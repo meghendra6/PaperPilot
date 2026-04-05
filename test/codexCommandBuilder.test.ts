@@ -22,6 +22,8 @@ import {
   getGeminiBuiltInModels,
   loadCodexCachedModels,
   mergeModelOptions,
+  normalizeGeminiModel,
+  normalizeGeminiModelList,
   parseAllowedModels,
 } from "../src/modules/codex/modelOptions";
 import { buildWorkspaceArtifacts } from "../src/modules/context/workspaceArtifacts";
@@ -293,9 +295,27 @@ test("mergeModelOptions keeps recent-first unique order", () => {
 
 test("getGeminiBuiltInModels exposes the supported Gemini CLI model list", () => {
   assert.deepEqual(getGeminiBuiltInModels(), [
-    "gemini-3.1-pro",
-    "gemini-3-flash",
+    "gemini-2.5-pro",
+    "gemini-2.5-flash",
   ]);
+});
+
+test("normalizeGeminiModel rewrites the regressed Gemini 3 aliases", () => {
+  assert.equal(normalizeGeminiModel("gemini-3.1-pro"), "gemini-2.5-pro");
+  assert.equal(normalizeGeminiModel("gemini-3-flash"), "gemini-2.5-flash");
+  assert.equal(normalizeGeminiModel(" gemini-2.5-pro "), "gemini-2.5-pro");
+});
+
+test("normalizeGeminiModelList keeps order while deduplicating aliases", () => {
+  assert.deepEqual(
+    normalizeGeminiModelList([
+      "gemini-3.1-pro",
+      "gemini-2.5-pro",
+      "gemini-3-flash",
+      "custom-model",
+    ]),
+    ["gemini-2.5-pro", "gemini-2.5-flash", "custom-model"],
+  );
 });
 
 test("buildWorkspaceArtifacts assembles paper and context files", () => {

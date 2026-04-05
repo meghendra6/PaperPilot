@@ -11,8 +11,31 @@ export function mergeModelOptions(recent: string[], allowed: string[]) {
   return [...new Set([...recent, ...allowed])];
 }
 
+const GEMINI_BUILT_IN_MODELS = ["gemini-2.5-pro", "gemini-2.5-flash"];
+const GEMINI_MODEL_ALIASES: Record<string, string> = {
+  "gemini-3.1-pro": "gemini-2.5-pro",
+  "gemini-3-flash": "gemini-2.5-flash",
+};
+
 export function getGeminiBuiltInModels() {
-  return ["gemini-3.1-pro", "gemini-3-flash"];
+  return [...GEMINI_BUILT_IN_MODELS];
+}
+
+export function normalizeGeminiModel(model: string) {
+  const normalized = model.trim();
+
+  if (!normalized) {
+    return GEMINI_BUILT_IN_MODELS[0];
+  }
+
+  return GEMINI_MODEL_ALIASES[normalized] || normalized;
+}
+
+export function normalizeGeminiModelList(models: string[]) {
+  return mergeModelOptions(
+    [],
+    models.map((model) => normalizeGeminiModel(model)).filter(Boolean),
+  );
 }
 
 export interface CachedCodexModel {

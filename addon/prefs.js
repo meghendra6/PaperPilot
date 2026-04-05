@@ -8,11 +8,8 @@ pref("__prefsPrefix__.responseLanguage", "English");
 
 // Gemini CLI
 pref("__prefsPrefix__.geminiExecutablePath", "");
-pref("__prefsPrefix__.geminiDefaultModel", "gemini-3.1-pro");
-pref(
-  "__prefsPrefix__.geminiAllowedModels",
-  "gemini-3.1-pro, gemini-3-flash",
-);
+pref("__prefsPrefix__.geminiDefaultModel", "gemini-2.5-pro");
+pref("__prefsPrefix__.geminiAllowedModels", "gemini-2.5-pro, gemini-2.5-flash");
 
 // Codex CLI
 pref("__prefsPrefix__.codexExecutablePath", "");

@@ -30,6 +30,8 @@ import {
   loadCodexCachedModelCatalog,
   loadCodexCachedModels,
   mergeModelOptions,
+  normalizeGeminiModel,
+  normalizeGeminiModelList,
   parseAllowedModels,
 } from "./codex/modelOptions";
 import { getCurrentReaderContext } from "./context/readerContext";
@@ -1183,7 +1185,12 @@ export function registerPaperPilotPaneSection() {
           masteryFeedback.className = `pp-mastery-feedback pp-mastery-feedback--${understood ? "correct" : "incorrect"}`;
           masteryFeedback.replaceChildren();
 
-          addHistorySection(masteryFeedback, "feedback", "Feedback", evaluation);
+          addHistorySection(
+            masteryFeedback,
+            "feedback",
+            "Feedback",
+            evaluation,
+          );
           if (!understood && explanation) {
             addHistorySection(
               masteryFeedback,
@@ -1201,8 +1208,7 @@ export function registerPaperPilotPaneSection() {
         ) {
           const understood = state.rounds.filter((r) => r.understood).length;
           const total = state.rounds.length;
-          const score =
-            total > 0 ? Math.round((understood / total) * 100) : 0;
+          const score = total > 0 ? Math.round((understood / total) * 100) : 0;
           if (masteryQuestion) {
             const scoreContent = `## Session Complete!\n\nGreat work studying this paper.\n\n**Score: ${score}%** (${understood}/${total} questions understood)`;
             masteryQuestion.replaceChildren(
@@ -1249,8 +1255,7 @@ export function registerPaperPilotPaneSection() {
                   s.running = false;
                   setMasteryState(item.id, s);
                 }
-                masteryReport.textContent =
-                  "Could not generate final report.";
+                masteryReport.textContent = "Could not generate final report.";
               },
             );
           }
@@ -1333,8 +1338,7 @@ export function registerPaperPilotPaneSection() {
                 resetOnFail();
                 return;
               }
-              const s =
-                getMasteryState(item.id) ?? buildInitialMasteryState();
+              const s = getMasteryState(item.id) ?? buildInitialMasteryState();
               s.phase = "awaiting-answer";
               s.currentQuestion = parsed.question;
               s.status = `Topic: ${parsed.topic} (${parsed.difficulty})`;
@@ -1397,8 +1401,7 @@ export function registerPaperPilotPaneSection() {
           await sendMasteryPrompt(
             buildEvaluateAnswerPrompt(question, answer, state.rounds),
             async (assistantText) => {
-              const evalResult =
-                parseMasteryEvaluationResponse(assistantText);
+              const evalResult = parseMasteryEvaluationResponse(assistantText);
               if (!evalResult) {
                 resetSubmitOnFail();
                 return;
@@ -2545,14 +2548,21 @@ async function renderModelHistory(
     return;
   }
 
-  const recentModels = getRecentCodexModels();
-  const allowedModels = parseAllowedModels(
+  const recentModels =
+    mode === "gemini_cli"
+      ? normalizeGeminiModelList(getRecentCodexModels())
+      : getRecentCodexModels();
+  const allowedModelsRaw = parseAllowedModels(
     String(
       getPref(
         mode === "gemini_cli" ? "geminiAllowedModels" : "codexAllowedModels",
       ) || "",
     ),
   );
+  const allowedModels =
+    mode === "gemini_cli"
+      ? normalizeGeminiModelList(allowedModelsRaw)
+      : allowedModelsRaw;
   const cachedModels =
     mode === "gemini_cli"
       ? getGeminiBuiltInModels()
@@ -2570,8 +2580,10 @@ async function renderModelHistory(
   const currentValue = String(
     getPref(
       mode === "gemini_cli" ? "geminiDefaultModel" : "codexDefaultModel",
-    ) || (mode === "gemini_cli" ? "gemini-3.1-pro" : "gpt-5-codex"),
+    ) || (mode === "gemini_cli" ? "gemini-2.5-pro" : "gpt-5-codex"),
   );
+  const selectedValue =
+    mode === "gemini_cli" ? normalizeGeminiModel(currentValue) : currentValue;
   const currentReasoningEffort = String(
     mode === "gemini_cli" ? "" : getPref("codexReasoningEffort") || "medium",
   );
@@ -2608,7 +2620,7 @@ async function renderModelHistory(
       option.textContent = label;
       const currentKey =
         mode === "gemini_cli"
-          ? `${currentValue}|`
+          ? `${selectedValue}|`
           : `${currentValue}|${currentReasoningEffort}`;
       if (value === currentKey) {
         option.selected = true;
@@ -2619,14 +2631,14 @@ async function renderModelHistory(
 
   const fallbackKey =
     mode === "gemini_cli"
-      ? `${currentValue}|`
+      ? `${selectedValue}|`
       : `${currentValue}|${currentReasoningEffort}`;
   if (!optionMap.has(fallbackKey)) {
     const fallback = doc.createElement("option");
     fallback.value = fallbackKey;
     fallback.textContent =
       mode === "gemini_cli"
-        ? currentValue
+        ? selectedValue
         : currentReasoningEffort
           ? `${currentValue} (${currentReasoningEffort})`
           : currentValue;

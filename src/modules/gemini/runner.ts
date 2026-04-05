@@ -1,4 +1,5 @@
-import { getPref } from "../../utils/prefs";
+import { getPref, setPref } from "../../utils/prefs";
+import { normalizeGeminiModel } from "../codex/modelOptions";
 import { normalizeResponseLanguage } from "../translation/responseLanguage";
 import { getCurrentReaderContext } from "../context/readerContext";
 import { getIndexedChunks } from "../context/indexStore";
@@ -114,7 +115,15 @@ export async function startGeminiRunForQuestion(params: {
 }): Promise<StartedGeminiRun | FailedGeminiRun> {
   const executablePath =
     String(getPref("geminiExecutablePath") || "gemini").trim() || "gemini";
-  const model = String(getPref("geminiDefaultModel") || "gemini-3.1-pro");
+  const preferredModel = String(
+    getPref("geminiDefaultModel") || "gemini-2.5-pro",
+  ).trim();
+  const model = normalizeGeminiModel(preferredModel);
+
+  if (model !== preferredModel) {
+    setPref("geminiDefaultModel", model);
+  }
+
   const workspaceRoot = String(
     getPref("codexWorkspaceRoot") || "/tmp/zotero-paper-ai",
   );
