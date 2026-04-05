@@ -1169,6 +1169,8 @@
   padding: 12px 14px;
   border-radius: var(--pp-radius-md, 6px);
   margin: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .pp-mastery-feedback--correct {
@@ -1181,6 +1183,12 @@
   background: color-mix(in srgb, var(--pp-error, #e53935) 12%, transparent);
   color: var(--pp-text-primary);
   border-left: 3px solid var(--pp-error, #e53935);
+}
+
+/* Override label colors on tinted backgrounds for adequate contrast */
+.pp-mastery-feedback--correct .pp-mastery-history-section .pp-mastery-history-label,
+.pp-mastery-feedback--incorrect .pp-mastery-history-section .pp-mastery-history-label {
+  color: var(--pp-text-primary);
 }
 
 /* --- Answer textarea --- */
@@ -1219,13 +1227,15 @@
 
 /* Clickable completed dots */
 .pp-mastery-progress-dot--correct,
-.pp-mastery-progress-dot--incorrect {
+.pp-mastery-progress-dot--incorrect,
+.pp-mastery-progress-dot--current {
   cursor: pointer;
   transition: transform 0.15s ease, box-shadow 0.15s ease;
 }
 
 .pp-mastery-progress-dot--correct:hover,
-.pp-mastery-progress-dot--incorrect:hover {
+.pp-mastery-progress-dot--incorrect:hover,
+.pp-mastery-progress-dot--current:hover {
   transform: scale(1.3);
 }
 
@@ -1235,16 +1245,102 @@
 }
 
 .pp-mastery-progress-dot--correct:focus-visible,
-.pp-mastery-progress-dot--incorrect:focus-visible {
+.pp-mastery-progress-dot--incorrect:focus-visible,
+.pp-mastery-progress-dot--current:focus-visible {
   outline: 2px solid var(--pp-accent, #1976d2);
   outline-offset: 2px;
 }
 
-/* History view in feedback */
+/* History view in feedback — vertical card layout */
 .pp-mastery-feedback--history {
   background: var(--pp-bg-secondary);
   border-left: 3px solid var(--pp-accent, #1976d2);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
 }
+
+/* Round header */
+.pp-mastery-history-header {
+  font-size: var(--pp-font-size-sm);
+  color: var(--pp-text-muted);
+  font-weight: 600;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--pp-border-light);
+  margin-bottom: 10px;
+}
+
+/* Each section (Q / A / Feedback / Explanation) */
+.pp-mastery-history-section {
+  padding: 8px 0;
+}
+
+.pp-mastery-history-section + .pp-mastery-history-section {
+  border-top: 1px solid var(--pp-border-light);
+}
+
+/* Section labels */
+.pp-mastery-history-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 4px;
+  line-height: 1;
+}
+
+.pp-mastery-history-section--question .pp-mastery-history-label {
+  color: var(--pp-accent, #1976d2);
+}
+
+.pp-mastery-history-section--answer .pp-mastery-history-label {
+  color: var(--pp-text-muted);
+}
+
+.pp-mastery-history-section--feedback .pp-mastery-history-label {
+  color: var(--pp-success, #4caf50);
+}
+
+.pp-mastery-history-section--explanation .pp-mastery-history-label {
+  color: var(--pp-warning, #ff9800);
+}
+
+/* Section body — markdown content */
+.pp-mastery-history-body {
+  font-size: var(--pp-font-size-base, 13px);
+  line-height: 1.55;
+  color: var(--pp-text-primary);
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+.pp-mastery-history-body p { margin: 0 0 6px; line-height: 1.55; }
+.pp-mastery-history-body p:last-child { margin-bottom: 0; }
+.pp-mastery-history-body ul,
+.pp-mastery-history-body ol { margin: 0 0 6px; padding-left: 18px; }
+.pp-mastery-history-body li { margin: 2px 0; }
+.pp-mastery-history-body code { font-family: var(--pp-font-mono); font-size: 0.92em; }
+.pp-mastery-history-body pre { margin: 0 0 6px; padding: 6px 8px; border-radius: var(--pp-radius-md); background: var(--pp-bg-code); color: var(--pp-text-code); overflow-x: auto; max-width: 100%; box-sizing: border-box; }
+.pp-mastery-history-body .katex-display { margin: 6px 0; overflow-x: auto; }
+.pp-mastery-history-body strong { font-weight: 700; }
+.pp-mastery-history-body em { font-style: italic; }
+.pp-mastery-history-body h1, .pp-mastery-history-body h2, .pp-mastery-history-body h3 {
+  margin: 8px 0 4px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+.pp-mastery-history-body h1 { font-size: 1.1em; }
+.pp-mastery-history-body h2 { font-size: 1.05em; }
+.pp-mastery-history-body h3 { font-size: 1em; }
+.pp-mastery-history-body blockquote {
+  margin: 4px 0;
+  padding: 4px 10px;
+  border-left: 2px solid var(--pp-border-light);
+  color: var(--pp-text-muted);
+}
+.pp-mastery-history-body table { width: 100%; border-collapse: collapse; font-size: 0.92em; overflow-x: auto; display: block; }
+.pp-mastery-history-body th, .pp-mastery-history-body td { padding: 4px 6px; border: 1px solid var(--pp-border-light); text-align: left; }
 
 /* Final report */
 .pp-mastery-report {
