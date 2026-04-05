@@ -76,6 +76,7 @@ import {
   buildInitialMasteryPrompt,
   buildEvaluateAnswerPrompt,
   buildFollowUpQuestionPrompt,
+  buildFinalReportPrompt,
   parseMasteryQuestionResponse,
   parseMasteryEvaluationResponse,
 } from "./comprehensionCheck/prompt";
@@ -213,6 +214,7 @@ export function registerPaperPilotPaneSection() {
             </div>
             <div id="paper-mastery-question" class="pp-mastery-question" style="display: none;"></div>
             <div id="paper-mastery-feedback" class="pp-mastery-feedback" style="display: none;"></div>
+            <div id="paper-mastery-report" class="pp-mastery-report" style="display: none;"></div>
             <html:textarea id="paper-mastery-answer" class="pp-mastery-answer" placeholder="Type your answer here..." style="display: none;" />
             <div id="paper-mastery-actions" class="pp-mastery-actions" style="display: none;">
               <html:button id="paper-mastery-submit" class="pp-btn pp-btn--primary">Submit Answer</html:button>
@@ -393,6 +395,9 @@ export function registerPaperPilotPaneSection() {
       const masteryEnd = body.querySelector(
         "#paper-mastery-end",
       ) as HTMLButtonElement | null;
+      const masteryReport = body.querySelector(
+        "#paper-mastery-report",
+      ) as HTMLElement | null;
       const paperMasteryBtn = body.querySelector(
         "#chat-paper-mastery",
       ) as HTMLButtonElement | null;
@@ -913,17 +918,99 @@ export function registerPaperPilotPaneSection() {
           "#paper-mastery-actions",
         ) as HTMLElement | null;
 
+        let selectedHistoryDot: number = -1;
+
+        function clearHistoryDotSelection() {
+          if (!masteryProgress) {
+            return;
+          }
+          selectedHistoryDot = -1;
+          const dots = masteryProgress.querySelectorAll(
+            ".pp-mastery-progress-dot--active",
+          );
+          dots.forEach((d) =>
+            d.classList.remove("pp-mastery-progress-dot--active"),
+          );
+        }
+
+        function showRoundHistory(
+          state: import("./comprehensionCheck/types").ComprehensionCheckState,
+          roundIndex: number,
+        ) {
+          if (!masteryFeedback) {
+            return;
+          }
+          const r = state.rounds[roundIndex];
+          if (!r) {
+            return;
+          }
+          const topicLabel = state.topics[roundIndex]?.topic ?? "general";
+          let content = `📋 **Viewing Round ${roundIndex + 1}** — ${topicLabel}\n\n`;
+          content += `**Q:** ${r.question}\n\n`;
+          content += `**Your answer:** ${r.userAnswer}\n\n`;
+          content += `---\n\n`;
+          content += `**Feedback:** ${r.evaluation}`;
+          if (!r.understood && r.explanation) {
+            content += `\n\n📚 ${r.explanation}`;
+          }
+          masteryFeedback.className =
+            "pp-mastery-feedback pp-mastery-feedback--history";
+          masteryFeedback.replaceChildren(
+            renderMarkdownFragment(content, masteryFeedback.ownerDocument!),
+          );
+          masteryFeedback.style.display = "";
+        }
+
         function updateMasteryProgressDots(
           state: import("./comprehensionCheck/types").ComprehensionCheckState,
         ) {
           if (!masteryProgress) {
             return;
           }
-          masteryProgress.innerHTML = "";
+          masteryProgress.replaceChildren();
           state.rounds.forEach((r, i) => {
             const dot = body.ownerDocument.createElement("span");
             dot.className = `pp-mastery-progress-dot pp-mastery-progress-dot--${r.understood ? "correct" : "incorrect"}`;
             dot.title = `Round ${i + 1}: ${r.understood ? "Understood" : "Needs review"}`;
+            dot.style.cursor = "pointer";
+            dot.setAttribute("tabindex", "0");
+            dot.setAttribute("role", "button");
+            dot.setAttribute(
+              "aria-label",
+              `Round ${i + 1}: ${r.understood ? "Understood" : "Needs review"}`,
+            );
+            const handleDotClick = () => {
+              const currentPhase = getMasteryState(item.id)?.phase;
+              if (
+                currentPhase === "evaluating" ||
+                currentPhase === "generating-question"
+              ) {
+                return;
+              }
+              if (selectedHistoryDot === i) {
+                clearHistoryDotSelection();
+                if (masteryFeedback) {
+                  masteryFeedback.style.display = "none";
+                  masteryFeedback.className = "pp-mastery-feedback";
+                }
+                return;
+              }
+              clearHistoryDotSelection();
+              selectedHistoryDot = i;
+              dot.classList.add("pp-mastery-progress-dot--active");
+              const currentState = getMasteryState(item.id) ?? state;
+              showRoundHistory(currentState, i);
+            };
+            dot.addEventListener("click", handleDotClick);
+            dot.addEventListener("keydown", (e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                handleDotClick();
+              }
+            });
+            if (selectedHistoryDot === i) {
+              dot.classList.add("pp-mastery-progress-dot--active");
+            }
             masteryProgress.appendChild(dot);
           });
           if (state.phase !== "complete") {
@@ -936,6 +1023,7 @@ export function registerPaperPilotPaneSection() {
         }
 
         function showMasteryQuestion(question: string) {
+          clearHistoryDotSelection();
           if (masteryQuestion) {
             masteryQuestion.replaceChildren(
               renderMarkdownFragment(question, masteryQuestion.ownerDocument!),
@@ -949,6 +1037,9 @@ export function registerPaperPilotPaneSection() {
           }
           if (masteryActionsDiv) {
             masteryActionsDiv.style.display = "";
+          }
+          if (masterySubmit) {
+            masterySubmit.disabled = false;
           }
           if (masteryFeedback) {
             masteryFeedback.style.display = "none";
@@ -982,15 +1073,17 @@ export function registerPaperPilotPaneSection() {
           const score =
             total > 0 ? Math.round((understood / total) * 100) : 0;
           if (masteryQuestion) {
-            masteryQuestion.textContent =
-              "Session complete! Great work studying this paper.";
+            const scoreContent = `## Session Complete!\n\nGreat work studying this paper.\n\n**Score: ${score}%** (${understood}/${total} questions understood)`;
+            masteryQuestion.replaceChildren(
+              renderMarkdownFragment(
+                scoreContent,
+                masteryQuestion.ownerDocument!,
+              ),
+            );
             masteryQuestion.style.display = "";
           }
           if (masteryFeedback) {
-            masteryFeedback.className =
-              "pp-mastery-feedback pp-mastery-feedback--correct";
-            masteryFeedback.textContent = `Score: ${score}% (${understood}/${total} questions understood)`;
-            masteryFeedback.style.display = "";
+            masteryFeedback.style.display = "none";
           }
           if (masteryAnswer) {
             masteryAnswer.style.display = "none";
@@ -1000,6 +1093,35 @@ export function registerPaperPilotPaneSection() {
           }
           if (masteryStatus) {
             masteryStatus.textContent = "Complete";
+          }
+          if (masteryReport) {
+            masteryReport.textContent = "Generating final report...";
+            masteryReport.style.display = "";
+            sendMasteryPrompt(
+              buildFinalReportPrompt(state.rounds, state.topics),
+              (assistantText) => {
+                const s = getMasteryState(item.id);
+                if (s) {
+                  s.running = false;
+                  setMasteryState(item.id, s);
+                }
+                masteryReport.replaceChildren(
+                  renderMarkdownFragment(
+                    assistantText,
+                    masteryReport.ownerDocument!,
+                  ),
+                );
+              },
+              () => {
+                const s = getMasteryState(item.id);
+                if (s) {
+                  s.running = false;
+                  setMasteryState(item.id, s);
+                }
+                masteryReport.textContent =
+                  "Could not generate final report.";
+              },
+            );
           }
         }
 
@@ -1115,6 +1237,7 @@ export function registerPaperPilotPaneSection() {
           }
 
           state.phase = "evaluating";
+          state.running = true;
           state.status = "Evaluating your answer...";
           setMasteryState(item.id, state);
           if (masteryStatus) {
@@ -1177,7 +1300,6 @@ export function registerPaperPilotPaneSection() {
                 s.rounds.length >= MAX_ROUNDS
               ) {
                 s.phase = "complete";
-                s.running = false;
                 setMasteryState(item.id, s);
                 showMasteryCompletion(s);
                 return;
@@ -1199,13 +1321,12 @@ export function registerPaperPilotPaneSection() {
                 (nextText) => {
                   const parsed = parseMasteryQuestionResponse(nextText);
                   if (!parsed) {
-                    if (masteryStatus) {
-                      masteryStatus.textContent =
-                        "Failed to generate next question.";
+                    const fst = getMasteryState(item.id);
+                    if (fst) {
+                      fst.phase = "complete";
+                      setMasteryState(item.id, fst);
                     }
-                    if (masterySubmit) {
-                      masterySubmit.disabled = false;
-                    }
+                    showMasteryCompletion(fst ?? s);
                     return;
                   }
                   const st = getMasteryState(item.id) ?? s;
@@ -1231,7 +1352,6 @@ export function registerPaperPilotPaneSection() {
                   const fst = getMasteryState(item.id);
                   if (fst) {
                     fst.phase = "complete";
-                    fst.running = false;
                     setMasteryState(item.id, fst);
                   }
                   showMasteryCompletion(fst ?? s);
@@ -1244,9 +1364,18 @@ export function registerPaperPilotPaneSection() {
 
         masteryEnd?.addEventListener("click", () => {
           const state = getMasteryState(item.id);
-          if (state && state.rounds.length > 0) {
+          if (!state) {
+            return;
+          }
+          if (
+            state.phase === "evaluating" ||
+            state.phase === "generating-question" ||
+            state.phase === "complete"
+          ) {
+            return;
+          }
+          if (state.rounds.length > 0) {
             state.phase = "complete";
-            state.running = false;
             setMasteryState(item.id, state);
             showMasteryCompletion(state);
           } else {
