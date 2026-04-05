@@ -1,0 +1,505 @@
+<linkset>
+  <html:link rel="localization" href="__addonRef__-preferences.ftl" />
+</linkset>
+<vbox
+  id="zotero-prefpane-__addonRef__"
+  onload="Zotero.__addonInstance__.hooks.onPrefsEvent('load', {window})"
+>
+  <html:div style="display: flex; flex-direction: column; gap: 16px">
+    <groupbox>
+      <label
+        ><html:h2 data-l10n-id="pref-surface-title" style="margin: 0"></html:h2
+      ></label>
+      <html:p
+        data-l10n-id="pref-surface-intro"
+        style="margin: 4px 0 0; color: #555"
+      ></html:p>
+    </groupbox>
+
+    <groupbox>
+      <label
+        ><html:h2
+          data-l10n-id="pref-section-general-title"
+          style="margin: 0"
+        ></html:h2
+      ></label>
+      <html:p
+        data-l10n-id="pref-section-general-desc"
+        style="margin: 4px 0 10px; color: #555"
+      ></html:p>
+      <hbox
+        align="center"
+        style="display: flex; align-items: center; margin-bottom: 10px"
+      >
+        <html:label
+          for="zotero-prefpane-__addonRef__-input-default-mode"
+          data-l10n-id="pref-general-default-mode"
+          style="flex: 0 0 220px; margin-right: 10px"
+        ></html:label>
+        <html:input
+          type="text"
+          id="zotero-prefpane-__addonRef__-input-default-mode"
+          preference="extensions.zotero.__addonRef__.defaultMode"
+          data-placeholder-pref="true"
+          data-placeholder-label="Default AI mode"
+          placeholder="gemini_cli or codex_cli"
+          style="flex: 1"
+        ></html:input>
+      </hbox>
+      <hbox
+        align="center"
+        style="display: flex; align-items: center; margin-bottom: 10px"
+      >
+        <html:label
+          for="zotero-prefpane-__addonRef__-input-auto-open-pane"
+          data-l10n-id="pref-general-auto-open-pane"
+          style="flex: 0 0 220px; margin-right: 10px"
+        ></html:label>
+        <html:input
+          type="checkbox"
+          id="zotero-prefpane-__addonRef__-input-auto-open-pane"
+          preference="extensions.zotero.__addonRef__.autoOpenPaneOnPdfOpen"
+          data-placeholder-pref="true"
+          data-placeholder-label="Auto-open pane on PDF open"
+        ></html:input>
+      </hbox>
+      <hbox
+        align="center"
+        style="display: flex; align-items: center; margin-bottom: 10px"
+      >
+        <html:label
+          for="zotero-prefpane-__addonRef__-input-save-sessions"
+          data-l10n-id="pref-general-save-sessions"
+          style="flex: 0 0 220px; margin-right: 10px"
+        ></html:label>
+        <html:input
+          type="checkbox"
+          id="zotero-prefpane-__addonRef__-input-save-sessions"
+          preference="extensions.zotero.__addonRef__.saveDocumentSessions"
+          data-placeholder-pref="true"
+          data-placeholder-label="Save document sessions"
+        ></html:input>
+      </hbox>
+      <hbox align="center" style="display: flex; align-items: center">
+        <html:label
+          for="zotero-prefpane-__addonRef__-input-response-language"
+          data-l10n-id="pref-general-response-language"
+          style="flex: 0 0 220px; margin-right: 10px"
+        ></html:label>
+        <html:select
+          id="zotero-prefpane-__addonRef__-input-response-language"
+          preference="extensions.zotero.__addonRef__.responseLanguage"
+          style="flex: 1"
+        >
+          <html:option
+            value="English"
+            data-l10n-id="pref-general-response-language-english"
+          ></html:option>
+          <html:option
+            value="Korean"
+            data-l10n-id="pref-general-response-language-korean"
+          ></html:option>
+          <html:option
+            value="Chinese"
+            data-l10n-id="pref-general-response-language-chinese"
+          ></html:option>
+        </html:select>
+      </hbox>
+    </groupbox>
+
+    <groupbox>
+      <label
+        ><html:h2
+          data-l10n-id="pref-section-gemini-title"
+          style="margin: 0"
+        ></html:h2
+      ></label>
+      <html:p
+        data-l10n-id="pref-section-gemini-desc"
+        style="margin: 4px 0 10px; color: #555"
+      ></html:p>
+      <hbox
+        align="center"
+        style="display: flex; align-items: center; margin-bottom: 10px"
+      >
+        <html:label
+          for="zotero-prefpane-__addonRef__-input-gemini-path"
+          data-l10n-id="pref-gemini-executable-path"
+          style="flex: 0 0 220px; margin-right: 10px"
+        ></html:label>
+        <html:input
+          type="text"
+          id="zotero-prefpane-__addonRef__-input-gemini-path"
+          preference="extensions.zotero.__addonRef__.geminiExecutablePath"
+          placeholder="/opt/homebrew/bin/gemini"
+          style="flex: 1"
+        ></html:input>
+      </hbox>
+      <hbox
+        align="center"
+        style="display: flex; align-items: center; margin-bottom: 10px"
+      >
+        <html:label
+          for="zotero-prefpane-__addonRef__-input-gemini-model"
+          data-l10n-id="pref-gemini-default-model"
+          style="flex: 0 0 220px; margin-right: 10px"
+        ></html:label>
+        <html:input
+          type="text"
+          id="zotero-prefpane-__addonRef__-input-gemini-model"
+          preference="extensions.zotero.__addonRef__.geminiDefaultModel"
+          placeholder="gemini-2.5-pro"
+          style="flex: 1"
+        ></html:input>
+      </hbox>
+      <hbox align="center" style="display: flex; align-items: center">
+        <html:label
+          for="zotero-prefpane-__addonRef__-input-gemini-allowed-models"
+          data-l10n-id="pref-gemini-allowed-models"
+          style="flex: 0 0 220px; margin-right: 10px"
+        ></html:label>
+        <html:input
+          type="text"
+          id="zotero-prefpane-__addonRef__-input-gemini-allowed-models"
+          preference="extensions.zotero.__addonRef__.geminiAllowedModels"
+          placeholder="comma-separated Gemini model ids"
+          style="flex: 1"
+        ></html:input>
+      </hbox>
+    </groupbox>
+
+    <groupbox>
+      <label
+        ><html:h2
+          data-l10n-id="pref-section-codex-title"
+          style="margin: 0"
+        ></html:h2
+      ></label>
+      <html:p
+        data-l10n-id="pref-section-codex-desc"
+        style="margin: 4px 0 10px; color: #555"
+      ></html:p>
+      <hbox
+        align="center"
+        style="display: flex; align-items: center; margin-bottom: 10px"
+      >
+        <html:label
+          for="zotero-prefpane-__addonRef__-input-codex-path"
+          data-l10n-id="pref-codex-executable-path"
+          style="flex: 0 0 220px; margin-right: 10px"
+        ></html:label>
+        <html:input
+          type="text"
+          id="zotero-prefpane-__addonRef__-input-codex-path"
+          preference="extensions.zotero.__addonRef__.codexExecutablePath"
+          data-placeholder-pref="true"
+          data-placeholder-label="Codex executable path"
+          placeholder="/usr/local/bin/codex"
+          style="flex: 1"
+        ></html:input>
+      </hbox>
+      <hbox
+        align="center"
+        style="display: flex; align-items: center; margin-bottom: 10px"
+      >
+        <html:label
+          for="zotero-prefpane-__addonRef__-input-default-model"
+          data-l10n-id="pref-codex-default-model"
+          style="flex: 0 0 220px; margin-right: 10px"
+        ></html:label>
+        <html:input
+          type="text"
+          id="zotero-prefpane-__addonRef__-input-default-model"
+          preference="extensions.zotero.__addonRef__.codexDefaultModel"
+          data-placeholder-pref="true"
+          data-placeholder-label="Default model"
+          placeholder="gpt-5-codex"
+          style="flex: 1"
+        ></html:input>
+      </hbox>
+      <hbox
+        align="center"
+        style="display: flex; align-items: center; margin-bottom: 10px"
+      >
+        <html:label
+          for="zotero-prefpane-__addonRef__-input-allowed-models"
+          data-l10n-id="pref-codex-allowed-models"
+          style="flex: 0 0 220px; margin-right: 10px"
+        ></html:label>
+        <html:input
+          type="text"
+          id="zotero-prefpane-__addonRef__-input-allowed-models"
+          preference="extensions.zotero.__addonRef__.codexAllowedModels"
+          data-placeholder-pref="true"
+          data-placeholder-label="Allowed models list"
+          placeholder="comma-separated model ids"
+          style="flex: 1"
+        ></html:input>
+      </hbox>
+      <hbox
+        align="center"
+        style="display: flex; align-items: center; margin-bottom: 10px"
+      >
+        <html:label
+          for="zotero-prefpane-__addonRef__-input-web-search"
+          data-l10n-id="pref-codex-web-search"
+          style="flex: 0 0 220px; margin-right: 10px"
+        ></html:label>
+        <html:input
+          type="checkbox"
+          id="zotero-prefpane-__addonRef__-input-web-search"
+          preference="extensions.zotero.__addonRef__.codexEnableWebSearch"
+          data-placeholder-pref="true"
+          data-placeholder-label="Enable web search"
+        ></html:input>
+      </hbox>
+      <hbox
+        align="center"
+        style="display: flex; align-items: center; margin-bottom: 10px"
+      >
+        <html:label
+          for="zotero-prefpane-__addonRef__-input-sandbox"
+          data-l10n-id="pref-codex-sandbox-mode"
+          style="flex: 0 0 220px; margin-right: 10px"
+        ></html:label>
+        <html:input
+          type="text"
+          id="zotero-prefpane-__addonRef__-input-sandbox"
+          preference="extensions.zotero.__addonRef__.codexSandboxMode"
+          data-placeholder-pref="true"
+          data-placeholder-label="Default sandbox mode"
+          placeholder="read-only, workspace-write, or danger-full-access"
+          style="flex: 1"
+        ></html:input>
+      </hbox>
+      <hbox
+        align="center"
+        style="display: flex; align-items: center; margin-bottom: 10px"
+      >
+        <html:label
+          for="zotero-prefpane-__addonRef__-input-approval-mode"
+          data-l10n-id="pref-codex-approval-mode"
+          style="flex: 0 0 220px; margin-right: 10px"
+        ></html:label>
+        <html:input
+          type="text"
+          id="zotero-prefpane-__addonRef__-input-approval-mode"
+          preference="extensions.zotero.__addonRef__.codexApprovalMode"
+          data-placeholder-pref="true"
+          data-placeholder-label="Approval mode"
+          placeholder="on-request, never, untrusted, or on-failure"
+          style="flex: 1"
+        ></html:input>
+      </hbox>
+      <hbox
+        align="center"
+        style="display: flex; align-items: center; margin-bottom: 10px"
+      >
+        <html:label
+          for="zotero-prefpane-__addonRef__-input-workspace-root"
+          data-l10n-id="pref-codex-workspace-root"
+          style="flex: 0 0 220px; margin-right: 10px"
+        ></html:label>
+        <html:input
+          type="text"
+          id="zotero-prefpane-__addonRef__-input-workspace-root"
+          preference="extensions.zotero.__addonRef__.codexWorkspaceRoot"
+          data-placeholder-pref="true"
+          data-placeholder-label="Workspace root"
+          placeholder="optional path"
+          style="flex: 1"
+        ></html:input>
+      </hbox>
+      <hbox align="center" style="display: flex; align-items: center">
+        <html:label
+          for="zotero-prefpane-__addonRef__-input-clean-workspace"
+          data-l10n-id="pref-codex-clean-workspace"
+          style="flex: 0 0 220px; margin-right: 10px"
+        ></html:label>
+        <html:input
+          type="checkbox"
+          id="zotero-prefpane-__addonRef__-input-clean-workspace"
+          preference="extensions.zotero.__addonRef__.codexAutoCleanWorkspace"
+          data-placeholder-pref="true"
+          data-placeholder-label="Auto-clean temp workspace"
+        ></html:input>
+      </hbox>
+    </groupbox>
+
+    <groupbox>
+      <label
+        ><html:h2
+          data-l10n-id="pref-section-retrieval-title"
+          style="margin: 0"
+        ></html:h2
+      ></label>
+      <html:p
+        data-l10n-id="pref-section-retrieval-desc"
+        style="margin: 4px 0 10px; color: #555"
+      ></html:p>
+      <hbox
+        align="center"
+        style="display: flex; align-items: center; margin-bottom: 10px"
+      >
+        <html:label
+          for="zotero-prefpane-__addonRef__-input-chunk-size"
+          data-l10n-id="pref-retrieval-chunk-size"
+          style="flex: 0 0 220px; margin-right: 10px"
+        ></html:label>
+        <html:input
+          type="number"
+          id="zotero-prefpane-__addonRef__-input-chunk-size"
+          preference="extensions.zotero.__addonRef__.retrievalChunkSize"
+          data-placeholder-pref="true"
+          data-placeholder-label="Chunk size"
+          style="flex: 1"
+        ></html:input>
+      </hbox>
+      <hbox
+        align="center"
+        style="display: flex; align-items: center; margin-bottom: 10px"
+      >
+        <html:label
+          for="zotero-prefpane-__addonRef__-input-overlap-size"
+          data-l10n-id="pref-retrieval-overlap-size"
+          style="flex: 0 0 220px; margin-right: 10px"
+        ></html:label>
+        <html:input
+          type="number"
+          id="zotero-prefpane-__addonRef__-input-overlap-size"
+          preference="extensions.zotero.__addonRef__.retrievalOverlapSize"
+          data-placeholder-pref="true"
+          data-placeholder-label="Overlap size"
+          style="flex: 1"
+        ></html:input>
+      </hbox>
+      <hbox
+        align="center"
+        style="display: flex; align-items: center; margin-bottom: 10px"
+      >
+        <html:label
+          for="zotero-prefpane-__addonRef__-input-top-k"
+          data-l10n-id="pref-retrieval-top-k"
+          style="flex: 0 0 220px; margin-right: 10px"
+        ></html:label>
+        <html:input
+          type="number"
+          id="zotero-prefpane-__addonRef__-input-top-k"
+          preference="extensions.zotero.__addonRef__.retrievalTopK"
+          data-placeholder-pref="true"
+          data-placeholder-label="Top-k"
+          style="flex: 1"
+        ></html:input>
+      </hbox>
+      <hbox
+        align="center"
+        style="display: flex; align-items: center; margin-bottom: 10px"
+      >
+        <html:label
+          for="zotero-prefpane-__addonRef__-input-include-abstract"
+          data-l10n-id="pref-retrieval-include-abstract"
+          style="flex: 0 0 220px; margin-right: 10px"
+        ></html:label>
+        <html:input
+          type="checkbox"
+          id="zotero-prefpane-__addonRef__-input-include-abstract"
+          preference="extensions.zotero.__addonRef__.retrievalIncludeAbstract"
+          data-placeholder-pref="true"
+          data-placeholder-label="Include abstract"
+        ></html:input>
+      </hbox>
+      <hbox align="center" style="display: flex; align-items: center">
+        <html:label
+          for="zotero-prefpane-__addonRef__-input-nearby-context"
+          data-l10n-id="pref-retrieval-nearby-context"
+          style="flex: 0 0 220px; margin-right: 10px"
+        ></html:label>
+        <html:input
+          type="checkbox"
+          id="zotero-prefpane-__addonRef__-input-nearby-context"
+          preference="extensions.zotero.__addonRef__.retrievalIncludeNearbyContext"
+          data-placeholder-pref="true"
+          data-placeholder-label="Include nearby selection context"
+        ></html:input>
+      </hbox>
+    </groupbox>
+
+    <groupbox>
+      <label
+        ><html:h2
+          data-l10n-id="pref-section-privacy-title"
+          style="margin: 0"
+        ></html:h2
+      ></label>
+      <html:p
+        data-l10n-id="pref-section-privacy-desc"
+        style="margin: 4px 0 10px; color: #555"
+      ></html:p>
+      <hbox
+        align="center"
+        style="display: flex; align-items: center; margin-bottom: 10px"
+      >
+        <html:label
+          for="zotero-prefpane-__addonRef__-input-store-history"
+          data-l10n-id="pref-privacy-store-history"
+          style="flex: 0 0 220px; margin-right: 10px"
+        ></html:label>
+        <html:input
+          type="checkbox"
+          id="zotero-prefpane-__addonRef__-input-store-history"
+          preference="extensions.zotero.__addonRef__.privacyStoreLocalHistory"
+          data-placeholder-pref="true"
+          data-placeholder-label="Store local history"
+        ></html:input>
+      </hbox>
+      <hbox
+        align="center"
+        style="display: flex; align-items: center; margin-bottom: 10px"
+      >
+        <html:label
+          for="zotero-prefpane-__addonRef__-input-save-prompts-only"
+          data-l10n-id="pref-privacy-save-prompts-only"
+          style="flex: 0 0 220px; margin-right: 10px"
+        ></html:label>
+        <html:input
+          type="checkbox"
+          id="zotero-prefpane-__addonRef__-input-save-prompts-only"
+          preference="extensions.zotero.__addonRef__.privacySavePromptsOnly"
+          data-placeholder-pref="true"
+          data-placeholder-label="Save prompts only"
+        ></html:input>
+      </hbox>
+      <hbox
+        align="center"
+        style="display: flex; align-items: center; margin-bottom: 10px"
+      >
+        <html:label
+          for="zotero-prefpane-__addonRef__-input-save-responses"
+          data-l10n-id="pref-privacy-save-responses"
+          style="flex: 0 0 220px; margin-right: 10px"
+        ></html:label>
+        <html:input
+          type="checkbox"
+          id="zotero-prefpane-__addonRef__-input-save-responses"
+          preference="extensions.zotero.__addonRef__.privacySaveResponses"
+          data-placeholder-pref="true"
+          data-placeholder-label="Save responses"
+        ></html:input>
+      </hbox>
+      <hbox align="center" style="display: flex; align-items: center">
+        <html:label
+          for="zotero-prefpane-__addonRef__-input-redact-paths"
+          data-l10n-id="pref-privacy-redact-paths"
+          style="flex: 0 0 220px; margin-right: 10px"
+        ></html:label>
+        <html:input
+          type="checkbox"
+          id="zotero-prefpane-__addonRef__-input-redact-paths"
+          preference="extensions.zotero.__addonRef__.privacyRedactLocalFilePaths"
+          data-placeholder-pref="true"
+          data-placeholder-label="Redact local file paths"
+        ></html:input>
+      </hbox>
+    </groupbox>
+  </html:div>
+</vbox>

@@ -1,0 +1,1218 @@
+/* ============================================================
+   Paper Pilot – Zotero Reader Pane Styles
+   Prefix: pp-  (Paper Pilot)
+   ============================================================ */
+
+/* --- Custom properties (light theme) --- */
+:root {
+  --pp-bg-primary: #ffffff;
+  --pp-bg-secondary: #f5f7fa;
+  --pp-bg-tertiary: #eef1f5;
+  --pp-bg-accent: #e7eefb;
+  --pp-bg-input: #f0f0f0;
+  --pp-bg-code: #0f172a;
+  --pp-bg-blockquote: #f8fafc;
+  --pp-bg-artifact: #f8fbff;
+  --pp-bg-status-info: #f1eef9;
+  --pp-bg-status-warning: #fff1e4;
+  --pp-bg-status-success: #eef7f1;
+  --pp-bg-status-embed: #eef4ff;
+  --pp-bg-draft: #f8f3d6;
+
+  --pp-text-primary: #1f2937;
+  --pp-text-secondary: #555;
+  --pp-text-muted: #666;
+  --pp-text-accent: #2f4f7f;
+  --pp-text-code: #e2e8f0;
+  --pp-text-blockquote: #334155;
+
+  --pp-border-light: #e2e5ea;
+  --pp-border-medium: #ccc;
+  --pp-border-accent: #dbe3ee;
+  --pp-border-status-info: #d8d0ea;
+  --pp-border-status-warning: #f2c98d;
+  --pp-border-status-success: #cfe5d5;
+  --pp-border-status-embed: #d5dff8;
+  --pp-border-draft: #e2d7a0;
+  --pp-border-blockquote: #cbd5e1;
+
+  --pp-text-run-state: #423960;
+  --pp-text-session-doc: #444;
+  --pp-text-streaming: #5b6b82;
+  --pp-text-artifact-time: #64748b;
+  --pp-text-artifact-source: #54657d;
+  --pp-bg-artifact-source: #eef4fb;
+  --pp-border-recommendation: #eef1f4;
+  --pp-text-recommendation-meta: #64748b;
+  --pp-text-recommendation-reason: #475569;
+
+  --pp-text-status-info: #5b6472;
+  --pp-text-status-warning: #7a4d14;
+  --pp-text-status-success: #2f5b3c;
+  --pp-text-status-embed: #29456a;
+
+  --pp-bg-evidence: #e6eef9;
+  --pp-text-evidence: #35527a;
+
+  --pp-bg-chip-library: #e7f7ed;
+  --pp-text-chip-library: #166534;
+
+  --pp-text-compare-default: #5b6472;
+  --pp-bg-compare-ready: #eef8f0;
+  --pp-text-compare-ready: #166534;
+  --pp-border-compare-ready: #cfe9d6;
+
+  --pp-border-hr: #d1d5db;
+  --pp-text-link: #2563eb;
+
+  color-scheme: light dark;
+
+  --pp-radius-sm: 4px;
+  --pp-radius-md: 8px;
+  --pp-radius-lg: 10px;
+  --pp-radius-pill: 999px;
+
+  --pp-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --pp-shadow-md: 0 2px 6px rgba(0, 0, 0, 0.06);
+
+  --pp-font-size-xs: 11px;
+  --pp-font-size-sm: 12px;
+  --pp-font-size-base: 14px;
+  --pp-font-size-md: 13px;
+  --pp-font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/* --- Dark mode --- */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --pp-bg-primary: #1e1e1e;
+    --pp-bg-secondary: #252526;
+    --pp-bg-tertiary: #2d2d30;
+    --pp-bg-accent: #2a3444;
+    --pp-bg-input: #2d2d30;
+    --pp-bg-code: #1a1a2e;
+    --pp-bg-blockquote: #252526;
+    --pp-bg-artifact: #252830;
+    --pp-bg-status-info: #2a2540;
+    --pp-bg-status-warning: #3a2e1c;
+    --pp-bg-status-success: #1e2e24;
+    --pp-bg-status-embed: #1e2a3a;
+    --pp-bg-draft: #2e2b1e;
+
+    --pp-text-primary: #d4d4d4;
+    --pp-text-secondary: #b0b0b0;
+    --pp-text-muted: #888;
+    --pp-text-accent: #7fb3e0;
+    --pp-text-code: #d4d4d4;
+    --pp-text-blockquote: #b0b0b0;
+
+    --pp-border-light: #3e3e42;
+    --pp-border-medium: #555;
+    --pp-border-accent: #3e4452;
+    --pp-border-status-info: #3e3558;
+    --pp-border-status-warning: #5a4420;
+    --pp-border-status-success: #2a4032;
+    --pp-border-status-embed: #2a3a55;
+    --pp-border-draft: #4a4020;
+    --pp-border-blockquote: #4a5060;
+
+    --pp-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.2);
+    --pp-shadow-md: 0 2px 6px rgba(0, 0, 0, 0.3);
+
+    --pp-text-run-state: #c4b5e0;
+    --pp-text-session-doc: #b0b0b0;
+    --pp-text-streaming: #8a9ab0;
+    --pp-text-artifact-time: #8a9ab0;
+    --pp-text-artifact-source: #8a9ab0;
+    --pp-bg-artifact-source: #2a3444;
+    --pp-border-recommendation: #3e3e42;
+    --pp-text-recommendation-meta: #8a9ab0;
+    --pp-text-recommendation-reason: #9aa5b4;
+
+    --pp-text-status-info: #a0a8b4;
+    --pp-text-status-warning: #d4a56a;
+    --pp-text-status-success: #7ec09a;
+    --pp-text-status-embed: #7faad4;
+
+    --pp-bg-evidence: #2a3444;
+    --pp-text-evidence: #7faad4;
+
+    --pp-bg-chip-library: #1e2e24;
+    --pp-text-chip-library: #7ec09a;
+
+    --pp-text-compare-default: #a0a8b4;
+    --pp-bg-compare-ready: #1e2e24;
+    --pp-text-compare-ready: #7ec09a;
+    --pp-border-compare-ready: #2a4032;
+
+    --pp-border-hr: #4a4f58;
+    --pp-text-link: #60a5fa;
+  }
+}
+
+/* ============================================================
+   1. Container
+   ============================================================ */
+#paper-pilot-container {
+  display: flex;
+  flex-direction: column;
+  min-height: 860px;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+  box-sizing: border-box;
+  font-family: inherit;
+  color: var(--pp-text-primary);
+}
+
+/* ============================================================
+   2. Mode bar
+   ============================================================ */
+#paper-pilot-mode {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.pp-mode-chip {
+  padding: 2px 8px;
+  border-radius: var(--pp-radius-pill);
+  background: var(--pp-bg-accent);
+  color: var(--pp-text-accent);
+  font-size: var(--pp-font-size-sm);
+  font-weight: 600;
+}
+
+.pp-mode-status {
+  font-size: var(--pp-font-size-sm);
+  color: var(--pp-text-muted);
+}
+
+/* ============================================================
+   3. Run state card
+   ============================================================ */
+.pp-run-state {
+  margin-bottom: 10px;
+  padding: 8px;
+  border-radius: var(--pp-radius-md);
+  background: var(--pp-bg-status-info);
+  border: 1px solid var(--pp-border-status-info);
+  font-size: var(--pp-font-size-sm);
+  color: var(--pp-text-run-state);
+  white-space: pre-wrap;
+}
+
+/* ============================================================
+   4. Session bar
+   ============================================================ */
+#paper-pilot-session-bar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+  padding: 0 10px; /* horizontal breathing room for wrapped buttons */
+}
+
+.pp-session-doc {
+  font-size: var(--pp-font-size-sm);
+  color: var(--pp-text-session-doc);
+  flex: 1;
+}
+
+.pp-session-status {
+  font-size: var(--pp-font-size-sm);
+  color: var(--pp-text-muted);
+}
+
+/* ============================================================
+   5. Workbench
+   ============================================================ */
+#chat-paper-workbench {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.pp-workbench-label {
+  font-size: var(--pp-font-size-sm);
+  color: var(--pp-text-secondary);
+  font-weight: 600;
+}
+
+/* ============================================================
+   6. Status / helper bars
+   ============================================================ */
+.pp-status-card {
+  margin-bottom: 8px;
+  padding: 8px;
+  border-radius: var(--pp-radius-md);
+  font-size: var(--pp-font-size-sm);
+}
+
+.pp-status-card--info {
+  background: var(--pp-bg-secondary);
+  color: var(--pp-text-status-info);
+}
+
+.pp-status-card--warning {
+  background: var(--pp-bg-status-warning);
+  border: 1px solid var(--pp-border-status-warning);
+  color: var(--pp-text-status-warning);
+}
+
+.pp-status-card--success {
+  background: var(--pp-bg-status-success);
+  border: 1px solid var(--pp-border-status-success);
+  color: var(--pp-text-status-success);
+}
+
+.pp-status-card--embed {
+  background: var(--pp-bg-status-embed);
+  border: 1px solid var(--pp-border-status-embed);
+  color: var(--pp-text-status-embed);
+}
+
+.pp-status-card--draft {
+  background: var(--pp-bg-draft);
+  border: 1px solid var(--pp-border-draft);
+  font-size: var(--pp-font-size-sm);
+}
+
+.pp-status-text {
+  font-size: var(--pp-font-size-sm);
+  color: var(--pp-text-muted);
+}
+
+.pp-tool-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+/* ============================================================
+   7. Codex actions row
+   ============================================================ */
+.pp-codex-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.pp-model-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.pp-model-row label {
+  font-size: var(--pp-font-size-sm);
+  color: var(--pp-text-secondary);
+}
+
+.pp-model-row select {
+  flex: 1;
+  min-width: 0;
+}
+
+.pp-codex-options {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.pp-codex-options label {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font-size: var(--pp-font-size-sm);
+  color: var(--pp-text-secondary);
+  cursor: pointer;
+}
+
+.pp-codex-options input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.pp-model-history {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+/* ============================================================
+   8. Streaming indicator  (main rule in section 19 below)
+   ============================================================ */
+
+/* ============================================================
+   9. Chat messages area
+   ============================================================ */
+#chat-messages {
+  flex: 3 1 640px;
+  min-height: 520px;
+  min-width: 0;
+  overflow-y: auto;
+  margin-bottom: 6px;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ============================================================
+   10. Chat message bubbles
+   ============================================================ */
+.pp-message-wrapper {
+  width: 100%;
+  display: flex;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.pp-message-wrapper--user {
+  flex-direction: row-reverse;
+}
+
+.pp-message-wrapper--ai {
+  flex-direction: row;
+}
+
+.pp-message {
+  word-wrap: break-word;
+  display: inline-block;
+  margin-bottom: 8px;
+  padding: 8px;
+  border-radius: var(--pp-radius-md);
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
+  min-width: 0;
+}
+
+.pp-message--user {
+  max-width: 70%;
+  background-color: var(--pp-bg-primary);
+  margin-left: auto;
+  white-space: pre-wrap;
+}
+
+.pp-message--ai {
+  max-width: 90%;
+  margin-right: auto;
+  background-color: var(--pp-bg-secondary);
+  border: 1px solid var(--pp-border-light);
+  white-space: normal;
+  overflow-x: hidden;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+/* ============================================================
+   11. Chat input
+   ============================================================ */
+#chat-input-shell {
+  background-color: var(--pp-bg-input);
+  border-radius: var(--pp-radius-md);
+  padding: 8px;
+  flex: 0 0 auto;
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  box-sizing: border-box;
+  max-width: 100%;
+}
+
+#chat-input {
+  width: 100%;
+  min-height: 72px;
+  max-height: 180px;
+  padding: 10px 12px;
+  border: 1px solid var(--pp-border-medium);
+  border-radius: var(--pp-radius-md);
+  font-family: inherit;
+  font-size: var(--pp-font-size-base);
+  line-height: 1.5;
+  resize: none;
+  overflow-y: auto;
+  box-sizing: border-box;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  background: var(--pp-bg-primary);
+  color: var(--pp-text-primary);
+}
+
+#chat-input::-webkit-scrollbar {
+  display: none;
+}
+
+/* ============================================================
+   12. Resize handle
+   ============================================================ */
+#chat-resize-handle {
+  flex: 0 0 auto;
+  height: 14px;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: ns-resize;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.pp-resize-grip {
+  width: 56px;
+  height: 4px;
+  border-radius: var(--pp-radius-pill);
+  background: var(--pp-border-blockquote);
+}
+
+/* ============================================================
+   13. Artifact cards
+   ============================================================ */
+.pp-artifact-card {
+  border: 1px solid var(--pp-border-accent);
+  border-radius: var(--pp-radius-lg);
+  background: var(--pp-bg-artifact);
+  padding: 10px 12px;
+  box-sizing: border-box;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.pp-artifact-card__header {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+
+.pp-artifact-card__title {
+  font-size: var(--pp-font-size-md);
+  font-weight: 700;
+  color: var(--pp-text-primary);
+}
+
+.pp-artifact-card__time {
+  font-size: var(--pp-font-size-xs);
+  color: var(--pp-text-artifact-time);
+}
+
+.pp-artifact-card__summary {
+  font-size: var(--pp-font-size-sm);
+  color: var(--pp-text-blockquote);
+  margin-bottom: 8px;
+}
+
+.pp-artifact-card__source {
+  font-size: var(--pp-font-size-xs);
+  color: var(--pp-text-artifact-source);
+  margin-bottom: 8px;
+  padding: 6px 8px;
+  background: var(--pp-bg-artifact-source);
+  border-radius: var(--pp-radius-md);
+}
+
+.pp-artifact-card__section {
+  margin-bottom: 8px;
+}
+
+.pp-artifact-card__section-header {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.pp-artifact-card__section-heading {
+  font-size: var(--pp-font-size-sm);
+  font-weight: 700;
+  color: var(--pp-text-blockquote);
+}
+
+.pp-artifact-card__evidence {
+  padding: 1px 6px;
+  border-radius: var(--pp-radius-pill);
+  background: var(--pp-bg-evidence);
+  color: var(--pp-text-evidence);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.pp-artifact-card__list {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--pp-text-primary);
+  font-size: var(--pp-font-size-sm);
+}
+
+.pp-artifact-card__list li {
+  margin-bottom: 2px;
+}
+
+/* ============================================================
+   14. Related papers / recommendations
+   ============================================================ */
+#chat-related-groups {
+  border: 1px solid var(--pp-border-light);
+  border-radius: var(--pp-radius-md);
+  overflow: hidden;
+  min-height: 0;
+  margin-bottom: 12px;
+}
+
+.pp-recommendation-group__header {
+  padding: 8px 12px;
+  font-size: var(--pp-font-size-sm);
+  font-weight: 700;
+  background: var(--pp-bg-blockquote);
+  color: var(--pp-text-blockquote);
+}
+
+.pp-recommendation-row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-top: 1px solid var(--pp-border-recommendation);
+  box-sizing: border-box;
+}
+
+.pp-recommendation-row__info {
+  flex: 1;
+  min-width: 0;
+}
+
+.pp-recommendation-row__title {
+  font-weight: 600;
+  color: var(--pp-text-primary);
+  margin-bottom: 4px;
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 0;
+  text-align: left;
+  font-size: var(--pp-font-size-md);
+}
+
+.pp-recommendation-row__title:hover {
+  text-decoration: underline;
+}
+
+.pp-recommendation-row__meta {
+  font-size: var(--pp-font-size-sm);
+  color: var(--pp-text-recommendation-meta);
+  margin-bottom: 4px;
+}
+
+.pp-recommendation-row__reason {
+  font-size: var(--pp-font-size-sm);
+  color: var(--pp-text-recommendation-reason);
+}
+
+.pp-recommendation-row__actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex: 0 0 auto;
+}
+
+.pp-chip {
+  padding: 2px 8px;
+  border-radius: var(--pp-radius-pill);
+  font-size: var(--pp-font-size-xs);
+  font-weight: 600;
+}
+
+.pp-chip--library {
+  background: var(--pp-bg-chip-library);
+  color: var(--pp-text-chip-library);
+}
+
+/* ============================================================
+   15. Compare helper
+   ============================================================ */
+.pp-compare-helper {
+  margin-bottom: 8px;
+  padding: 6px 8px;
+  border-radius: var(--pp-radius-md);
+  font-size: var(--pp-font-size-sm);
+}
+
+.pp-compare-helper--default {
+  background: var(--pp-bg-secondary);
+  color: var(--pp-text-compare-default);
+  border: 1px solid var(--pp-border-light);
+}
+
+.pp-compare-helper--ready {
+  background: var(--pp-bg-compare-ready);
+  color: var(--pp-text-compare-ready);
+  border: 1px solid var(--pp-border-compare-ready);
+}
+
+/* ============================================================
+   16. Buttons
+   ============================================================ */
+.pp-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: var(--pp-radius-sm);
+  font-size: var(--pp-font-size-sm);
+  font-family: inherit;
+  cursor: pointer;
+  transition:
+    background-color 0.15s,
+    border-color 0.15s,
+    opacity 0.15s;
+  line-height: 1.4;
+  white-space: normal;
+  overflow-wrap: break-word;
+  text-align: center;
+  min-height: 28px;
+  min-width: 40px;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.pp-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.pp-btn:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
+
+.pp-btn--primary {
+  background: #2563eb;
+  color: #fff;
+  border: 1px solid #2563eb;
+}
+
+.pp-btn--primary:hover:not(:disabled) {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+}
+
+.pp-btn--secondary {
+  background: var(--pp-bg-primary);
+  color: var(--pp-text-primary);
+  border: 1px solid var(--pp-border-medium);
+}
+
+.pp-btn--secondary:hover:not(:disabled) {
+  background: var(--pp-bg-secondary);
+}
+
+.pp-btn--ghost {
+  background: transparent;
+  color: var(--pp-text-secondary);
+  border: 1px solid transparent;
+}
+
+.pp-btn--ghost:hover:not(:disabled) {
+  background: var(--pp-bg-tertiary);
+}
+
+/* ============================================================
+   17. Markdown rendered content (inside .pp-message--ai)
+   ============================================================ */
+.pp-message--ai h1 {
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.3;
+  margin: 0 0 12px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--pp-border-light);
+}
+
+.pp-message--ai h2 {
+  font-size: 19px;
+  font-weight: 700;
+  line-height: 1.35;
+  margin: 16px 0 10px;
+}
+
+.pp-message--ai h3 {
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.4;
+  margin: 14px 0 8px;
+}
+
+.pp-message--ai h4,
+.pp-message--ai h5,
+.pp-message--ai h6 {
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.4;
+  margin: 12px 0 6px;
+}
+
+.pp-message--ai p {
+  margin: 0 0 12px;
+  line-height: 1.6;
+}
+
+.pp-message--ai blockquote {
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  border-left: 3px solid var(--pp-border-blockquote);
+  background-color: var(--pp-bg-blockquote);
+  color: var(--pp-text-blockquote);
+  line-height: 1.6;
+}
+
+.pp-message--ai hr {
+  margin: 16px 0;
+  border: 0;
+  border-top: 1px solid var(--pp-border-hr);
+}
+
+.pp-message--ai pre {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: var(--pp-radius-md);
+  background-color: var(--pp-bg-code);
+  color: var(--pp-text-code);
+  overflow-x: auto;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.pp-message--ai ul,
+.pp-message--ai ol {
+  margin: 0 0 12px;
+  padding-left: 22px;
+  line-height: 1.6;
+}
+
+.pp-message--ai li {
+  margin: 4px 0;
+}
+
+.pp-message--ai code {
+  font-family: var(--pp-font-mono);
+  font-size: 0.92em;
+}
+
+.pp-message--ai strong {
+  font-weight: 700;
+}
+
+.pp-message--ai em {
+  font-style: italic;
+}
+
+.pp-message--ai a {
+  color: var(--pp-text-link);
+  text-decoration: none;
+}
+
+.pp-message--ai a:hover {
+  text-decoration: underline;
+}
+
+/* ============================================================
+   18. Math blocks (KaTeX MathML)
+   ============================================================ */
+.pp-math-block {
+  margin: 12px 0;
+  padding: 8px 12px;
+  overflow-x: auto;
+  text-align: center;
+  font-size: 1.1em;
+}
+
+.pp-message--ai math {
+  font-size: 1.1em;
+}
+
+/* ============================================================
+   19. Tables
+   ============================================================ */
+.pp-table {
+  width: 100%;
+  max-width: 100%;
+  border-collapse: collapse;
+  margin: 0 0 12px;
+  font-size: var(--pp-font-size-sm);
+  table-layout: fixed;
+  overflow-wrap: anywhere;
+}
+
+.pp-table th,
+.pp-table td {
+  padding: 6px 10px;
+  border: 1px solid var(--pp-border-light);
+  text-align: left;
+  line-height: 1.5;
+}
+
+.pp-table th {
+  background: var(--pp-bg-tertiary);
+  font-weight: 600;
+  color: var(--pp-text-primary);
+}
+
+.pp-table tr:nth-child(even) td {
+  background: var(--pp-bg-secondary);
+}
+
+/* Message footer (copy button) */
+.pp-message-footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 6px;
+  padding-top: 4px;
+  border-top: 1px solid var(--pp-border-light);
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.pp-message:hover .pp-message-footer {
+  opacity: 1;
+}
+
+.pp-message:focus-within .pp-message-footer {
+  opacity: 1;
+}
+
+.pp-message-copy {
+  font-size: var(--pp-font-size-xs);
+  padding: 2px 6px;
+}
+
+/* Streaming indicator animation */
+.pp-streaming {
+  display: none;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 10px;
+  font-size: var(--pp-font-size-sm);
+  color: var(--pp-text-streaming);
+  flex: 0 0 auto;
+}
+
+.pp-streaming-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--pp-text-streaming);
+  animation: pp-dot-bounce 1.4s infinite both;
+}
+
+.pp-streaming-dot:nth-child(1) {
+  animation-delay: 0s;
+}
+
+.pp-streaming-dot:nth-child(2) {
+  animation-delay: 0.16s;
+}
+
+.pp-streaming-dot:nth-child(3) {
+  animation-delay: 0.32s;
+}
+
+@keyframes pp-dot-bounce {
+  0%,
+  80%,
+  100% {
+    transform: scale(0.6);
+    opacity: 0.4;
+  }
+
+  40% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.pp-streaming-text {
+  margin-left: 4px;
+}
+
+/* ============================================================
+   20. Collapsible sections
+   ============================================================ */
+.pp-section {
+  margin-bottom: 8px;
+  border: 1px solid var(--pp-border-light);
+  border-radius: var(--pp-radius-md);
+  overflow: hidden;
+}
+
+.pp-section__header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: var(--pp-bg-secondary);
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  font-size: var(--pp-font-size-sm);
+  font-weight: 600;
+  color: var(--pp-text-primary);
+}
+
+.pp-section__header:hover {
+  background: var(--pp-bg-tertiary);
+}
+
+.pp-section__toggle {
+  font-size: 10px;
+  color: var(--pp-text-muted);
+  transition: transform 0.2s;
+}
+
+.pp-section--collapsed .pp-section__toggle {
+  transform: rotate(-90deg);
+}
+
+.pp-section__body {
+  padding: 8px 10px;
+  box-sizing: border-box;
+  min-width: 0;
+}
+
+.pp-section--collapsed .pp-section__body {
+  display: none;
+}
+
+/* ============================================================
+   21. Inline code in non-preformatted context
+   ============================================================ */
+.pp-message--ai p > code,
+.pp-message--ai li > code,
+.pp-message--ai td > code {
+  background: var(--pp-bg-tertiary);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 0.9em;
+}
+
+/* ============================================================
+   22. User message enhancements
+   ============================================================ */
+.pp-message--user {
+  background: linear-gradient(
+    135deg,
+    var(--pp-bg-primary),
+    var(--pp-bg-secondary)
+  );
+  border: 1px solid var(--pp-border-light);
+}
+
+/* ============================================================
+   23. Paper Mastery — card-based vertical layout
+   ============================================================ */
+
+/* --- Body: gap-driven layout --- */
+#paper-pilot-mastery-section > .pp-section__body {
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+#paper-pilot-mastery-section.pp-section--collapsed > .pp-section__body {
+  display: none;
+}
+
+/* --- Topic card: status + progress grouped --- */
+.pp-mastery-topic-card {
+  background: var(--pp-bg-secondary);
+  border-radius: var(--pp-radius-md, 6px);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pp-mastery-status {
+  font-size: var(--pp-font-size-sm);
+  color: var(--pp-text-muted);
+  font-weight: 500;
+  line-height: 1.4;
+  margin: 0;
+}
+
+.pp-mastery-progress {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin: 0;
+}
+
+.pp-mastery-progress:empty {
+  display: none;
+}
+
+/* --- Progress dots --- */
+.pp-mastery-progress-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.pp-mastery-progress-dot--correct {
+  background: var(--pp-success, #4caf50);
+}
+
+.pp-mastery-progress-dot--incorrect {
+  background: var(--pp-error, #e53935);
+}
+
+.pp-mastery-progress-dot--current {
+  background: var(--pp-accent, #1976d2);
+  animation: pp-mastery-pulse 1.2s infinite;
+}
+
+@keyframes pp-mastery-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* --- Question card: primary visual emphasis --- */
+.pp-mastery-question {
+  background: var(--pp-bg-secondary);
+  border-left: 3px solid var(--pp-accent, #1976d2);
+  border-radius: var(--pp-radius-md, 6px);
+  padding: 14px 16px;
+  font-size: var(--pp-font-size-base, 13px);
+  font-weight: 600;
+  color: var(--pp-text-primary);
+  line-height: 1.55;
+  margin: 0;
+}
+
+/* --- Markdown/LaTeX child elements inside mastery cards --- */
+.pp-mastery-question p,
+.pp-mastery-feedback p {
+  margin: 0 0 8px;
+  line-height: 1.55;
+}
+
+.pp-mastery-question p:last-child,
+.pp-mastery-feedback p:last-child {
+  margin-bottom: 0;
+}
+
+.pp-mastery-question ul, .pp-mastery-question ol,
+.pp-mastery-feedback ul, .pp-mastery-feedback ol {
+  margin: 0 0 8px;
+  padding-left: 20px;
+  line-height: 1.55;
+}
+
+.pp-mastery-question li, .pp-mastery-feedback li {
+  margin: 2px 0;
+}
+
+.pp-mastery-question code, .pp-mastery-feedback code {
+  font-family: var(--pp-font-mono);
+  font-size: 0.92em;
+}
+
+.pp-mastery-question pre, .pp-mastery-feedback pre {
+  margin: 0 0 8px;
+  padding: 8px 10px;
+  border-radius: var(--pp-radius-md);
+  background-color: var(--pp-bg-code);
+  color: var(--pp-text-code);
+  overflow-x: auto;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.pp-mastery-question strong, .pp-mastery-feedback strong {
+  font-weight: 700;
+}
+
+.pp-mastery-question em, .pp-mastery-feedback em {
+  font-style: italic;
+}
+
+.pp-mastery-question .katex-display, .pp-mastery-feedback .katex-display {
+  margin: 8px 0;
+  overflow-x: auto;
+}
+
+/* --- Feedback card --- */
+.pp-mastery-feedback {
+  font-size: var(--pp-font-size-sm);
+  line-height: 1.5;
+  padding: 12px 14px;
+  border-radius: var(--pp-radius-md, 6px);
+  margin: 0;
+}
+
+.pp-mastery-feedback--correct {
+  background: color-mix(in srgb, var(--pp-success, #4caf50) 12%, transparent);
+  color: var(--pp-text-primary);
+  border-left: 3px solid var(--pp-success, #4caf50);
+}
+
+.pp-mastery-feedback--incorrect {
+  background: color-mix(in srgb, var(--pp-error, #e53935) 12%, transparent);
+  color: var(--pp-text-primary);
+  border-left: 3px solid var(--pp-error, #e53935);
+}
+
+/* --- Answer textarea --- */
+.pp-mastery-answer {
+  width: 100%;
+  min-height: 80px;
+  resize: vertical;
+  padding: 10px 12px;
+  border: 1px solid var(--pp-border-light);
+  border-radius: var(--pp-radius-md, 6px);
+  background: var(--pp-bg-primary);
+  color: var(--pp-text-primary);
+  font-family: inherit;
+  font-size: var(--pp-font-size-base, 13px);
+  line-height: 1.5;
+  box-sizing: border-box;
+  margin: 0;
+}
+
+.pp-mastery-answer:focus {
+  outline: 2px solid transparent; /* visible in forced-colors / High Contrast Mode */
+  border-color: var(--pp-accent, #1976d2);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--pp-accent, #1976d2) 20%, transparent);
+}
+
+/* --- Action buttons --- */
+.pp-mastery-actions {
+  display: flex;
+  gap: 8px;
+  margin: 0;
+}
+
+.pp-mastery-actions > .pp-btn--primary {
+  flex: 1;
+}

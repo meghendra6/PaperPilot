@@ -1,0 +1,63 @@
+{
+  "name": "zotero-paper-pilot",
+  "version": "0.0.1",
+  "description": "Paper Pilot: Zotero plugin",
+  "config": {
+    "addonName": "Paper Pilot",
+    "addonID": "paperpilot@harampark.com",
+    "addonRef": "paperpilot",
+    "addonInstance": "AddonTemplate",
+    "prefsPrefix": "extensions.zotero.paperpilot"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/meghendra6/PaperPilot.git"
+  },
+  "author": "Scott Lee",
+  "bugs": {
+    "url": "https://github.com/meghendra6/PaperPilot/issues"
+  },
+  "homepage": "https://github.com/meghendra6/PaperPilot",
+  "license": "AGPL-3.0-or-later",
+  "scripts": {
+    "start": "node ./scripts/prepare-opendataloader.mjs && node ./scripts/zotero-plugin-cli.mjs serve",
+    "build": "node ./scripts/prepare-opendataloader.mjs && node ./scripts/zotero-plugin-cli.mjs build && tsc --noEmit",
+    "lint": "prettier --write . && eslint . --fix",
+    "release": "node ./scripts/prepare-opendataloader.mjs && node ./scripts/zotero-plugin-cli.mjs release",
+    "test": "node --require ts-node/register --test test/*.test.ts",
+    "update-deps": "npm update --save"
+  },
+  "dependencies": {
+    "@opendataloader/pdf": "^2.2.0",
+    "katex": "^0.16.44",
+    "pdfjs-dist": "^4.6.82",
+    "zotero-plugin": "^2.0.30",
+    "zotero-plugin-toolkit": "^5.1.0-beta.13"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.9.1",
+    "@types/node": "^22.5.0",
+    "eslint": "^9.9.1",
+    "prettier": "^3.3.3",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.5.4",
+    "typescript-eslint": "^8.19.1",
+    "zotero-plugin-scaffold": "^0.8.2",
+    "zotero-types": "^4.1.0-beta.4"
+  },
+  "prettier": {
+    "printWidth": 80,
+    "tabWidth": 2,
+    "endOfLine": "lf",
+    "overrides": [
+      {
+        "files": [
+          "*.xhtml"
+        ],
+        "options": {
+          "htmlWhitespaceSensitivity": "css"
+        }
+      }
+    ]
+  }
+}

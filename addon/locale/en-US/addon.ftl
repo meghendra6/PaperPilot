@@ -1,0 +1,14 @@
+startup-begin = Paper Pilot is loading
+startup-finish = Paper Pilot is ready
+prefs-title = Paper Pilot
+prefs-table-title = Title
+prefs-table-detail = Detail
+tabpanel-lib-tab-label = Lib Tab
+tabpanel-reader-tab-label = Reader Tab
+reader-action-explain = Explain
+reader-action-summarize = Summarize
+reader-action-translate = Translate
+reader-action-ask-ai = Ask AI
+reader-action-annotation-ask = Ask about annotation
+reader-action-annotation-summarize = Summarize annotation
+reader-action-annotation-explain = Explain annotation context
