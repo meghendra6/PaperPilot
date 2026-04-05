@@ -920,6 +920,25 @@ export function registerPaperPilotPaneSection() {
 
         let selectedHistoryDot: number = -1;
 
+        function addHistorySection(
+          parent: HTMLElement,
+          modifier: string,
+          label: string,
+          markdown: string,
+        ) {
+          const doc = parent.ownerDocument!;
+          const section = doc.createElement("div");
+          section.className = `pp-mastery-history-section pp-mastery-history-section--${modifier}`;
+          const lbl = doc.createElement("div");
+          lbl.className = "pp-mastery-history-label";
+          lbl.textContent = label;
+          const sectionBody = doc.createElement("div");
+          sectionBody.className = "pp-mastery-history-body";
+          sectionBody.appendChild(renderMarkdownFragment(markdown, doc));
+          section.append(lbl, sectionBody);
+          parent.appendChild(section);
+        }
+
         function clearHistoryDotSelection() {
           if (!masteryProgress) {
             return;
@@ -944,20 +963,90 @@ export function registerPaperPilotPaneSection() {
           if (!r) {
             return;
           }
+          const doc = masteryFeedback.ownerDocument!;
           const topicLabel = state.topics[roundIndex]?.topic ?? "general";
-          let content = `📋 **Viewing Round ${roundIndex + 1}** — ${topicLabel}\n\n`;
-          content += `**Q:** ${r.question}\n\n`;
-          content += `**Your answer:** ${r.userAnswer}\n\n`;
-          content += `---\n\n`;
-          content += `**Feedback:** ${r.evaluation}`;
-          if (!r.understood && r.explanation) {
-            content += `\n\n📚 ${r.explanation}`;
-          }
+
           masteryFeedback.className =
             "pp-mastery-feedback pp-mastery-feedback--history";
-          masteryFeedback.replaceChildren(
-            renderMarkdownFragment(content, masteryFeedback.ownerDocument!),
+          masteryFeedback.replaceChildren();
+          masteryFeedback.setAttribute(
+            "aria-label",
+            `Round ${roundIndex + 1} history`,
           );
+
+          const header = doc.createElement("div");
+          header.className = "pp-mastery-history-header";
+          header.textContent = `Round ${roundIndex + 1} — ${topicLabel}`;
+          masteryFeedback.appendChild(header);
+
+          addHistorySection(masteryFeedback, "question", "Q", r.question);
+          addHistorySection(
+            masteryFeedback,
+            "answer",
+            "Your Answer",
+            r.userAnswer,
+          );
+          addHistorySection(
+            masteryFeedback,
+            "feedback",
+            "Feedback",
+            r.evaluation,
+          );
+          if (!r.understood && r.explanation) {
+            addHistorySection(
+              masteryFeedback,
+              "explanation",
+              "📚 Explanation",
+              r.explanation,
+            );
+          }
+
+          masteryFeedback.style.display = "";
+        }
+
+        function showCurrentRoundPreview(
+          state: import("./comprehensionCheck/types").ComprehensionCheckState,
+        ) {
+          if (!masteryFeedback) {
+            return;
+          }
+          const doc = masteryFeedback.ownerDocument!;
+          const roundNum = state.rounds.length + 1;
+          const currentTopic =
+            state.topics[state.rounds.length]?.topic ?? "general";
+
+          masteryFeedback.className =
+            "pp-mastery-feedback pp-mastery-feedback--history";
+          masteryFeedback.replaceChildren();
+          masteryFeedback.setAttribute(
+            "aria-label",
+            `Round ${roundNum} — current`,
+          );
+
+          const header = doc.createElement("div");
+          header.className = "pp-mastery-history-header";
+          header.textContent = `Round ${roundNum} — ${currentTopic} (current)`;
+          masteryFeedback.appendChild(header);
+
+          if (state.currentQuestion) {
+            addHistorySection(
+              masteryFeedback,
+              "question",
+              "Q",
+              state.currentQuestion,
+            );
+          }
+
+          const userText = masteryAnswer?.value?.trim();
+          if (userText) {
+            addHistorySection(
+              masteryFeedback,
+              "answer",
+              "Your Answer (draft)",
+              userText,
+            );
+          }
+
           masteryFeedback.style.display = "";
         }
 
@@ -1014,10 +1103,47 @@ export function registerPaperPilotPaneSection() {
             masteryProgress.appendChild(dot);
           });
           if (state.phase !== "complete") {
+            const currentIndex = state.rounds.length;
             const current = body.ownerDocument.createElement("span");
             current.className =
               "pp-mastery-progress-dot pp-mastery-progress-dot--current";
             current.title = "Current round";
+            current.style.cursor = "pointer";
+            current.setAttribute("tabindex", "0");
+            current.setAttribute("role", "button");
+            current.setAttribute("aria-label", "Current round");
+            const handleCurrentDotClick = () => {
+              const currentPhase = getMasteryState(item.id)?.phase;
+              if (
+                currentPhase === "evaluating" ||
+                currentPhase === "generating-question"
+              ) {
+                return;
+              }
+              if (selectedHistoryDot === currentIndex) {
+                clearHistoryDotSelection();
+                if (masteryFeedback) {
+                  masteryFeedback.style.display = "none";
+                  masteryFeedback.className = "pp-mastery-feedback";
+                }
+                return;
+              }
+              clearHistoryDotSelection();
+              selectedHistoryDot = currentIndex;
+              current.classList.add("pp-mastery-progress-dot--active");
+              const currentState = getMasteryState(item.id) ?? state;
+              showCurrentRoundPreview(currentState);
+            };
+            current.addEventListener("click", handleCurrentDotClick);
+            current.addEventListener("keydown", (e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                handleCurrentDotClick();
+              }
+            });
+            if (selectedHistoryDot === currentIndex) {
+              current.classList.add("pp-mastery-progress-dot--active");
+            }
             masteryProgress.appendChild(current);
           }
         }
@@ -1055,13 +1181,18 @@ export function registerPaperPilotPaneSection() {
             return;
           }
           masteryFeedback.className = `pp-mastery-feedback pp-mastery-feedback--${understood ? "correct" : "incorrect"}`;
-          let content = evaluation;
+          masteryFeedback.replaceChildren();
+
+          addHistorySection(masteryFeedback, "feedback", "Feedback", evaluation);
           if (!understood && explanation) {
-            content += `\n\n📚 ${explanation}`;
+            addHistorySection(
+              masteryFeedback,
+              "explanation",
+              "📚 Explanation",
+              explanation,
+            );
           }
-          masteryFeedback.replaceChildren(
-            renderMarkdownFragment(content, masteryFeedback.ownerDocument!),
-          );
+
           masteryFeedback.style.display = "";
         }
 
@@ -1286,6 +1417,7 @@ export function registerPaperPilotPaneSection() {
                 last.understood = evalResult.understood;
                 last.confidence = evalResult.confidence;
               }
+              clearHistoryDotSelection();
               showMasteryFeedback(
                 evalResult.evaluation,
                 evalResult.understood,
