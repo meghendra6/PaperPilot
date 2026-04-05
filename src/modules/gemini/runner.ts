@@ -114,7 +114,7 @@ export async function startGeminiRunForQuestion(params: {
 }): Promise<StartedGeminiRun | FailedGeminiRun> {
   const executablePath =
     String(getPref("geminiExecutablePath") || "gemini").trim() || "gemini";
-  const model = String(getPref("geminiDefaultModel") || "gemini-2.5-pro");
+  const model = String(getPref("geminiDefaultModel") || "gemini-3.1-pro");
   const workspaceRoot = String(
     getPref("codexWorkspaceRoot") || "/tmp/zotero-paper-ai",
   );

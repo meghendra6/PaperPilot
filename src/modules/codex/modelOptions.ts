@@ -12,12 +12,7 @@ export function mergeModelOptions(recent: string[], allowed: string[]) {
 }
 
 export function getGeminiBuiltInModels() {
-  return [
-    "gemini-2.5-pro",
-    "gemini-2.5-flash",
-    "gemini-2.0-flash",
-    "gemini-2.0-flash-lite",
-  ];
+  return ["gemini-3.1-pro", "gemini-3-flash"];
 }
 
 export interface CachedCodexModel {
