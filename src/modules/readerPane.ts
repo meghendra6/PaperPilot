@@ -2438,7 +2438,7 @@ async function renderModelHistory(
   const currentValue = String(
     getPref(
       mode === "gemini_cli" ? "geminiDefaultModel" : "codexDefaultModel",
-    ) || (mode === "gemini_cli" ? "gemini-2.5-pro" : "gpt-5-codex"),
+    ) || (mode === "gemini_cli" ? "gemini-3.1-pro" : "gpt-5-codex"),
   );
   const currentReasoningEffort = String(
     mode === "gemini_cli" ? "" : getPref("codexReasoningEffort") || "medium",

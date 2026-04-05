@@ -19,6 +19,7 @@ import {
   parseCodexOutputText,
 } from "../src/modules/codex/outputParser";
 import {
+  getGeminiBuiltInModels,
   loadCodexCachedModels,
   mergeModelOptions,
   parseAllowedModels,
@@ -288,6 +289,13 @@ test("mergeModelOptions keeps recent-first unique order", () => {
     mergeModelOptions(["gpt-5-codex", "o4-mini"], ["o4-mini", "gpt-5"]),
     ["gpt-5-codex", "o4-mini", "gpt-5"],
   );
+});
+
+test("getGeminiBuiltInModels exposes the supported Gemini CLI model list", () => {
+  assert.deepEqual(getGeminiBuiltInModels(), [
+    "gemini-3.1-pro",
+    "gemini-3-flash",
+  ]);
 });
 
 test("buildWorkspaceArtifacts assembles paper and context files", () => {
