@@ -11,10 +11,15 @@ export function mergeModelOptions(recent: string[], allowed: string[]) {
   return [...new Set([...recent, ...allowed])];
 }
 
-const GEMINI_BUILT_IN_MODELS = ["gemini-2.5-pro", "gemini-2.5-flash"];
+const GEMINI_BUILT_IN_MODELS = [
+  "gemini-3.1-pro-preview",
+  "gemini-3-flash-preview",
+];
 const GEMINI_MODEL_ALIASES: Record<string, string> = {
-  "gemini-3.1-pro": "gemini-2.5-pro",
-  "gemini-3-flash": "gemini-2.5-flash",
+  "gemini-3.1-pro": "gemini-3.1-pro-preview",
+  "gemini-3-flash": "gemini-3-flash-preview",
+  "gemini-2.5-pro": "gemini-3.1-pro-preview",
+  "gemini-2.5-flash": "gemini-3-flash-preview",
 };
 
 export function getGeminiBuiltInModels() {

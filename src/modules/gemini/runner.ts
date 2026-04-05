@@ -116,7 +116,7 @@ export async function startGeminiRunForQuestion(params: {
   const executablePath =
     String(getPref("geminiExecutablePath") || "gemini").trim() || "gemini";
   const preferredModel = String(
-    getPref("geminiDefaultModel") || "gemini-2.5-pro",
+    getPref("geminiDefaultModel") || "gemini-3.1-pro-preview",
   ).trim();
   const model = normalizeGeminiModel(preferredModel);
 

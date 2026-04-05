@@ -295,26 +295,45 @@ test("mergeModelOptions keeps recent-first unique order", () => {
 
 test("getGeminiBuiltInModels exposes the supported Gemini CLI model list", () => {
   assert.deepEqual(getGeminiBuiltInModels(), [
-    "gemini-2.5-pro",
-    "gemini-2.5-flash",
+    "gemini-3.1-pro-preview",
+    "gemini-3-flash-preview",
   ]);
 });
 
-test("normalizeGeminiModel rewrites the regressed Gemini 3 aliases", () => {
-  assert.equal(normalizeGeminiModel("gemini-3.1-pro"), "gemini-2.5-pro");
-  assert.equal(normalizeGeminiModel("gemini-3-flash"), "gemini-2.5-flash");
-  assert.equal(normalizeGeminiModel(" gemini-2.5-pro "), "gemini-2.5-pro");
+test("normalizeGeminiModel rewrites legacy Gemini ids to preview ids", () => {
+  assert.equal(
+    normalizeGeminiModel("gemini-3.1-pro"),
+    "gemini-3.1-pro-preview",
+  );
+  assert.equal(
+    normalizeGeminiModel("gemini-3-flash"),
+    "gemini-3-flash-preview",
+  );
+  assert.equal(
+    normalizeGeminiModel("gemini-2.5-pro"),
+    "gemini-3.1-pro-preview",
+  );
+  assert.equal(
+    normalizeGeminiModel("gemini-2.5-flash"),
+    "gemini-3-flash-preview",
+  );
+  assert.equal(
+    normalizeGeminiModel(" gemini-3.1-pro-preview "),
+    "gemini-3.1-pro-preview",
+  );
 });
 
 test("normalizeGeminiModelList keeps order while deduplicating aliases", () => {
   assert.deepEqual(
     normalizeGeminiModelList([
-      "gemini-3.1-pro",
       "gemini-2.5-pro",
+      "gemini-3.1-pro",
+      "gemini-3.1-pro-preview",
+      "gemini-2.5-flash",
       "gemini-3-flash",
       "custom-model",
     ]),
-    ["gemini-2.5-pro", "gemini-2.5-flash", "custom-model"],
+    ["gemini-3.1-pro-preview", "gemini-3-flash-preview", "custom-model"],
   );
 });
 
