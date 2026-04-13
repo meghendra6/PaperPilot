@@ -1,20 +1,28 @@
 import type { EngineMode } from "../ai/types";
+import { buildSessionTitle } from "./sessionTitle";
 import type { PaperSession } from "./types";
 
 class SessionStore {
   private sessions = new Map<string, PaperSession>();
 
-  private getKey(itemID: number, mode: EngineMode) {
-    return `${itemID}:${mode}`;
+  private getKey(itemID: number) {
+    return String(itemID);
+  }
+
+  get(itemID: number) {
+    return this.sessions.get(this.getKey(itemID));
+  }
+
+  set(session: PaperSession) {
+    this.sessions.set(this.getKey(session.itemID), session);
+    return session;
   }
 
   getOrCreate(itemID: number, mode: EngineMode, title?: string): PaperSession {
-    const key = this.getKey(itemID, mode);
+    const key = this.getKey(itemID);
     const existing = this.sessions.get(key);
     if (existing) {
-      if (title) {
-        existing.threadTitle = title;
-      }
+      existing.mode = mode;
       return existing;
     }
 
@@ -25,7 +33,7 @@ class SessionStore {
       mode,
       createdAt: now,
       updatedAt: now,
-      threadTitle: title || `Paper ${itemID} · ${mode}`,
+      threadTitle: title || buildSessionTitle("", new Date(now)),
     };
     this.sessions.set(key, session);
     return session;
@@ -49,8 +57,8 @@ class SessionStore {
     return session;
   }
 
-  reset(itemID: number, mode: EngineMode) {
-    this.sessions.delete(this.getKey(itemID, mode));
+  reset(itemID: number, _mode?: EngineMode) {
+    this.sessions.delete(this.getKey(itemID));
   }
 }
 

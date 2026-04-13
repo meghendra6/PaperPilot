@@ -1,16 +1,20 @@
 import { addMessage, setMessageContent } from "../components/ChatMessage";
-import { messageStore } from "../message/messageStore";
 import { sanitizeAssistantText } from "../message/assistantOutput";
-import { sessionStore } from "../session/sessionStore";
+import { sessionHistoryService } from "../session/sessionHistoryService";
 import { clearCodexPollerForItem } from "./poller";
 import { buildCodexRunState, setCodexRunStateForItem } from "./runState";
 import { readCodexRunProgress, startCodexRunForQuestion } from "./runner";
+import { stopCodexRunSilently } from "./stopRun";
 import { classifyCodexLoginFailure } from "./statusClassification";
+
+declare const addon: any;
+export { stopCodexRunSilently } from "./stopRun";
 
 export async function handleCodexQuestion(params: {
   itemID: number;
   sessionId: string;
   sessionTitle: string;
+  paperTitle?: string;
   question: string;
   selectedText?: string;
   annotationIDs?: string[];
@@ -24,6 +28,7 @@ export async function handleCodexQuestion(params: {
   addon.data.lastCodexRequests?.set(params.itemID, {
     sessionId: params.sessionId,
     sessionTitle: params.sessionTitle,
+    paperTitle: params.paperTitle,
     question: params.question,
     selectedText: params.selectedText,
     annotationIDs: params.annotationIDs,
@@ -46,13 +51,15 @@ export async function handleCodexQuestion(params: {
     const loginState = classifyCodexLoginFailure(result.error);
     if (!params.suppressChatMessages) {
       addMessage(params.chatMessages, `Codex CLI error: ${result.error}`, "ai");
-      messageStore.append(params.sessionId, {
-        role: "assistant",
-        text: result.error,
-        sourceMode: "codex_cli",
-        status: "error",
-      });
     }
+    await sessionHistoryService.persistAssistantTurn({
+      itemID: params.itemID,
+      sessionId: params.sessionId,
+      mode: "codex_cli",
+      paperTitle: params.paperTitle || params.sessionTitle,
+      assistantText: result.error,
+      success: false,
+    });
     setCodexRunStateForItem(params.itemID, {
       ...buildCodexRunState({
         itemID: params.itemID,
@@ -128,15 +135,6 @@ export async function handleCodexQuestion(params: {
     }
 
     const success = progress.exitCode === "0";
-    if (!params.suppressChatMessages) {
-      messageStore.append(params.sessionId, {
-        role: "assistant",
-        text: assistantText,
-        sourceMode: "codex_cli",
-        status: success ? "done" : "error",
-        rawEvent: progress.rawOutput,
-      });
-    }
     const resumedThreadId = progress.rawOutput
       .split(/\r?\n/)
       .map((line) => line.trim())
@@ -154,16 +152,16 @@ export async function handleCodexQuestion(params: {
           typeof event.thread_id === "string",
       )?.thread_id as string | undefined;
 
-    sessionStore.update(
-      params.itemID,
-      "codex_cli",
-      params.sessionTitle,
-      (existing) => {
-        existing.lastCodexSessionID = success
-          ? resumedThreadId || existing.lastCodexSessionID || "last"
-          : existing.lastCodexSessionID;
-      },
-    );
+    await sessionHistoryService.persistAssistantTurn({
+      itemID: params.itemID,
+      sessionId: params.sessionId,
+      mode: "codex_cli",
+      paperTitle: params.paperTitle || params.sessionTitle,
+      assistantText,
+      success,
+      rawEvent: progress.rawOutput,
+      resumeSessionId: resumedThreadId,
+    });
     setCodexRunStateForItem(params.itemID, {
       ...buildCodexRunState({
         itemID: params.itemID,
@@ -205,6 +203,7 @@ export async function retryLastCodexQuestion(params: {
     itemID: params.itemID,
     sessionId: last.sessionId,
     sessionTitle: last.sessionTitle,
+    paperTitle: (last as typeof last & { paperTitle?: string }).paperTitle,
     question: last.question,
     resumeSessionId: last.resumeSessionId,
     selectedText: last.selectedText,
@@ -219,15 +218,10 @@ export async function cancelCodexRun(params: {
   itemID: number;
   chatMessages: HTMLElement;
 }) {
-  const runState = addon.data.codexRunStates?.get(params.itemID);
-  clearCodexPollerForItem(params.itemID);
-  const pid = runState?.processId;
-  if (pid) {
-    await Zotero.Utilities.Internal.exec("/bin/zsh", [
-      "-lc",
-      `kill ${pid} >/dev/null 2>&1 || true`,
-    ]);
-  }
+  const runState = await stopCodexRunSilently({
+    itemID: params.itemID,
+    clearRunState: false,
+  });
   if (runState) {
     setCodexRunStateForItem(params.itemID, {
       ...runState,

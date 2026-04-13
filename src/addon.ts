@@ -18,6 +18,11 @@ class Addon {
       import("./modules/codex/runState").CodexRunState
     >;
     codexRunPollers?: Map<number, ReturnType<typeof setInterval>>;
+    geminiRunStates?: Map<
+      number,
+      import("./modules/gemini/runState").GeminiRunState
+    >;
+    geminiRunPollers?: Map<number, ReturnType<typeof setInterval>>;
     codexExecutableResolvedPath?: string;
     codexLastProbeError?: string;
     codexDiagnosticsText?: string;
@@ -27,6 +32,7 @@ class Addon {
       {
         sessionId: string;
         sessionTitle: string;
+        paperTitle?: string;
         question: string;
         selectedText?: string;
         annotationIDs?: string[];
@@ -103,6 +109,8 @@ class Addon {
       ztoolkit: createZToolkit(),
       codexRunStates: new Map(),
       codexRunPollers: new Map(),
+      geminiRunStates: new Map(),
+      geminiRunPollers: new Map(),
       lastCodexRequests: new Map(),
       paperIndexStore: new Map(),
       modeOverrides: new Map(),

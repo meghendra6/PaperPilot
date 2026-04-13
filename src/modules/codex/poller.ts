@@ -1,3 +1,5 @@
+declare const addon: any;
+
 export function clearCodexPollerForItem(itemID: number) {
   const poller = addon.data.codexRunPollers?.get(itemID);
   if (poller) {

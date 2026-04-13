@@ -227,6 +227,83 @@
   color: var(--pp-text-muted);
 }
 
+.pp-session-history {
+  margin: 0 10px 10px;
+  padding: 10px;
+  border: 1px solid var(--pp-border-light);
+  border-radius: var(--pp-radius-md);
+  background: var(--pp-bg-secondary);
+  box-shadow: var(--pp-shadow-sm);
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.pp-session-history__header,
+.pp-session-history__item,
+.pp-session-history__row-actions,
+.pp-session-history__actions,
+.pp-session-history__item-header,
+.pp-session-history__badges {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.pp-session-history__header,
+.pp-session-history__item {
+  justify-content: space-between;
+}
+
+.pp-session-history__header {
+  margin-bottom: 8px;
+}
+
+.pp-session-history__title,
+.pp-session-history__item-title {
+  font-size: var(--pp-font-size-sm);
+  font-weight: 600;
+  color: var(--pp-text-primary);
+}
+
+.pp-session-history__item {
+  padding: 8px 0;
+  border-top: 1px solid var(--pp-border-light);
+}
+
+.pp-session-history__item:first-of-type {
+  border-top: 0;
+}
+
+.pp-session-history__info {
+  min-width: 0;
+  flex: 1;
+}
+
+.pp-session-history__meta,
+.pp-session-history__empty {
+  font-size: var(--pp-font-size-sm);
+  color: var(--pp-text-muted);
+}
+
+.pp-session-history__badge {
+  padding: 1px 6px;
+  border-radius: var(--pp-radius-pill);
+  background: var(--pp-bg-accent);
+  color: var(--pp-text-accent);
+  font-size: var(--pp-font-size-xs);
+  font-weight: 600;
+}
+
+.pp-session-history__rename-input {
+  min-width: 180px;
+  flex: 1;
+  padding: 4px 6px;
+  border: 1px solid var(--pp-border-medium);
+  border-radius: var(--pp-radius-sm);
+  background: var(--pp-bg-primary);
+  color: var(--pp-text-primary);
+}
+
 /* ============================================================
    5. Workbench
    ============================================================ */

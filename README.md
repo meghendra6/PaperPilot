@@ -15,7 +15,7 @@ Paper Pilot is an AI reading workbench for the Zotero 7 PDF reader. It adds a pa
 - Structured paper workbench for brief, compare, contributions, limitations, and follow-ups
 - Structured PDF workspace extraction via **OpenDataLoader PDF**
 - Related-paper discovery with open/add-to-collection flows
-- Auto-highlight and paper-scoped session continuity
+- Auto-highlight plus persisted paper-scoped session history
 - Automated local verification is in place; full Zotero runtime QA is still pending
 
 ## Screenshots and demo
@@ -56,7 +56,8 @@ See [`docs/manual-qa.md`](./docs/manual-qa.md) for the current runtime checklist
 - Keeps conversations scoped to the active paper
 - Supports per-paper engine switching between Codex CLI and Gemini CLI
 - Preserves follow-up continuity within the same paper/session
-- Supports **New session** resets without leaking state across papers
+- Supports **Past sessions** for reopening, renaming, deleting, and clearing saved sessions for the current paper
+- Uses **New session** to preserve the current session and start a blank draft for the same paper
 
 ### 2. Paper-aware actions from the reader
 

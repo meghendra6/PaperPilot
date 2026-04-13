@@ -58,6 +58,13 @@ class MessageStore {
     return record;
   }
 
+  replace(sessionId: string, messages: MessageRecord[]) {
+    this.messages.set(
+      sessionId,
+      messages.map((message) => ({ ...message })),
+    );
+  }
+
   clear(sessionId: string) {
     this.messages.delete(sessionId);
   }
