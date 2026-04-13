@@ -1,7 +1,6 @@
 import type { ComprehensionCheckState } from "../comprehensionCheck/types";
 import { messageStore } from "../message/messageStore";
 import type { MessageRecord } from "../message/types";
-import { setPref } from "../../utils/prefs";
 import { resolveSessionHistoryPrefs } from "./historyPrefs";
 import {
   SESSION_HISTORY_STORAGE_VERSION,
@@ -188,22 +187,6 @@ export function captureSessionSnapshot(params: {
   };
 }
 
-function applySavedModel(snapshot: SessionHistorySnapshot) {
-  if (!snapshot.lastModel?.model) {
-    return;
-  }
-
-  if (snapshot.lastModel.mode === "gemini_cli") {
-    setPref("geminiDefaultModel", snapshot.lastModel.model);
-    return;
-  }
-
-  setPref("codexDefaultModel", snapshot.lastModel.model);
-  if (snapshot.lastModel.reasoningEffort) {
-    setPref("codexReasoningEffort", snapshot.lastModel.reasoningEffort);
-  }
-}
-
 export function applySessionSnapshot(snapshot: SessionHistorySnapshot): PaperSession {
   const data = getAddonData();
 
@@ -239,7 +222,6 @@ export function applySessionSnapshot(snapshot: SessionHistorySnapshot): PaperSes
   if (snapshot.lastMode) {
     data.modeOverrides?.set(snapshot.paperItemID, snapshot.lastMode);
   }
-  applySavedModel(snapshot);
 
   return {
     sessionId: snapshot.sessionId,

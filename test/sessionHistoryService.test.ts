@@ -585,7 +585,7 @@ test("SessionHistoryService opens a saved snapshot into the in-memory stores", a
       ).addon?.data?.currentSessionId,
       snapshot.sessionId,
     );
-    assert.equal(globals.prefWrites.get("geminiDefaultModel"), "gemini-3.1-pro-preview");
+    assert.equal(globals.prefWrites.size, 0);
 
     messageStore.clear(snapshot.sessionId);
     sessionStore.reset(504, "codex_cli");
