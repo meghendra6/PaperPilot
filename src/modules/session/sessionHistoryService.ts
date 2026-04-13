@@ -26,10 +26,15 @@ function shouldPreserveSessionTitle(
   sessionTitle: string | undefined,
   createdAt: string,
   paperTitle: string,
+  persistedTitle?: string,
 ) {
   const trimmedSessionTitle = trimSessionTitle(sessionTitle || "");
   if (!trimmedSessionTitle) {
     return false;
+  }
+
+  if (trimmedSessionTitle === trimSessionTitle(persistedTitle || "")) {
+    return true;
   }
 
   const trimmedPaperTitle = trimSessionTitle(paperTitle);
@@ -84,10 +89,16 @@ export class SessionHistoryService {
       return undefined;
     }
 
+    const existingSnapshot = await this.repository.readSessionSnapshot(
+      params.itemID,
+      session.sessionId,
+    );
+
     const snapshot = shouldPreserveSessionTitle(
       session.threadTitle,
       session.createdAt,
       params.paperTitle,
+      existingSnapshot?.title,
     )
       ? {
           ...capturedSnapshot,

@@ -315,6 +315,56 @@ test("SessionHistoryService keeps a renamed title after reopening and continuing
   }
 });
 
+test("SessionHistoryService keeps an explicit rename to the paper title after reopening and continuing the session", async () => {
+  const { globals, repository, service } = createService({
+    saveDocumentSessions: true,
+    privacyStoreLocalHistory: true,
+    privacySavePromptsOnly: false,
+    privacySaveResponses: true,
+  });
+
+  try {
+    const session = service.ensureDraftSession({
+      itemID: 7022,
+      mode: "codex_cli",
+      title: "Task 3 paper",
+    });
+    messageStore.append(session.sessionId, {
+      role: "user",
+      text: "Original first question",
+      sourceMode: "codex_cli",
+      status: "done",
+    });
+    await service.persistActiveSession({
+      itemID: 7022,
+      paperTitle: "Task 3 paper",
+    });
+
+    await service.renameSavedSession({
+      itemID: 7022,
+      sessionId: session.sessionId,
+      title: "Task 3 paper",
+    });
+    await service.openSavedSession({
+      itemID: 7022,
+      sessionId: session.sessionId,
+    });
+
+    await service.persistUserMessage({
+      itemID: 7022,
+      mode: "gemini_cli",
+      paperTitle: "Task 3 paper",
+      text: "Follow-up after reopening",
+    });
+
+    const saved = await repository.readSessionSnapshot(7022, session.sessionId);
+    assert.ok(saved);
+    assert.equal(saved.title, "Task 3 paper");
+  } finally {
+    globals.restore();
+  }
+});
+
 test("Session lifecycle persists immediately after a user message append", async () => {
   const { globals, repository, service } = createService({
     saveDocumentSessions: true,
