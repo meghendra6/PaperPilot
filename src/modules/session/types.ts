@@ -1,4 +1,5 @@
 import type { EngineMode } from "../ai/types";
+import type { SessionHistoryModelMetadata } from "./historyTypes";
 
 export interface PaperSession {
   sessionId: string;
@@ -9,5 +10,6 @@ export interface PaperSession {
   updatedAt: string;
   lastCodexSessionID?: string;
   lastGeminiSessionID?: string;
+  lastModel?: SessionHistoryModelMetadata;
   threadTitle: string;
 }
