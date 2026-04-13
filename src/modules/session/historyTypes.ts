@@ -67,6 +67,7 @@ export interface SessionHistoryFileOps {
   writeTextAtomic(path: string, contents: string): Promise<void>;
   remove(path: string): Promise<void>;
   exists(path: string): Promise<boolean>;
+  listDirectory(path: string): Promise<string[]>;
 }
 
 export interface SessionHistoryRepositoryOptions {

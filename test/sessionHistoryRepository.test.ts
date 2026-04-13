@@ -36,12 +36,20 @@ function withPrefs(
 class MemoryFileOps implements SessionHistoryFileOps {
   files = new Map<string, string>();
   directories = new Set<string>();
+  throwOnMissingRead = true;
 
   async ensureDirectory(path: string) {
     this.directories.add(path);
   }
 
   async readText(path: string) {
+    if (!this.files.has(path)) {
+      if (this.throwOnMissingRead) {
+        throw new Error(`ENOENT: no such file or directory, open '${path}'`);
+      }
+      return undefined;
+    }
+
     return this.files.get(path);
   }
 
@@ -55,6 +63,14 @@ class MemoryFileOps implements SessionHistoryFileOps {
 
   async exists(path: string) {
     return this.files.has(path) || this.directories.has(path);
+  }
+
+  async listDirectory(path: string) {
+    const normalizedPrefix = path.replace(/\/+$/, "");
+    return [...this.files.keys()].filter((filePath) =>
+      filePath.startsWith(`${normalizedPrefix}/`) ||
+      filePath.startsWith(`${normalizedPrefix}\\`),
+    );
   }
 }
 
@@ -243,6 +259,100 @@ test("SessionHistoryRepository persists the paper index and snapshot via file op
       },
     ],
   });
+});
+
+test("SessionHistoryRepository returns an empty index when index.json is missing", async () => {
+  const fileOps = new MemoryFileOps();
+  const repo = new SessionHistoryRepository({
+    rootDir: "/session-history",
+    fileOps,
+  });
+
+  const index = await repo.readPaperIndex(42);
+
+  assert.deepEqual(index, {
+    storageVersion: SESSION_HISTORY_STORAGE_VERSION,
+    paperItemID: 42,
+    paperTitle: "",
+    sessions: [],
+  });
+});
+
+test("SessionHistoryRepository recovers valid snapshots when index.json is malformed", async () => {
+  const fileOps = new MemoryFileOps();
+  const repo = new SessionHistoryRepository({
+    rootDir: "/session-history",
+    fileOps,
+  });
+  const firstSnapshot = buildSnapshot();
+  const secondSnapshot = {
+    ...buildSnapshot(),
+    sessionId: "paper-42-session-b",
+    title: "Follow-up session",
+    updatedAt: "2026-04-14T00:29:00.000Z",
+    createdAt: "2026-04-14T00:20:00.000Z",
+    messages: [
+      {
+        id: "message-3",
+        role: "user" as const,
+        text: "What if the index is broken?",
+        createdAt: "2026-04-14T00:20:00.000Z",
+        sourceMode: "gemini_cli" as const,
+        status: "done" as const,
+      },
+    ],
+  };
+
+  fileOps.files.set(
+    repo.getPaperIndexPath(42),
+    "{ not valid json",
+  );
+  fileOps.files.set(
+    repo.getSessionSnapshotPath(42, firstSnapshot.sessionId),
+    JSON.stringify(firstSnapshot),
+  );
+  fileOps.files.set(
+    repo.getSessionSnapshotPath(42, secondSnapshot.sessionId),
+    JSON.stringify(secondSnapshot),
+  );
+
+  const index = await repo.readPaperIndex(42);
+  assert.deepEqual(
+    index.sessions.map((entry) => entry.sessionId),
+    [secondSnapshot.sessionId, firstSnapshot.sessionId],
+  );
+  assert.equal(index.sessions[0].title, secondSnapshot.title);
+
+  await repo.deleteSession(42, firstSnapshot.sessionId);
+  assert.deepEqual(
+    (await repo.listSessions(42)).map((entry) => entry.sessionId),
+    [secondSnapshot.sessionId],
+  );
+});
+
+test("SessionHistoryRepository uses platform-safe path joining", () => {
+  const previousPathUtils = (globalThis as { PathUtils?: unknown }).PathUtils;
+  (globalThis as { PathUtils?: unknown }).PathUtils = {
+    join: (...parts: string[]) => parts.join("\\"),
+  };
+
+  try {
+    const repo = new SessionHistoryRepository({
+      rootDir: "C:\\session-history",
+      fileOps: new MemoryFileOps(),
+    });
+
+    assert.equal(
+      repo.getPaperIndexPath(42),
+      "C:\\session-history\\papers\\42\\index.json",
+    );
+    assert.equal(
+      repo.getSessionSnapshotPath(42, "paper-42-session-a"),
+      "C:\\session-history\\papers\\42\\sessions\\paper-42-session-a.json",
+    );
+  } finally {
+    (globalThis as { PathUtils?: unknown }).PathUtils = previousPathUtils;
+  }
 });
 
 test("SessionHistoryRepository deletes the snapshot and removes the index entry", async () => {

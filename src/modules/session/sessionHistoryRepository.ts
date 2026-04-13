@@ -1,3 +1,5 @@
+import * as path from "node:path";
+
 import {
   SESSION_HISTORY_STORAGE_VERSION,
   type SessionHistoryFileOps,
@@ -9,6 +11,7 @@ import {
 
 declare const Zotero: any;
 declare const IOUtils: any;
+declare const PathUtils: any;
 
 function getGlobalZotero() {
   return (globalThis as typeof globalThis & { Zotero?: typeof Zotero }).Zotero;
@@ -19,19 +22,22 @@ function getGlobalIOUtils() {
     .IOUtils;
 }
 
-function joinPath(...parts: string[]) {
-  return parts
-    .filter((part) => Boolean(part))
-    .map((part, index) => {
-      const segment = String(part);
-      if (index === 0) {
-        return segment.replace(/\/+$/, "");
-      }
+function getGlobalPathUtils() {
+  return (globalThis as typeof globalThis & { PathUtils?: typeof PathUtils })
+    .PathUtils;
+}
 
-      return segment.replace(/^\/+/, "").replace(/\/+$/, "");
-    })
-    .filter((part) => Boolean(part))
-    .join("/");
+function joinPath(...parts: string[]) {
+  const pathUtils = getGlobalPathUtils();
+  if (pathUtils?.join) {
+    return pathUtils.join(...parts);
+  }
+
+  return path.join(...parts);
+}
+
+function getFileName(filePath: string) {
+  return filePath.split(/[\\/]/).pop() || filePath;
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -96,6 +102,10 @@ function toSessionEntry(snapshot: SessionHistorySnapshot): SessionHistoryListEnt
     hasRecommendations: hasMeaningfulState(snapshot.relatedRecommendations),
     hasMasteryState: hasMeaningfulState(snapshot.mastery),
   };
+}
+
+function sessionIdFromPath(filePath: string) {
+  return getFileName(filePath).replace(/\.json$/i, "");
 }
 
 function createDefaultFileOps(): SessionHistoryFileOps {
@@ -165,6 +175,30 @@ function createDefaultFileOps(): SessionHistoryFileOps {
 
       return false;
     },
+    async listDirectory(path: string) {
+      const zotero = getGlobalZotero();
+      if (!zotero?.File?.iterateDirectory) {
+        throw new Error(
+          "Zotero file APIs are unavailable for session history persistence.",
+        );
+      }
+
+      const entries: string[] = [];
+      try {
+        await zotero.File.iterateDirectory(
+          path,
+          async (entry: { isDir?: boolean; path: string }) => {
+            if (!entry.isDir) {
+              entries.push(entry.path);
+            }
+          },
+        );
+      } catch {
+        return [];
+      }
+
+      return entries;
+    },
   };
 }
 
@@ -206,7 +240,13 @@ export class SessionHistoryRepository {
   }
 
   private async readJson<T>(path: string): Promise<T | undefined> {
-    const raw = await this.fileOps.readText(path);
+    let raw: string | undefined;
+    try {
+      raw = await this.fileOps.readText(path);
+    } catch {
+      return undefined;
+    }
+
     if (raw === undefined || !String(raw).trim()) {
       return undefined;
     }
@@ -221,6 +261,51 @@ export class SessionHistoryRepository {
   private async ensurePaperDirectories(itemID: number) {
     await this.fileOps.ensureDirectory(this.getPaperRoot(itemID));
     await this.fileOps.ensureDirectory(this.getSessionsRoot(itemID));
+  }
+
+  private async recoverSessionsFromDisk(itemID: number) {
+    const sessionsRoot = this.getSessionsRoot(itemID);
+    let filePaths: string[] = [];
+
+    try {
+      filePaths = await this.fileOps.listDirectory(sessionsRoot);
+    } catch {
+      return [];
+    }
+
+    const recoveredEntries: SessionHistoryListEntry[] = [];
+    for (const filePath of filePaths) {
+      if (!filePath.endsWith(".json")) {
+        continue;
+      }
+
+      const snapshot = await this.readSessionSnapshot(
+        itemID,
+        sessionIdFromPath(filePath),
+      );
+      if (snapshot) {
+        recoveredEntries.push(toSessionEntry(snapshot));
+      }
+    }
+
+    return recoveredEntries;
+  }
+
+  private mergeRecoveredSessions(
+    indexSessions: SessionHistoryListEntry[],
+    recoveredSessions: SessionHistoryListEntry[],
+  ) {
+    const merged = new Map<string, SessionHistoryListEntry>();
+
+    for (const entry of indexSessions) {
+      merged.set(entry.sessionId, entry);
+    }
+
+    for (const entry of recoveredSessions) {
+      merged.set(entry.sessionId, entry);
+    }
+
+    return sortSessionEntries([...merged.values()]);
   }
 
   private normalizeIndex(index: SessionHistoryIndex): SessionHistoryIndex {
@@ -239,11 +324,18 @@ export class SessionHistoryRepository {
     const index = await this.readJson<SessionHistoryIndex>(
       this.getPaperIndexPath(itemID),
     );
+    const recoveredSessions = await this.recoverSessionsFromDisk(itemID);
     if (!index) {
-      return emptyIndex(itemID);
+      return {
+        ...emptyIndex(itemID),
+        sessions: sortSessionEntries(recoveredSessions),
+      };
     }
 
-    return this.normalizeIndex(index);
+    return this.normalizeIndex({
+      ...index,
+      sessions: this.mergeRecoveredSessions(index.sessions, recoveredSessions),
+    });
   }
 
   async writePaperIndex(index: SessionHistoryIndex) {
@@ -303,15 +395,14 @@ export class SessionHistoryRepository {
   }
 
   async deleteSession(itemID: number, sessionId: string) {
-    const indexPath = this.getPaperIndexPath(itemID);
-    const indexExists = await this.fileOps.exists(indexPath);
     const index = await this.readPaperIndex(itemID);
     const remainingSessions = index.sessions.filter(
       (entry) => entry.sessionId !== sessionId,
     );
 
     await this.fileOps.remove(this.getSessionSnapshotPath(itemID, sessionId));
-    if (!indexExists) {
+    if (!remainingSessions.length) {
+      await this.fileOps.remove(this.getPaperIndexPath(itemID));
       return;
     }
 
@@ -325,7 +416,9 @@ export class SessionHistoryRepository {
     const index = await this.readPaperIndex(itemID);
     await Promise.all(
       index.sessions.map((entry) =>
-        this.fileOps.remove(this.getSessionSnapshotPath(itemID, entry.sessionId)),
+        this.fileOps.remove(
+          this.getSessionSnapshotPath(itemID, entry.sessionId),
+        ),
       ),
     );
     await this.fileOps.remove(this.getPaperIndexPath(itemID));
