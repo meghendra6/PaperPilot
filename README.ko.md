@@ -14,7 +14,7 @@ Paper Pilot는 Zotero 7 PDF 리더를 위한 AI 읽기 워크벤치입니다. Zo
 - 두 가지 로컬 엔진 모드: **Codex CLI**, **Gemini CLI**
 - brief, compare, contributions, limitations, follow-ups를 위한 구조화된 논문 워크벤치
 - 관련 논문 추천, 열기, 컬렉션 추가 흐름 지원
-- auto-highlight 및 논문 단위 세션 연속성 지원
+- auto-highlight 및 저장되는 논문 단위 세션 기록 지원
 - 자동화된 로컬 검증은 갖춰져 있지만, 실제 Zotero 런타임 QA는 아직 남아 있음
 
 ## 스크린샷과 데모
@@ -55,7 +55,8 @@ Paper Pilot는 현재 활발히 개발 중입니다.
 - 대화를 현재 논문 단위로 유지
 - 논문별로 Codex CLI와 Gemini CLI 전환 지원
 - 같은 논문/세션 안에서 후속 질문 맥락 유지
-- **New session**으로 다른 논문에 상태가 섞이지 않도록 세션 초기화 지원
+- 현재 논문의 저장된 세션을 다시 열고, 이름 변경하고, 삭제하고, 한 번에 모두 지울 수 있는 **Past sessions** 지원
+- **New session**은 현재 세션을 보존한 채 같은 논문에서 비어 있는 새 초안을 시작
 
 ### 2. 리더 내 논문 맥락 액션
 

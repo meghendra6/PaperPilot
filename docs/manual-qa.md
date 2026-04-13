@@ -77,9 +77,15 @@ Use this checklist inside a real Zotero 7 runtime before claiming readiness.
 
 ## 7. Session correctness
 
+- [ ] Open `Past sessions` and confirm the current paper shows a compact saved-session list
+- [ ] Open a saved session and confirm the prior transcript loads into the pane and follow-up turns continue in that same session
+- [ ] Rename a saved session from `Past sessions` and confirm the updated title appears immediately
+- [ ] Delete one saved session from `Past sessions` and confirm the list and pane state update correctly
+- [ ] Use `Delete all` in `Past sessions` and confirm only the current paper's saved sessions are removed
 - [ ] Use `New session`
-- [ ] Confirm messages/draft/run-state reset for the current document+mode
-- [ ] Confirm research-brief and paper-tool cards reset with the session
+- [ ] Confirm `New session` preserves the prior session in `Past sessions` and starts a blank draft instead of discarding it
+- [ ] Confirm messages/draft/run-state reset for the new blank draft
+- [ ] Confirm research-brief and paper-tool cards reset with the blank draft
 - [ ] Switch between Gemini CLI and Codex CLI and confirm previous threads do not mix
 - [ ] Open a second paper and confirm context/session state does not leak from the first
 

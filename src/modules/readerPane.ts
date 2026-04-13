@@ -37,6 +37,7 @@ import {
 import { getCurrentReaderContext } from "./context/readerContext";
 import { messageStore } from "./message/messageStore";
 import { sessionStore } from "./session/sessionStore";
+import { sessionHistoryService } from "./session/sessionHistoryService";
 import { probeCodexLoginState } from "./codex/status";
 import { buildCodexAuthenticateMessage } from "./codex/authAction";
 import {
@@ -147,9 +148,11 @@ export function registerPaperPilotPaneSection() {
           <span id="chat-auto-highlight-status" class="pp-session-status"></span>
           <html:button id="chat-auto-highlight" class="pp-btn pp-btn--secondary">Highlight key passages</html:button>
           <html:button id="chat-new-session" class="pp-btn pp-btn--secondary">New session</html:button>
+          <html:button id="chat-past-sessions" class="pp-btn pp-btn--ghost">Past sessions</html:button>
           <html:button id="chat-related-recommend" class="pp-btn pp-btn--secondary">Recommend related papers</html:button>
           <html:button id="chat-paper-mastery" class="pp-btn pp-btn--secondary">Paper Mastery</html:button>
         </div>
+        <div id="paper-pilot-session-history" class="pp-session-history" style="display: none;"></div>
         <div class="pp-section" id="paper-pilot-workbench-section">
           <div class="pp-section__header" id="paper-pilot-workbench-toggle">
             <span class="pp-section__toggle">▼</span>
@@ -282,6 +285,12 @@ export function registerPaperPilotPaneSection() {
       const newSessionButton = body.querySelector(
         "#chat-new-session",
       ) as HTMLButtonElement;
+      const pastSessionsButton = body.querySelector(
+        "#chat-past-sessions",
+      ) as HTMLButtonElement;
+      const sessionHistoryPanel = body.querySelector(
+        "#paper-pilot-session-history",
+      ) as HTMLElement;
       const relatedRecommendButton = body.querySelector(
         "#chat-related-recommend",
       ) as HTMLButtonElement;
@@ -420,6 +429,8 @@ export function registerPaperPilotPaneSection() {
         autoHighlightStatus &&
         autoHighlightButton &&
         newSessionButton &&
+        pastSessionsButton &&
+        sessionHistoryPanel &&
         relatedRecommendButton &&
         researchBriefButton &&
         compareButton &&
@@ -450,45 +461,283 @@ export function registerPaperPilotPaneSection() {
         codexWebSearchToggle &&
         modelHistory
       ) {
+        let sessionHistoryOpen = false;
+        let renamingSessionId: string | undefined;
+
+        const clearSessionRuntimeState = () => {
+          clearCodexPollerForItem(item.id);
+          clearCodexRunStateForItem(item.id);
+          clearReaderActionDraft();
+          renderStreamingIndicator(streamingIndicator, false);
+        };
+
+        const clearBlankSessionState = () => {
+          clearSessionRuntimeState();
+          setPaperArtifactState(item.id, {
+            running: false,
+            status: "",
+            cards: [],
+          });
+          addon.data.relatedRecommendationStates?.delete(item.id);
+          clearMasteryState(item.id);
+          input.value = "";
+        };
+
+        const rerenderPane = async () => {
+          await renderPaneState({
+            itemID: item.id,
+            itemTitle: item.getField("title"),
+            currentDocumentLabel,
+            autoHighlightStatus,
+            autoHighlightButton,
+            researchBriefButton,
+            contributionsButton,
+            limitationsButton,
+            followUpsButton,
+            compareButton,
+            compareHelper,
+            saveWorkbenchNoteButton,
+            saveWorkbenchCollectionButton,
+            clearWorkbenchButton,
+            paperToolStatus,
+            paperToolCards,
+            modeChip,
+            modeStatus,
+            runStateCard,
+            codexActions,
+            policyWarning,
+            geminiFallbackCard,
+            geminiEmbedCard,
+            modelRow,
+            modelInput,
+            codexOptionsRow,
+            codexWebSearchToggle,
+            modelHistory,
+            chatMessages,
+            draftCard,
+            streamingIndicator,
+            setSectionSummary,
+          });
+          await renderSessionHistory();
+        };
+
+        const renderSessionHistory = async () => {
+          const entries = await sessionHistoryService.listSavedSessions({
+            itemID: item.id,
+          });
+          pastSessionsButton.textContent = entries.length
+            ? `Past sessions (${entries.length})`
+            : "Past sessions";
+          pastSessionsButton.setAttribute(
+            "aria-expanded",
+            sessionHistoryOpen ? "true" : "false",
+          );
+
+          if (!sessionHistoryOpen) {
+            sessionHistoryPanel.style.display = "none";
+            sessionHistoryPanel.replaceChildren();
+            renamingSessionId = undefined;
+            return;
+          }
+
+          const doc = sessionHistoryPanel.ownerDocument;
+          sessionHistoryPanel.style.display = "block";
+          sessionHistoryPanel.replaceChildren();
+
+          const header = doc.createElement("div");
+          header.className = "pp-session-history__header";
+
+          const title = doc.createElement("div");
+          title.className = "pp-session-history__title";
+          title.textContent = "Past sessions";
+          header.appendChild(title);
+
+          const actions = doc.createElement("div");
+          actions.className = "pp-session-history__actions";
+
+          if (entries.length) {
+            const deleteAllButton = doc.createElement("button");
+            deleteAllButton.type = "button";
+            deleteAllButton.className = "pp-btn pp-btn--ghost";
+            deleteAllButton.textContent = "Delete all";
+            deleteAllButton.addEventListener("click", async () => {
+              await sessionHistoryService.deleteAllSavedSessions({
+                itemID: item.id,
+              });
+              clearBlankSessionState();
+              sessionHistoryOpen = false;
+              await rerenderPane();
+            });
+            actions.appendChild(deleteAllButton);
+          }
+
+          const closeButton = doc.createElement("button");
+          closeButton.type = "button";
+          closeButton.className = "pp-btn pp-btn--ghost";
+          closeButton.textContent = "Close";
+          closeButton.addEventListener("click", async () => {
+            sessionHistoryOpen = false;
+            await renderSessionHistory();
+          });
+          actions.appendChild(closeButton);
+
+          header.appendChild(actions);
+          sessionHistoryPanel.appendChild(header);
+
+          if (!entries.length) {
+            const emptyState = doc.createElement("div");
+            emptyState.className = "pp-session-history__empty";
+            emptyState.textContent = "No saved sessions for this paper yet.";
+            sessionHistoryPanel.appendChild(emptyState);
+            return;
+          }
+
+          const currentSessionId = addon.data.currentSessionId;
+
+          for (const entry of entries) {
+            const row = doc.createElement("div");
+            row.className = "pp-session-history__item";
+
+            const info = doc.createElement("div");
+            info.className = "pp-session-history__info";
+
+            const titleRow = doc.createElement("div");
+            titleRow.className = "pp-session-history__item-header";
+
+            if (renamingSessionId === entry.sessionId) {
+              const renameInput = doc.createElement("input");
+              renameInput.className = "pp-session-history__rename-input";
+              renameInput.value = entry.title;
+              titleRow.appendChild(renameInput);
+
+              const saveRenameButton = doc.createElement("button");
+              saveRenameButton.type = "button";
+              saveRenameButton.className = "pp-btn pp-btn--secondary";
+              saveRenameButton.textContent = "Save";
+              saveRenameButton.addEventListener("click", async () => {
+                await sessionHistoryService.renameSavedSession({
+                  itemID: item.id,
+                  sessionId: entry.sessionId,
+                  title: renameInput.value,
+                });
+                renamingSessionId = undefined;
+                await renderSessionHistory();
+              });
+              titleRow.appendChild(saveRenameButton);
+
+              const cancelRenameButton = doc.createElement("button");
+              cancelRenameButton.type = "button";
+              cancelRenameButton.className = "pp-btn pp-btn--ghost";
+              cancelRenameButton.textContent = "Cancel";
+              cancelRenameButton.addEventListener("click", async () => {
+                renamingSessionId = undefined;
+                await renderSessionHistory();
+              });
+              titleRow.appendChild(cancelRenameButton);
+            } else {
+              const entryTitle = doc.createElement("div");
+              entryTitle.className = "pp-session-history__item-title";
+              entryTitle.textContent = entry.title;
+              titleRow.appendChild(entryTitle);
+
+              if (currentSessionId === entry.sessionId) {
+                const currentBadge = doc.createElement("span");
+                currentBadge.className = "pp-session-history__badge";
+                currentBadge.textContent = "Current";
+                titleRow.appendChild(currentBadge);
+              }
+            }
+
+            info.appendChild(titleRow);
+
+            const meta = doc.createElement("div");
+            meta.className = "pp-session-history__meta";
+            meta.textContent = [
+              `Updated ${new Date(entry.updatedAt).toLocaleString()}`,
+              `Created ${new Date(entry.createdAt).toLocaleString()}`,
+              `${entry.messageCount} message${entry.messageCount === 1 ? "" : "s"}`,
+              entry.lastMode === "gemini_cli" ? "Gemini CLI" : "Codex CLI",
+            ].join(" · ");
+            info.appendChild(meta);
+
+            const badges: string[] = [];
+            if (entry.hasArtifacts || entry.hasRecommendations || entry.hasMasteryState) {
+              badges.push("Has cards");
+            }
+            if (badges.length) {
+              const badgeRow = doc.createElement("div");
+              badgeRow.className = "pp-session-history__badges";
+              for (const badgeText of badges) {
+                const badge = doc.createElement("span");
+                badge.className = "pp-session-history__badge";
+                badge.textContent = badgeText;
+                badgeRow.appendChild(badge);
+              }
+              info.appendChild(badgeRow);
+            }
+
+            row.appendChild(info);
+
+            const rowActions = doc.createElement("div");
+            rowActions.className = "pp-session-history__row-actions";
+
+            const openButton = doc.createElement("button");
+            openButton.type = "button";
+            openButton.className = "pp-btn pp-btn--secondary";
+            openButton.textContent = "Open";
+            openButton.disabled = currentSessionId === entry.sessionId;
+            openButton.addEventListener("click", async () => {
+              clearSessionRuntimeState();
+              await sessionHistoryService.openSavedSession({
+                itemID: item.id,
+                sessionId: entry.sessionId,
+              });
+              input.value = "";
+              sessionHistoryOpen = false;
+              renamingSessionId = undefined;
+              await rerenderPane();
+            });
+            rowActions.appendChild(openButton);
+
+            const renameButton = doc.createElement("button");
+            renameButton.type = "button";
+            renameButton.className = "pp-btn pp-btn--ghost";
+            renameButton.textContent = "Rename";
+            renameButton.addEventListener("click", async () => {
+              renamingSessionId = entry.sessionId;
+              await renderSessionHistory();
+            });
+            rowActions.appendChild(renameButton);
+
+            const deleteButton = doc.createElement("button");
+            deleteButton.type = "button";
+            deleteButton.className = "pp-btn pp-btn--ghost";
+            deleteButton.textContent = "Delete";
+            deleteButton.addEventListener("click", async () => {
+              const deletingCurrent = addon.data.currentSessionId === entry.sessionId;
+              await sessionHistoryService.deleteSavedSession({
+                itemID: item.id,
+                sessionId: entry.sessionId,
+              });
+              if (deletingCurrent) {
+                clearBlankSessionState();
+              }
+              renamingSessionId = undefined;
+              await rerenderPane();
+            });
+            rowActions.appendChild(deleteButton);
+
+            row.appendChild(rowActions);
+            sessionHistoryPanel.appendChild(row);
+          }
+        };
+
         const cleanup = adjustContainerHeight(
           chatContainer,
           input,
           chatResizeHandle,
         );
-        await renderPaneState({
-          itemID: item.id,
-          itemTitle: item.getField("title"),
-          currentDocumentLabel,
-          autoHighlightStatus,
-          autoHighlightButton,
-          researchBriefButton,
-          contributionsButton,
-          limitationsButton,
-          followUpsButton,
-          compareButton,
-          compareHelper,
-          saveWorkbenchNoteButton,
-          saveWorkbenchCollectionButton,
-          clearWorkbenchButton,
-          paperToolStatus,
-          paperToolCards,
-          modeChip,
-          modeStatus,
-          runStateCard,
-          codexActions,
-          policyWarning,
-          geminiFallbackCard,
-          geminiEmbedCard,
-          modelRow,
-          modelInput,
-          codexOptionsRow,
-          codexWebSearchToggle,
-          modelHistory,
-          chatMessages,
-          draftCard,
-          streamingIndicator,
-          setSectionSummary,
-        });
+        await rerenderPane();
         renderRelatedRecommendationState(
           relatedRecommendButton,
           relatedStatus,
@@ -689,6 +938,12 @@ export function registerPaperPilotPaneSection() {
             );
             addMessage(chatMessages, `Auto-highlight error: ${message}`, "ai");
           }
+        });
+
+        pastSessionsButton.addEventListener("click", async () => {
+          sessionHistoryOpen = !sessionHistoryOpen;
+          renamingSessionId = undefined;
+          await renderSessionHistory();
         });
 
         researchBriefButton.addEventListener("click", async () => {
@@ -1527,56 +1782,15 @@ export function registerPaperPilotPaneSection() {
 
         newSessionButton.addEventListener("click", async () => {
           const mode = getModeForItem(item.id);
-          const currentSession = sessionStore.getOrCreate(
-            item.id,
-            mode,
-            item.getField("title"),
-          );
-          messageStore.clear(currentSession.sessionId);
-          clearCodexPollerForItem(item.id);
-          sessionStore.reset(item.id, mode);
-          clearCodexRunStateForItem(item.id);
-          clearReaderActionDraft();
-          setPaperArtifactState(item.id, {
-            running: false,
-            status: "",
-            cards: [],
-          });
-          input.value = "";
-          await renderPaneState({
+          await sessionHistoryService.startNewSessionDraft({
             itemID: item.id,
-            itemTitle: item.getField("title"),
-            currentDocumentLabel,
-            autoHighlightStatus,
-            autoHighlightButton,
-            researchBriefButton,
-            contributionsButton,
-            limitationsButton,
-            followUpsButton,
-            compareButton,
-            compareHelper,
-            saveWorkbenchNoteButton,
-            saveWorkbenchCollectionButton,
-            clearWorkbenchButton,
-            paperToolStatus,
-            paperToolCards,
-            modeChip,
-            modeStatus,
-            runStateCard,
-            codexActions,
-            policyWarning,
-            geminiFallbackCard,
-            geminiEmbedCard,
-            modelRow,
-            modelInput,
-            codexOptionsRow,
-            codexWebSearchToggle,
-            modelHistory,
-            chatMessages,
-            draftCard,
-            streamingIndicator,
-            setSectionSummary,
+            mode,
+            paperTitle: String(item.getField("title") || ""),
           });
+          clearBlankSessionState();
+          sessionHistoryOpen = false;
+          renamingSessionId = undefined;
+          await rerenderPane();
         });
 
         codexAuthButton.addEventListener("click", async () => {
@@ -1763,6 +1977,7 @@ export function registerPaperPilotPaneSection() {
               streamingIndicator,
             );
             renderDraftCard(draftCard);
+            await renderSessionHistory();
           }
         });
 
@@ -1788,6 +2003,7 @@ export function registerPaperPilotPaneSection() {
               streamingIndicator,
             );
             renderDraftCard(draftCard);
+            await renderSessionHistory();
           }
 
           addon.data.pendingReaderAction = undefined;
@@ -3180,15 +3396,14 @@ async function handleUserInput(
       (readerContext?.selectedText
         ? String(readerContext.selectedText)
         : undefined);
-    const session = sessionStore.touch(itemID, mode, itemTitle);
-    if (!options?.silentUserMessage) {
-      messageStore.append(session.sessionId, {
-        role: "user",
-        text: question,
-        sourceMode: mode,
-        status: "done",
-      });
-    }
+    const session = options?.silentUserMessage
+      ? sessionStore.touch(itemID, mode, itemTitle)
+      : await sessionHistoryService.persistUserMessage({
+          itemID,
+          mode,
+          paperTitle: itemTitle,
+          text: question,
+        });
     if (mode === "codex_cli") {
       if (draft) {
         if (!options?.suppressChatMessages) {
@@ -3205,6 +3420,7 @@ async function handleUserInput(
         itemID,
         sessionId: session.sessionId,
         sessionTitle: session.threadTitle,
+        paperTitle: itemTitle,
         question,
         selectedText,
         annotationIDs: draft?.annotationIDs,
@@ -3234,6 +3450,7 @@ async function handleUserInput(
         itemID,
         sessionId: session.sessionId,
         sessionTitle: session.threadTitle,
+        paperTitle: itemTitle,
         question,
         selectedText,
         annotationIDs: draft?.annotationIDs,
