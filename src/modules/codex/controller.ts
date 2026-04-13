@@ -34,7 +34,7 @@ export async function handleCodexQuestion(params: {
     annotationIDs: params.annotationIDs,
     useResume: params.useResume,
     resumeSessionId: params.resumeSessionId,
-  } as any);
+  });
 
   const result = await startCodexRunForQuestion({
     itemID: params.itemID,

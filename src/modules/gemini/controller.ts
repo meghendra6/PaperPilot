@@ -1,7 +1,14 @@
 import { addMessage, setMessageContent } from "../components/ChatMessage";
 import { sanitizeAssistantText } from "../message/assistantOutput";
 import { sessionHistoryService } from "../session/sessionHistoryService";
+import { clearGeminiPollerForItem } from "./poller";
+import { setGeminiRunStateForItem, clearGeminiRunStateForItem } from "./runState";
 import { startGeminiRunForQuestion, readGeminiRunProgress } from "./runner";
+import { stopGeminiRunSilently } from "./stopRun";
+
+declare const addon: any;
+
+export { stopGeminiRunSilently } from "./stopRun";
 
 export async function handleGeminiQuestion(params: {
   itemID: number;
@@ -54,6 +61,10 @@ export async function handleGeminiQuestion(params: {
   const assistantMessage = params.suppressChatMessages
     ? undefined
     : addMessage(params.chatMessages, "Starting Gemini CLI run…", "ai");
+  clearGeminiPollerForItem(params.itemID);
+  setGeminiRunStateForItem(params.itemID, {
+    processId: result.processId,
+  });
 
   const poller = setInterval(async () => {
     const progress = await readGeminiRunProgress({
@@ -73,7 +84,7 @@ export async function handleGeminiQuestion(params: {
       return;
     }
 
-    clearInterval(poller);
+    clearGeminiPollerForItem(params.itemID);
 
     const assistantText = sanitizeAssistantText(
       progress.parsedOutput ||
@@ -100,5 +111,8 @@ export async function handleGeminiQuestion(params: {
       success,
       assistantText,
     });
+    clearGeminiRunStateForItem(params.itemID);
   }, 800);
+
+  addon.data.geminiRunPollers?.set(params.itemID, poller);
 }

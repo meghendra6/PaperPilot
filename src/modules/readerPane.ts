@@ -45,7 +45,7 @@ import {
   retryLastCodexQuestion,
   stopCodexRunSilently,
 } from "./codex/controller";
-import { handleGeminiQuestion } from "./gemini/controller";
+import { handleGeminiQuestion, stopGeminiRunSilently } from "./gemini/controller";
 import { shouldEnableAutoHighlight } from "./autoHighlight/status";
 import { runAutoHighlightWorkflow } from "./autoHighlight/workflow";
 import {
@@ -466,6 +466,9 @@ export function registerPaperPilotPaneSection() {
 
         const clearSessionRuntimeState = async () => {
           await stopCodexRunSilently({
+            itemID: item.id,
+          });
+          await stopGeminiRunSilently({
             itemID: item.id,
           });
           clearReaderActionDraft();
