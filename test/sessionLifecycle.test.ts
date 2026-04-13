@@ -436,6 +436,75 @@ test("SessionHistoryService persists a late assistant turn back to the originati
   }
 });
 
+test("SessionHistoryService does not persist late assistant messages for inactive sessions in prompts-only mode", async () => {
+  const { globals, repository, service } = createService({
+    saveDocumentSessions: true,
+    privacyStoreLocalHistory: true,
+    privacySavePromptsOnly: true,
+    privacySaveResponses: true,
+  });
+
+  try {
+    const originalSession = service.ensureDraftSession({
+      itemID: 70231,
+      mode: "codex_cli",
+      title: "Task 3 paper",
+    });
+    await service.persistUserMessage({
+      itemID: 70231,
+      mode: "codex_cli",
+      paperTitle: "Task 3 paper",
+      text: "Original session question",
+    });
+
+    const activeDraft = await service.startNewSessionDraft({
+      itemID: 70231,
+      mode: "gemini_cli",
+      paperTitle: "Task 3 paper",
+    });
+    await service.persistUserMessage({
+      itemID: 70231,
+      mode: "gemini_cli",
+      paperTitle: "Task 3 paper",
+      text: "New active session question",
+    });
+
+    await service.persistAssistantTurn({
+      itemID: 70231,
+      sessionId: originalSession.sessionId,
+      mode: "codex_cli",
+      paperTitle: "Task 3 paper",
+      assistantText: "Late completion for the original session",
+      success: true,
+      resumeSessionId: "codex-thread-late-prompts-only",
+    });
+
+    const originalSnapshot = await repository.readSessionSnapshot(
+      70231,
+      originalSession.sessionId,
+    );
+    const activeSnapshot = await repository.readSessionSnapshot(
+      70231,
+      activeDraft.sessionId,
+    );
+    assert.ok(originalSnapshot);
+    assert.ok(originalSnapshot.messages);
+    assert.equal(originalSnapshot.messages.length, 1);
+    assert.equal(originalSnapshot.messages[0].text, "Original session question");
+    assert.equal(
+      originalSnapshot.lastCodexSessionID,
+      "codex-thread-late-prompts-only",
+    );
+
+    assert.ok(activeSnapshot);
+    assert.ok(activeSnapshot.messages);
+    assert.equal(activeSnapshot.messages.length, 1);
+    assert.equal(activeSnapshot.messages[0].text, "New active session question");
+  } finally {
+    globals.restore();
+  }
+});
+
 test("sessionStore.getOrCreate preserves a renamed title during rerender-like access", async () => {
   const { globals, service } = createService({
     saveDocumentSessions: true,

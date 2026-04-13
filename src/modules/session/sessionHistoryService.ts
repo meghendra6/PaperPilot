@@ -6,6 +6,7 @@ import type { EngineMode } from "../ai/types";
 import { buildSessionTitle } from "./sessionTitle";
 import { sanitizeAssistantText } from "../message/assistantOutput";
 import type { MessageRecord } from "../message/types";
+import { resolveSessionHistoryPrefs } from "./historyPrefs";
 
 export interface SessionHistoryServiceOptions {
   repository?: SessionHistoryRepository;
@@ -208,17 +209,20 @@ export class SessionHistoryService {
       }
 
       const messages = [...(snapshot.messages ?? [])];
-      messages.push(
-        buildAssistantMessageRecord({
-          sessionId: params.sessionId,
-          createdAt,
-          assistantText: params.assistantText,
-          mode: params.mode,
-          success: params.success,
-          rawEvent: params.rawEvent,
-          index: messages.length,
-        }),
-      );
+      const prefs = resolveSessionHistoryPrefs();
+      if (prefs.persistAssistantMessages) {
+        messages.push(
+          buildAssistantMessageRecord({
+            sessionId: params.sessionId,
+            createdAt,
+            assistantText: params.assistantText,
+            mode: params.mode,
+            success: params.success,
+            rawEvent: params.rawEvent,
+            index: messages.length,
+          }),
+        );
+      }
       const updatedSnapshot = {
         ...snapshot,
         updatedAt: createdAt,
