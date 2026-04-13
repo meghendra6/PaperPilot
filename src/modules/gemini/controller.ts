@@ -37,6 +37,7 @@ export async function handleGeminiQuestion(params: {
     }
     await sessionHistoryService.persistAssistantTurn({
       itemID: params.itemID,
+      sessionId: params.sessionId,
       mode: "gemini_cli",
       paperTitle: params.paperTitle || params.sessionTitle,
       assistantText: result.error,
@@ -86,6 +87,7 @@ export async function handleGeminiQuestion(params: {
     const success = progress.exitCode === "0";
     await sessionHistoryService.persistAssistantTurn({
       itemID: params.itemID,
+      sessionId: params.sessionId,
       mode: "gemini_cli",
       paperTitle: params.paperTitle || params.sessionTitle,
       assistantText,

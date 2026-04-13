@@ -234,6 +234,8 @@
   border-radius: var(--pp-radius-md);
   background: var(--pp-bg-secondary);
   box-shadow: var(--pp-shadow-sm);
+  max-height: 280px;
+  overflow-y: auto;
 }
 
 .pp-session-history__header,

@@ -4,7 +4,11 @@ import { sessionHistoryService } from "../session/sessionHistoryService";
 import { clearCodexPollerForItem } from "./poller";
 import { buildCodexRunState, setCodexRunStateForItem } from "./runState";
 import { readCodexRunProgress, startCodexRunForQuestion } from "./runner";
+import { stopCodexRunSilently } from "./stopRun";
 import { classifyCodexLoginFailure } from "./statusClassification";
+
+declare const addon: any;
+export { stopCodexRunSilently } from "./stopRun";
 
 export async function handleCodexQuestion(params: {
   itemID: number;
@@ -50,6 +54,7 @@ export async function handleCodexQuestion(params: {
     }
     await sessionHistoryService.persistAssistantTurn({
       itemID: params.itemID,
+      sessionId: params.sessionId,
       mode: "codex_cli",
       paperTitle: params.paperTitle || params.sessionTitle,
       assistantText: result.error,
@@ -149,6 +154,7 @@ export async function handleCodexQuestion(params: {
 
     await sessionHistoryService.persistAssistantTurn({
       itemID: params.itemID,
+      sessionId: params.sessionId,
       mode: "codex_cli",
       paperTitle: params.paperTitle || params.sessionTitle,
       assistantText,
@@ -212,15 +218,10 @@ export async function cancelCodexRun(params: {
   itemID: number;
   chatMessages: HTMLElement;
 }) {
-  const runState = addon.data.codexRunStates?.get(params.itemID);
-  clearCodexPollerForItem(params.itemID);
-  const pid = runState?.processId;
-  if (pid) {
-    await Zotero.Utilities.Internal.exec("/bin/zsh", [
-      "-lc",
-      `kill ${pid} >/dev/null 2>&1 || true`,
-    ]);
-  }
+  const runState = await stopCodexRunSilently({
+    itemID: params.itemID,
+    clearRunState: false,
+  });
   if (runState) {
     setCodexRunStateForItem(params.itemID, {
       ...runState,

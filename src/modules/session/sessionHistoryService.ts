@@ -4,6 +4,8 @@ import { sessionStore } from "./sessionStore";
 import { messageStore } from "../message/messageStore";
 import type { EngineMode } from "../ai/types";
 import { buildSessionTitle } from "./sessionTitle";
+import { sanitizeAssistantText } from "../message/assistantOutput";
+import type { MessageRecord } from "../message/types";
 
 export interface SessionHistoryServiceOptions {
   repository?: SessionHistoryRepository;
@@ -20,6 +22,44 @@ function getAddonData() {
 
 function trimSessionTitle(title: string) {
   return title.trim();
+}
+
+function buildAssistantMessageRecord(params: {
+  sessionId: string;
+  createdAt: string;
+  assistantText: string;
+  mode: EngineMode;
+  success: boolean;
+  rawEvent?: string;
+  index: number;
+}): MessageRecord {
+  return {
+    id: `${params.sessionId}-${Date.parse(params.createdAt)}-${params.index}`,
+    role: "assistant",
+    text: sanitizeAssistantText(params.assistantText),
+    createdAt: params.createdAt,
+    sourceMode: params.mode,
+    status: params.success ? "done" : "error",
+    ...(params.rawEvent ? { rawEvent: params.rawEvent } : {}),
+  };
+}
+
+function applyResumeMetadata<T extends {
+  lastCodexSessionID?: string;
+  lastGeminiSessionID?: string;
+}>(target: T, params: {
+  mode: EngineMode;
+  success: boolean;
+  resumeSessionId?: string;
+}) {
+  if (params.mode === "codex_cli" && params.success) {
+    target.lastCodexSessionID =
+      params.resumeSessionId || target.lastCodexSessionID || "last";
+  }
+  if (params.mode === "gemini_cli" && params.success) {
+    target.lastGeminiSessionID =
+      params.resumeSessionId || target.lastGeminiSessionID || "latest";
+  }
 }
 
 function shouldPreserveSessionTitle(
@@ -147,6 +187,7 @@ export class SessionHistoryService {
 
   async persistAssistantTurn(params: {
     itemID: number;
+    sessionId: string;
     mode: EngineMode;
     paperTitle: string;
     assistantText: string;
@@ -155,8 +196,42 @@ export class SessionHistoryService {
     resumeSessionId?: string;
   }) {
     const session = sessionStore.get(params.itemID);
-    if (!session) {
-      return undefined;
+    const createdAt = this.now().toISOString();
+
+    if (!session || session.sessionId !== params.sessionId) {
+      const snapshot = await this.repository.readSessionSnapshot(
+        params.itemID,
+        params.sessionId,
+      );
+      if (!snapshot) {
+        return undefined;
+      }
+
+      const messages = [...(snapshot.messages ?? [])];
+      messages.push(
+        buildAssistantMessageRecord({
+          sessionId: params.sessionId,
+          createdAt,
+          assistantText: params.assistantText,
+          mode: params.mode,
+          success: params.success,
+          rawEvent: params.rawEvent,
+          index: messages.length,
+        }),
+      );
+      const updatedSnapshot = {
+        ...snapshot,
+        updatedAt: createdAt,
+        lastMode: params.mode,
+        messages,
+      };
+      applyResumeMetadata(updatedSnapshot, params);
+      await this.repository.saveSessionSnapshot({
+        paperItemID: params.itemID,
+        paperTitle: params.paperTitle,
+        snapshot: updatedSnapshot,
+      });
+      return updatedSnapshot;
     }
 
     messageStore.append(session.sessionId, {
@@ -172,14 +247,7 @@ export class SessionHistoryService {
       params.mode,
       session.threadTitle,
       (existing) => {
-        if (params.mode === "codex_cli" && params.success) {
-          existing.lastCodexSessionID =
-            params.resumeSessionId || existing.lastCodexSessionID || "last";
-        }
-        if (params.mode === "gemini_cli" && params.success) {
-          existing.lastGeminiSessionID =
-            params.resumeSessionId || existing.lastGeminiSessionID || "latest";
-        }
+        applyResumeMetadata(existing, params);
       },
     );
 

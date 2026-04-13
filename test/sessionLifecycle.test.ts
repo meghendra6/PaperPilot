@@ -12,6 +12,7 @@ import {
   type SessionHistorySnapshot,
 } from "../src/modules/session/historyTypes";
 import { SessionHistoryService } from "../src/modules/session/sessionHistoryService";
+import { sessionStore } from "../src/modules/session/sessionStore";
 
 class MemoryFileOps implements SessionHistoryFileOps {
   files = new Map<string, string>();
@@ -360,6 +361,118 @@ test("SessionHistoryService keeps an explicit rename to the paper title after re
     const saved = await repository.readSessionSnapshot(7022, session.sessionId);
     assert.ok(saved);
     assert.equal(saved.title, "Task 3 paper");
+  } finally {
+    globals.restore();
+  }
+});
+
+test("SessionHistoryService persists a late assistant turn back to the originating saved session", async () => {
+  const { globals, repository, service } = createService({
+    saveDocumentSessions: true,
+    privacyStoreLocalHistory: true,
+    privacySavePromptsOnly: false,
+    privacySaveResponses: true,
+  });
+
+  try {
+    const originalSession = service.ensureDraftSession({
+      itemID: 7023,
+      mode: "codex_cli",
+      title: "Task 3 paper",
+    });
+    await service.persistUserMessage({
+      itemID: 7023,
+      mode: "codex_cli",
+      paperTitle: "Task 3 paper",
+      text: "Original session question",
+    });
+
+    const activeDraft = await service.startNewSessionDraft({
+      itemID: 7023,
+      mode: "gemini_cli",
+      paperTitle: "Task 3 paper",
+    });
+    await service.persistUserMessage({
+      itemID: 7023,
+      mode: "gemini_cli",
+      paperTitle: "Task 3 paper",
+      text: "New active session question",
+    });
+
+    await service.persistAssistantTurn({
+      itemID: 7023,
+      sessionId: originalSession.sessionId,
+      mode: "codex_cli",
+      paperTitle: "Task 3 paper",
+      assistantText: "Late completion for the original session",
+      success: true,
+      resumeSessionId: "codex-thread-late",
+    });
+
+    const originalSnapshot = await repository.readSessionSnapshot(
+      7023,
+      originalSession.sessionId,
+    );
+    const activeSnapshot = await repository.readSessionSnapshot(
+      7023,
+      activeDraft.sessionId,
+    );
+    assert.ok(originalSnapshot);
+    assert.ok(originalSnapshot.messages);
+    assert.equal(originalSnapshot.messages.length, 2);
+    assert.equal(
+      originalSnapshot.messages[1].text,
+      "Late completion for the original session",
+    );
+    assert.equal(originalSnapshot.lastCodexSessionID, "codex-thread-late");
+
+    assert.ok(activeSnapshot);
+    assert.ok(activeSnapshot.messages);
+    assert.equal(activeSnapshot.messages.length, 1);
+    assert.equal(activeSnapshot.messages[0].text, "New active session question");
+    assert.equal(sessionStore.get(7023)?.sessionId, activeDraft.sessionId);
+  } finally {
+    globals.restore();
+  }
+});
+
+test("sessionStore.getOrCreate preserves a renamed title during rerender-like access", async () => {
+  const { globals, service } = createService({
+    saveDocumentSessions: true,
+    privacyStoreLocalHistory: true,
+    privacySavePromptsOnly: false,
+    privacySaveResponses: true,
+  });
+
+  try {
+    const session = service.ensureDraftSession({
+      itemID: 7024,
+      mode: "codex_cli",
+      title: "Task 3 paper",
+    });
+    messageStore.append(session.sessionId, {
+      role: "user",
+      text: "Original first question",
+      sourceMode: "codex_cli",
+      status: "done",
+    });
+    await service.persistActiveSession({
+      itemID: 7024,
+      paperTitle: "Task 3 paper",
+    });
+    await service.renameSavedSession({
+      itemID: 7024,
+      sessionId: session.sessionId,
+      title: "Renamed session",
+    });
+
+    const rerenderSession = sessionStore.getOrCreate(
+      7024,
+      "gemini_cli",
+      "Task 3 paper",
+    );
+
+    assert.equal(rerenderSession.threadTitle, "Renamed session");
   } finally {
     globals.restore();
   }

@@ -14,7 +14,6 @@ import { getProviderDescriptorForItem } from "./ai/providerRegistry";
 import type { EngineMode } from "./ai/types";
 import {
   buildCodexRunState,
-  clearCodexRunStateForItem,
   getCodexRunStateForItem,
   setCodexRunStateForItem,
 } from "./codex/runState";
@@ -44,6 +43,7 @@ import {
   cancelCodexRun,
   handleCodexQuestion,
   retryLastCodexQuestion,
+  stopCodexRunSilently,
 } from "./codex/controller";
 import { handleGeminiQuestion } from "./gemini/controller";
 import { shouldEnableAutoHighlight } from "./autoHighlight/status";
@@ -464,15 +464,15 @@ export function registerPaperPilotPaneSection() {
         let sessionHistoryOpen = false;
         let renamingSessionId: string | undefined;
 
-        const clearSessionRuntimeState = () => {
-          clearCodexPollerForItem(item.id);
-          clearCodexRunStateForItem(item.id);
+        const clearSessionRuntimeState = async () => {
+          await stopCodexRunSilently({
+            itemID: item.id,
+          });
           clearReaderActionDraft();
           renderStreamingIndicator(streamingIndicator, false);
         };
 
-        const clearBlankSessionState = () => {
-          clearSessionRuntimeState();
+        const resetBlankSessionState = () => {
           setPaperArtifactState(item.id, {
             running: false,
             status: "",
@@ -481,6 +481,11 @@ export function registerPaperPilotPaneSection() {
           addon.data.relatedRecommendationStates?.delete(item.id);
           clearMasteryState(item.id);
           input.value = "";
+        };
+
+        const clearBlankSessionState = async () => {
+          await clearSessionRuntimeState();
+          resetBlankSessionState();
         };
 
         const rerenderPane = async () => {
@@ -561,10 +566,10 @@ export function registerPaperPilotPaneSection() {
             deleteAllButton.className = "pp-btn pp-btn--ghost";
             deleteAllButton.textContent = "Delete all";
             deleteAllButton.addEventListener("click", async () => {
+              await clearBlankSessionState();
               await sessionHistoryService.deleteAllSavedSessions({
                 itemID: item.id,
               });
-              clearBlankSessionState();
               sessionHistoryOpen = false;
               await rerenderPane();
             });
@@ -687,7 +692,7 @@ export function registerPaperPilotPaneSection() {
             openButton.textContent = "Open";
             openButton.disabled = currentSessionId === entry.sessionId;
             openButton.addEventListener("click", async () => {
-              clearSessionRuntimeState();
+              await clearSessionRuntimeState();
               await sessionHistoryService.openSavedSession({
                 itemID: item.id,
                 sessionId: entry.sessionId,
@@ -715,12 +720,15 @@ export function registerPaperPilotPaneSection() {
             deleteButton.textContent = "Delete";
             deleteButton.addEventListener("click", async () => {
               const deletingCurrent = addon.data.currentSessionId === entry.sessionId;
+              if (deletingCurrent) {
+                await clearSessionRuntimeState();
+              }
               await sessionHistoryService.deleteSavedSession({
                 itemID: item.id,
                 sessionId: entry.sessionId,
               });
               if (deletingCurrent) {
-                clearBlankSessionState();
+                resetBlankSessionState();
               }
               renamingSessionId = undefined;
               await rerenderPane();
@@ -1782,12 +1790,13 @@ export function registerPaperPilotPaneSection() {
 
         newSessionButton.addEventListener("click", async () => {
           const mode = getModeForItem(item.id);
+          await clearSessionRuntimeState();
           await sessionHistoryService.startNewSessionDraft({
             itemID: item.id,
             mode,
             paperTitle: String(item.getField("title") || ""),
           });
-          clearBlankSessionState();
+          resetBlankSessionState();
           sessionHistoryOpen = false;
           renamingSessionId = undefined;
           await rerenderPane();

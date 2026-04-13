@@ -23,9 +23,6 @@ class SessionStore {
     const existing = this.sessions.get(key);
     if (existing) {
       existing.mode = mode;
-      if (title) {
-        existing.threadTitle = title;
-      }
       return existing;
     }
 
