@@ -291,6 +291,22 @@ export class SessionHistoryRepository {
     return recoveredEntries;
   }
 
+  private async loadReadableIndexSessions(
+    itemID: number,
+    indexSessions: SessionHistoryListEntry[],
+  ) {
+    const readableEntries: SessionHistoryListEntry[] = [];
+
+    for (const entry of indexSessions) {
+      const snapshot = await this.readSessionSnapshot(itemID, entry.sessionId);
+      if (snapshot) {
+        readableEntries.push(toSessionEntry(snapshot));
+      }
+    }
+
+    return readableEntries;
+  }
+
   private mergeRecoveredSessions(
     indexSessions: SessionHistoryListEntry[],
     recoveredSessions: SessionHistoryListEntry[],
@@ -332,9 +348,17 @@ export class SessionHistoryRepository {
       };
     }
 
+    const readableIndexSessions = await this.loadReadableIndexSessions(
+      itemID,
+      index.sessions,
+    );
+
     return this.normalizeIndex({
       ...index,
-      sessions: this.mergeRecoveredSessions(index.sessions, recoveredSessions),
+      sessions: this.mergeRecoveredSessions(
+        readableIndexSessions,
+        recoveredSessions,
+      ),
     });
   }
 

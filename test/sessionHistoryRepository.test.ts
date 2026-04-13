@@ -330,6 +330,136 @@ test("SessionHistoryRepository recovers valid snapshots when index.json is malfo
   );
 });
 
+test("SessionHistoryRepository prunes index rows whose snapshot is missing", async () => {
+  const fileOps = new MemoryFileOps();
+  const repo = new SessionHistoryRepository({
+    rootDir: "/session-history",
+    fileOps,
+  });
+  const validSnapshot = buildSnapshot();
+  const missingSnapshotId = "paper-42-session-missing";
+
+  fileOps.files.set(
+    repo.getPaperIndexPath(42),
+    JSON.stringify(
+      {
+        storageVersion: SESSION_HISTORY_STORAGE_VERSION,
+        paperItemID: 42,
+        paperTitle: "Attention Is All You Need",
+        sessions: [
+          {
+            storageVersion: SESSION_HISTORY_STORAGE_VERSION,
+            sessionId: validSnapshot.sessionId,
+            title: validSnapshot.title,
+            createdAt: validSnapshot.createdAt,
+            updatedAt: validSnapshot.updatedAt,
+            messageCount: 2,
+            lastMode: "codex_cli",
+            hasArtifacts: true,
+            hasRecommendations: true,
+            hasMasteryState: true,
+          },
+          {
+            storageVersion: SESSION_HISTORY_STORAGE_VERSION,
+            sessionId: missingSnapshotId,
+            title: "Dead session",
+            createdAt: "2026-04-14T00:05:00.000Z",
+            updatedAt: "2026-04-14T00:06:00.000Z",
+            messageCount: 1,
+            lastMode: "gemini_cli",
+            hasArtifacts: false,
+            hasRecommendations: false,
+            hasMasteryState: false,
+          },
+        ],
+      },
+      null,
+      2,
+    ),
+  );
+  fileOps.files.set(
+    repo.getSessionSnapshotPath(42, validSnapshot.sessionId),
+    JSON.stringify(validSnapshot),
+  );
+
+  const index = await repo.readPaperIndex(42);
+  assert.deepEqual(
+    index.sessions.map((entry) => entry.sessionId),
+    [validSnapshot.sessionId],
+  );
+  assert.deepEqual(
+    await repo.listSessions(42),
+    index.sessions,
+  );
+});
+
+test("SessionHistoryRepository prunes index rows whose snapshot is corrupt", async () => {
+  const fileOps = new MemoryFileOps();
+  const repo = new SessionHistoryRepository({
+    rootDir: "/session-history",
+    fileOps,
+  });
+  const validSnapshot = buildSnapshot();
+  const corruptSnapshotId = "paper-42-session-corrupt";
+
+  fileOps.files.set(
+    repo.getPaperIndexPath(42),
+    JSON.stringify(
+      {
+        storageVersion: SESSION_HISTORY_STORAGE_VERSION,
+        paperItemID: 42,
+        paperTitle: "Attention Is All You Need",
+        sessions: [
+          {
+            storageVersion: SESSION_HISTORY_STORAGE_VERSION,
+            sessionId: validSnapshot.sessionId,
+            title: validSnapshot.title,
+            createdAt: validSnapshot.createdAt,
+            updatedAt: validSnapshot.updatedAt,
+            messageCount: 2,
+            lastMode: "codex_cli",
+            hasArtifacts: true,
+            hasRecommendations: true,
+            hasMasteryState: true,
+          },
+          {
+            storageVersion: SESSION_HISTORY_STORAGE_VERSION,
+            sessionId: corruptSnapshotId,
+            title: "Corrupt session",
+            createdAt: "2026-04-14T00:05:00.000Z",
+            updatedAt: "2026-04-14T00:06:00.000Z",
+            messageCount: 1,
+            lastMode: "gemini_cli",
+            hasArtifacts: false,
+            hasRecommendations: false,
+            hasMasteryState: false,
+          },
+        ],
+      },
+      null,
+      2,
+    ),
+  );
+  fileOps.files.set(
+    repo.getSessionSnapshotPath(42, validSnapshot.sessionId),
+    JSON.stringify(validSnapshot),
+  );
+  fileOps.files.set(
+    repo.getSessionSnapshotPath(42, corruptSnapshotId),
+    "{ not valid json",
+  );
+
+  const index = await repo.readPaperIndex(42);
+  assert.deepEqual(
+    index.sessions.map((entry) => entry.sessionId),
+    [validSnapshot.sessionId],
+  );
+  assert.deepEqual(
+    await repo.listSessions(42),
+    index.sessions,
+  );
+});
+
 test("SessionHistoryRepository uses platform-safe path joining", () => {
   const previousPathUtils = (globalThis as { PathUtils?: unknown }).PathUtils;
   (globalThis as { PathUtils?: unknown }).PathUtils = {
