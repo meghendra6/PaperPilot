@@ -1,5 +1,3 @@
-import * as path from "node:path";
-
 import {
   SESSION_HISTORY_STORAGE_VERSION,
   type SessionHistoryFileOps,
@@ -33,7 +31,19 @@ function joinPath(...parts: string[]) {
     return pathUtils.join(...parts);
   }
 
-  return path.join(...parts);
+  const separator = parts.some((part) => part.includes("\\")) ? "\\" : "/";
+  const normalizedParts = parts
+    .filter((part) => part.length > 0)
+    .map((part, index) => {
+      if (index === 0) {
+        return part.replace(/[\\/]+$/g, "");
+      }
+
+      return part.replace(/^[\\/]+|[\\/]+$/g, "");
+    })
+    .filter((part) => part.length > 0);
+
+  return normalizedParts.join(separator);
 }
 
 function getFileName(filePath: string) {
