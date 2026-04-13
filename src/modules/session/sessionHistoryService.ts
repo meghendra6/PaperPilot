@@ -3,6 +3,7 @@ import { sessionHistoryRepository, SessionHistoryRepository } from "./sessionHis
 import { sessionStore } from "./sessionStore";
 import { messageStore } from "../message/messageStore";
 import type { EngineMode } from "../ai/types";
+import { buildSessionTitle } from "./sessionTitle";
 
 export interface SessionHistoryServiceOptions {
   repository?: SessionHistoryRepository;
@@ -19,6 +20,24 @@ function getAddonData() {
 
 function trimSessionTitle(title: string) {
   return title.trim();
+}
+
+function shouldPreserveSessionTitle(
+  sessionTitle: string | undefined,
+  createdAt: string,
+  paperTitle: string,
+) {
+  const trimmedSessionTitle = trimSessionTitle(sessionTitle || "");
+  if (!trimmedSessionTitle) {
+    return false;
+  }
+
+  const trimmedPaperTitle = trimSessionTitle(paperTitle);
+  if (trimmedSessionTitle === trimmedPaperTitle) {
+    return false;
+  }
+
+  return trimmedSessionTitle !== buildSessionTitle("", new Date(createdAt));
 }
 
 export class SessionHistoryService {
@@ -57,13 +76,24 @@ export class SessionHistoryService {
       return undefined;
     }
 
-    const snapshot = captureSessionSnapshot({
+    const capturedSnapshot = captureSessionSnapshot({
       session,
       now: this.now(),
     });
-    if (!snapshot) {
+    if (!capturedSnapshot) {
       return undefined;
     }
+
+    const snapshot = shouldPreserveSessionTitle(
+      session.threadTitle,
+      session.createdAt,
+      params.paperTitle,
+    )
+      ? {
+          ...capturedSnapshot,
+          title: trimSessionTitle(session.threadTitle),
+        }
+      : capturedSnapshot;
 
     sessionStore.set({
       ...session,
@@ -88,7 +118,7 @@ export class SessionHistoryService {
     paperTitle: string;
     text: string;
   }) {
-    const session = sessionStore.touch(params.itemID, params.mode, params.paperTitle);
+    const session = sessionStore.touch(params.itemID, params.mode);
     messageStore.append(session.sessionId, {
       role: "user",
       text: params.text,
