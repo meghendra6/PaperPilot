@@ -201,6 +201,17 @@ npm test
 npm run build
 ```
 
+## 建立 GitHub 發布
+
+發布流程以標籤為準。請務必讓套件版本與標籤保持一致：
+
+1. 在 `main` 上把 `package.json` 和 `package-lock.json` 更新到目標發布版本。
+2. 將這次版本更新合併到 `main`。
+3. 建立並推送相符的標籤，例如 `git tag v0.0.3 && git push origin v0.0.3`。
+4. Release 工作流程現在會在發布前執行 `scripts/check-release-tag-version.mjs`。如果 ref 名稱與 `v${package.json.version}` 不完全一致，會立即失敗。
+
+如果使用 `workflow_dispatch`，也必須從相符的發布標籤 ref 執行。分支 ref 會被同一個檢查拒絕。
+
 ## 建置輸出
 
 建置成功後，會在 `build/` 中產生 Zotero 外掛套件。

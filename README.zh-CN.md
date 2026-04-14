@@ -196,6 +196,17 @@ npm test
 npm run build
 ```
 
+## 创建 GitHub 发布
+
+发布流程以标签为准。请始终让包版本与标签保持一致：
+
+1. 在 `main` 上把 `package.json` 和 `package-lock.json` 更新到目标发布版本。
+2. 将这次版本更新合并到 `main`。
+3. 创建并推送匹配的标签，例如 `git tag v0.0.3 && git push origin v0.0.3`。
+4. Release 工作流现在会在发布前运行 `scripts/check-release-tag-version.mjs`。如果 ref 名称与 `v${package.json.version}` 不完全一致，会立即失败。
+
+如果使用 `workflow_dispatch`，也必须从匹配的发布标签 ref 运行。分支 ref 会被同一个校验拒绝。
+
 ## 构建输出
 
 构建成功后，会在 `build/` 中生成 Zotero 插件包。
