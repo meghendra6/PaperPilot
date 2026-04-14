@@ -25,50 +25,6 @@ function getGlobalPathUtils() {
     .PathUtils;
 }
 
-function getFallbackPathSeparator(parts: string[]) {
-  return parts.some((part) => part.includes("\\")) ? "\\" : "/";
-}
-
-function joinPathWithoutNode(...parts: string[]) {
-  const nonEmptyParts = parts.filter((part) => part.length > 0);
-  if (!nonEmptyParts.length) {
-    return "";
-  }
-
-  const separator = getFallbackPathSeparator(nonEmptyParts);
-  const segments: string[] = [];
-  let prefix = "";
-
-  for (const [index, originalPart] of nonEmptyParts.entries()) {
-    let part = originalPart;
-
-    if (index === 0) {
-      const driveMatch = part.match(/^([A-Za-z]:)(.*)$/);
-      if (driveMatch) {
-        prefix = driveMatch[1];
-        part = driveMatch[2] || "";
-        if (part.startsWith("/") || part.startsWith("\\")) {
-          prefix = `${prefix}${separator}`;
-          part = part.replace(/^[\\/]+/, "");
-        }
-      } else if (part.startsWith("/") || part.startsWith("\\")) {
-        prefix = separator;
-        part = part.replace(/^[\\/]+/, "");
-      }
-    }
-
-    segments.push(...part.split(/[\\/]+/).filter(Boolean));
-  }
-
-  if (!segments.length) {
-    return prefix;
-  }
-
-  const normalizedPrefix =
-    prefix && !prefix.endsWith(separator) ? `${prefix}${separator}` : prefix;
-  return `${normalizedPrefix}${segments.join(separator)}`;
-}
-
 function joinPath(...parts: string[]) {
   const pathUtils = getGlobalPathUtils();
   if (pathUtils?.join) {
