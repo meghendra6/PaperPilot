@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import * as assert from "node:assert/strict";
+import { build } from "esbuild";
 
 import {
   SESSION_HISTORY_STORAGE_VERSION,
@@ -483,6 +484,40 @@ test("SessionHistoryRepository uses platform-safe path joining", () => {
   } finally {
     (globalThis as { PathUtils?: unknown }).PathUtils = previousPathUtils;
   }
+});
+
+test("SessionHistoryRepository falls back to Windows separators without PathUtils", () => {
+  const previousPathUtils = (globalThis as { PathUtils?: unknown }).PathUtils;
+  delete (globalThis as { PathUtils?: unknown }).PathUtils;
+
+  try {
+    const repo = new SessionHistoryRepository({
+      rootDir: "C:\\session-history",
+      fileOps: new MemoryFileOps(),
+    });
+
+    assert.equal(
+      repo.getPaperIndexPath(42),
+      "C:\\session-history\\papers\\42\\index.json",
+    );
+    assert.equal(
+      repo.getSessionSnapshotPath(42, "paper-42-session-a"),
+      "C:\\session-history\\papers\\42\\sessions\\paper-42-session-a.json",
+    );
+  } finally {
+    (globalThis as { PathUtils?: unknown }).PathUtils = previousPathUtils;
+  }
+});
+
+test("SessionHistoryRepository bundles without Node builtin path imports", async () => {
+  await assert.doesNotReject(async () => {
+    await build({
+      entryPoints: ["src/modules/session/sessionHistoryRepository.ts"],
+      bundle: true,
+      write: false,
+      logLevel: "silent",
+    });
+  });
 });
 
 test("SessionHistoryRepository deletes the snapshot and removes the index entry", async () => {
