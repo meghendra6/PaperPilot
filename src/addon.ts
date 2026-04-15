@@ -38,6 +38,7 @@ class Addon {
         annotationIDs?: string[];
         useResume: boolean;
         resumeSessionId?: string;
+        suppressChatMessages?: boolean;
       }
     >;
     paperIndexStore?: Map<string, { hash: string; chunks: string[] }>;

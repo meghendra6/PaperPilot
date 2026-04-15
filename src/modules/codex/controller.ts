@@ -34,6 +34,7 @@ export async function handleCodexQuestion(params: {
     annotationIDs: params.annotationIDs,
     useResume: params.useResume,
     resumeSessionId: params.resumeSessionId,
+    suppressChatMessages: params.suppressChatMessages,
   });
 
   const result = await startCodexRunForQuestion({
@@ -211,6 +212,7 @@ export async function retryLastCodexQuestion(params: {
     selectedText: last.selectedText,
     annotationIDs: last.annotationIDs,
     useResume: last.useResume,
+    suppressChatMessages: last.suppressChatMessages,
     chatMessages: params.chatMessages,
     streamingIndicator: params.streamingIndicator,
   });
