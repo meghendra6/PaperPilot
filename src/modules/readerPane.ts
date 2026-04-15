@@ -2955,7 +2955,7 @@ function confirmDestructive(
   if (win && typeof win.confirm === "function") {
     return win.confirm(`${title}\n\n${message}`);
   }
-  return true;
+  return false;
 }
 
 function renderHelpState(chatMessages: HTMLElement, response: string) {
