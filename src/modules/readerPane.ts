@@ -1006,9 +1006,54 @@ export function registerPaperPilotPaneSection() {
           }
         });
 
+        const closeSessionHistoryPopover = async (
+          options?: { restoreFocus?: boolean },
+        ) => {
+          sessionHistoryOpen = false;
+          renamingSessionId = undefined;
+          await renderSessionHistory();
+          if (options?.restoreFocus) {
+            pastSessionsButton.focus();
+          }
+        };
+
+        const installPopoverDismissHandlers = () => {
+          const ownerDoc = pastSessionsButton.ownerDocument;
+          const onDocumentClick = (event: MouseEvent) => {
+            const target = event.target as Node | null;
+            if (!target) {
+              return;
+            }
+            if (
+              sessionHistoryPanel.contains(target) ||
+              pastSessionsButton.contains(target)
+            ) {
+              return;
+            }
+            void closeSessionHistoryPopover();
+          };
+          const onKeyDown = (event: KeyboardEvent) => {
+            if (event.key === "Escape") {
+              event.preventDefault();
+              void closeSessionHistoryPopover({ restoreFocus: true });
+            }
+          };
+
+          ownerDoc.addEventListener("mousedown", onDocumentClick, true);
+          ownerDoc.addEventListener("keydown", onKeyDown, true);
+
+          dismissPopoverHandlers = () => {
+            ownerDoc.removeEventListener("mousedown", onDocumentClick, true);
+            ownerDoc.removeEventListener("keydown", onKeyDown, true);
+          };
+        };
+
         pastSessionsButton.addEventListener("click", async () => {
           sessionHistoryOpen = !sessionHistoryOpen;
           renamingSessionId = undefined;
+          if (sessionHistoryOpen) {
+            installPopoverDismissHandlers();
+          }
           await renderSessionHistory();
         });
 
