@@ -38,6 +38,8 @@ Important areas to understand before making changes:
 - `src/modules/paperTools.ts` — contributions/limitations/follow-ups prompts and parsing
 - `src/modules/relatedRecommendations.ts` — grouped paper recommendation flow
 - `src/modules/paperCompare.ts` — bounded paper comparison flow
+- `src/modules/comprehensionCheck/` — Paper Mastery prompts, parser, and session state
+- `src/modules/session/` — paper-scoped session history, snapshot apply/capture, silent-turn filter
 - `test/` — regression tests for prompts, parsing, and workflow logic
 
 ## Contribution guidelines
@@ -56,18 +58,22 @@ When making changes, please:
 Use the lightest verification that still proves the change.
 
 ### Documentation-only changes
+
 - review links, headings, and examples manually
 - update multilingual docs together when the shared meaning changes
 
 ### Parser / prompt / workflow logic changes
+
 - run `npm test`
 - add or update focused tests under `test/`
 
 ### Build or packaging changes
+
 - run `npm run build`
 - confirm expected artifacts still appear in `build/`
 
 ### Reader-pane or runtime-sensitive changes
+
 - use [`docs/manual-qa.md`](./docs/manual-qa.md) for manual Zotero validation where relevant
 
 ## Suggested workflow

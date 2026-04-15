@@ -16,6 +16,7 @@ Paper Pilot is an AI reading workbench for the Zotero 7 PDF reader. It adds a pa
 - Structured PDF workspace extraction via **OpenDataLoader PDF**
 - Related-paper discovery with open/add-to-collection flows
 - Auto-highlight plus persisted paper-scoped session history
+- **Paper Mastery** — multi-round Socratic comprehension check with a final Markdown learning report
 - Automated local verification is in place; full Zotero runtime QA is still pending
 
 ## Screenshots and demo
@@ -96,7 +97,17 @@ Paper Pilot can generate grouped related-paper recommendations and help you:
 
 The plugin includes an auto-highlight path for extracting high-confidence passages from the active paper and surfacing key passages back in the reader workflow.
 
-### 6. Local workspace artifacts for Codex
+### 6. Paper Mastery (comprehension check)
+
+The reader pane includes a **Paper Mastery** workflow that drives a multi-round Socratic comprehension check on the active paper:
+
+- The AI generates one open-ended question at a time, scoped to the paper's core contributions, methodology, or assumptions.
+- The reader answers in free text; the AI evaluates each answer and records whether a topic was understood.
+- When the session ends, a Markdown learning report summarizes strengths, areas for improvement, key misconceptions, and recommended re-reading.
+
+Mastery prompts enforce strict JSON responses for questions and evaluations (no reasoning prose), wrap reader answers in `<user_answer>` tags, and reject markdown fences in the JSON payload. Parsing is string/escape-aware so that a `}` inside a quoted string never truncates a valid response.
+
+### 7. Local workspace artifacts for Codex
 
 When you ask a question in **Codex CLI** mode, Paper Pilot writes a per-paper workspace so the CLI can inspect local paper context before answering.
 
@@ -128,6 +139,7 @@ When Java 11+ is available, `paper.md` and `paper.json` come from the bundled Op
 | Persistence       | Save latest output to note, save workbench artifacts for collections                                         |
 | Context grounding | Workspace artifacts, OpenDataLoader-backed structured PDF context, retrieval context, recent-turn continuity |
 | Highlighting      | Auto-highlight workflow for key passages                                                                     |
+| Comprehension     | Paper Mastery multi-round comprehension check with Markdown learning report                                  |
 
 ## Engine modes
 
@@ -169,6 +181,7 @@ Current prompt surfaces include:
 - **Paper tools**
 - **Paper compare**
 - **Auto-highlight**
+- **Paper Mastery (comprehension check)**
 - **Workspace/chat prompt assembly**
 
 See [`docs/prompt-contracts.md`](./docs/prompt-contracts.md) for the exact output-shape intent and guardrails.

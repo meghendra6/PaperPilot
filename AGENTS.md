@@ -13,6 +13,8 @@ Default goal: make small, verifiable changes that keep the reader experience com
 - `src/`
   - `modules/readerPane.ts`, `readerActions.ts`: reader UI wiring and action flow
   - `modules/researchBrief.ts`, `paperTools.ts`, `paperCompare.ts`, `relatedRecommendations.ts`: structured paper workflows
+  - `modules/comprehensionCheck/`: Paper Mastery prompts, parser, and round/topic state
+  - `modules/session/`: paper-scoped session history service, snapshot capture/apply, and the silent-turn filter that keeps tool JSON out of replayed chat
   - `modules/.../prompt*.ts`, `modules/context/promptPreviewBuilder.ts`: prompt assembly and output-shape guardrails
   - `modules/paperArtifact*.ts`: persistence/reuse of paper artifacts
   - `utils/`: shared helpers
