@@ -116,3 +116,15 @@ Use this checklist inside a real Zotero 7 runtime before claiming readiness.
 - [ ] Build artifacts install and load in Zotero
 - [ ] Built `.xpi` contains `chrome/content/vendor/opendataloader/opendataloader-pdf-cli.jar`
 - [ ] No console/runtime errors during pane render and action triggers
+
+## Session history popover and silent-turn QA (2026-04-16)
+
+After running mastery and one or more workbench tools (research brief, contributions, limitations, follow-ups, paper compare) on a paper, then opening "Past sessions":
+
+- The popover anchors below the "Past sessions" button and does NOT push the chat down.
+- Clicking outside the popover or pressing Escape closes it. Escape returns focus to the trigger button.
+- Each row is a single line: title (with optional Current / cards-saved badges), meta line, an Open button, and a kebab (⋯) button. Rename and Delete live inside the kebab menu.
+- Delete and Delete all show a confirmation dialog. Cancel keeps the data.
+- Reopening a session that previously ran mastery / workbench tools shows the natural chat transcript in the message list (prose markdown), with NO raw JSON lines.
+- Mastery cards, workbench cards, and recommendation groups still rehydrate when the session is reopened (existing behavior).
+- After opening a saved session, sending a fresh chat message continues to work end-to-end with both Codex CLI and Gemini CLI.

@@ -37,6 +37,7 @@ import { getCurrentReaderContext } from "./context/readerContext";
 import { messageStore } from "./message/messageStore";
 import { sessionStore } from "./session/sessionStore";
 import { sessionHistoryService } from "./session/sessionHistoryService";
+import { isLikelySilentToolMessage } from "./session/silentTurnFilter";
 import { probeCodexLoginState } from "./codex/status";
 import { buildCodexAuthenticateMessage } from "./codex/authAction";
 import {
@@ -45,7 +46,10 @@ import {
   retryLastCodexQuestion,
   stopCodexRunSilently,
 } from "./codex/controller";
-import { handleGeminiQuestion, stopGeminiRunSilently } from "./gemini/controller";
+import {
+  handleGeminiQuestion,
+  stopGeminiRunSilently,
+} from "./gemini/controller";
 import { shouldEnableAutoHighlight } from "./autoHighlight/status";
 import { runAutoHighlightWorkflow } from "./autoHighlight/workflow";
 import {
@@ -463,6 +467,7 @@ export function registerPaperPilotPaneSection() {
       ) {
         let sessionHistoryOpen = false;
         let renamingSessionId: string | undefined;
+        let dismissPopoverHandlers: (() => void) | undefined;
 
         const clearSessionRuntimeState = async () => {
           await stopCodexRunSilently({
@@ -545,12 +550,16 @@ export function registerPaperPilotPaneSection() {
             sessionHistoryPanel.style.display = "none";
             sessionHistoryPanel.replaceChildren();
             renamingSessionId = undefined;
+            dismissPopoverHandlers?.();
+            dismissPopoverHandlers = undefined;
             return;
           }
 
           const doc = sessionHistoryPanel.ownerDocument;
           sessionHistoryPanel.style.display = "block";
           sessionHistoryPanel.replaceChildren();
+
+          let activeKebabClose: (() => void) | undefined;
 
           const header = doc.createElement("div");
           header.className = "pp-session-history__header";
@@ -560,8 +569,8 @@ export function registerPaperPilotPaneSection() {
           title.textContent = "Past sessions";
           header.appendChild(title);
 
-          const actions = doc.createElement("div");
-          actions.className = "pp-session-history__actions";
+          const headerActions = doc.createElement("div");
+          headerActions.className = "pp-session-history__actions";
 
           if (entries.length) {
             const deleteAllButton = doc.createElement("button");
@@ -569,6 +578,15 @@ export function registerPaperPilotPaneSection() {
             deleteAllButton.className = "pp-btn pp-btn--ghost";
             deleteAllButton.textContent = "Delete all";
             deleteAllButton.addEventListener("click", async () => {
+              if (
+                !confirmDestructive(
+                  pastSessionsButton.ownerDocument,
+                  "Delete all sessions",
+                  "Delete all saved sessions for this paper? This cannot be undone.",
+                )
+              ) {
+                return;
+              }
               await clearBlankSessionState();
               await sessionHistoryService.deleteAllSavedSessions({
                 itemID: item.id,
@@ -576,20 +594,10 @@ export function registerPaperPilotPaneSection() {
               sessionHistoryOpen = false;
               await rerenderPane();
             });
-            actions.appendChild(deleteAllButton);
+            headerActions.appendChild(deleteAllButton);
           }
 
-          const closeButton = doc.createElement("button");
-          closeButton.type = "button";
-          closeButton.className = "pp-btn pp-btn--ghost";
-          closeButton.textContent = "Close";
-          closeButton.addEventListener("click", async () => {
-            sessionHistoryOpen = false;
-            await renderSessionHistory();
-          });
-          actions.appendChild(closeButton);
-
-          header.appendChild(actions);
+          header.appendChild(headerActions);
           sessionHistoryPanel.appendChild(header);
 
           if (!entries.length) {
@@ -605,6 +613,7 @@ export function registerPaperPilotPaneSection() {
           for (const entry of entries) {
             const row = doc.createElement("div");
             row.className = "pp-session-history__item";
+            row.title = `Created ${new Date(entry.createdAt).toLocaleString()}`;
 
             const info = doc.createElement("div");
             info.className = "pp-session-history__info";
@@ -654,6 +663,21 @@ export function registerPaperPilotPaneSection() {
                 currentBadge.textContent = "Current";
                 titleRow.appendChild(currentBadge);
               }
+
+              if (
+                entry.hasArtifacts ||
+                entry.hasRecommendations ||
+                entry.hasMasteryState
+              ) {
+                const cardsBadge = doc.createElement("span");
+                cardsBadge.className = "pp-session-history__badge";
+                cardsBadge.textContent = "●";
+                cardsBadge.setAttribute(
+                  "aria-label",
+                  "Has saved cards, recommendations, or mastery state",
+                );
+                titleRow.appendChild(cardsBadge);
+              }
             }
 
             info.appendChild(titleRow);
@@ -662,29 +686,17 @@ export function registerPaperPilotPaneSection() {
             meta.className = "pp-session-history__meta";
             meta.textContent = [
               `Updated ${new Date(entry.updatedAt).toLocaleString()}`,
-              `Created ${new Date(entry.createdAt).toLocaleString()}`,
-              `${entry.messageCount} message${entry.messageCount === 1 ? "" : "s"}`,
-              entry.lastMode === "gemini_cli" ? "Gemini CLI" : "Codex CLI",
+              `${entry.messageCount} msg${entry.messageCount === 1 ? "" : "s"}`,
+              entry.lastMode === "gemini_cli" ? "Gemini" : "Codex",
             ].join(" · ");
             info.appendChild(meta);
 
-            const badges: string[] = [];
-            if (entry.hasArtifacts || entry.hasRecommendations || entry.hasMasteryState) {
-              badges.push("Has cards");
-            }
-            if (badges.length) {
-              const badgeRow = doc.createElement("div");
-              badgeRow.className = "pp-session-history__badges";
-              for (const badgeText of badges) {
-                const badge = doc.createElement("span");
-                badge.className = "pp-session-history__badge";
-                badge.textContent = badgeText;
-                badgeRow.appendChild(badge);
-              }
-              info.appendChild(badgeRow);
-            }
-
             row.appendChild(info);
+
+            if (renamingSessionId === entry.sessionId) {
+              sessionHistoryPanel.appendChild(row);
+              continue;
+            }
 
             const rowActions = doc.createElement("div");
             rowActions.className = "pp-session-history__row-actions";
@@ -707,36 +719,90 @@ export function registerPaperPilotPaneSection() {
             });
             rowActions.appendChild(openButton);
 
-            const renameButton = doc.createElement("button");
-            renameButton.type = "button";
-            renameButton.className = "pp-btn pp-btn--ghost";
-            renameButton.textContent = "Rename";
-            renameButton.addEventListener("click", async () => {
-              renamingSessionId = entry.sessionId;
-              await renderSessionHistory();
-            });
-            rowActions.appendChild(renameButton);
+            const kebabContainer = doc.createElement("div");
+            kebabContainer.className = "pp-session-history__kebab";
 
-            const deleteButton = doc.createElement("button");
-            deleteButton.type = "button";
-            deleteButton.className = "pp-btn pp-btn--ghost";
-            deleteButton.textContent = "Delete";
-            deleteButton.addEventListener("click", async () => {
-              const deletingCurrent = addon.data.currentSessionId === entry.sessionId;
-              if (deletingCurrent) {
-                await clearSessionRuntimeState();
+            const kebabButton = doc.createElement("button");
+            kebabButton.type = "button";
+            kebabButton.className = "pp-btn pp-btn--ghost";
+            kebabButton.textContent = "⋯";
+            kebabButton.setAttribute(
+              "aria-label",
+              `More actions for session "${entry.title}"`,
+            );
+
+            let kebabMenu: HTMLElement | undefined;
+            const closeKebab = () => {
+              kebabMenu?.remove();
+              kebabMenu = undefined;
+              if (activeKebabClose === closeKebab) {
+                activeKebabClose = undefined;
               }
-              await sessionHistoryService.deleteSavedSession({
-                itemID: item.id,
-                sessionId: entry.sessionId,
+            };
+
+            kebabButton.addEventListener("click", (event) => {
+              event.stopPropagation();
+              if (kebabMenu) {
+                closeKebab();
+                return;
+              }
+
+              activeKebabClose?.();
+              activeKebabClose = closeKebab;
+
+              kebabMenu = doc.createElement("div");
+              kebabMenu.className = "pp-session-history__kebab-menu";
+
+              const renameItem = doc.createElement("button");
+              renameItem.type = "button";
+              renameItem.className = "pp-btn pp-btn--ghost";
+              renameItem.textContent = "Rename";
+              renameItem.addEventListener("click", async (renameEvent) => {
+                renameEvent.stopPropagation();
+                closeKebab();
+                renamingSessionId = entry.sessionId;
+                await renderSessionHistory();
               });
-              if (deletingCurrent) {
-                resetBlankSessionState();
-              }
-              renamingSessionId = undefined;
-              await rerenderPane();
+              kebabMenu.appendChild(renameItem);
+
+              const deleteItem = doc.createElement("button");
+              deleteItem.type = "button";
+              deleteItem.className = "pp-btn pp-btn--ghost";
+              deleteItem.textContent = "Delete";
+              deleteItem.addEventListener("click", async (deleteEvent) => {
+                deleteEvent.stopPropagation();
+                closeKebab();
+                if (
+                  !confirmDestructive(
+                    pastSessionsButton.ownerDocument,
+                    "Delete session",
+                    `Delete session "${entry.title}"? This cannot be undone.`,
+                  )
+                ) {
+                  return;
+                }
+                const deletingCurrent =
+                  addon.data.currentSessionId === entry.sessionId;
+                if (deletingCurrent) {
+                  await clearSessionRuntimeState();
+                }
+                await sessionHistoryService.deleteSavedSession({
+                  itemID: item.id,
+                  sessionId: entry.sessionId,
+                });
+                if (deletingCurrent) {
+                  resetBlankSessionState();
+                }
+                renamingSessionId = undefined;
+                await rerenderPane();
+              });
+              kebabMenu.appendChild(deleteItem);
+
+              kebabContainer.appendChild(kebabMenu);
             });
-            rowActions.appendChild(deleteButton);
+
+            kebabContainer.appendChild(kebabButton);
+            rowActions.appendChild(kebabContainer);
 
             row.appendChild(rowActions);
             sessionHistoryPanel.appendChild(row);
@@ -951,9 +1017,60 @@ export function registerPaperPilotPaneSection() {
           }
         });
 
+        const closeSessionHistoryPopover = async (options?: {
+          restoreFocus?: boolean;
+        }) => {
+          sessionHistoryOpen = false;
+          renamingSessionId = undefined;
+          await renderSessionHistory();
+          if (options?.restoreFocus) {
+            pastSessionsButton.focus();
+          }
+        };
+
+        const installPopoverDismissHandlers = () => {
+          const ownerDoc = pastSessionsButton.ownerDocument;
+          const onDocumentClick = (event: MouseEvent) => {
+            if (!sessionHistoryPanel.isConnected) {
+              return;
+            }
+            const target = event.target as Node | null;
+            if (!target) {
+              return;
+            }
+            if (
+              sessionHistoryPanel.contains(target) ||
+              pastSessionsButton.contains(target)
+            ) {
+              return;
+            }
+            void closeSessionHistoryPopover();
+          };
+          const onKeyDown = (event: KeyboardEvent) => {
+            if (!sessionHistoryPanel.isConnected) {
+              return;
+            }
+            if (event.key === "Escape") {
+              event.preventDefault();
+              void closeSessionHistoryPopover({ restoreFocus: true });
+            }
+          };
+
+          ownerDoc.addEventListener("mousedown", onDocumentClick, true);
+          ownerDoc.addEventListener("keydown", onKeyDown, true);
+
+          dismissPopoverHandlers = () => {
+            ownerDoc.removeEventListener("mousedown", onDocumentClick, true);
+            ownerDoc.removeEventListener("keydown", onKeyDown, true);
+          };
+        };
+
         pastSessionsButton.addEventListener("click", async () => {
           sessionHistoryOpen = !sessionHistoryOpen;
           renamingSessionId = undefined;
+          if (sessionHistoryOpen) {
+            installPopoverDismissHandlers();
+          }
           await renderSessionHistory();
         });
 
@@ -2878,6 +2995,31 @@ async function renderModelHistory(
   modelHistory.replaceChildren();
 }
 
+function confirmDestructive(
+  ownerDocument: Document,
+  title: string,
+  message: string,
+): boolean {
+  const services = (
+    globalThis as {
+      Services?: { prompt?: { confirm?: (...args: unknown[]) => boolean } };
+    }
+  ).Services;
+  const win = ownerDocument.defaultView ?? null;
+  const promptConfirm = services?.prompt?.confirm;
+  if (typeof promptConfirm === "function") {
+    try {
+      return Boolean(promptConfirm(win, title, message));
+    } catch {
+      // fall through to window.confirm
+    }
+  }
+  if (win && typeof win.confirm === "function") {
+    return win.confirm(`${title}\n\n${message}`);
+  }
+  return false;
+}
+
 function renderHelpState(chatMessages: HTMLElement, response: string) {
   if (chatMessages.childElementCount > 0) {
     return;
@@ -2891,7 +3033,10 @@ function renderMessageHistory(
   sessionId: string,
   placeholderResponse: string,
 ) {
-  const messages = messageStore.list(sessionId);
+  const messages = messageStore
+    .list(sessionId)
+    .filter((message) => !isLikelySilentToolMessage(message));
+
   if (!messages.length) {
     renderHelpState(chatMessages, placeholderResponse);
     return;

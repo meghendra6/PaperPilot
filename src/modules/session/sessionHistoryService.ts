@@ -195,6 +195,7 @@ export class SessionHistoryService {
     success: boolean;
     rawEvent?: string;
     resumeSessionId?: string;
+    suppressMessage?: boolean;
   }) {
     const session = sessionStore.get(params.itemID);
     const createdAt = this.now().toISOString();
@@ -210,7 +211,7 @@ export class SessionHistoryService {
 
       const messages = [...(snapshot.messages ?? [])];
       const prefs = resolveSessionHistoryPrefs();
-      if (prefs.persistAssistantMessages) {
+      if (prefs.persistAssistantMessages && !params.suppressMessage) {
         messages.push(
           buildAssistantMessageRecord({
             sessionId: params.sessionId,
@@ -238,13 +239,15 @@ export class SessionHistoryService {
       return updatedSnapshot;
     }
 
-    messageStore.append(session.sessionId, {
-      role: "assistant",
-      text: params.assistantText,
-      sourceMode: params.mode,
-      status: params.success ? "done" : "error",
-      ...(params.rawEvent ? { rawEvent: params.rawEvent } : {}),
-    });
+    if (!params.suppressMessage) {
+      messageStore.append(session.sessionId, {
+        role: "assistant",
+        text: params.assistantText,
+        sourceMode: params.mode,
+        status: params.success ? "done" : "error",
+        ...(params.rawEvent ? { rawEvent: params.rawEvent } : {}),
+      });
+    }
 
     sessionStore.update(
       params.itemID,

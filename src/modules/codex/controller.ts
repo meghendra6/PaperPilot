@@ -34,6 +34,7 @@ export async function handleCodexQuestion(params: {
     annotationIDs: params.annotationIDs,
     useResume: params.useResume,
     resumeSessionId: params.resumeSessionId,
+    suppressChatMessages: params.suppressChatMessages,
   });
 
   const result = await startCodexRunForQuestion({
@@ -59,6 +60,7 @@ export async function handleCodexQuestion(params: {
       paperTitle: params.paperTitle || params.sessionTitle,
       assistantText: result.error,
       success: false,
+      suppressMessage: params.suppressChatMessages,
     });
     setCodexRunStateForItem(params.itemID, {
       ...buildCodexRunState({
@@ -161,6 +163,7 @@ export async function handleCodexQuestion(params: {
       success,
       rawEvent: progress.rawOutput,
       resumeSessionId: resumedThreadId,
+      suppressMessage: params.suppressChatMessages,
     });
     setCodexRunStateForItem(params.itemID, {
       ...buildCodexRunState({
@@ -209,6 +212,7 @@ export async function retryLastCodexQuestion(params: {
     selectedText: last.selectedText,
     annotationIDs: last.annotationIDs,
     useResume: last.useResume,
+    suppressChatMessages: last.suppressChatMessages,
     chatMessages: params.chatMessages,
     streamingIndicator: params.streamingIndicator,
   });
