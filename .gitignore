@@ -11,3 +11,6 @@ zotero-cmd.json
 !.github/workflows/
 !.github/workflows/**
 .scaffold
+
+# Superpowers planning/spec workspace — local design notes, not for GitHub.
+docs/superpowers/
