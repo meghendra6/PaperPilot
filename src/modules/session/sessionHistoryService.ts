@@ -211,7 +211,7 @@ export class SessionHistoryService {
 
       const messages = [...(snapshot.messages ?? [])];
       const prefs = resolveSessionHistoryPrefs();
-      if (prefs.persistAssistantMessages) {
+      if (prefs.persistAssistantMessages && !params.suppressMessage) {
         messages.push(
           buildAssistantMessageRecord({
             sessionId: params.sessionId,

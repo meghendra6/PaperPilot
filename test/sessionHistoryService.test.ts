@@ -654,3 +654,85 @@ test("SessionHistoryService.persistAssistantTurn with suppressMessage skips chat
     globals.restore();
   }
 });
+
+test("SessionHistoryService.persistAssistantTurn with suppressMessage skips message push on the late-completion branch", async () => {
+  const { globals, repository, service } = createService({
+    saveDocumentSessions: true,
+    privacyStoreLocalHistory: true,
+    privacySavePromptsOnly: false,
+    privacySaveResponses: true,
+  });
+
+  try {
+    // Simulate a previously persisted snapshot that the user has since switched away from.
+    const priorSession = service.ensureDraftSession({
+      itemID: 602,
+      mode: "gemini_cli",
+    });
+    const priorSessionId = priorSession.sessionId;
+
+    messageStore.append(priorSessionId, {
+      role: "user",
+      text: "Original question.",
+      sourceMode: "gemini_cli",
+      status: "done",
+    });
+    messageStore.append(priorSessionId, {
+      role: "assistant",
+      text: "Original response.",
+      sourceMode: "gemini_cli",
+      status: "done",
+    });
+    await service.persistActiveSession({
+      itemID: 602,
+      paperTitle: "Late completion paper",
+    });
+
+    // User starts a new draft -- the active session is now different.
+    sessionStore.reset(602, "gemini_cli");
+    // Directly set a session with a guaranteed-different ID to avoid
+    // Date.now() collisions when both calls happen in the same millisecond.
+    const newSessionId = `paper-602-gemini_cli-new-draft`;
+    sessionStore.set({
+      sessionId: newSessionId,
+      itemID: 602,
+      mode: "gemini_cli",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      threadTitle: "New draft",
+    });
+    const newDraft = sessionStore.get(602)!;
+    assert.notEqual(newDraft.sessionId, priorSessionId);
+
+    // A late silent completion arrives bound to the prior session.
+    const result = await service.persistAssistantTurn({
+      itemID: 602,
+      sessionId: priorSessionId,
+      mode: "gemini_cli",
+      paperTitle: "Late completion paper",
+      assistantText: '{"understood":true,"confidence":0.9,"evaluation":"ok"}',
+      success: true,
+      resumeSessionId: "gemini-thread-late",
+      suppressMessage: true,
+    });
+
+    // The prior snapshot must not gain a new assistant message...
+    assert.ok(result);
+    assert.equal(result?.messages?.length, 2);
+    assert.equal(
+      result?.messages?.[result.messages.length - 1].text,
+      "Original response.",
+    );
+
+    // ...but resume metadata on the persisted snapshot is updated.
+    const saved = await repository.readSessionSnapshot(602, priorSessionId);
+    assert.equal(saved?.messages?.length, 2);
+    assert.equal(saved?.lastGeminiSessionID, "gemini-thread-late");
+
+    messageStore.clear(priorSessionId);
+    messageStore.clear(newDraft.sessionId);
+    sessionStore.reset(602, "gemini_cli");
+  } finally {
+    globals.restore();
+  }
+});
