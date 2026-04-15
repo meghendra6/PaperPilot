@@ -37,6 +37,7 @@ import { getCurrentReaderContext } from "./context/readerContext";
 import { messageStore } from "./message/messageStore";
 import { sessionStore } from "./session/sessionStore";
 import { sessionHistoryService } from "./session/sessionHistoryService";
+import { isLikelySilentToolMessage } from "./session/silentTurnFilter";
 import { probeCodexLoginState } from "./codex/status";
 import { buildCodexAuthenticateMessage } from "./codex/authAction";
 import {
@@ -2891,7 +2892,10 @@ function renderMessageHistory(
   sessionId: string,
   placeholderResponse: string,
 ) {
-  const messages = messageStore.list(sessionId);
+  const messages = messageStore
+    .list(sessionId)
+    .filter((message) => !isLikelySilentToolMessage(message));
+
   if (!messages.length) {
     renderHelpState(chatMessages, placeholderResponse);
     return;
