@@ -38,9 +38,13 @@ function lineLooksLikeSilentToolJson(line: string) {
     return false;
   }
 
+  let matches = 0;
   for (const key of Object.keys(parsed)) {
     if (SILENT_TOOL_KEYS.has(key)) {
-      return true;
+      matches += 1;
+      if (matches >= 2) {
+        return true;
+      }
     }
   }
   return false;

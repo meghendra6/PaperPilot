@@ -84,3 +84,18 @@ test("assistant message whose JSON line lacks any tool key is not flagged", () =
   const record = buildAssistant('{"unrelated":"value","other":42}');
   assert.equal(isLikelySilentToolMessage(record), false);
 });
+
+test("assistant message with a single matching key only is not flagged (tightened threshold)", () => {
+  const record = buildAssistant('{"summary":"The authors propose a new method."}');
+  assert.equal(isLikelySilentToolMessage(record), false);
+});
+
+test("assistant message with two matching keys is flagged", () => {
+  const record = buildAssistant('{"kind":"research-brief","summary":"Overview"}');
+  assert.equal(isLikelySilentToolMessage(record), true);
+});
+
+test("assistant JSON with legitimate single topic mention is not flagged", () => {
+  const record = buildAssistant('{"topic":"SWP-WS","notes":"short"}');
+  assert.equal(isLikelySilentToolMessage(record), false);
+});
