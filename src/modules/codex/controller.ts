@@ -59,6 +59,7 @@ export async function handleCodexQuestion(params: {
       paperTitle: params.paperTitle || params.sessionTitle,
       assistantText: result.error,
       success: false,
+      suppressMessage: params.suppressChatMessages,
     });
     setCodexRunStateForItem(params.itemID, {
       ...buildCodexRunState({
@@ -161,6 +162,7 @@ export async function handleCodexQuestion(params: {
       success,
       rawEvent: progress.rawOutput,
       resumeSessionId: resumedThreadId,
+      suppressMessage: params.suppressChatMessages,
     });
     setCodexRunStateForItem(params.itemID, {
       ...buildCodexRunState({

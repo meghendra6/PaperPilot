@@ -49,6 +49,7 @@ export async function handleGeminiQuestion(params: {
       paperTitle: params.paperTitle || params.sessionTitle,
       assistantText: result.error,
       success: false,
+      suppressMessage: params.suppressChatMessages,
     });
     params.streamingIndicator.style.display = "none";
     params.onComplete?.({
@@ -105,6 +106,7 @@ export async function handleGeminiQuestion(params: {
       success,
       rawEvent: progress.rawOutput,
       resumeSessionId: params.resumeSessionId,
+      suppressMessage: params.suppressChatMessages,
     });
     params.streamingIndicator.style.display = "none";
     params.onComplete?.({
