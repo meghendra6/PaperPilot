@@ -46,7 +46,10 @@ import {
   retryLastCodexQuestion,
   stopCodexRunSilently,
 } from "./codex/controller";
-import { handleGeminiQuestion, stopGeminiRunSilently } from "./gemini/controller";
+import {
+  handleGeminiQuestion,
+  stopGeminiRunSilently,
+} from "./gemini/controller";
 import { shouldEnableAutoHighlight } from "./autoHighlight/status";
 import { runAutoHighlightWorkflow } from "./autoHighlight/workflow";
 import {
@@ -556,6 +559,8 @@ export function registerPaperPilotPaneSection() {
           sessionHistoryPanel.style.display = "block";
           sessionHistoryPanel.replaceChildren();
 
+          let activeKebabClose: (() => void) | undefined;
+
           const header = doc.createElement("div");
           header.className = "pp-session-history__header";
 
@@ -730,6 +735,9 @@ export function registerPaperPilotPaneSection() {
             const closeKebab = () => {
               kebabMenu?.remove();
               kebabMenu = undefined;
+              if (activeKebabClose === closeKebab) {
+                activeKebabClose = undefined;
+              }
             };
 
             kebabButton.addEventListener("click", (event) => {
@@ -738,6 +746,9 @@ export function registerPaperPilotPaneSection() {
                 closeKebab();
                 return;
               }
+
+              activeKebabClose?.();
+              activeKebabClose = closeKebab;
 
               kebabMenu = doc.createElement("div");
               kebabMenu.className = "pp-session-history__kebab-menu";
@@ -1006,9 +1017,9 @@ export function registerPaperPilotPaneSection() {
           }
         });
 
-        const closeSessionHistoryPopover = async (
-          options?: { restoreFocus?: boolean },
-        ) => {
+        const closeSessionHistoryPopover = async (options?: {
+          restoreFocus?: boolean;
+        }) => {
           sessionHistoryOpen = false;
           renamingSessionId = undefined;
           await renderSessionHistory();
@@ -1020,6 +1031,9 @@ export function registerPaperPilotPaneSection() {
         const installPopoverDismissHandlers = () => {
           const ownerDoc = pastSessionsButton.ownerDocument;
           const onDocumentClick = (event: MouseEvent) => {
+            if (!sessionHistoryPanel.isConnected) {
+              return;
+            }
             const target = event.target as Node | null;
             if (!target) {
               return;
@@ -1033,6 +1047,9 @@ export function registerPaperPilotPaneSection() {
             void closeSessionHistoryPopover();
           };
           const onKeyDown = (event: KeyboardEvent) => {
+            if (!sessionHistoryPanel.isConnected) {
+              return;
+            }
             if (event.key === "Escape") {
               event.preventDefault();
               void closeSessionHistoryPopover({ restoreFocus: true });
