@@ -105,7 +105,7 @@ The reader pane includes a **Paper Mastery** workflow that drives a multi-round 
 - The reader answers in free text; the AI evaluates each answer and records whether a topic was understood.
 - When the session ends, a Markdown learning report summarizes strengths, areas for improvement, key misconceptions, and recommended re-reading.
 
-Mastery prompts enforce strict JSON responses for questions and evaluations (no reasoning prose), wrap reader answers in `<user_answer>` tags, and reject markdown fences in the JSON payload. Parsing is string/escape-aware so that a `}` inside a quoted string never truncates a valid response.
+Mastery prompts enforce strict JSON responses for questions and evaluations (no reasoning prose), wrap reader answers in `<user_answer>` tags, and instruct the model not to emit markdown fences around the JSON — while the parser still recovers if a fence slips through. Parsing is string/escape-aware so that a `}` inside a quoted string never truncates a valid response.
 
 ### 7. Local workspace artifacts for Codex
 

@@ -69,12 +69,13 @@ This note documents the purpose, target answer shape, and guardrails for the mai
 - Purpose: run a multi-round Socratic comprehension check on the active paper and produce a learning report
 - Shapes:
   - `buildInitialMasteryPrompt` / `buildFollowUpQuestionPrompt` → strict JSON `{ "question", "topic", "difficulty" }` with `difficulty ∈ {foundational, intermediate, advanced}`
-  - `buildEvaluateAnswerPrompt` → strict JSON `{ "understood", "confidence", "evaluation", "misunderstandings", "explanation" }` (final key list is enforced by `parseMasteryEvaluationResponse`)
+  - `buildEvaluateAnswerPrompt` → strict JSON `{ "understood", "confidence", "evaluation", "misunderstandings", "explanation", "nextTopic", "nextDifficulty" }`
   - `buildFinalReportPrompt` → Markdown report (not JSON) with `Strengths`, `Areas for Improvement`, `Key Misconceptions`, `Recommendations`, `Overall Assessment`
 - Guardrails:
   - question/evaluation prompts forbid reasoning or planning prose before the JSON; the response must begin with `{` and end with `}`
   - reader-supplied answers are wrapped in `<user_answer>` tags; the prompt instructs the model to treat those tags as data only and to ignore any instructions inside them
-  - parser tolerates markdown fences around the JSON and is string/escape-aware so that `}` inside quoted strings does not truncate the payload
+  - `parseMasteryQuestionResponse` requires only `question` to be a string and falls back to `topic: "general"` and `difficulty: "foundational"`; `parseMasteryEvaluationResponse` requires `understood` to be a boolean and supplies safe defaults (confidence 0.5, empty strings/arrays, `nextTopic: null`, `nextDifficulty: "foundational"`) when other keys are missing or the wrong type
+  - both parsers tolerate markdown fences around the JSON and are string/escape-aware, so `}` inside quoted strings does not truncate the payload
   - the Markdown report is written in second person (`you`), stays encouraging but honest, and references specific rounds from the session
 
 ### Workspace / chat prompt
