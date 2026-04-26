@@ -34,7 +34,7 @@ async function loadReleaseTagGuard() {
 test("release tag guard derives the expected tag from the package version", async () => {
   const { expectedReleaseTag } = await loadReleaseTagGuard();
 
-  assert.equal(expectedReleaseTag("0.0.3"), "v0.0.3");
+  assert.equal(expectedReleaseTag("0.1.0"), "v0.1.0");
 });
 
 test("release tag guard rejects mismatched tag and package versions", async () => {
@@ -44,14 +44,19 @@ test("release tag guard rejects mismatched tag and package versions", async () =
     () =>
       assertReleaseTagMatchesVersion({
         tagName: "v0.0.2",
-        version: "0.0.3",
+        version: "0.1.0",
       }),
-    /expected v0\.0\.3.*got v0\.0\.2/i,
+    /expected v0\.1\.0.*got v0\.0\.2/i,
   );
 });
 
 test("release workflow runs the release tag guard before publishing", () => {
-  const workflowPath = join(process.cwd(), ".github", "workflows", "release.yml");
+  const workflowPath = join(
+    process.cwd(),
+    ".github",
+    "workflows",
+    "release.yml",
+  );
   const workflow = readFileSync(workflowPath, "utf8");
 
   assert.match(workflow, /check-release-tag-version\.mjs/);

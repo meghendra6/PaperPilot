@@ -228,7 +228,7 @@ OpenDataLoader 패키징 메모:
 
 1. `main`에서 `package.json`과 `package-lock.json`을 릴리즈 버전으로 올립니다.
 2. 그 버전 변경 커밋을 `main`에 머지합니다.
-3. 일치하는 태그를 만들고 푸시합니다. 예: `git tag v0.0.3 && git push origin v0.0.3`
+3. 일치하는 태그를 만들고 푸시합니다. 예: `git tag v0.1.0 && git push origin v0.1.0`
 4. Release 워크플로우는 배포 전에 `scripts/check-release-tag-version.mjs`를 실행합니다. ref 이름이 `v${package.json.version}`과 정확히 일치하지 않으면 즉시 실패합니다.
 
 `workflow_dispatch`를 사용할 때도 같은 릴리즈 태그 ref에서 실행해야 합니다. 브랜치 ref에서는 같은 가드에 의해 실패합니다.
