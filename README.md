@@ -155,8 +155,7 @@ Codex mode is the more workspace-oriented path. The current codebase includes su
 - executable discovery and validation
 - login/status checks
 - workspace writability checks
-- model selection and model history
-- reasoning-effort support
+- `gpt-5.5` model selection with `low`, `medium`, `high`, and `xhigh` reasoning effort options
 - sandbox and approval settings
 - optional web-search toggle
 - resumable follow-up runs tied to the current paper
@@ -229,7 +228,7 @@ Release publishing is tag-driven. Keep the package version and the tag aligned:
 
 1. Update `package.json` and `package-lock.json` to the release version on `main`.
 2. Merge that version bump to `main`.
-3. Create and push the matching tag, for example `git tag v0.0.3 && git push origin v0.0.3`.
+3. Create and push the matching tag, for example `git tag v0.1.0 && git push origin v0.1.0`.
 4. The Release workflow now runs `scripts/check-release-tag-version.mjs` before publishing. It fails fast if the ref name does not exactly match `v${package.json.version}`.
 
 If you use `workflow_dispatch`, run it from the matching release tag ref. Branch refs are rejected by the same guard.

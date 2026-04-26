@@ -33,7 +33,7 @@ test("stopCodexRunSilently kills the active pid and clears run state and poller 
   try {
     setCodexRunStateForItem(77, {
       workspacePath: "/tmp/paperpilot/77",
-      model: "gpt-5-codex",
+      model: "gpt-5.5",
       loginState: "ready",
       runStatus: "running",
       latestEventType: "spawned",
@@ -49,15 +49,19 @@ test("stopCodexRunSilently kills the active pid and clears run state and poller 
       },
     ]);
     assert.equal(
-      (globalThis as {
-        addon?: { data?: { codexRunStates?: Map<number, unknown> } };
-      }).addon?.data?.codexRunStates?.has(77),
+      (
+        globalThis as {
+          addon?: { data?: { codexRunStates?: Map<number, unknown> } };
+        }
+      ).addon?.data?.codexRunStates?.has(77),
       false,
     );
     assert.equal(
-      (globalThis as {
-        addon?: { data?: { codexRunPollers?: Map<number, unknown> } };
-      }).addon?.data?.codexRunPollers?.has(77),
+      (
+        globalThis as {
+          addon?: { data?: { codexRunPollers?: Map<number, unknown> } };
+        }
+      ).addon?.data?.codexRunPollers?.has(77),
       false,
     );
   } finally {

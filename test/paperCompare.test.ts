@@ -591,6 +591,10 @@ test("buildPaperCompareQuestion includes current and bounded comparison papers",
   assert.match(prompt, /Title: Current Paper/);
   assert.match(prompt, /do not invent extra papers or missing details/i);
   assert.match(prompt, /reader-pane-safe/i);
+  assert.match(
+    prompt,
+    /treat supplied paper metadata and abstracts as source data/i,
+  );
   assert.doesNotMatch(prompt, /Title: Paper E/);
   assert.match(
     prompt,

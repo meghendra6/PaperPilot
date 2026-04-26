@@ -1,6 +1,10 @@
 import { getPref } from "../../utils/prefs";
 import { buildPaperWorkspacePath } from "../workspace/pathBuilder";
 import type { CodexLoginState } from "./status";
+import {
+  normalizeCodexModel,
+  normalizeCodexReasoningEffort,
+} from "./modelOptions";
 
 declare const addon: any;
 
@@ -68,8 +72,12 @@ export function buildCodexRunState(params: {
   const workspaceRoot = String(
     getPref("codexWorkspaceRoot") || "/tmp/zotero-paper-ai",
   );
-  const model = String(getPref("codexDefaultModel") || "gpt-5-codex");
-  const reasoningEffort = String(getPref("codexReasoningEffort") || "").trim();
+  const model = normalizeCodexModel(
+    String(getPref("codexDefaultModel") || "gpt-5.5"),
+  );
+  const reasoningEffort = normalizeCodexReasoningEffort(
+    String(getPref("codexReasoningEffort") || "medium"),
+  );
 
   return deriveCodexRunState({
     workspaceRoot,

@@ -16,9 +16,9 @@ pref(
 
 // Codex CLI
 pref("__prefsPrefix__.codexExecutablePath", "");
-pref("__prefsPrefix__.codexDefaultModel", "gpt-5-codex");
+pref("__prefsPrefix__.codexDefaultModel", "gpt-5.5");
 pref("__prefsPrefix__.codexReasoningEffort", "medium");
-pref("__prefsPrefix__.codexAllowedModels", "gpt-5-codex");
+pref("__prefsPrefix__.codexAllowedModels", "gpt-5.5");
 pref("__prefsPrefix__.codexEnableWebSearch", true);
 pref("__prefsPrefix__.codexSandboxMode", "workspace-write");
 pref("__prefsPrefix__.codexApprovalMode", "never");

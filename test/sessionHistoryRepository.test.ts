@@ -68,9 +68,10 @@ class MemoryFileOps implements SessionHistoryFileOps {
 
   async listDirectory(path: string) {
     const normalizedPrefix = path.replace(/\/+$/, "");
-    return [...this.files.keys()].filter((filePath) =>
-      filePath.startsWith(`${normalizedPrefix}/`) ||
-      filePath.startsWith(`${normalizedPrefix}\\`),
+    return [...this.files.keys()].filter(
+      (filePath) =>
+        filePath.startsWith(`${normalizedPrefix}/`) ||
+        filePath.startsWith(`${normalizedPrefix}\\`),
     );
   }
 }
@@ -88,7 +89,7 @@ function buildSnapshot() {
     lastGeminiSessionID: "gemini-thread-id",
     lastModel: {
       mode: "codex_cli" as const,
-      model: "gpt-5-codex",
+      model: "gpt-5.5",
       reasoningEffort: "medium",
     },
     messages: [
@@ -225,7 +226,10 @@ test("SessionHistoryRepository persists the paper index and snapshot via file op
   });
   const snapshot = buildSnapshot();
 
-  assert.equal(repo.getPaperIndexPath(42), "/session-history/papers/42/index.json");
+  assert.equal(
+    repo.getPaperIndexPath(42),
+    "/session-history/papers/42/index.json",
+  );
   assert.equal(
     repo.getSessionSnapshotPath(42, snapshot.sessionId),
     "/session-history/papers/42/sessions/paper-42-session-a.json",
@@ -304,10 +308,7 @@ test("SessionHistoryRepository recovers valid snapshots when index.json is malfo
     ],
   };
 
-  fileOps.files.set(
-    repo.getPaperIndexPath(42),
-    "{ not valid json",
-  );
+  fileOps.files.set(repo.getPaperIndexPath(42), "{ not valid json");
   fileOps.files.set(
     repo.getSessionSnapshotPath(42, firstSnapshot.sessionId),
     JSON.stringify(firstSnapshot),
@@ -388,10 +389,7 @@ test("SessionHistoryRepository prunes index rows whose snapshot is missing", asy
     index.sessions.map((entry) => entry.sessionId),
     [validSnapshot.sessionId],
   );
-  assert.deepEqual(
-    await repo.listSessions(42),
-    index.sessions,
-  );
+  assert.deepEqual(await repo.listSessions(42), index.sessions);
 });
 
 test("SessionHistoryRepository prunes index rows whose snapshot is corrupt", async () => {
@@ -455,10 +453,7 @@ test("SessionHistoryRepository prunes index rows whose snapshot is corrupt", asy
     index.sessions.map((entry) => entry.sessionId),
     [validSnapshot.sessionId],
   );
-  assert.deepEqual(
-    await repo.listSessions(42),
-    index.sessions,
-  );
+  assert.deepEqual(await repo.listSessions(42), index.sessions);
 });
 
 test("SessionHistoryRepository uses platform-safe path joining", () => {
@@ -536,6 +531,9 @@ test("SessionHistoryRepository deletes the snapshot and removes the index entry"
 
   await repo.deleteSession(42, snapshot.sessionId);
 
-  assert.equal(await repo.readSessionSnapshot(42, snapshot.sessionId), undefined);
+  assert.equal(
+    await repo.readSessionSnapshot(42, snapshot.sessionId),
+    undefined,
+  );
   assert.deepEqual(await repo.listSessions(42), []);
 });

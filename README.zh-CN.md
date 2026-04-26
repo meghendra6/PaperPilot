@@ -153,8 +153,7 @@ Codex 模式更偏向工作区驱动。当前代码库已经包含：
 - 可执行文件发现与校验
 - 登录/状态检查
 - 工作区可写性检查
-- 模型选择与模型历史
-- reasoning effort 支持
+- `gpt-5.5` 模型选择，以及 `low`、`medium`、`high`、`xhigh` reasoning effort 选项
 - sandbox 与 approval 设置
 - 可选网页搜索开关
 - 与当前论文关联的可恢复追问运行
@@ -227,7 +226,7 @@ OpenDataLoader 打包说明：
 
 1. 在 `main` 上把 `package.json` 和 `package-lock.json` 更新到目标发布版本。
 2. 将这次版本更新合并到 `main`。
-3. 创建并推送匹配的标签，例如 `git tag v0.0.3 && git push origin v0.0.3`。
+3. 创建并推送匹配的标签，例如 `git tag v0.1.0 && git push origin v0.1.0`。
 4. Release 工作流现在会在发布前运行 `scripts/check-release-tag-version.mjs`。如果 ref 名称与 `v${package.json.version}` 不完全一致，会立即失败。
 
 如果使用 `workflow_dispatch`，也必须从匹配的发布标签 ref 运行。分支 ref 会被同一个校验拒绝。

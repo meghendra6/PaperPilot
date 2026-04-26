@@ -158,8 +158,7 @@ Codex 模式更偏向工作區驅動。當前程式碼庫已包含：
 - 可執行檔發現與驗證
 - 登入／狀態檢查
 - 工作區可寫性檢查
-- 模型選擇與模型歷史
-- reasoning effort 支援
+- `gpt-5.5` 模型選擇，以及 `low`、`medium`、`high`、`xhigh` reasoning effort 選項
 - sandbox 與 approval 設定
 - 可選網頁搜尋切換
 - 與目前論文綁定的可恢復追問執行
@@ -232,7 +231,7 @@ OpenDataLoader 打包說明：
 
 1. 在 `main` 上把 `package.json` 和 `package-lock.json` 更新到目標發布版本。
 2. 將這次版本更新合併到 `main`。
-3. 建立並推送相符的標籤，例如 `git tag v0.0.3 && git push origin v0.0.3`。
+3. 建立並推送相符的標籤，例如 `git tag v0.1.0 && git push origin v0.1.0`。
 4. Release 工作流程現在會在發布前執行 `scripts/check-release-tag-version.mjs`。如果 ref 名稱與 `v${package.json.version}` 不完全一致，會立即失敗。
 
 如果使用 `workflow_dispatch`，也必須從相符的發布標籤 ref 執行。分支 ref 會被同一個檢查拒絕。

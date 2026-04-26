@@ -1,6 +1,6 @@
 {
   "name": "zotero-paper-pilot",
-  "version": "0.0.3",
+  "version": "0.1.0",
   "description": "Paper Pilot: Zotero plugin",
   "config": {
     "addonName": "Paper Pilot",

@@ -25,10 +25,13 @@ import {
   rememberRecentCodexModel,
 } from "./codex/modelHistory";
 import {
+  getCodexBuiltInModelCatalog,
+  getCodexBuiltInModels,
   getGeminiBuiltInModels,
-  loadCodexCachedModelCatalog,
-  loadCodexCachedModels,
   mergeModelOptions,
+  normalizeCodexModel,
+  normalizeCodexModelList,
+  normalizeCodexReasoningEffort,
   normalizeGeminiModel,
   normalizeGeminiModelList,
   parseAllowedModels,
@@ -2014,10 +2017,17 @@ export function registerPaperPilotPaneSection() {
           if (getCurrentProviderDescriptor(item.id).mode === "gemini_cli") {
             setPref("geminiDefaultModel", savedModel);
           } else {
-            setPref("codexDefaultModel", savedModel);
-            setPref("codexReasoningEffort", savedReasoningEffort || "medium");
+            setPref("codexDefaultModel", normalizeCodexModel(savedModel));
+            setPref(
+              "codexReasoningEffort",
+              normalizeCodexReasoningEffort(savedReasoningEffort || "medium"),
+            );
           }
-          rememberRecentCodexModel(savedModel);
+          rememberRecentCodexModel(
+            getCurrentProviderDescriptor(item.id).mode === "gemini_cli"
+              ? savedModel
+              : normalizeCodexModel(savedModel),
+          );
           await renderPaneState({
             itemID: item.id,
             itemTitle: item.getField("title"),
@@ -2896,7 +2906,7 @@ async function renderModelHistory(
   const recentModels =
     mode === "gemini_cli"
       ? normalizeGeminiModelList(getRecentCodexModels())
-      : getRecentCodexModels();
+      : normalizeCodexModelList(getRecentCodexModels());
   const allowedModelsRaw = parseAllowedModels(
     String(
       getPref(
@@ -2907,11 +2917,9 @@ async function renderModelHistory(
   const allowedModels =
     mode === "gemini_cli"
       ? normalizeGeminiModelList(allowedModelsRaw)
-      : allowedModelsRaw;
+      : normalizeCodexModelList(allowedModelsRaw);
   const cachedModels =
-    mode === "gemini_cli"
-      ? getGeminiBuiltInModels()
-      : await loadCodexCachedModels();
+    mode === "gemini_cli" ? getGeminiBuiltInModels() : getCodexBuiltInModels();
   const options = mergeModelOptions(
     recentModels,
     mergeModelOptions(allowedModels, cachedModels),
@@ -2925,14 +2933,20 @@ async function renderModelHistory(
   const currentValue = String(
     getPref(
       mode === "gemini_cli" ? "geminiDefaultModel" : "codexDefaultModel",
-    ) || (mode === "gemini_cli" ? "gemini-3.1-pro-preview" : "gpt-5-codex"),
+    ) || (mode === "gemini_cli" ? "gemini-3.1-pro-preview" : "gpt-5.5"),
   );
   const selectedValue =
-    mode === "gemini_cli" ? normalizeGeminiModel(currentValue) : currentValue;
+    mode === "gemini_cli"
+      ? normalizeGeminiModel(currentValue)
+      : normalizeCodexModel(currentValue);
   const currentReasoningEffort = String(
-    mode === "gemini_cli" ? "" : getPref("codexReasoningEffort") || "medium",
+    mode === "gemini_cli"
+      ? ""
+      : normalizeCodexReasoningEffort(
+          String(getPref("codexReasoningEffort") || "medium"),
+        ),
   );
-  const catalog = await loadCodexCachedModelCatalog();
+  const catalog = mode === "gemini_cli" ? [] : getCodexBuiltInModelCatalog();
   const optionMap = new Map<string, string>();
   const doc = modelInput.ownerDocument || globalThis.document;
 
@@ -2942,8 +2956,10 @@ async function renderModelHistory(
     return;
   }
 
-  for (const model of options) {
-    optionMap.set(`${model}|`, model);
+  if (mode === "gemini_cli") {
+    for (const model of options) {
+      optionMap.set(`${model}|`, model);
+    }
   }
 
   for (const model of mode === "gemini_cli" ? [] : catalog) {
@@ -2966,7 +2982,7 @@ async function renderModelHistory(
       const currentKey =
         mode === "gemini_cli"
           ? `${selectedValue}|`
-          : `${currentValue}|${currentReasoningEffort}`;
+          : `${selectedValue}|${currentReasoningEffort}`;
       if (value === currentKey) {
         option.selected = true;
       }
@@ -2977,7 +2993,7 @@ async function renderModelHistory(
   const fallbackKey =
     mode === "gemini_cli"
       ? `${selectedValue}|`
-      : `${currentValue}|${currentReasoningEffort}`;
+      : `${selectedValue}|${currentReasoningEffort}`;
   if (!optionMap.has(fallbackKey)) {
     const fallback = doc.createElement("option");
     fallback.value = fallbackKey;
@@ -2985,8 +3001,8 @@ async function renderModelHistory(
       mode === "gemini_cli"
         ? selectedValue
         : currentReasoningEffort
-          ? `${currentValue} (${currentReasoningEffort})`
-          : currentValue;
+          ? `${selectedValue} (${currentReasoningEffort})`
+          : selectedValue;
     fallback.selected = true;
     modelInput.appendChild(fallback);
   }
