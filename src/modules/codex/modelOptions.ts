@@ -1,5 +1,3 @@
-declare const Zotero: any;
-
 export function parseAllowedModels(value: string) {
   return value
     .split(",")
@@ -10,6 +8,10 @@ export function parseAllowedModels(value: string) {
 export function mergeModelOptions(recent: string[], allowed: string[]) {
   return [...new Set([...recent, ...allowed])];
 }
+
+const CODEX_BUILT_IN_MODEL = "gpt-5.5";
+const CODEX_REASONING_EFFORTS = ["low", "medium", "high", "xhigh"];
+const CODEX_DEFAULT_REASONING_EFFORT = "medium";
 
 const GEMINI_BUILT_IN_MODELS = [
   "gemini-3.1-pro-preview",
@@ -50,87 +52,38 @@ export interface CachedCodexModel {
   defaultReasoningEffort?: string;
 }
 
-function getUserHomeFromProfilePath() {
-  const profilePath = Zotero.getProfileDirectory()?.path || "";
-  return profilePath.includes("/Library/")
-    ? profilePath.split("/Library/")[0]
-    : "";
+export function getCodexBuiltInModels() {
+  return [CODEX_BUILT_IN_MODEL];
 }
 
-export async function loadCodexCachedModels() {
-  const userHome = getUserHomeFromProfilePath();
-  if (!userHome) {
-    return [];
-  }
-
-  const cachePath = `${userHome}/.codex/models_cache.json`;
-
-  try {
-    const raw = await Promise.resolve(
-      Zotero.File.getContentsAsync(cachePath, "utf-8"),
-    );
-    const parsed = JSON.parse(String(raw || "{}")) as {
-      models?: Array<{
-        slug?: string;
-        display_name?: string;
-        visibility?: string;
-      }>;
-    };
-    const models = Array.isArray(parsed.models) ? parsed.models : [];
-
-    return models
-      .filter((model) => model.visibility !== "hidden")
-      .map((model) => model.slug || model.display_name || "")
-      .filter(Boolean);
-  } catch {
-    return [];
-  }
+export function getCodexBuiltInModelCatalog(): CachedCodexModel[] {
+  return [
+    {
+      slug: CODEX_BUILT_IN_MODEL,
+      displayName: CODEX_BUILT_IN_MODEL,
+      reasoningEfforts: [...CODEX_REASONING_EFFORTS],
+      defaultReasoningEffort: CODEX_DEFAULT_REASONING_EFFORT,
+    },
+  ];
 }
 
-export async function loadCodexCachedModelCatalog(): Promise<
-  CachedCodexModel[]
-> {
-  const userHome = getUserHomeFromProfilePath();
-  if (!userHome) {
-    return [];
-  }
+export function normalizeCodexModel(model: string) {
+  const normalized = model.trim();
+  return normalized === CODEX_BUILT_IN_MODEL
+    ? normalized
+    : CODEX_BUILT_IN_MODEL;
+}
 
-  const cachePath = `${userHome}/.codex/models_cache.json`;
+export function normalizeCodexModelList(models: string[]) {
+  return mergeModelOptions(
+    [],
+    models.map((model) => normalizeCodexModel(model)).filter(Boolean),
+  );
+}
 
-  try {
-    const raw = await Promise.resolve(
-      Zotero.File.getContentsAsync(cachePath, "utf-8"),
-    );
-    const parsed = JSON.parse(String(raw || "{}")) as {
-      models?: Array<{
-        slug?: string;
-        display_name?: string;
-        visibility?: string;
-        supported_reasoning_levels?: Array<{ effort?: string }>;
-        default_reasoning_level?: string;
-      }>;
-    };
-    const models = Array.isArray(parsed.models) ? parsed.models : [];
-
-    return models
-      .filter(
-        (model) =>
-          model.visibility !== "hidden" && (model.slug || model.display_name),
-      )
-      .map((model) => {
-        const efforts = (model.supported_reasoning_levels || [])
-          .map((level) => String(level.effort || "").trim())
-          .filter(Boolean);
-
-        return {
-          slug: String(model.slug || model.display_name || ""),
-          displayName: String(model.display_name || model.slug || ""),
-          reasoningEfforts: efforts,
-          defaultReasoningEffort: model.default_reasoning_level,
-        } satisfies CachedCodexModel;
-      })
-      .filter((model) => Boolean(model.slug));
-  } catch {
-    return [];
-  }
+export function normalizeCodexReasoningEffort(reasoningEffort: string) {
+  const normalized = reasoningEffort.trim();
+  return CODEX_REASONING_EFFORTS.includes(normalized)
+    ? normalized
+    : CODEX_DEFAULT_REASONING_EFFORT;
 }

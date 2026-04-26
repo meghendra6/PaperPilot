@@ -153,8 +153,7 @@ Codex 模式更偏向工作区驱动。当前代码库已经包含：
 - 可执行文件发现与校验
 - 登录/状态检查
 - 工作区可写性检查
-- 模型选择与模型历史
-- reasoning effort 支持
+- `gpt-5.5` 模型选择，以及 `low`、`medium`、`high`、`xhigh` reasoning effort 选项
 - sandbox 与 approval 设置
 - 可选网页搜索开关
 - 与当前论文关联的可恢复追问运行

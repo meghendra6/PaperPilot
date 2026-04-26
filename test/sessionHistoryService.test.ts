@@ -46,9 +46,10 @@ class MemoryFileOps implements SessionHistoryFileOps {
 
   async listDirectory(path: string) {
     const normalizedPrefix = path.replace(/\/+$/, "");
-    return [...this.files.keys()].filter((filePath) =>
-      filePath.startsWith(`${normalizedPrefix}/`) ||
-      filePath.startsWith(`${normalizedPrefix}\\`),
+    return [...this.files.keys()].filter(
+      (filePath) =>
+        filePath.startsWith(`${normalizedPrefix}/`) ||
+        filePath.startsWith(`${normalizedPrefix}\\`),
     );
   }
 }
@@ -384,7 +385,10 @@ test("SessionHistoryService persists the active session snapshot with mixed-mode
     });
     assert.deepEqual(persisted?.mastery, buildMasteryState());
 
-    const savedSnapshot = await repository.readSessionSnapshot(502, session.sessionId);
+    const savedSnapshot = await repository.readSessionSnapshot(
+      502,
+      session.sessionId,
+    );
     assert.deepEqual(savedSnapshot, persisted);
 
     messageStore.clear(session.sessionId);
@@ -422,7 +426,7 @@ test("SessionHistoryService honors prompts-only persistence for snapshots", asyn
     sessionStore.update(503, "codex_cli", undefined, (existing) => {
       existing.lastModel = {
         mode: "codex_cli",
-        model: "gpt-5-codex",
+        model: "gpt-5.5",
         reasoningEffort: "medium",
       };
     });
@@ -485,11 +489,14 @@ test("SessionHistoryService honors prompts-only persistence for snapshots", asyn
     assert.equal(persisted?.mastery, undefined);
     assert.deepEqual(persisted?.lastModel, {
       mode: "codex_cli",
-      model: "gpt-5-codex",
+      model: "gpt-5.5",
       reasoningEffort: "medium",
     });
 
-    const savedSnapshot = await repository.readSessionSnapshot(503, session.sessionId);
+    const savedSnapshot = await repository.readSessionSnapshot(
+      503,
+      session.sessionId,
+    );
     assert.deepEqual(savedSnapshot, persisted);
 
     messageStore.clear(session.sessionId);
@@ -523,7 +530,10 @@ test("SessionHistoryService opens a saved snapshot into the in-memory stores", a
     assert.ok(opened);
     assert.equal(opened?.sessionId, snapshot.sessionId);
     assert.equal(opened?.mode, "gemini_cli");
-    assert.deepEqual(messageStore.recentRaw(snapshot.sessionId, 10), snapshot.messages);
+    assert.deepEqual(
+      messageStore.recentRaw(snapshot.sessionId, 10),
+      snapshot.messages,
+    );
     assert.deepEqual(
       (
         globalThis as {
@@ -621,7 +631,8 @@ test("SessionHistoryService.persistAssistantTurn with suppressMessage skips chat
       sessionId: session.sessionId,
       mode: "codex_cli",
       paperTitle: "Suppressed turn paper",
-      assistantText: '{"question":"silent","topic":"x","difficulty":"foundational"}',
+      assistantText:
+        '{"question":"silent","topic":"x","difficulty":"foundational"}',
       success: true,
       rawEvent: '{"type":"item.completed"}',
       resumeSessionId: "codex-thread-suppressed",

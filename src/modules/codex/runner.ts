@@ -20,6 +20,10 @@ import {
 } from "./commandBuilder";
 import { buildCodexCommandEnvironment } from "./environment";
 import { resolveCodexExecutablePath } from "./executable";
+import {
+  normalizeCodexModel,
+  normalizeCodexReasoningEffort,
+} from "./modelOptions";
 import { parseCodexOutput } from "./outputParser";
 import { buildBackgroundCodexShellScript } from "./shell";
 
@@ -65,8 +69,12 @@ export async function startCodexRunForQuestion(params: {
   const executablePath = await resolveCodexExecutablePath(
     String(getPref("codexExecutablePath") || ""),
   );
-  const model = String(getPref("codexDefaultModel") || "gpt-5-codex");
-  const reasoningEffort = String(getPref("codexReasoningEffort") || "").trim();
+  const model = normalizeCodexModel(
+    String(getPref("codexDefaultModel") || "gpt-5.5"),
+  );
+  const reasoningEffort = normalizeCodexReasoningEffort(
+    String(getPref("codexReasoningEffort") || "medium"),
+  );
   const workspaceRoot = String(
     getPref("codexWorkspaceRoot") || "/tmp/zotero-paper-ai",
   );

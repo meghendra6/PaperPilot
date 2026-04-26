@@ -155,8 +155,7 @@ Codex mode is the more workspace-oriented path. The current codebase includes su
 - executable discovery and validation
 - login/status checks
 - workspace writability checks
-- model selection and model history
-- reasoning-effort support
+- `gpt-5.5` model selection with `low`, `medium`, `high`, and `xhigh` reasoning effort options
 - sandbox and approval settings
 - optional web-search toggle
 - resumable follow-up runs tied to the current paper
