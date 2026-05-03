@@ -15,6 +15,7 @@ import type { EngineMode } from "./ai/types";
 import {
   buildCodexRunState,
   getCodexRunStateForItem,
+  isCodexRunActiveForItem,
   setCodexRunStateForItem,
 } from "./codex/runState";
 import { clearCodexPollerForItem } from "./codex/poller";
@@ -53,6 +54,7 @@ import {
   handleGeminiQuestion,
   stopGeminiRunSilently,
 } from "./gemini/controller";
+import { isGeminiRunActiveForItem } from "./gemini/runState";
 import { shouldEnableAutoHighlight } from "./autoHighlight/status";
 import { runAutoHighlightWorkflow } from "./autoHighlight/workflow";
 import {
@@ -3074,6 +3076,18 @@ function renderStreamingIndicator(
   streamingIndicator.style.display = visible ? "flex" : "none";
 }
 
+function getActiveRunMessage(mode: EngineMode, itemID: number) {
+  if (mode === "codex_cli" && isCodexRunActiveForItem(itemID)) {
+    return "A Codex CLI run is already active for this paper. Cancel it or wait for it to finish before starting another request.";
+  }
+
+  if (mode === "gemini_cli" && isGeminiRunActiveForItem(itemID)) {
+    return "A Gemini CLI run is already active for this paper. Wait for it to finish before starting another request.";
+  }
+
+  return undefined;
+}
+
 function adjustContainerHeight(
   chatContainer: HTMLElement,
   input: HTMLTextAreaElement,
@@ -3544,6 +3558,22 @@ async function handleUserInput(
 ) {
   const question = input.value.trim();
   if (!question) {
+    return;
+  }
+
+  const activeRunMessage = getActiveRunMessage(mode, itemID);
+  if (activeRunMessage) {
+    if (options?.silentUserMessage) {
+      input.value = "";
+      input.style.height = `${CHAT_INPUT_MIN_HEIGHT}px`;
+    }
+    if (!options?.suppressChatMessages) {
+      addMessage(chatMessages, activeRunMessage, "ai");
+    }
+    options?.onComplete?.({
+      success: false,
+      assistantText: activeRunMessage,
+    });
     return;
   }
 

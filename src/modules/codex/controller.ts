@@ -1,8 +1,13 @@
 import { addMessage, setMessageContent } from "../components/ChatMessage";
 import { sanitizeAssistantText } from "../message/assistantOutput";
 import { sessionHistoryService } from "../session/sessionHistoryService";
+import { cleanupWorkspaceIfEnabled } from "../workspace/cleanup";
 import { clearCodexPollerForItem } from "./poller";
-import { buildCodexRunState, setCodexRunStateForItem } from "./runState";
+import {
+  buildCodexRunState,
+  isCodexRunActiveForItem,
+  setCodexRunStateForItem,
+} from "./runState";
 import { readCodexRunProgress, startCodexRunForQuestion } from "./runner";
 import { stopCodexRunSilently } from "./stopRun";
 import { classifyCodexLoginFailure } from "./statusClassification";
@@ -25,6 +30,20 @@ export async function handleCodexQuestion(params: {
   suppressChatMessages?: boolean;
   onComplete?: (result: { success: boolean; assistantText: string }) => void;
 }) {
+  if (isCodexRunActiveForItem(params.itemID)) {
+    const assistantText =
+      "A Codex CLI run is already active for this paper. Cancel it or wait for it to finish before starting another request.";
+    if (!params.suppressChatMessages) {
+      addMessage(params.chatMessages, assistantText, "ai");
+    }
+    params.streamingIndicator.style.display = "none";
+    params.onComplete?.({
+      success: false,
+      assistantText,
+    });
+    return;
+  }
+
   addon.data.lastCodexRequests?.set(params.itemID, {
     sessionId: params.sessionId,
     sessionTitle: params.sessionTitle,
@@ -75,6 +94,7 @@ export async function handleCodexQuestion(params: {
       success: false,
       assistantText: result.error,
     });
+    await cleanupWorkspaceIfEnabled(result.workspacePath);
     return;
   }
 
@@ -182,6 +202,7 @@ export async function handleCodexQuestion(params: {
       success,
       assistantText,
     });
+    await cleanupWorkspaceIfEnabled(result.workspacePath);
   }, 800);
 
   addon.data.codexRunPollers?.set(params.itemID, poller);

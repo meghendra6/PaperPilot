@@ -5,6 +5,7 @@ import type {
 } from "./executableSelection";
 import { buildCodexCommandEnvironment } from "./environment";
 import { chooseBestCodexExecutable } from "./executableSelection";
+import { shellEscape } from "./shell";
 
 interface CodexExecutableCandidate {
   path: string;
@@ -23,10 +24,6 @@ function normalizeOutput(output: string) {
   return String(output || "")
     .trim()
     .replace(/\s+/g, " ");
-}
-
-function shellEscape(value: string) {
-  return `'${value.replace(/'/g, `'"'"'`)}'`;
 }
 
 function isAbsolutePath(path: string) {

@@ -19,6 +19,7 @@ import {
   readCodexRunProgress,
   startCodexRunForQuestion,
 } from "../codex/runner";
+import { cleanupWorkspaceIfEnabled } from "../workspace/cleanup";
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -55,31 +56,40 @@ async function waitForCodexText(params: {
   });
 
   if (!started.ok) {
+    await cleanupWorkspaceIfEnabled(started.workspacePath);
     throw new Error(started.error);
   }
 
-  for (let attempts = 0; attempts < 300; attempts += 1) {
-    const progress = await readCodexRunProgress({
-      outputPath: started.outputPath,
-      exitCodePath: started.exitCodePath,
-    });
+  let completed = false;
+  try {
+    for (let attempts = 0; attempts < 300; attempts += 1) {
+      const progress = await readCodexRunProgress({
+        outputPath: started.outputPath,
+        exitCodePath: started.exitCodePath,
+      });
 
-    if (progress.completed) {
-      const parsedText =
-        parseCodexOutputText(progress.rawOutput) || progress.rawOutput;
-      if (progress.exitCode !== "0") {
-        throw new Error(parsedText || "Codex highlight run failed.");
+      if (progress.completed) {
+        completed = true;
+        const parsedText =
+          parseCodexOutputText(progress.rawOutput) || progress.rawOutput;
+        if (progress.exitCode !== "0") {
+          throw new Error(parsedText || "Codex highlight run failed.");
+        }
+        return parsedText;
       }
-      return parsedText;
+
+      if (attempts === 0) {
+        params.onStatus?.("Finding important passages…");
+      }
+      await sleep(800);
     }
 
-    if (attempts === 0) {
-      params.onStatus?.("Finding important passages…");
+    throw new Error("Codex highlight run timed out.");
+  } finally {
+    if (completed) {
+      await cleanupWorkspaceIfEnabled(started.workspacePath);
     }
-    await sleep(800);
   }
-
-  throw new Error("Codex highlight run timed out.");
 }
 
 async function resolveOpenPDFAttachment(itemID: number) {

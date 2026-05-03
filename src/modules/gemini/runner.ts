@@ -15,6 +15,9 @@ import {
   type PaperWorkspaceContent,
 } from "../tools/paperWorkspaceContent";
 import { buildPaperWorkspacePath } from "../workspace/pathBuilder";
+import { shellEscape } from "../codex/shell";
+
+declare const Zotero: any;
 
 export interface StartedGeminiRun {
   ok: true;
@@ -34,7 +37,9 @@ interface FailedGeminiRun {
 }
 
 function buildGeminiShellEnvironment() {
-  const profilePath = Zotero.getProfileDirectory()?.path || "";
+  const profilePath =
+    (globalThis as { Zotero?: any }).Zotero?.getProfileDirectory?.()?.path ||
+    "";
   const userHome = profilePath.includes("/Library/")
     ? profilePath.split("/Library/")[0]
     : "";
@@ -55,10 +60,6 @@ function buildGeminiShellEnvironment() {
   };
 }
 
-function shellEscape(value: string) {
-  return `'${value.replace(/'/g, `"'"'"'`)}'`;
-}
-
 async function readTextFile(path: string) {
   try {
     const contents = await Promise.resolve(
@@ -70,7 +71,7 @@ async function readTextFile(path: string) {
   }
 }
 
-function buildGeminiCommand(params: {
+export function buildGeminiCommand(params: {
   promptPath: string;
   outputPath: string;
   exitCodePath: string;
@@ -97,8 +98,7 @@ function buildGeminiCommand(params: {
     ...environmentLines,
     `(` +
       `cd ${shellEscape(params.workspacePath)} && ` +
-      `PROMPT=$(cat ${shellEscape(params.promptPath)}) && ` +
-      `${shellEscape(params.executablePath)} ${resumePart} -m ${shellEscape(params.model)} --yolo --output-format text -p "$PROMPT" > ${shellEscape(params.outputPath)} 2>&1; ` +
+      `cat ${shellEscape(params.promptPath)} | ${shellEscape(params.executablePath)} ${resumePart} -m ${shellEscape(params.model)} --yolo --output-format text > ${shellEscape(params.outputPath)} 2>&1; ` +
       `printf '%s' $? > ${shellEscape(params.exitCodePath)}` +
       `) & echo $! > ${shellEscape(params.pidPath)}`,
   ].join(" && ");
@@ -151,12 +151,12 @@ export async function startGeminiRunForQuestion(params: {
   const readerContext = await getCurrentReaderContext();
   payload.pageNumber = readerContext.pageIndex;
 
-  const item = (await Zotero.Items.getAsync(params.itemID)) as Zotero.Item;
+  const item = (await Zotero.Items.getAsync(params.itemID)) as any;
   const authors =
     typeof item.getCreators === "function"
       ? item
           .getCreators()
-          .map((creator) =>
+          .map((creator: { firstName?: string; lastName?: string }) =>
             [creator.firstName, creator.lastName]
               .filter(Boolean)
               .join(" ")
@@ -165,7 +165,7 @@ export async function startGeminiRunForQuestion(params: {
           .filter(Boolean)
       : [];
   const attachmentID = !item.isAttachment()
-    ? item.getAttachments().find((id) => {
+    ? item.getAttachments().find((id: number) => {
         const attachment = Zotero.Items.get(id);
         return (
           attachment.attachmentContentType === "application/pdf" ||
