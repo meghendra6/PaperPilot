@@ -1,3 +1,5 @@
+import { isCodexRunActiveForItem } from "./codex/runState";
+
 declare const Zotero: any;
 
 export interface RecommendedPaper {
@@ -389,11 +391,18 @@ export async function generateRelatedPaperGroups(params: {
   itemTitle: string;
   onStatus?: (status: string) => void;
 }) {
+  if (isCodexRunActiveForItem(params.itemID)) {
+    throw new Error(
+      "A Codex CLI run is already active for this paper. Cancel it or wait for it to finish before starting related-paper recommendations.",
+    );
+  }
+
   const [{ readCodexRunProgress, startCodexRunForQuestion }, { sessionStore }] =
     await Promise.all([
       import("./codex/runner"),
       import("./session/sessionStore"),
     ]);
+  const { cleanupWorkspaceIfEnabled } = await import("./workspace/cleanup");
   const item = await Zotero.Items.getAsync(params.itemID);
   const session = sessionStore.touch(
     params.itemID,
@@ -411,39 +420,50 @@ export async function generateRelatedPaperGroups(params: {
   });
 
   if (!result.ok) {
+    await cleanupWorkspaceIfEnabled(result.workspacePath);
     throw new Error(result.error);
   }
 
   let attempts = 0;
-  while (attempts < 300) {
-    const progress = await readCodexRunProgress({
-      outputPath: result.outputPath,
-      exitCodePath: result.exitCodePath,
-    });
-    if (progress.completed) {
-      if (progress.exitCode !== "0") {
-        throw new Error(
-          progress.parsedOutput ||
-            progress.rawOutput ||
-            "Related paper generation failed.",
+  let completed = false;
+  try {
+    while (attempts < 300) {
+      const progress = await readCodexRunProgress({
+        outputPath: result.outputPath,
+        exitCodePath: result.exitCodePath,
+      });
+      if (progress.completed) {
+        completed = true;
+        if (progress.exitCode !== "0") {
+          throw new Error(
+            progress.parsedOutput ||
+              progress.rawOutput ||
+              "Related paper generation failed.",
+          );
+        }
+        params.onStatus?.("Grouping recommendations…");
+        const parsed = parseRelatedPaperResponse(
+          progress.parsedOutput || progress.rawOutput,
         );
+        const candidates = await getLibraryItemCandidates(item.libraryID);
+        return {
+          groups: attachExistingItems(parsed.groups, candidates),
+          rawOutput: progress.rawOutput,
+        };
       }
-      params.onStatus?.("Grouping recommendations…");
-      const parsed = parseRelatedPaperResponse(
-        progress.parsedOutput || progress.rawOutput,
-      );
-      const candidates = await getLibraryItemCandidates(item.libraryID);
-      return {
-        groups: attachExistingItems(parsed.groups, candidates),
-        rawOutput: progress.rawOutput,
-      };
+
+      await new Promise((resolve) => setTimeout(resolve, 800));
+      attempts += 1;
     }
 
-    await new Promise((resolve) => setTimeout(resolve, 800));
-    attempts += 1;
+    throw new Error(
+      "Timed out while waiting for related paper recommendations.",
+    );
+  } finally {
+    if (completed) {
+      await cleanupWorkspaceIfEnabled(result.workspacePath);
+    }
   }
-
-  throw new Error("Timed out while waiting for related paper recommendations.");
 }
 
 export async function openRecommendedPaper(paper: RecommendedPaper) {

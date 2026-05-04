@@ -1,8 +1,13 @@
 import { addMessage, setMessageContent } from "../components/ChatMessage";
 import { sanitizeAssistantText } from "../message/assistantOutput";
 import { sessionHistoryService } from "../session/sessionHistoryService";
+import { cleanupWorkspaceIfEnabled } from "../workspace/cleanup";
 import { clearGeminiPollerForItem } from "./poller";
-import { setGeminiRunStateForItem, clearGeminiRunStateForItem } from "./runState";
+import {
+  clearGeminiRunStateForItem,
+  isGeminiRunActiveForItem,
+  setGeminiRunStateForItem,
+} from "./runState";
 import { startGeminiRunForQuestion, readGeminiRunProgress } from "./runner";
 import { stopGeminiRunSilently } from "./stopRun";
 
@@ -24,6 +29,20 @@ export async function handleGeminiQuestion(params: {
   suppressChatMessages?: boolean;
   onComplete?: (result: { success: boolean; assistantText: string }) => void;
 }) {
+  if (isGeminiRunActiveForItem(params.itemID)) {
+    const assistantText =
+      "A Gemini CLI run is already active for this paper. Wait for it to finish before starting another request.";
+    if (!params.suppressChatMessages) {
+      addMessage(params.chatMessages, assistantText, "ai");
+    }
+    params.streamingIndicator.style.display = "none";
+    params.onComplete?.({
+      success: false,
+      assistantText,
+    });
+    return;
+  }
+
   const result = await startGeminiRunForQuestion({
     itemID: params.itemID,
     title: params.sessionTitle,
@@ -56,6 +75,7 @@ export async function handleGeminiQuestion(params: {
       success: false,
       assistantText: result.error,
     });
+    await cleanupWorkspaceIfEnabled(result.workspacePath);
     return;
   }
 
@@ -114,6 +134,7 @@ export async function handleGeminiQuestion(params: {
       assistantText,
     });
     clearGeminiRunStateForItem(params.itemID);
+    await cleanupWorkspaceIfEnabled(result.workspacePath);
   }, 800);
 
   addon.data.geminiRunPollers?.set(params.itemID, poller);

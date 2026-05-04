@@ -1,4 +1,5 @@
 import { buildCodexCommandEnvironment } from "../codex/environment";
+import { shellEscape } from "../codex/shell";
 
 declare const Zotero: any;
 declare const IOUtils: any;
@@ -101,10 +102,6 @@ async function resolvePdfAttachment(item: any) {
   }
 
   return undefined;
-}
-
-function shellEscape(value: string) {
-  return `'${value.replace(/'/g, `'"'"'`)}'`;
 }
 
 function fileURLToPathString(fileUrl: string) {

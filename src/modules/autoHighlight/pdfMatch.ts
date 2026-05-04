@@ -1,5 +1,6 @@
 import type { MatchedHighlight, PDFPageText, PDFTextSpan } from "./types";
 import { buildCodexCommandEnvironment } from "../codex/environment";
+import { shellEscape } from "../codex/shell";
 
 async function dynamicImportPdfJs() {
   const dynamicImport = new Function(
@@ -375,11 +376,10 @@ async function extractPdfTextPagesViaSubprocess(
     throw new Error("PDF extraction fallback subprocess is unavailable.");
   }
 
-  const escape = (value: string) => `'${value.replace(/'/g, `'"'"'`)}'`;
   const environment = buildCodexCommandEnvironment("/opt/homebrew/bin/node");
   const exports = Object.entries(environment)
     .filter((entry): entry is [string, string] => Boolean(entry[0] && entry[1]))
-    .map(([key, value]) => `export ${key}=${escape(value)}`);
+    .map(([key, value]) => `export ${key}=${shellEscape(value)}`);
   const pdfjsSpecifier = await resolvePdfJsModuleSpecifier();
   const nodeScript = `
 import fs from "node:fs";
@@ -447,7 +447,7 @@ try {
       `if [ -z "$NODE_BIN" ]; then printf '%s' '{"ok":false,"error":"node executable not found in PATH"}'; exit 0; fi`,
       `OUT_FILE="$(mktemp)"`,
       `ERR_FILE="$(mktemp)"`,
-      `"${"$"}NODE_BIN" --input-type=module - ${escape(filePath)} ${escape(pdfjsSpecifier)} >"${"$"}OUT_FILE" 2>"${"$"}ERR_FILE" <<'EOF'\n${nodeScript}\nEOF`,
+      `"${"$"}NODE_BIN" --input-type=module - ${shellEscape(filePath)} ${shellEscape(pdfjsSpecifier)} >"${"$"}OUT_FILE" 2>"${"$"}ERR_FILE" <<'EOF'\n${nodeScript}\nEOF`,
       `STATUS=$?`,
       `STDOUT_CONTENT="$(cat "${"$"}OUT_FILE" 2>/dev/null || true)"`,
       `STDERR_CONTENT="$(cat "${"$"}ERR_FILE" 2>/dev/null || true)"`,
@@ -567,7 +567,10 @@ export function buildSortIndex(pageIndex: number, rects: number[][]) {
   return `${pagePart}|${topPart}|${leftPart}`;
 }
 
-export function mergeRectsOnSameLine(rects: number[][], tolerance = 2): number[][] {
+export function mergeRectsOnSameLine(
+  rects: number[][],
+  tolerance = 2,
+): number[][] {
   if (rects.length <= 1) {
     return rects;
   }
@@ -676,9 +679,7 @@ export function matchQuoteInPages(
               ? n2oMap[n2oMap.length - 1]
               : 0;
         const origEnd =
-          range.endInSpan < n2oMap.length
-            ? n2oMap[range.endInSpan]
-            : origLen;
+          range.endInSpan < n2oMap.length ? n2oMap[range.endInSpan] : origLen;
         const startFraction = origLen > 0 ? origStart / origLen : 0;
         const endFraction = origLen > 0 ? origEnd / origLen : 1;
         const newX1 = x1 + startFraction * spanWidth;

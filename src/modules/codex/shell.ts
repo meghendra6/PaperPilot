@@ -1,5 +1,5 @@
-function shellEscape(value: string) {
-  return `'${value.replace(/'/g, `"'"'"`)}'`;
+export function shellEscape(value: string) {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
 function buildShellEnvironmentExports(

@@ -98,6 +98,14 @@ export function getCodexRunStateForItem(itemID: number) {
   return addon.data.codexRunStates?.get(itemID);
 }
 
+export function isCodexRunActiveForItem(itemID: number) {
+  const runState = getCodexRunStateForItem(itemID);
+  return Boolean(
+    addon.data.codexRunPollers?.has(itemID) ||
+      runState?.runStatus === "running",
+  );
+}
+
 export function clearCodexRunStateForItem(itemID: number) {
   addon.data.codexRunStates?.delete(itemID);
 }

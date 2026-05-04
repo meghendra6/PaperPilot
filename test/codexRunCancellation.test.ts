@@ -3,6 +3,7 @@ import * as assert from "node:assert/strict";
 
 import {
   clearCodexRunStateForItem,
+  isCodexRunActiveForItem,
   setCodexRunStateForItem,
 } from "../src/modules/codex/runState";
 import { stopCodexRunSilently } from "../src/modules/codex/stopRun";
@@ -69,5 +70,47 @@ test("stopCodexRunSilently kills the active pid and clears run state and poller 
     clearCodexRunStateForItem(77);
     (globalThis as { addon?: unknown }).addon = previousAddon;
     (globalThis as { Zotero?: unknown }).Zotero = previousZotero;
+  }
+});
+
+test("isCodexRunActiveForItem reports active poller or running state", () => {
+  const previousAddon = (globalThis as { addon?: unknown }).addon;
+  const interval = setInterval(() => undefined, 60_000);
+
+  (globalThis as { addon?: unknown }).addon = {
+    data: {
+      codexRunStates: new Map(),
+      codexRunPollers: new Map(),
+    },
+  };
+
+  try {
+    assert.equal(isCodexRunActiveForItem(77), false);
+
+    (
+      globalThis as {
+        addon?: { data?: { codexRunPollers?: Map<number, unknown> } };
+      }
+    ).addon?.data?.codexRunPollers?.set(77, interval);
+    assert.equal(isCodexRunActiveForItem(77), true);
+
+    (
+      globalThis as {
+        addon?: { data?: { codexRunPollers?: Map<number, unknown> } };
+      }
+    ).addon?.data?.codexRunPollers?.delete(77);
+    setCodexRunStateForItem(77, {
+      workspacePath: "/tmp/paperpilot/77",
+      model: "gpt-5.5",
+      loginState: "ready",
+      runStatus: "running",
+      latestEventType: "spawned",
+      processId: "4123",
+    });
+    assert.equal(isCodexRunActiveForItem(77), true);
+  } finally {
+    clearInterval(interval);
+    clearCodexRunStateForItem(77);
+    (globalThis as { addon?: unknown }).addon = previousAddon;
   }
 });
