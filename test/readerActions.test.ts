@@ -1,49 +1,42 @@
 import { test } from "node:test";
 import * as assert from "node:assert/strict";
+import { buildReaderActionQuestion } from "../src/modules/readerActionPrompt";
 import { normalizeResponseLanguage } from "../src/modules/translation/responseLanguage";
 
-function buildQuestionForTest(
-  action: string,
-  text?: string,
-  targetLanguage = "English",
-) {
-  const selected = text
-    ? `
+function withResponseLanguage<T>(language: string, run: () => T) {
+  const previousZotero = (globalThis as { Zotero?: unknown }).Zotero;
+  (globalThis as { Zotero?: unknown }).Zotero = {
+    Prefs: {
+      get: () => language,
+    },
+  };
 
-Selected text:
-${text}`
-    : "";
-  switch (action) {
-    case "explain":
-      return `Explain the selected passage in the context of this paper.${selected}`;
-    case "summarize":
-      return `Summarize the selected passage in the context of this paper.${selected}`;
-    case "translate":
-      return `Translate the selected passage into ${targetLanguage}.${selected}`;
-    default:
-      return text
-        ? `Ask a question about the selected passage.${selected}`
-        : "Ask a question about this annotation.";
+  try {
+    return run();
+  } finally {
+    (globalThis as { Zotero?: unknown }).Zotero = previousZotero;
   }
 }
 
 test("selection explain action creates an explanation prompt from selected text", () => {
   assert.match(
-    buildQuestionForTest("explain", "Important sentence."),
+    buildReaderActionQuestion("explain", "Important sentence.").question,
     /Explain the selected passage[\s\S]*Important sentence/,
   );
 });
 
 test("selection translate action targets the preferred language", () => {
-  assert.match(
-    buildQuestionForTest("translate", "Bonjour", "Korean"),
-    /Translate the selected passage into Korean[\s\S]*Bonjour/,
-  );
+  withResponseLanguage("Korean", () => {
+    assert.match(
+      buildReaderActionQuestion("translate", "Bonjour").question,
+      /Translate the selected passage into Korean[\s\S]*Bonjour/,
+    );
+  });
 });
 
 test("ask-ai action keeps selection context for a follow-up custom question", () => {
   assert.match(
-    buildQuestionForTest("ask-ai", "Key paragraph"),
+    buildReaderActionQuestion("ask-ai", "Key paragraph").question,
     /Ask a question about the selected passage[\s\S]*Key paragraph/,
   );
 });

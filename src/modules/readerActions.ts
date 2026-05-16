@@ -1,19 +1,25 @@
 import { config } from "../../package.json";
 import { getString } from "../utils/locale";
-import { getPref } from "../utils/prefs";
-import { normalizeResponseLanguage } from "./translation/responseLanguage";
+import {
+  buildReaderActionQuestion,
+  type ReaderActionName,
+} from "./readerActionPrompt";
 import { clearReaderActionDraft, setReaderActionDraft } from "./readerPane";
+
+declare const Zotero: any;
 
 type DraftSource = "selection-popup" | "annotation-menu";
 
-type ReaderActionName =
-  | "explain"
-  | "summarize"
-  | "translate"
-  | "ask-ai"
-  | "annotation-ask"
-  | "annotation-summarize"
-  | "annotation-explain";
+type TextSelectionPopupEvent = {
+  doc: Document;
+  params: { annotation?: { text?: string } };
+  append: (...nodes: Array<Node | string>) => void;
+};
+
+type AnnotationContextMenuEvent = {
+  params: { ids?: string[] };
+  append: (params: { label: string; onCommand: () => void }) => void;
+};
 
 function saveDraft(params: {
   source: DraftSource;
@@ -37,45 +43,6 @@ function queueReaderAction(question: string, autoSubmit: boolean) {
   void addon.data.applyReaderActionToPane?.();
 }
 
-function buildQuestion(action: ReaderActionName, text?: string) {
-  const selected = text
-    ? `
-
-Selected text:
-${text}`
-    : "";
-  const targetLanguage = normalizeResponseLanguage(getPref("responseLanguage"));
-
-  switch (action) {
-    case "explain":
-    case "annotation-explain":
-      return {
-        question: `Explain the selected passage in the context of this paper.${selected}`,
-        autoSubmit: true,
-      };
-    case "summarize":
-    case "annotation-summarize":
-      return {
-        question: `Summarize the selected passage in the context of this paper.${selected}`,
-        autoSubmit: true,
-      };
-    case "translate":
-      return {
-        question: `Translate the selected passage into ${targetLanguage}.${selected}`,
-        autoSubmit: true,
-      };
-    case "annotation-ask":
-    case "ask-ai":
-    default:
-      return {
-        question: text
-          ? `Ask a question about the selected passage.${selected}`
-          : "Ask a question about this annotation.",
-        autoSubmit: false,
-      };
-  }
-}
-
 function triggerAction(params: {
   source: DraftSource;
   action: ReaderActionName;
@@ -88,7 +55,7 @@ function triggerAction(params: {
   }
 
   saveDraft(params);
-  const prepared = buildQuestion(params.action, params.text);
+  const prepared = buildReaderActionQuestion(params.action, params.text);
   queueReaderAction(prepared.question, prepared.autoSubmit);
 }
 
@@ -140,9 +107,7 @@ const ANNOTATION_ACTIONS = [
   },
 ] as const;
 
-const renderTextSelectionPopup = (
-  event: _ZoteroTypes.Reader.EventParams<"renderTextSelectionPopup">,
-) => {
+const renderTextSelectionPopup = (event: TextSelectionPopupEvent) => {
   const wrapper = event.doc.createElement("div");
   wrapper.style.cssText =
     "display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; align-items:center;";
@@ -159,9 +124,7 @@ const renderTextSelectionPopup = (
   event.append(wrapper);
 };
 
-const createAnnotationContextMenu = (
-  event: _ZoteroTypes.Reader.EventParams<"createAnnotationContextMenu">,
-) => {
+const createAnnotationContextMenu = (event: AnnotationContextMenuEvent) => {
   for (const item of ANNOTATION_ACTIONS) {
     event.append({
       label: item.label(),
