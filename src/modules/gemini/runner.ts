@@ -98,7 +98,7 @@ export function buildGeminiCommand(params: {
     ...environmentLines,
     `(` +
       `cd ${shellEscape(params.workspacePath)} && ` +
-      `cat ${shellEscape(params.promptPath)} | ${shellEscape(params.executablePath)} ${resumePart} -m ${shellEscape(params.model)} --yolo --output-format text > ${shellEscape(params.outputPath)} 2>&1; ` +
+      `cat ${shellEscape(params.promptPath)} | ${shellEscape(params.executablePath)} --skip-trust ${resumePart} -m ${shellEscape(params.model)} --yolo --output-format text -p '' > ${shellEscape(params.outputPath)} 2>&1; ` +
       `printf '%s' $? > ${shellEscape(params.exitCodePath)}` +
       `) & echo $! > ${shellEscape(params.pidPath)}`,
   ].join(" && ");
