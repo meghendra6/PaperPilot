@@ -115,7 +115,7 @@ export function buildClaudeCommand(params: {
     ...environmentLines,
     `(` +
       `cd ${shellEscape(params.workspacePath)} && ` +
-      `cat ${shellEscape(params.promptPath)} | ${shellEscape(params.executablePath)} -p --output-format text --model ${shellEscape(params.model)} ${resumePart} --permission-mode ${shellEscape(permissionMode)} > ${shellEscape(params.outputPath)} 2>&1; ` +
+      `cat ${shellEscape(params.promptPath)} | ${shellEscape(params.executablePath)} -p --output-format text --model ${shellEscape(params.model)} ${resumePart} --permission-mode ${shellEscape(permissionMode)} --setting-sources project,local > ${shellEscape(params.outputPath)} 2>&1; ` +
       `printf '%s' $? > ${shellEscape(params.exitCodePath)}` +
       `) & echo $! > ${shellEscape(params.pidPath)}`,
   ].join(" && ");

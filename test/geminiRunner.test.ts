@@ -46,4 +46,6 @@ test("buildGeminiCommand streams the prompt file instead of expanding it into ar
     /cat '\/tmp\/Paper Pilot\/Smith'\\''s paper\/gemini-prompt\.txt' \|/,
   );
   assert.match(script, /'\/opt\/Homebrew Tools\/gemini'\\''s bin\/gemini'/);
+  assert.match(script, /--skip-trust/);
+  assert.match(script, /-p ''/);
 });

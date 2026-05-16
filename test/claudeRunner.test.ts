@@ -50,6 +50,7 @@ test("buildClaudeCommand streams the prompt file into Claude Code print mode", (
   assert.match(script, /--model 'sonnet'/);
   assert.match(script, /--resume 'claude-thread-7'/);
   assert.match(script, /--permission-mode 'default'/);
+  assert.match(script, /--setting-sources project,local/);
 });
 
 test("buildClaudeCommand uses Claude Code continue mode for the latest session marker", () => {
