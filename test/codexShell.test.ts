@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import * as assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
 
 import { buildBackgroundCodexShellScript } from "../src/modules/codex/shell";
+import { checkShellSyntax } from "./helpers/shellSyntax";
 
 test("buildBackgroundCodexShellScript exports environment before running codex", () => {
   const script = buildBackgroundCodexShellScript({
@@ -42,10 +42,7 @@ test("buildBackgroundCodexShellScript quotes paths with apostrophes", () => {
     },
   });
 
-  const syntax = spawnSync("/bin/zsh", ["-n"], {
-    input: script,
-    encoding: "utf8",
-  });
+  const syntax = checkShellSyntax(script);
 
   assert.equal(syntax.status, 0, syntax.stderr);
   assert.match(script, /Smith'\\''s paper/);

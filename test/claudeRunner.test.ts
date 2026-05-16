@@ -3,9 +3,9 @@
 
 import { test } from "node:test";
 import * as assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
 
 import * as claudeRunner from "../src/modules/claude/runner";
+import { checkShellSyntax } from "./helpers/shellSyntax";
 
 type BuildClaudeCommand = (params: {
   promptPath: string;
@@ -38,10 +38,7 @@ test("buildClaudeCommand streams the prompt file into Claude Code print mode", (
     permissionMode: "default",
   });
 
-  const syntax = spawnSync("/bin/zsh", ["-n"], {
-    input: script,
-    encoding: "utf8",
-  });
+  const syntax = checkShellSyntax(script);
 
   assert.equal(syntax.status, 0, syntax.stderr);
   assert.match(
