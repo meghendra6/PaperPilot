@@ -6,6 +6,12 @@ pref("__prefsPrefix__.autoOpenPaneOnPdfOpen", false);
 pref("__prefsPrefix__.saveDocumentSessions", true);
 pref("__prefsPrefix__.responseLanguage", "English");
 
+// Claude Code
+pref("__prefsPrefix__.claudeExecutablePath", "");
+pref("__prefsPrefix__.claudeDefaultModel", "sonnet");
+pref("__prefsPrefix__.claudeAllowedModels", "sonnet, opus");
+pref("__prefsPrefix__.claudePermissionMode", "default");
+
 // Gemini CLI
 pref("__prefsPrefix__.geminiExecutablePath", "");
 pref("__prefsPrefix__.geminiDefaultModel", "gemini-3.1-pro-preview");

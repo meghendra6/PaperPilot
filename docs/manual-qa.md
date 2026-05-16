@@ -1,6 +1,6 @@
 # Manual QA Checklist
 
-Use this checklist inside a real Zotero 7 runtime before claiming readiness.
+Use this checklist inside real Zotero 7, 8, and 9 runtimes before claiming readiness.
 
 ## 0. Environment prerequisites
 
@@ -21,6 +21,8 @@ Use this checklist inside a real Zotero 7 runtime before claiming readiness.
 
 - [ ] Switch to `Gemini CLI`
 - [ ] Confirm Gemini session controls and mode messaging update correctly
+- [ ] Switch to `Claude Code`
+- [ ] Confirm Claude Code model controls and mode messaging update correctly
 - [ ] Switch to `Codex CLI`
 - [ ] Confirm Codex run-state card and model controls render
 - [ ] Confirm per-paper mode override does not affect another document unexpectedly
@@ -60,7 +62,16 @@ Use this checklist inside a real Zotero 7 runtime before claiming readiness.
 - [ ] Send a follow-up question and confirm resume/session continuity works
 - [ ] Verify invalid executable path or missing CLI state surfaces a clear error
 
-## 6. Codex CLI flow
+## 6. Claude Code flow
+
+- [ ] Enter a question in Claude Code mode
+- [ ] Confirm a local `claude -p` run starts successfully
+- [ ] Confirm output updates in pane and session metadata persists
+- [ ] Send a follow-up question and confirm resume/session continuity works
+- [ ] Verify invalid executable path or missing CLI state surfaces a clear error
+- [ ] Verify permission mode behaves as configured in preferences
+
+## 7. Codex CLI flow
 
 - [ ] Verify invalid executable path shows failure state
 - [ ] Verify login-required state is visible when Codex is not authenticated
@@ -75,7 +86,7 @@ Use this checklist inside a real Zotero 7 runtime before claiming readiness.
 - [ ] If Java is intentionally unavailable, confirm `metadata.json` falls back to `zotero-attachment-text` and includes a readable extraction note
 - [ ] Confirm the packaged add-on can resolve the bundled OpenDataLoader JAR without requiring a globally installed `opendataloader-pdf`
 
-## 7. Session correctness
+## 8. Session correctness
 
 - [ ] Open `Past sessions` and confirm the current paper shows a compact saved-session list
 - [ ] Open a saved session and confirm the prior transcript loads into the pane and follow-up turns continue in that same session
@@ -86,10 +97,10 @@ Use this checklist inside a real Zotero 7 runtime before claiming readiness.
 - [ ] Confirm `New session` preserves the prior session in `Past sessions` and starts a blank draft instead of discarding it
 - [ ] Confirm messages/draft/run-state reset for the new blank draft
 - [ ] Confirm research-brief and paper-tool cards reset with the blank draft
-- [ ] Switch between Gemini CLI and Codex CLI and confirm previous threads do not mix
+- [ ] Switch between Gemini CLI, Claude Code, and Codex CLI and confirm previous threads do not mix
 - [ ] Open a second paper and confirm context/session state does not leak from the first
 
-## 8. Related papers / auto-highlight regression checks
+## 9. Related papers / auto-highlight regression checks
 
 - [ ] Trigger `Recommend related papers` after using roadmap paper tools and confirm recommendation rendering still works
 - [ ] Open a recommended paper and confirm the current-paper pane state remains stable
@@ -97,7 +108,7 @@ Use this checklist inside a real Zotero 7 runtime before claiming readiness.
 - [ ] Run `Highlight key passages` after generating a research brief and confirm highlight workflow still completes
 - [ ] Confirm auto-highlight and research-brief/paper-tool outputs can coexist without making the pane unusable
 
-## 9. Compare / reusable artifact checks
+## 10. Compare / reusable artifact checks
 
 - [ ] `Compare` stays disabled before recommendations exist, then becomes enabled with a compact ready count once related papers are available
 - [ ] Multi-paper compare flow launches from the current paper plus a bounded recommended-paper set rather than an unbounded picker
@@ -106,11 +117,11 @@ Use this checklist inside a real Zotero 7 runtime before claiming readiness.
 - [ ] Compare surface avoids wide tables or layouts that crowd the existing workbench/recommendation/chat areas
 - [ ] `Save for collection` preserves reusable artifact content with traceable source paper context
 
-## 10. Future-phase checks (run only when implemented)
+## 11. Future-phase checks (run only when implemented)
 
 - [ ] Any workspace/discovery surface does not regress reader-pane usability or per-paper session isolation
 
-## 11. Regression checks
+## 12. Regression checks
 
 - [ ] Preferences pane opens without errors
 - [ ] Build artifacts install and load in Zotero
@@ -127,4 +138,4 @@ After running mastery and one or more workbench tools (research brief, contribut
 - Delete and Delete all show a confirmation dialog. Cancel keeps the data.
 - Reopening a session that previously ran mastery / workbench tools shows the natural chat transcript in the message list (prose markdown), with NO raw JSON lines.
 - Mastery cards, workbench cards, and recommendation groups still rehydrate when the session is reopened (existing behavior).
-- After opening a saved session, sending a fresh chat message continues to work end-to-end with both Codex CLI and Gemini CLI.
+- After opening a saved session, sending a fresh chat message continues to work end-to-end with Codex CLI, Claude Code, and Gemini CLI.

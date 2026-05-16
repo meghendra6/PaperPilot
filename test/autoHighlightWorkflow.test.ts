@@ -21,7 +21,7 @@ test("parseHighlightCandidatesWithRepair repairs prose-only responses via retry"
   });
 
   assert.equal(requestCount, 1);
-  assert.deepEqual(seenStatuses, ["Repairing Codex response…"]);
+  assert.deepEqual(seenStatuses, ["Repairing AI response…"]);
   assert.deepEqual(repaired, [
     { quote: "Exact repaired quote", reason: "important" },
   ]);

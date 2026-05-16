@@ -42,7 +42,7 @@
           preference="extensions.zotero.__addonRef__.defaultMode"
           data-placeholder-pref="true"
           data-placeholder-label="Default AI mode"
-          placeholder="gemini_cli or codex_cli"
+          placeholder="codex_cli, claude_code, or gemini_cli"
           style="flex: 1"
         ></html:input>
       </hbox>
@@ -104,6 +104,84 @@
             data-l10n-id="pref-general-response-language-chinese"
           ></html:option>
         </html:select>
+      </hbox>
+    </groupbox>
+
+    <groupbox>
+      <label
+        ><html:h2
+          data-l10n-id="pref-section-claude-title"
+          style="margin: 0"
+        ></html:h2
+      ></label>
+      <html:p
+        data-l10n-id="pref-section-claude-desc"
+        style="margin: 4px 0 10px; color: #555"
+      ></html:p>
+      <hbox
+        align="center"
+        style="display: flex; align-items: center; margin-bottom: 10px"
+      >
+        <html:label
+          for="zotero-prefpane-__addonRef__-input-claude-path"
+          data-l10n-id="pref-claude-executable-path"
+          style="flex: 0 0 220px; margin-right: 10px"
+        ></html:label>
+        <html:input
+          type="text"
+          id="zotero-prefpane-__addonRef__-input-claude-path"
+          preference="extensions.zotero.__addonRef__.claudeExecutablePath"
+          placeholder="/Users/me/.local/bin/claude"
+          style="flex: 1"
+        ></html:input>
+      </hbox>
+      <hbox
+        align="center"
+        style="display: flex; align-items: center; margin-bottom: 10px"
+      >
+        <html:label
+          for="zotero-prefpane-__addonRef__-input-claude-model"
+          data-l10n-id="pref-claude-default-model"
+          style="flex: 0 0 220px; margin-right: 10px"
+        ></html:label>
+        <html:input
+          type="text"
+          id="zotero-prefpane-__addonRef__-input-claude-model"
+          preference="extensions.zotero.__addonRef__.claudeDefaultModel"
+          placeholder="sonnet"
+          style="flex: 1"
+        ></html:input>
+      </hbox>
+      <hbox
+        align="center"
+        style="display: flex; align-items: center; margin-bottom: 10px"
+      >
+        <html:label
+          for="zotero-prefpane-__addonRef__-input-claude-allowed-models"
+          data-l10n-id="pref-claude-allowed-models"
+          style="flex: 0 0 220px; margin-right: 10px"
+        ></html:label>
+        <html:input
+          type="text"
+          id="zotero-prefpane-__addonRef__-input-claude-allowed-models"
+          preference="extensions.zotero.__addonRef__.claudeAllowedModels"
+          placeholder="comma-separated Claude Code model ids"
+          style="flex: 1"
+        ></html:input>
+      </hbox>
+      <hbox align="center" style="display: flex; align-items: center">
+        <html:label
+          for="zotero-prefpane-__addonRef__-input-claude-permission-mode"
+          data-l10n-id="pref-claude-permission-mode"
+          style="flex: 0 0 220px; margin-right: 10px"
+        ></html:label>
+        <html:input
+          type="text"
+          id="zotero-prefpane-__addonRef__-input-claude-permission-mode"
+          preference="extensions.zotero.__addonRef__.claudePermissionMode"
+          placeholder="default, acceptEdits, auto, bypassPermissions, dontAsk, or plan"
+          style="flex: 1"
+        ></html:input>
       </hbox>
     </groupbox>
 

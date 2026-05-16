@@ -1,9 +1,13 @@
 import { getPref } from "../../utils/prefs";
 import type { EngineMode } from "./types";
 
+declare const addon: any;
+
 export function getDefaultMode(): EngineMode {
   const prefMode = getPref("defaultMode");
-  return prefMode === "gemini_cli" || prefMode === "codex_cli"
+  return prefMode === "gemini_cli" ||
+    prefMode === "claude_code" ||
+    prefMode === "codex_cli"
     ? prefMode
     : "codex_cli";
 }

@@ -33,6 +33,7 @@ export interface SessionHistorySnapshot {
   updatedAt: string;
   lastMode?: EngineMode;
   lastCodexSessionID?: string;
+  lastClaudeSessionID?: string;
   lastGeminiSessionID?: string;
   lastModel?: SessionHistoryModelMetadata;
   messages?: MessageRecord[];

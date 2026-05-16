@@ -126,3 +126,16 @@ export function buildGeminiWorkspacePrompt(promptPreview: string) {
     promptPreview,
   ].join("\n");
 }
+
+export function buildClaudeWorkspacePrompt(promptPreview: string) {
+  return [
+    "You are helping inside a Zotero paper workspace through Claude Code.",
+    "Before answering, inspect the workspace files in this directory when they are relevant.",
+    "Prefer paper.md and paper.json over paper.txt when they are available.",
+    "Ground your answer in the local paper workspace contents rather than guessing.",
+    ...buildWorkspaceAnswerStyleRules(),
+    "",
+    "User request:",
+    promptPreview,
+  ].join("\n");
+}

@@ -2,6 +2,7 @@ import { ColumnOptions, DialogHelper } from "zotero-plugin-toolkit";
 import { config } from "../package.json";
 import hooks from "./hooks";
 import { createZToolkit } from "./utils/ztoolkit";
+import type { EngineMode } from "./modules/ai/types";
 
 class Addon {
   public data: {
@@ -23,6 +24,11 @@ class Addon {
       import("./modules/gemini/runState").GeminiRunState
     >;
     geminiRunPollers?: Map<number, ReturnType<typeof setInterval>>;
+    claudeRunStates?: Map<
+      number,
+      import("./modules/claude/runState").ClaudeRunState
+    >;
+    claudeRunPollers?: Map<number, ReturnType<typeof setInterval>>;
     codexExecutableResolvedPath?: string;
     codexLastProbeError?: string;
     codexDiagnosticsText?: string;
@@ -42,7 +48,7 @@ class Addon {
       }
     >;
     paperIndexStore?: Map<string, { hash: string; chunks: string[] }>;
-    modeOverrides?: Map<number, "gemini_cli" | "codex_cli">;
+    modeOverrides?: Map<number, EngineMode>;
     recentCodexModels?: string[];
     prefs?: {
       window: Window;
@@ -61,7 +67,7 @@ class Addon {
       updatedAt: string;
     };
     lastPreparedPrompt?: {
-      mode: "gemini_cli" | "codex_cli";
+      mode: EngineMode;
       text: string;
       updatedAt: string;
     };
@@ -112,6 +118,8 @@ class Addon {
       codexRunPollers: new Map(),
       geminiRunStates: new Map(),
       geminiRunPollers: new Map(),
+      claudeRunStates: new Map(),
+      claudeRunPollers: new Map(),
       lastCodexRequests: new Map(),
       paperIndexStore: new Map(),
       modeOverrides: new Map(),

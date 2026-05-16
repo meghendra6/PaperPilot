@@ -3,7 +3,7 @@ import { getPref, setPref } from "../utils/prefs";
 import { normalizeResponseLanguage } from "./translation/responseLanguage";
 
 const PLACEHOLDER_PREF_NOTICE =
-  "Placeholder preference saved. This settings surface does not wire live provider or retrieval behavior yet.";
+  "Preference saved. Reopen or refresh the reader pane if the visible controls do not update immediately.";
 
 export async function registerPrefsScripts(_window: Window) {
   // This function is called when the prefs window is opened

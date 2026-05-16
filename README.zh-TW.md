@@ -1,22 +1,23 @@
-# Paper Pilot for Zotero 7
+# Paper Pilot for Zotero 7-9
 
 > Languages: [English](./README.md) | [한국어](./README.ko.md) | [简体中文](./README.zh-CN.md) | [繁體中文](./README.zh-TW.md)
 
-**Paper Pilot 可將 Zotero 7 PDF 閱讀器變成 AI 驅動的論文工作台。**
+**Paper Pilot 可將 Zotero 7-9 PDF 閱讀器變成 AI 驅動的論文工作台。**
 
-Paper Pilot 是一個面向 Zotero 7 PDF 閱讀器的 AI 閱讀工作台。它直接在 Zotero 中提供以論文為範圍的聊天面板、結構化論文工具、相關論文探索，以及基於本地 CLI 的 AI 執行能力。
+Paper Pilot 是一個面向 Zotero 7-9 PDF 閱讀器的 AI 閱讀工作台。它直接在 Zotero 中提供以論文為範圍的聊天面板、結構化論文工具、相關論文探索，以及基於本地 CLI 的 AI 執行能力。
 
-![Zotero 7](https://img.shields.io/badge/Zotero-7-cc2936) ![Node 20+](https://img.shields.io/badge/Node-20%2B-339933) ![Java 11+](https://img.shields.io/badge/Java-11%2B-007396) ![License](https://img.shields.io/badge/License-AGPL--3.0--or--later-blue) ![Engines](https://img.shields.io/badge/Engines-Codex%20CLI%20%7C%20Gemini%20CLI-6f42c1)
+![Zotero 7-9](https://img.shields.io/badge/Zotero-7--9-cc2936) ![Node 20+](https://img.shields.io/badge/Node-20%2B-339933) ![Java 11+](https://img.shields.io/badge/Java-11%2B-007396) ![License](https://img.shields.io/badge/License-AGPL--3.0--or--later-blue) ![Engines](https://img.shields.io/badge/Engines-Codex%20CLI%20%7C%20Claude%20Code%20%7C%20Gemini%20CLI-6f42c1)
 
-目前外掛支援兩種引擎模式：
+目前外掛支援三種引擎模式：
 
 - **Codex CLI**
+- **Claude Code**
 - **Gemini CLI**
 
 ## 快速總覽
 
 - 直接在 Zotero Reader 中使用 AI 聊天
-- 兩種本地引擎模式：**Codex CLI** 與 **Gemini CLI**
+- 三種本地引擎模式：**Codex CLI**、**Claude Code** 與 **Gemini CLI**
 - 面向 brief、compare、contributions、limitations、follow-ups 的結構化論文工作台
 - 支援相關論文推薦、開啟論文、加入 collection 的流程
 - 支援 auto-highlight 與可持久化的論文級會話歷史
@@ -48,7 +49,7 @@ Paper Pilot 仍在積極開發中。
 
 在可被視為完全可用於正式環境之前，仍需要：
 
-- 在真實 Zotero 7 執行環境中完成端對端手動 QA
+- 在真實 Zotero 7-9 執行環境中完成端對端手動 QA
 - 在更多真實使用者環境中驗證安裝與執行情況
 
 目前的執行時檢查清單請見 [`docs/manual-qa.md`](./docs/manual-qa.md)。
@@ -59,7 +60,7 @@ Paper Pilot 仍在積極開發中。
 
 - 在 Zotero 閱讀器／條目面板中加入 AI 面板
 - 將對話限制在目前論文範圍內
-- 支援依論文切換 Codex CLI 與 Gemini CLI
+- 支援依論文切換 Codex CLI、Claude Code 與 Gemini CLI
 - 在同一篇論文／會話內保留追問脈絡
 - 支援透過 **Past sessions** 重新開啟、重新命名、刪除，或清空目前論文的已儲存會話
 - **New session** 會保留目前會話，並為同一篇論文開啟一個空白新草稿
@@ -111,9 +112,9 @@ Paper Pilot 可以產生分組的相關論文推薦，並協助你：
 
 Mastery prompt 會強制問題／評估回應為嚴格 JSON（禁止前置推理或開場白），將使用者回答包覆在 `<user_answer>` 標籤內，並容許 JSON 周圍出現 markdown fence 作為容錯。解析器能辨識字串與跳脫字元，因此引號內的 `}` 不會截斷有效回應。
 
-### 7. 面向 Codex 的本地工作區產物
+### 7. 面向 CLI 引擎的本地工作區產物
 
-當你在 **Codex CLI** 模式下提問時，Paper Pilot 會為目前論文建立一個工作區，讓 CLI 在回答前先讀取本地論文脈絡。
+當你在 **Codex CLI**、**Claude Code** 或 **Gemini CLI** 模式下提問時，Paper Pilot 會為目前論文建立一個工作區，讓 CLI 在回答前先讀取本地論文脈絡。
 
 典型產物包括：
 
@@ -129,14 +130,14 @@ Mastery prompt 會強制問題／評估回應為嚴格 JSON（禁止前置推理
 
 `paper.md` 是結構化 Markdown 視圖，`paper.json` 記錄結構化 PDF 元素與擷取後設資料，`paper.txt` 作為相容／純文字退路保留。當 Java 可用時，`paper.md` 和 `paper.json` 由內建的 OpenDataLoader 執行時產生；若結構化擷取不可用，Paper Pilot 會退回到 Zotero `attachmentText`，並在 `metadata.json` 中記錄此情況。
 
-這讓 Codex 可以根據目前論文、選取內容與最近對話歷史來回答問題。
+這讓所選 CLI 可以根據目前論文、選取內容與最近對話歷史來回答問題。
 
 ## 功能總覽
 
 | 領域       | 目前支援                                                                                     |
 | ---------- | -------------------------------------------------------------------------------------------- |
 | 閱讀器聊天 | Zotero Reader 內以論文為範圍的 AI 聊天                                                       |
-| 引擎       | Codex CLI、Gemini CLI                                                                        |
+| 引擎       | Codex CLI、Claude Code、Gemini CLI                                                           |
 | 論文工作台 | Research brief、compare、contributions、limitations、follow-ups                              |
 | 探索       | 分組相關論文推薦                                                                             |
 | 儲存       | 將最新結果儲存到 note，將 workbench artifact 儲存到 collection                               |
@@ -146,10 +147,11 @@ Mastery prompt 會強制問題／評估回應為嚴格 JSON（禁止前置推理
 
 ## 引擎模式
 
-| 模式         | 適用場景             | 目前優勢                                                                  |
-| ------------ | -------------------- | ------------------------------------------------------------------------- |
-| `Codex CLI`  | 面向工作區的論文分析 | 本地工作區產物、可恢復執行、模型／沙箱／批准控制、可選網頁搜尋            |
-| `Gemini CLI` | 輕量級本地論文問答   | 更簡單的可執行檔／模型設定、論文級脈絡連續性、本地 retrieval/context 組裝 |
+| 模式          | 適用場景             | 目前優勢                                                                  |
+| ------------- | -------------------- | ------------------------------------------------------------------------- |
+| `Codex CLI`   | 面向工作區的論文分析 | 本地工作區產物、可恢復執行、模型／沙箱／批准控制、可選網頁搜尋            |
+| `Claude Code` | 面向工作區的論文問答 | 本地工作區產物、模型／權限模式控制、論文級脈絡連續性                      |
+| `Gemini CLI`  | 輕量級本地論文問答   | 更簡單的可執行檔／模型設定、論文級脈絡連續性、本地 retrieval/context 組裝 |
 
 ### Codex CLI 模式
 
@@ -162,6 +164,16 @@ Codex 模式更偏向工作區驅動。當前程式碼庫已包含：
 - sandbox 與 approval 設定
 - 可選網頁搜尋切換
 - 與目前論文綁定的可恢復追問執行
+
+### Claude Code 模式
+
+Claude Code 模式使用本地 `claude` CLI 的 print 模式，並基於閱讀器聊天和工作台流程使用的同一論文工作區產物來回答。當前程式碼庫已包含：
+
+- 可設定的可執行檔路徑
+- 可設定的預設模型
+- 可設定的 permission mode
+- 論文級追問脈絡連續性
+- 面向目前論文的 retrieval/context 組裝
 
 ### Gemini CLI 模式
 
@@ -190,12 +202,13 @@ Gemini 模式是較輕量的本地 CLI 路徑。當前程式碼庫已包含：
 
 ## 環境需求
 
-- **Zotero 7**
+- **Zotero 7、8 或 9**
 - 開發用 **Node.js 20+**
 - 用於依賴與建置的 **npm**
 - 執行時 **Java 11+**（用於 OpenDataLoader 結構化 PDF 擷取）
 - 至少安裝一個本地 AI CLI：
   - **Codex CLI**
+  - **Claude Code**
   - **Gemini CLI**
 
 ## 開發快速開始
@@ -260,10 +273,10 @@ OpenDataLoader 打包說明：
 
 安裝 `.xpi` 後，可以用以下最短路徑驗證外掛是否正常工作：
 
-1. 在 Zotero 設定中配置本地 **Codex CLI** 或 **Gemini CLI** 可執行檔路徑。
+1. 在 Zotero 設定中配置本地 **Codex CLI**、**Claude Code** 或 **Gemini CLI** 可執行檔路徑。
 2. 在 Zotero Reader 中開啟一個 PDF 附件。
 3. 開啟 **Paper Pilot** 面板。
-4. 選擇 **Codex CLI** 或 **Gemini CLI**。
+4. 選擇 **Codex CLI**、**Claude Code** 或 **Gemini CLI**。
 5. 針對目前論文提出一個問題。
 6. 試用一個結構化工作台操作，例如 **Research brief** 或 **Compare**。
 
@@ -272,6 +285,7 @@ OpenDataLoader 打包說明：
 目前設定介面包含以下區塊：
 
 - **General**
+- **Claude Code**
 - **Gemini CLI**
 - **Codex CLI**
 - **Retrieval**
@@ -288,7 +302,7 @@ OpenDataLoader 打包說明：
 
 1. 在 Zotero Reader 中開啟 PDF。
 2. 開啟 **Paper Pilot** 面板。
-3. 選擇 **Codex CLI** 或 **Gemini CLI**。
+3. 選擇 **Codex CLI**、**Claude Code** 或 **Gemini CLI**。
 4. 針對論文提問。
 5. 如有需要，可透過選取文字或註解操作產生下一條 prompt。
 6. 使用工作台按鈕產生 brief、compare、contributions、follow-ups 等結構化結果。
@@ -309,6 +323,7 @@ build/      產生的外掛建置產物
 
 - `src/modules/readerPane.ts` — 主閱讀器面板 UI 與工作流連接
 - `src/modules/codex/` — Codex CLI 執行、狀態、解析與命令建構
+- `src/modules/claude/` — Claude Code 執行流程
 - `src/modules/gemini/` — Gemini CLI 執行流程
 - `src/modules/context/` — 論文脈絡收集與工作區產物生成
 - `src/modules/autoHighlight/` — 高亮擷取工作流
