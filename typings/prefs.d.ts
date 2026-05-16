@@ -11,6 +11,10 @@ declare namespace _ZoteroTypes {
       "autoOpenPaneOnPdfOpen": boolean;
       "saveDocumentSessions": boolean;
       "responseLanguage": string;
+      "claudeExecutablePath": string;
+      "claudeDefaultModel": string;
+      "claudeAllowedModels": string;
+      "claudePermissionMode": string;
       "geminiExecutablePath": string;
       "geminiDefaultModel": string;
       "geminiAllowedModels": string;

@@ -1,4 +1,5 @@
 import type { ComprehensionCheckState } from "../comprehensionCheck/types";
+import type { EngineMode } from "../ai/types";
 import { messageStore } from "../message/messageStore";
 import type { MessageRecord } from "../message/types";
 import { resolveSessionHistoryPrefs } from "./historyPrefs";
@@ -36,7 +37,7 @@ function getAddonData() {
       addon?: {
         data: {
           currentSessionId?: string;
-          modeOverrides?: Map<number, "gemini_cli" | "codex_cli">;
+          modeOverrides?: Map<number, EngineMode>;
           paperArtifactStates?: Map<number, unknown>;
           relatedRecommendationStates?: Map<number, unknown>;
           comprehensionCheckStates?: Map<number, unknown>;
@@ -99,16 +100,22 @@ function getPersistedMessages(sessionId: string) {
   return messageStore
     .listRaw(sessionId)
     .filter(
-      (message) =>
-        message.role === "user" || prefs.persistAssistantMessages,
+      (message) => message.role === "user" || prefs.persistAssistantMessages,
     )
     .map((message) => cloneValue(message));
 }
 
-function getSnapshotTitle(session: PaperSession, messages: MessageRecord[], now: Date) {
+function getSnapshotTitle(
+  session: PaperSession,
+  messages: MessageRecord[],
+  now: Date,
+) {
   const firstUserMessage = messages.find((message) => message.role === "user");
   if (firstUserMessage?.text?.trim()) {
-    return buildSessionTitle(firstUserMessage.text, new Date(session.createdAt));
+    return buildSessionTitle(
+      firstUserMessage.text,
+      new Date(session.createdAt),
+    );
   }
 
   if (session.threadTitle.trim()) {
@@ -175,6 +182,9 @@ export function captureSessionSnapshot(params: {
     ...(params.session.lastCodexSessionID
       ? { lastCodexSessionID: params.session.lastCodexSessionID }
       : {}),
+    ...(params.session.lastClaudeSessionID
+      ? { lastClaudeSessionID: params.session.lastClaudeSessionID }
+      : {}),
     ...(params.session.lastGeminiSessionID
       ? { lastGeminiSessionID: params.session.lastGeminiSessionID }
       : {}),
@@ -187,7 +197,9 @@ export function captureSessionSnapshot(params: {
   };
 }
 
-export function applySessionSnapshot(snapshot: SessionHistorySnapshot): PaperSession {
+export function applySessionSnapshot(
+  snapshot: SessionHistorySnapshot,
+): PaperSession {
   const data = getAddonData();
 
   messageStore.replace(snapshot.sessionId, cloneValue(snapshot.messages ?? []));
@@ -230,6 +242,7 @@ export function applySessionSnapshot(snapshot: SessionHistorySnapshot): PaperSes
     createdAt: snapshot.createdAt,
     updatedAt: snapshot.updatedAt,
     lastCodexSessionID: snapshot.lastCodexSessionID,
+    lastClaudeSessionID: snapshot.lastClaudeSessionID,
     lastGeminiSessionID: snapshot.lastGeminiSessionID,
     lastModel: cloneValue(snapshot.lastModel),
     threadTitle: snapshot.title,

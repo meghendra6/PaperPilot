@@ -1,4 +1,11 @@
-import { isCodexRunActiveForItem } from "./codex/runState";
+import { getModeForItem } from "./ai/modeStore";
+import {
+  extractWorkspaceRunText,
+  getWorkspaceEngineActiveMessage,
+  isWorkspaceRunActiveForItem,
+  readWorkspaceRunProgress,
+  startWorkspaceTextRun,
+} from "./ai/workspaceRun";
 
 declare const Zotero: any;
 
@@ -391,32 +398,25 @@ export async function generateRelatedPaperGroups(params: {
   itemTitle: string;
   onStatus?: (status: string) => void;
 }) {
-  if (isCodexRunActiveForItem(params.itemID)) {
+  const mode = getModeForItem(params.itemID);
+  if (isWorkspaceRunActiveForItem(mode, params.itemID)) {
     throw new Error(
-      "A Codex CLI run is already active for this paper. Cancel it or wait for it to finish before starting related-paper recommendations.",
+      getWorkspaceEngineActiveMessage(mode, "related-paper recommendations"),
     );
   }
 
-  const [{ readCodexRunProgress, startCodexRunForQuestion }, { sessionStore }] =
-    await Promise.all([
-      import("./codex/runner"),
-      import("./session/sessionStore"),
-    ]);
+  const { sessionStore } = await import("./session/sessionStore");
   const { cleanupWorkspaceIfEnabled } = await import("./workspace/cleanup");
   const item = await Zotero.Items.getAsync(params.itemID);
-  const session = sessionStore.touch(
-    params.itemID,
-    "codex_cli",
-    params.itemTitle,
-  );
+  const session = sessionStore.touch(params.itemID, mode, params.itemTitle);
   params.onStatus?.("Finding related papers…");
 
-  const result = await startCodexRunForQuestion({
+  const result = await startWorkspaceTextRun({
+    mode,
     itemID: params.itemID,
     title: params.itemTitle,
     sessionId: session.sessionId,
     question: buildRelatedPaperQuestion(item),
-    useResume: false,
   });
 
   if (!result.ok) {
@@ -428,23 +428,18 @@ export async function generateRelatedPaperGroups(params: {
   let completed = false;
   try {
     while (attempts < 300) {
-      const progress = await readCodexRunProgress({
+      const progress = await readWorkspaceRunProgress(mode, {
         outputPath: result.outputPath,
         exitCodePath: result.exitCodePath,
       });
       if (progress.completed) {
         completed = true;
+        const responseText = extractWorkspaceRunText(mode, progress);
         if (progress.exitCode !== "0") {
-          throw new Error(
-            progress.parsedOutput ||
-              progress.rawOutput ||
-              "Related paper generation failed.",
-          );
+          throw new Error(responseText || "Related paper generation failed.");
         }
         params.onStatus?.("Grouping recommendations…");
-        const parsed = parseRelatedPaperResponse(
-          progress.parsedOutput || progress.rawOutput,
-        );
+        const parsed = parseRelatedPaperResponse(responseText);
         const candidates = await getLibraryItemCandidates(item.libraryID);
         return {
           groups: attachExistingItems(parsed.groups, candidates),

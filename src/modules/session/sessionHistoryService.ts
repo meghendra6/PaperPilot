@@ -1,5 +1,11 @@
-import { captureSessionSnapshot, applySessionSnapshot } from "./sessionSnapshot";
-import { sessionHistoryRepository, SessionHistoryRepository } from "./sessionHistoryRepository";
+import {
+  captureSessionSnapshot,
+  applySessionSnapshot,
+} from "./sessionSnapshot";
+import {
+  sessionHistoryRepository,
+  SessionHistoryRepository,
+} from "./sessionHistoryRepository";
 import { sessionStore } from "./sessionStore";
 import { messageStore } from "../message/messageStore";
 import type { EngineMode } from "../ai/types";
@@ -45,17 +51,27 @@ function buildAssistantMessageRecord(params: {
   };
 }
 
-function applyResumeMetadata<T extends {
-  lastCodexSessionID?: string;
-  lastGeminiSessionID?: string;
-}>(target: T, params: {
-  mode: EngineMode;
-  success: boolean;
-  resumeSessionId?: string;
-}) {
+function applyResumeMetadata<
+  T extends {
+    lastCodexSessionID?: string;
+    lastClaudeSessionID?: string;
+    lastGeminiSessionID?: string;
+  },
+>(
+  target: T,
+  params: {
+    mode: EngineMode;
+    success: boolean;
+    resumeSessionId?: string;
+  },
+) {
   if (params.mode === "codex_cli" && params.success) {
     target.lastCodexSessionID =
       params.resumeSessionId || target.lastCodexSessionID || "last";
+  }
+  if (params.mode === "claude_code" && params.success) {
+    target.lastClaudeSessionID =
+      params.resumeSessionId || target.lastClaudeSessionID || "latest";
   }
   if (params.mode === "gemini_cli" && params.success) {
     target.lastGeminiSessionID =
@@ -97,7 +113,7 @@ export class SessionHistoryService {
 
   ensureDraftSession(params: {
     itemID: number;
-    mode: "gemini_cli" | "codex_cli";
+    mode: EngineMode;
     title?: string;
   }) {
     const session = sessionStore.getOrCreate(

@@ -28,8 +28,11 @@ import {
 import {
   getCodexBuiltInModelCatalog,
   getCodexBuiltInModels,
+  getClaudeBuiltInModels,
   getGeminiBuiltInModels,
   mergeModelOptions,
+  normalizeClaudeModel,
+  normalizeClaudeModelList,
   normalizeCodexModel,
   normalizeCodexModelList,
   normalizeCodexReasoningEffort,
@@ -50,6 +53,11 @@ import {
   retryLastCodexQuestion,
   stopCodexRunSilently,
 } from "./codex/controller";
+import {
+  handleClaudeQuestion,
+  stopClaudeRunSilently,
+} from "./claude/controller";
+import { isClaudeRunActiveForItem } from "./claude/runState";
 import {
   handleGeminiQuestion,
   stopGeminiRunSilently,
@@ -148,6 +156,7 @@ export function registerPaperPilotPaneSection() {
           <span id="paper-pilot-mode-chip" class="pp-mode-chip"></span>
           <span id="paper-pilot-mode-status" class="pp-mode-status"></span>
           <html:button id="chat-mode-gemini" class="pp-btn pp-btn--ghost">Gemini CLI</html:button>
+          <html:button id="chat-mode-claude" class="pp-btn pp-btn--ghost">Claude Code</html:button>
           <html:button id="chat-mode-codex" class="pp-btn pp-btn--ghost">Codex CLI</html:button>
           <html:button id="chat-mode-reset" class="pp-btn pp-btn--ghost">Use Default</html:button>
         </div>
@@ -272,6 +281,9 @@ export function registerPaperPilotPaneSection() {
       ) as HTMLElement;
       const modeGeminiButton = body.querySelector(
         "#chat-mode-gemini",
+      ) as HTMLButtonElement;
+      const modeClaudeButton = body.querySelector(
+        "#chat-mode-claude",
       ) as HTMLButtonElement;
       const modeCodexButton = body.querySelector(
         "#chat-mode-codex",
@@ -431,6 +443,7 @@ export function registerPaperPilotPaneSection() {
         modeChip &&
         modeStatus &&
         modeGeminiButton &&
+        modeClaudeButton &&
         modeCodexButton &&
         modeResetButton &&
         runStateCard &&
@@ -476,6 +489,9 @@ export function registerPaperPilotPaneSection() {
 
         const clearSessionRuntimeState = async () => {
           await stopCodexRunSilently({
+            itemID: item.id,
+          });
+          await stopClaudeRunSilently({
             itemID: item.id,
           });
           await stopGeminiRunSilently({
@@ -692,7 +708,7 @@ export function registerPaperPilotPaneSection() {
             meta.textContent = [
               `Updated ${new Date(entry.updatedAt).toLocaleString()}`,
               `${entry.messageCount} msg${entry.messageCount === 1 ? "" : "s"}`,
-              entry.lastMode === "gemini_cli" ? "Gemini" : "Codex",
+              getModeShortLabel(entry.lastMode),
             ].join(" · ");
             info.appendChild(meta);
 
@@ -857,6 +873,45 @@ export function registerPaperPilotPaneSection() {
         modeGeminiButton.addEventListener("click", async () => {
           clearCodexPollerForItem(item.id);
           setModeOverrideForItem(item.id, "gemini_cli");
+          await renderPaneState({
+            itemID: item.id,
+            itemTitle: item.getField("title"),
+            currentDocumentLabel,
+            autoHighlightStatus,
+            autoHighlightButton,
+            researchBriefButton,
+            contributionsButton,
+            limitationsButton,
+            followUpsButton,
+            compareButton,
+            compareHelper,
+            saveWorkbenchNoteButton,
+            saveWorkbenchCollectionButton,
+            clearWorkbenchButton,
+            paperToolStatus,
+            paperToolCards,
+            modeChip,
+            modeStatus,
+            runStateCard,
+            codexActions,
+            policyWarning,
+            geminiFallbackCard,
+            geminiEmbedCard,
+            modelRow,
+            modelInput,
+            codexOptionsRow,
+            codexWebSearchToggle,
+            modelHistory,
+            chatMessages,
+            draftCard,
+            streamingIndicator,
+            setSectionSummary,
+          });
+        });
+
+        modeClaudeButton.addEventListener("click", async () => {
+          clearCodexPollerForItem(item.id);
+          setModeOverrideForItem(item.id, "claude_code");
           await renderPaneState({
             itemID: item.id,
             itemTitle: item.getField("title"),
@@ -2016,8 +2071,11 @@ export function registerPaperPilotPaneSection() {
           }
           const [savedModel, savedReasoningEffort] =
             modelInput.value.split("|");
-          if (getCurrentProviderDescriptor(item.id).mode === "gemini_cli") {
+          const activeMode = getCurrentProviderDescriptor(item.id).mode;
+          if (activeMode === "gemini_cli") {
             setPref("geminiDefaultModel", savedModel);
+          } else if (activeMode === "claude_code") {
+            setPref("claudeDefaultModel", normalizeClaudeModel(savedModel));
           } else {
             setPref("codexDefaultModel", normalizeCodexModel(savedModel));
             setPref(
@@ -2026,9 +2084,7 @@ export function registerPaperPilotPaneSection() {
             );
           }
           rememberRecentCodexModel(
-            getCurrentProviderDescriptor(item.id).mode === "gemini_cli"
-              ? savedModel
-              : normalizeCodexModel(savedModel),
+            normalizeModelForMode(activeMode, savedModel),
           );
           await renderPaneState({
             itemID: item.id,
@@ -2188,6 +2244,16 @@ function getCurrentProviderDescriptor(itemID?: number) {
   return getProviderDescriptorForItem(itemID);
 }
 
+function getModeShortLabel(mode?: EngineMode) {
+  if (mode === "gemini_cli") {
+    return "Gemini";
+  }
+  if (mode === "claude_code") {
+    return "Claude";
+  }
+  return "Codex";
+}
+
 async function renderPaneState(params: {
   itemID: number;
   itemTitle: string;
@@ -2280,7 +2346,9 @@ async function renderPaneState(params: {
   ) as HTMLElement | null;
   if (engineSection) {
     engineSection.style.display =
-      descriptor.mode === "codex_cli" || descriptor.mode === "gemini_cli"
+      descriptor.mode === "codex_cli" ||
+      descriptor.mode === "claude_code" ||
+      descriptor.mode === "gemini_cli"
         ? ""
         : "none";
   }
@@ -2870,7 +2938,7 @@ function renderModelRow(
   modelInput: HTMLSelectElement,
   mode: EngineMode,
 ) {
-  if (mode !== "codex_cli" && mode !== "gemini_cli") {
+  if (mode !== "codex_cli" && mode !== "claude_code" && mode !== "gemini_cli") {
     modelRow.style.display = "none";
     modelInput.value = "";
     return;
@@ -2894,34 +2962,83 @@ function renderCodexOptionsRow(
   codexWebSearchToggle.checked = Boolean(getPref("codexEnableWebSearch"));
 }
 
+function getDefaultModelPrefForMode(mode: EngineMode) {
+  if (mode === "gemini_cli") {
+    return "geminiDefaultModel";
+  }
+  if (mode === "claude_code") {
+    return "claudeDefaultModel";
+  }
+  return "codexDefaultModel";
+}
+
+function getAllowedModelsPrefForMode(mode: EngineMode) {
+  if (mode === "gemini_cli") {
+    return "geminiAllowedModels";
+  }
+  if (mode === "claude_code") {
+    return "claudeAllowedModels";
+  }
+  return "codexAllowedModels";
+}
+
+function getFallbackModelForMode(mode: EngineMode) {
+  if (mode === "gemini_cli") {
+    return "gemini-3.1-pro-preview";
+  }
+  if (mode === "claude_code") {
+    return "sonnet";
+  }
+  return "gpt-5.5";
+}
+
+function getBuiltInModelsForMode(mode: EngineMode) {
+  if (mode === "gemini_cli") {
+    return getGeminiBuiltInModels();
+  }
+  if (mode === "claude_code") {
+    return getClaudeBuiltInModels();
+  }
+  return getCodexBuiltInModels();
+}
+
+function normalizeModelForMode(mode: EngineMode, model: string) {
+  if (mode === "gemini_cli") {
+    return normalizeGeminiModel(model);
+  }
+  if (mode === "claude_code") {
+    return normalizeClaudeModel(model);
+  }
+  return normalizeCodexModel(model);
+}
+
+function normalizeModelListForMode(mode: EngineMode, models: string[]) {
+  if (mode === "gemini_cli") {
+    return normalizeGeminiModelList(models);
+  }
+  if (mode === "claude_code") {
+    return normalizeClaudeModelList(models);
+  }
+  return normalizeCodexModelList(models);
+}
+
 async function renderModelHistory(
   modelHistory: HTMLElement,
   modelInput: HTMLSelectElement,
   mode: EngineMode,
 ) {
-  if (mode !== "codex_cli" && mode !== "gemini_cli") {
+  if (mode !== "codex_cli" && mode !== "claude_code" && mode !== "gemini_cli") {
     modelHistory.style.display = "none";
     modelHistory.replaceChildren();
     return;
   }
 
-  const recentModels =
-    mode === "gemini_cli"
-      ? normalizeGeminiModelList(getRecentCodexModels())
-      : normalizeCodexModelList(getRecentCodexModels());
+  const recentModels = normalizeModelListForMode(mode, getRecentCodexModels());
   const allowedModelsRaw = parseAllowedModels(
-    String(
-      getPref(
-        mode === "gemini_cli" ? "geminiAllowedModels" : "codexAllowedModels",
-      ) || "",
-    ),
+    String(getPref(getAllowedModelsPrefForMode(mode)) || ""),
   );
-  const allowedModels =
-    mode === "gemini_cli"
-      ? normalizeGeminiModelList(allowedModelsRaw)
-      : normalizeCodexModelList(allowedModelsRaw);
-  const cachedModels =
-    mode === "gemini_cli" ? getGeminiBuiltInModels() : getCodexBuiltInModels();
+  const allowedModels = normalizeModelListForMode(mode, allowedModelsRaw);
+  const cachedModels = getBuiltInModelsForMode(mode);
   const options = mergeModelOptions(
     recentModels,
     mergeModelOptions(allowedModels, cachedModels),
@@ -2933,22 +3050,20 @@ async function renderModelHistory(
   }
 
   const currentValue = String(
-    getPref(
-      mode === "gemini_cli" ? "geminiDefaultModel" : "codexDefaultModel",
-    ) || (mode === "gemini_cli" ? "gemini-3.1-pro-preview" : "gpt-5.5"),
+    getPref(getDefaultModelPrefForMode(mode)) || getFallbackModelForMode(mode),
   );
-  const selectedValue =
-    mode === "gemini_cli"
-      ? normalizeGeminiModel(currentValue)
-      : normalizeCodexModel(currentValue);
+  const selectedValue = normalizeModelForMode(mode, currentValue);
   const currentReasoningEffort = String(
-    mode === "gemini_cli"
+    mode === "gemini_cli" || mode === "claude_code"
       ? ""
       : normalizeCodexReasoningEffort(
           String(getPref("codexReasoningEffort") || "medium"),
         ),
   );
-  const catalog = mode === "gemini_cli" ? [] : getCodexBuiltInModelCatalog();
+  const catalog =
+    mode === "gemini_cli" || mode === "claude_code"
+      ? []
+      : getCodexBuiltInModelCatalog();
   const optionMap = new Map<string, string>();
   const doc = modelInput.ownerDocument || globalThis.document;
 
@@ -2958,13 +3073,15 @@ async function renderModelHistory(
     return;
   }
 
-  if (mode === "gemini_cli") {
+  if (mode === "gemini_cli" || mode === "claude_code") {
     for (const model of options) {
       optionMap.set(`${model}|`, model);
     }
   }
 
-  for (const model of mode === "gemini_cli" ? [] : catalog) {
+  for (const model of mode === "gemini_cli" || mode === "claude_code"
+    ? []
+    : catalog) {
     const efforts = model.reasoningEfforts.length
       ? model.reasoningEfforts
       : [model.defaultReasoningEffort || "medium"];
@@ -2982,7 +3099,7 @@ async function renderModelHistory(
       option.value = value;
       option.textContent = label;
       const currentKey =
-        mode === "gemini_cli"
+        mode === "gemini_cli" || mode === "claude_code"
           ? `${selectedValue}|`
           : `${selectedValue}|${currentReasoningEffort}`;
       if (value === currentKey) {
@@ -2993,14 +3110,14 @@ async function renderModelHistory(
   );
 
   const fallbackKey =
-    mode === "gemini_cli"
+    mode === "gemini_cli" || mode === "claude_code"
       ? `${selectedValue}|`
       : `${selectedValue}|${currentReasoningEffort}`;
   if (!optionMap.has(fallbackKey)) {
     const fallback = doc.createElement("option");
     fallback.value = fallbackKey;
     fallback.textContent =
-      mode === "gemini_cli"
+      mode === "gemini_cli" || mode === "claude_code"
         ? selectedValue
         : currentReasoningEffort
           ? `${selectedValue} (${currentReasoningEffort})`
@@ -3079,6 +3196,10 @@ function renderStreamingIndicator(
 function getActiveRunMessage(mode: EngineMode, itemID: number) {
   if (mode === "codex_cli" && isCodexRunActiveForItem(itemID)) {
     return "A Codex CLI run is already active for this paper. Cancel it or wait for it to finish before starting another request.";
+  }
+
+  if (mode === "claude_code" && isClaudeRunActiveForItem(itemID)) {
+    return "A Claude Code run is already active for this paper. Wait for it to finish before starting another request.";
   }
 
   if (mode === "gemini_cli" && isGeminiRunActiveForItem(itemID)) {
@@ -3637,6 +3758,35 @@ async function handleUserInput(
       return;
     }
 
+    if (mode === "claude_code") {
+      if (draft) {
+        if (!options?.suppressChatMessages) {
+          addMessage(
+            chatMessages,
+            `Attached draft from ${draft.source}: ${draft.action}`,
+            "ai",
+          );
+        }
+        clearReaderActionDraft();
+      }
+
+      await handleClaudeQuestion({
+        itemID,
+        sessionId: session.sessionId,
+        sessionTitle: session.threadTitle,
+        paperTitle: itemTitle,
+        question,
+        selectedText,
+        annotationIDs: draft?.annotationIDs,
+        resumeSessionId: session.lastClaudeSessionID,
+        chatMessages,
+        streamingIndicator,
+        suppressChatMessages: options?.suppressChatMessages,
+        onComplete: options?.onComplete,
+      });
+      return;
+    }
+
     if (mode === "gemini_cli") {
       if (draft) {
         if (!options?.suppressChatMessages) {
@@ -3691,7 +3841,11 @@ async function handleUserInput(
       assistantText,
     });
   } finally {
-    if (mode !== "codex_cli" && mode !== "gemini_cli") {
+    if (
+      mode !== "codex_cli" &&
+      mode !== "claude_code" &&
+      mode !== "gemini_cli"
+    ) {
       renderStreamingIndicator(streamingIndicator, false);
     }
     input.disabled = false;

@@ -3,7 +3,9 @@ import { getString, initLocale } from "./utils/locale";
 import { registerPrefsScripts } from "./modules/preferenceScript";
 import { createZToolkit } from "./utils/ztoolkit";
 import { registerPaperPilotPaneSection } from "./modules/readerPane";
+import { clearClaudePollerForItem } from "./modules/claude/poller";
 import { clearCodexPollerForItem } from "./modules/codex/poller";
+import { clearGeminiPollerForItem } from "./modules/gemini/poller";
 import {
   registerReaderActionPlaceholders,
   unregisterReaderActionPlaceholders,
@@ -60,6 +62,12 @@ function registerPreferencePane() {
 function onShutdown(): void {
   addon.data.codexRunPollers?.forEach((_poller, itemID) =>
     clearCodexPollerForItem(itemID),
+  );
+  addon.data.claudeRunPollers?.forEach((_poller, itemID) =>
+    clearClaudePollerForItem(itemID),
+  );
+  addon.data.geminiRunPollers?.forEach((_poller, itemID) =>
+    clearGeminiPollerForItem(itemID),
   );
   unregisterReaderActionPlaceholders();
   ztoolkit.unregisterAll();

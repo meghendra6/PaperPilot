@@ -1,11 +1,13 @@
 import type { ReaderAiProvider } from "./provider";
 import type { EngineMode } from "./types";
 import { getDefaultMode, getModeForItem } from "./modeStore";
+import { ClaudeCodeProvider } from "./providers/claudeCodeProvider";
 import { CodexCliProvider } from "./providers/codexCliProvider";
 import { GeminiCliProvider } from "./providers/geminiCliProvider";
 
 const providers: Record<EngineMode, ReaderAiProvider> = {
   codex_cli: new CodexCliProvider(),
+  claude_code: new ClaudeCodeProvider(),
   gemini_cli: new GeminiCliProvider(),
 };
 

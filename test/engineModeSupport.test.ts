@@ -14,8 +14,9 @@ import {
   setModeOverrideForItem,
 } from "../src/modules/ai/modeStore";
 
-test("provider registry exposes ready Codex and Gemini CLI descriptors", () => {
+test("provider registry exposes ready Codex, Claude Code, and Gemini CLI descriptors", () => {
   const codex = getProvider("codex_cli").getDescriptor();
+  const claude = getProvider("claude_code").getDescriptor();
   const gemini = getProvider("gemini_cli").getDescriptor();
 
   assert.deepEqual(
@@ -26,19 +27,24 @@ test("provider registry exposes ready Codex and Gemini CLI descriptors", () => {
     { mode: gemini.mode, status: gemini.status, label: gemini.label },
     { mode: "gemini_cli", status: "ready", label: "Gemini CLI" },
   );
+  assert.deepEqual(
+    { mode: claude.mode, status: claude.status, label: claude.label },
+    { mode: "claude_code", status: "ready", label: "Claude Code" },
+  );
   assert.match(gemini.placeholderResponse, /Gemini CLI mode is ready/i);
+  assert.match(claude.placeholderResponse, /Claude Code mode is ready/i);
 });
 
-test("mode store accepts Gemini as the default mode and falls back to Codex", () => {
+test("mode store accepts Claude Code as the default mode and falls back to Codex", () => {
   const previousZotero = (globalThis as { Zotero?: unknown }).Zotero;
   (globalThis as { Zotero?: unknown }).Zotero = {
     Prefs: {
-      get: (_key: string) => "gemini_cli",
+      get: (_key: string) => "claude_code",
     },
   };
 
   try {
-    assert.equal(getDefaultMode(), "gemini_cli");
+    assert.equal(getDefaultMode(), "claude_code");
 
     (
       globalThis as { Zotero?: { Prefs: { get: (_key: string) => unknown } } }
@@ -59,7 +65,10 @@ test("mode overrides are stored per item without changing the default mode", () 
   const previousZotero = (globalThis as { Zotero?: unknown }).Zotero;
   (globalThis as { addon?: unknown }).addon = {
     data: {
-      modeOverrides: new Map<number, "codex_cli" | "gemini_cli">(),
+      modeOverrides: new Map<
+        number,
+        "codex_cli" | "claude_code" | "gemini_cli"
+      >(),
     },
   };
   (globalThis as { Zotero?: unknown }).Zotero = {
@@ -70,8 +79,8 @@ test("mode overrides are stored per item without changing the default mode", () 
 
   try {
     assert.equal(getModeForItem(42), "codex_cli");
-    setModeOverrideForItem(42, "gemini_cli");
-    assert.equal(getModeForItem(42), "gemini_cli");
+    setModeOverrideForItem(42, "claude_code");
+    assert.equal(getModeForItem(42), "claude_code");
     clearModeOverrideForItem(42);
     assert.equal(getModeForItem(42), "codex_cli");
   } finally {
@@ -85,9 +94,10 @@ test("provider descriptor resolution respects per-item mode overrides", () => {
   const previousZotero = (globalThis as { Zotero?: unknown }).Zotero;
   (globalThis as { addon?: unknown }).addon = {
     data: {
-      modeOverrides: new Map<number, "codex_cli" | "gemini_cli">([
-        [7, "gemini_cli"],
-      ]),
+      modeOverrides: new Map<
+        number,
+        "codex_cli" | "claude_code" | "gemini_cli"
+      >([[7, "claude_code"]]),
     },
   };
   (globalThis as { Zotero?: unknown }).Zotero = {
@@ -98,7 +108,7 @@ test("provider descriptor resolution respects per-item mode overrides", () => {
 
   try {
     assert.equal(getProviderDescriptorForItem().mode, "codex_cli");
-    assert.equal(getProviderDescriptorForItem(7).mode, "gemini_cli");
+    assert.equal(getProviderDescriptorForItem(7).mode, "claude_code");
     assert.equal(getProviderDescriptorForItem(8).mode, "codex_cli");
   } finally {
     (globalThis as { addon?: unknown }).addon = previousAddon;

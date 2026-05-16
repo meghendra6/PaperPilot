@@ -24,6 +24,12 @@ const GEMINI_MODEL_ALIASES: Record<string, string> = {
   "gemini-2.5-flash": "gemini-3-flash-preview",
 };
 
+const CLAUDE_BUILT_IN_MODELS = ["sonnet", "opus"];
+const CLAUDE_MODEL_ALIASES: Record<string, string> = {
+  "claude-sonnet": "sonnet",
+  "claude-opus": "opus",
+};
+
 export function getGeminiBuiltInModels() {
   return [...GEMINI_BUILT_IN_MODELS];
 }
@@ -42,6 +48,27 @@ export function normalizeGeminiModelList(models: string[]) {
   return mergeModelOptions(
     [],
     models.map((model) => normalizeGeminiModel(model)).filter(Boolean),
+  );
+}
+
+export function getClaudeBuiltInModels() {
+  return [...CLAUDE_BUILT_IN_MODELS];
+}
+
+export function normalizeClaudeModel(model: string) {
+  const normalized = model.trim();
+
+  if (!normalized) {
+    return CLAUDE_BUILT_IN_MODELS[0];
+  }
+
+  return CLAUDE_MODEL_ALIASES[normalized] || normalized;
+}
+
+export function normalizeClaudeModelList(models: string[]) {
+  return mergeModelOptions(
+    [],
+    models.map((model) => normalizeClaudeModel(model)).filter(Boolean),
   );
 }
 

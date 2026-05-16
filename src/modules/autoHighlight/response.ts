@@ -19,7 +19,7 @@ export async function parseHighlightCandidatesWithRepair(params: {
   try {
     return parseAutoHighlightResponse(params.rawResponse);
   } catch (initialError) {
-    params.onStatus?.("Repairing Codex response…");
+    params.onStatus?.("Repairing AI response…");
     const repairedResponse = await params.requestText({
       itemID: params.itemID,
       title: params.title,

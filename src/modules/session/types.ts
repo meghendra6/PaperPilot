@@ -9,6 +9,7 @@ export interface PaperSession {
   createdAt: string;
   updatedAt: string;
   lastCodexSessionID?: string;
+  lastClaudeSessionID?: string;
   lastGeminiSessionID?: string;
   lastModel?: SessionHistoryModelMetadata;
   threadTitle: string;

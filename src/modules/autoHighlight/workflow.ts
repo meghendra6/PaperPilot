@@ -14,11 +14,13 @@ import {
 } from "./pdfMatch";
 import { formatAutoHighlightSummary } from "./status";
 import type { AutoHighlightResult } from "./types";
-import { parseCodexOutputText } from "../codex/outputParser";
 import {
-  readCodexRunProgress,
-  startCodexRunForQuestion,
-} from "../codex/runner";
+  extractWorkspaceRunText,
+  getWorkspaceEngineLabel,
+  readWorkspaceRunProgress,
+  startWorkspaceTextRun,
+} from "../ai/workspaceRun";
+import { getModeForItem } from "../ai/modeStore";
 import { cleanupWorkspaceIfEnabled } from "../workspace/cleanup";
 
 function sleep(ms: number) {
@@ -41,18 +43,21 @@ async function getActiveReader() {
   return undefined;
 }
 
-async function waitForCodexText(params: {
+async function waitForWorkspaceText(params: {
   itemID: number;
+  modeItemID: number;
   title: string;
   question: string;
   onStatus?: (status: string) => void;
 }) {
-  const started = await startCodexRunForQuestion({
+  const mode = getModeForItem(params.modeItemID);
+  const engineLabel = getWorkspaceEngineLabel(mode);
+  const started = await startWorkspaceTextRun({
+    mode,
     itemID: params.itemID,
     title: params.title,
     sessionId: `auto-highlight-${params.itemID}`,
     question: params.question,
-    useResume: false,
   });
 
   if (!started.ok) {
@@ -63,17 +68,16 @@ async function waitForCodexText(params: {
   let completed = false;
   try {
     for (let attempts = 0; attempts < 300; attempts += 1) {
-      const progress = await readCodexRunProgress({
+      const progress = await readWorkspaceRunProgress(mode, {
         outputPath: started.outputPath,
         exitCodePath: started.exitCodePath,
       });
 
       if (progress.completed) {
         completed = true;
-        const parsedText =
-          parseCodexOutputText(progress.rawOutput) || progress.rawOutput;
+        const parsedText = extractWorkspaceRunText(mode, progress);
         if (progress.exitCode !== "0") {
-          throw new Error(parsedText || "Codex highlight run failed.");
+          throw new Error(parsedText || `${engineLabel} highlight run failed.`);
         }
         return parsedText;
       }
@@ -84,7 +88,7 @@ async function waitForCodexText(params: {
       await sleep(800);
     }
 
-    throw new Error("Codex highlight run timed out.");
+    throw new Error(`${engineLabel} highlight run timed out.`);
   } finally {
     if (completed) {
       await cleanupWorkspaceIfEnabled(started.workspacePath);
@@ -124,8 +128,9 @@ export async function runAutoHighlightWorkflow(params: {
 }): Promise<{ result: AutoHighlightResult; summary: string }> {
   const { attachment, reader } = await resolveOpenPDFAttachment(params.itemID);
 
-  const rawResponse = await waitForCodexText({
+  const rawResponse = await waitForWorkspaceText({
     itemID: attachment.id,
+    modeItemID: params.itemID,
     title: params.itemTitle,
     question: buildAutoHighlightQuestion(DEFAULT_AUTO_HIGHLIGHT_LIMIT),
     onStatus: params.onStatus,
@@ -135,7 +140,11 @@ export async function runAutoHighlightWorkflow(params: {
     title: params.itemTitle,
     rawResponse,
     onStatus: params.onStatus,
-    requestText: waitForCodexText,
+    requestText: (requestParams) =>
+      waitForWorkspaceText({
+        ...requestParams,
+        modeItemID: params.itemID,
+      }),
   });
 
   params.onStatus?.("Matching quotes to PDF…");

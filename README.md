@@ -1,17 +1,17 @@
-# Paper Pilot for Zotero 7
+# Paper Pilot for Zotero 7-9
 
 > Languages: [English](./README.md) | [한국어](./README.ko.md) | [简体中文](./README.zh-CN.md) | [繁體中文](./README.zh-TW.md)
 
-**Paper Pilot turns the Zotero 7 PDF reader into an AI-assisted paper workbench.**
+**Paper Pilot turns the Zotero 7-9 PDF reader into an AI-assisted paper workbench.**
 
-Paper Pilot is an AI reading workbench for the Zotero 7 PDF reader. It adds a paper-scoped chat pane, structured paper tools, related-paper discovery, and local CLI-based AI execution directly inside Zotero.
+Paper Pilot is an AI reading workbench for the Zotero 7-9 PDF reader. It adds a paper-scoped chat pane, structured paper tools, related-paper discovery, and local CLI-based AI execution directly inside Zotero.
 
-![Zotero 7](https://img.shields.io/badge/Zotero-7-cc2936) ![Node 20+](https://img.shields.io/badge/Node-20%2B-339933) ![Java 11+](https://img.shields.io/badge/Java-11%2B-007396) ![License](https://img.shields.io/badge/License-AGPL--3.0--or--later-blue) ![Engines](https://img.shields.io/badge/Engines-Codex%20CLI%20%7C%20Gemini%20CLI-6f42c1)
+![Zotero 7-9](https://img.shields.io/badge/Zotero-7--9-cc2936) ![Node 20+](https://img.shields.io/badge/Node-20%2B-339933) ![Java 11+](https://img.shields.io/badge/Java-11%2B-007396) ![License](https://img.shields.io/badge/License-AGPL--3.0--or--later-blue) ![Engines](https://img.shields.io/badge/Engines-Codex%20CLI%20%7C%20Claude%20Code%20%7C%20Gemini%20CLI-6f42c1)
 
 ## At a glance
 
 - AI chat directly inside the Zotero Reader
-- Two local engine modes: **Codex CLI** and **Gemini CLI**
+- Three local engine modes: **Codex CLI**, **Claude Code**, and **Gemini CLI**
 - Structured paper workbench for brief, compare, contributions, limitations, and follow-ups
 - Structured PDF workspace extraction via **OpenDataLoader PDF**
 - Related-paper discovery with open/add-to-collection flows
@@ -44,7 +44,7 @@ What is already in place:
 
 What is still required before calling it fully production-ready:
 
-- end-to-end manual QA inside a real Zotero 7 runtime
+- end-to-end manual QA inside real Zotero 7-9 runtimes
 - broader install and environment validation across real user setups
 
 See [`docs/manual-qa.md`](./docs/manual-qa.md) for the current runtime checklist.
@@ -55,7 +55,7 @@ See [`docs/manual-qa.md`](./docs/manual-qa.md) for the current runtime checklist
 
 - Adds an AI pane to the Zotero reader/item pane
 - Keeps conversations scoped to the active paper
-- Supports per-paper engine switching between Codex CLI and Gemini CLI
+- Supports per-paper engine switching between Codex CLI, Claude Code, and Gemini CLI
 - Preserves follow-up continuity within the same paper/session
 - Supports **Past sessions** for reopening, renaming, deleting, and clearing saved sessions for the current paper
 - Uses **New session** to preserve the current session and start a blank draft for the same paper
@@ -107,9 +107,9 @@ The reader pane includes a **Paper Mastery** workflow that drives a multi-round 
 
 Mastery prompts enforce strict JSON responses for questions and evaluations (no reasoning prose), wrap reader answers in `<user_answer>` tags, and instruct the model not to emit markdown fences around the JSON — while the parser still recovers if a fence slips through. Parsing is string/escape-aware so that a `}` inside a quoted string never truncates a valid response.
 
-### 7. Local workspace artifacts for Codex
+### 7. Local workspace artifacts for CLI engines
 
-When you ask a question in **Codex CLI** mode, Paper Pilot writes a per-paper workspace so the CLI can inspect local paper context before answering.
+When you ask a question in **Codex CLI**, **Claude Code**, or **Gemini CLI** mode, Paper Pilot writes a per-paper workspace so the CLI can inspect local paper context before answering.
 
 Typical artifacts include:
 
@@ -125,7 +125,7 @@ Typical artifacts include:
 
 `paper.md` is the structured Markdown view, `paper.json` carries structured PDF elements plus extraction metadata, and `paper.txt` remains as the compatibility/plain-text fallback. When Java is unavailable, Paper Pilot records the fallback in `metadata.json`.
 
-This keeps Codex grounded in the current paper, selection context, and recent conversation history.
+This keeps the selected CLI grounded in the current paper, selection context, and recent conversation history.
 When Java 11+ is available, `paper.md` and `paper.json` come from the bundled OpenDataLoader runtime. If structured extraction is unavailable, Paper Pilot falls back to Zotero `attachmentText` and records that in `metadata.json`.
 
 ## Feature overview
@@ -133,7 +133,7 @@ When Java 11+ is available, `paper.md` and `paper.json` come from the bundled Op
 | Area              | Current support                                                                                              |
 | ----------------- | ------------------------------------------------------------------------------------------------------------ |
 | Reader chat       | Paper-scoped AI chat inside Zotero Reader                                                                    |
-| Engines           | Codex CLI and Gemini CLI                                                                                     |
+| Engines           | Codex CLI, Claude Code, and Gemini CLI                                                                       |
 | Paper workbench   | Research brief, compare, contributions, limitations, follow-ups                                              |
 | Discovery         | Grouped related-paper recommendations                                                                        |
 | Persistence       | Save latest output to note, save workbench artifacts for collections                                         |
@@ -143,10 +143,11 @@ When Java 11+ is available, `paper.md` and `paper.json` come from the bundled Op
 
 ## Engine modes
 
-| Mode         | Best for                       | Current strengths                                                                               |
-| ------------ | ------------------------------ | ----------------------------------------------------------------------------------------------- |
-| `Codex CLI`  | workspace-aware paper analysis | local workspace artifacts, resumable runs, model/sandbox/approval controls, optional web search |
-| `Gemini CLI` | lighter local paper Q&A        | simpler executable/model setup, paper-scoped continuity, local retrieval/context assembly       |
+| Mode          | Best for                       | Current strengths                                                                               |
+| ------------- | ------------------------------ | ----------------------------------------------------------------------------------------------- |
+| `Codex CLI`   | workspace-aware paper analysis | local workspace artifacts, resumable runs, model/sandbox/approval controls, optional web search |
+| `Claude Code` | workspace-aware paper Q&A      | local workspace artifacts, model/permission controls, paper-scoped continuity                   |
+| `Gemini CLI`  | lighter local paper Q&A        | simpler executable/model setup, paper-scoped continuity, local retrieval/context assembly       |
 
 ### Codex CLI mode
 
@@ -159,6 +160,16 @@ Codex mode is the more workspace-oriented path. The current codebase includes su
 - sandbox and approval settings
 - optional web-search toggle
 - resumable follow-up runs tied to the current paper
+
+### Claude Code mode
+
+Claude Code mode uses the local `claude` CLI in print mode with the same paper workspace artifacts used by the reader chat and workbench flows. The current codebase includes support for:
+
+- configurable executable path
+- configurable default model
+- configurable permission mode
+- paper-scoped follow-up continuity
+- retrieval/context assembly for the active paper
 
 ### Gemini CLI mode
 
@@ -187,12 +198,13 @@ See [`docs/prompt-contracts.md`](./docs/prompt-contracts.md) for the exact outpu
 
 ## Requirements
 
-- **Zotero 7**
+- **Zotero 7, 8, or 9**
 - **Node.js 20+** for development
 - **npm** for dependency and build workflows
 - **Java 11+** at runtime for OpenDataLoader PDF extraction
 - At least one local AI CLI:
   - **Codex CLI**, or
+  - **Claude Code**, or
   - **Gemini CLI**
 
 ## Development quick start
@@ -257,10 +269,10 @@ Typical outputs include:
 
 After installing the `.xpi`, this is the fastest way to validate the plugin:
 
-1. Open Zotero settings and configure a local **Codex CLI** or **Gemini CLI** executable path.
+1. Open Zotero settings and configure a local **Codex CLI**, **Claude Code**, or **Gemini CLI** executable path.
 2. Open a PDF attachment in Zotero Reader.
 3. Open the **Paper Pilot** pane.
-4. Select **Codex CLI** or **Gemini CLI**.
+4. Select **Codex CLI**, **Claude Code**, or **Gemini CLI**.
 5. Ask a question about the current paper.
 6. Try one structured workbench action such as **Research brief** or **Compare**.
 
@@ -269,6 +281,7 @@ After installing the `.xpi`, this is the fastest way to validate the plugin:
 The preferences UI currently exposes settings across these areas:
 
 - **General**
+- **Claude Code**
 - **Gemini CLI**
 - **Codex CLI**
 - **Retrieval**
@@ -285,7 +298,7 @@ Important current details:
 
 1. Open a PDF in Zotero Reader.
 2. Open the **Paper Pilot** pane.
-3. Choose **Codex CLI** or **Gemini CLI**.
+3. Choose **Codex CLI**, **Claude Code**, or **Gemini CLI**.
 4. Ask a question about the paper.
 5. Optionally use a selection or annotation action to seed the next prompt.
 6. Use the workbench buttons for structured outputs such as brief, compare, contributions, or follow-ups.
@@ -306,6 +319,7 @@ Key source areas:
 
 - `src/modules/readerPane.ts` — main reader pane UI and workflow wiring
 - `src/modules/codex/` — Codex CLI execution, status, parsing, and command building
+- `src/modules/claude/` — Claude Code execution flow
 - `src/modules/gemini/` — Gemini CLI execution flow
 - `src/modules/context/` — paper context retrieval and workspace artifact generation
 - `src/modules/autoHighlight/` — highlight extraction workflow
