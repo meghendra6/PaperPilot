@@ -3,9 +3,9 @@
 
 import { test } from "node:test";
 import * as assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
 
 import * as geminiRunner from "../src/modules/gemini/runner";
+import { checkShellSyntax } from "./helpers/shellSyntax";
 
 type BuildGeminiCommand = (params: {
   promptPath: string;
@@ -37,10 +37,7 @@ test("buildGeminiCommand streams the prompt file instead of expanding it into ar
     executablePath: "/opt/Homebrew Tools/gemini's bin/gemini",
   });
 
-  const syntax = spawnSync("/bin/zsh", ["-n"], {
-    input: script,
-    encoding: "utf8",
-  });
+  const syntax = checkShellSyntax(script);
 
   assert.equal(syntax.status, 0, syntax.stderr);
   assert.doesNotMatch(script, /PROMPT=\$\(cat/);
