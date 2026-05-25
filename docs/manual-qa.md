@@ -14,7 +14,7 @@ Use this checklist inside real Zotero 7, 8, and 9 runtimes before claiming readi
 - [ ] Confirm mode/status/session cards render without errors
 - [ ] Trigger `Recommend related papers` and confirm the pane expands enough to show multiple recommendation rows immediately
 - [ ] Confirm tall recommendation lists scroll inside the recommendation section without breaking chat history or the input area
-- [ ] If roadmap paper-tool controls are present, confirm they do not crowd or overlap the existing mode/session controls
+- [ ] If paper-tool controls are present, confirm they do not crowd or overlap the existing mode/session controls
 - [ ] If structured brief cards are present, confirm they remain readable without pushing chat input off-screen
 
 ## 2. Mode behavior
@@ -36,12 +36,14 @@ Use this checklist inside real Zotero 7, 8, and 9 runtimes before claiming readi
 - [ ] Trigger annotation context menu action
 - [ ] Confirm annotation-origin draft appears in pane
 
-## 4. Research brief + paper-tool roadmap checks
+## 4. Research brief + paper-tool checks
 
 - [ ] Trigger the research-brief entry point for the active paper
 - [ ] Confirm the workbench shows `Research brief`, `Compare`, `Contributions`, `Limitations`, `Follow-ups`, `Save latest to note`, `Save for collection`, and `Clear cards`
 - [ ] Confirm a structured response renders summary, contributions, methods, limitations, follow-up questions, and search-query guidance
 - [ ] Confirm any inference/source-aware labels are visibly distinct from direct paper-grounded content
+- [ ] Confirm generated brief/tool cards use full-paper workspace context when available and do not present metadata/abstract-only context as full-paper evidence
+- [ ] Confirm generated brief/tool cards cite section, page, figure, or table support when available without inventing source locations
 - [ ] Trigger each paper-tool quick action (`Contributions`, `Limitations`, `Follow-ups` or current equivalents)
 - [ ] Confirm quick-action results stay scoped to the active paper and reuse the current session/prompt plumbing
 - [ ] Confirm repeated runs replace the same card kind instead of endlessly duplicating cards
@@ -102,9 +104,9 @@ Use this checklist inside real Zotero 7, 8, and 9 runtimes before claiming readi
 
 ## 9. Related papers / auto-highlight regression checks
 
-- [ ] Trigger `Recommend related papers` after using roadmap paper tools and confirm recommendation rendering still works
+- [ ] Trigger `Recommend related papers` after using workbench paper tools and confirm recommendation rendering still works
 - [ ] Open a recommended paper and confirm the current-paper pane state remains stable
-- [ ] Use `Add to collection` on a recommendation and confirm no roadmap UI state is corrupted afterward
+- [ ] Use `Add to collection` on a recommendation and confirm no workbench UI state is corrupted afterward
 - [ ] Run `Highlight key passages` after generating a research brief and confirm highlight workflow still completes
 - [ ] Confirm auto-highlight and research-brief/paper-tool outputs can coexist without making the pane unusable
 

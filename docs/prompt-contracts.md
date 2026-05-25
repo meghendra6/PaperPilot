@@ -98,7 +98,7 @@ This note documents the purpose, target answer shape, and guardrails for the mai
 ### Workspace / chat prompt
 
 - File: `src/modules/context/promptPreviewBuilder.ts`
-- Purpose: steer Codex to inspect the local paper workspace before answering
+- Purpose: steer local CLI engines to inspect the local paper workspace before answering
 - Shape: instruction preamble plus the user request
 - Guardrails:
   - read workspace artifacts before answering

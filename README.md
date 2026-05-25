@@ -194,6 +194,13 @@ Current prompt surfaces include:
 - **Paper Mastery (comprehension check)**
 - **Workspace/chat prompt assembly**
 
+Across these surfaces, Paper Pilot prompts the model to prefer full current-paper
+workspace content when available. Metadata and abstracts are orientation or
+fallback context; if an answer depends on abstract-only context, the output
+should say so when that limitation affects confidence. Prompts also ask models
+to keep paper claims, reader-relevant interpretation, and outside/web findings
+separate, with section, page, figure, or table support when available.
+
 See [`docs/prompt-contracts.md`](./docs/prompt-contracts.md) for the exact output-shape intent and guardrails.
 
 ## Requirements
@@ -232,7 +239,7 @@ OpenDataLoader packaging note:
 - `npm run build` copies the OpenDataLoader JAR into `addon/chrome/content/vendor/opendataloader/` before the xpi is packed
 - the built add-on bundles that JAR, but still requires a local Java runtime to execute it
 
-`npm start`, `npm run build`, and `npm run release` now vendor the OpenDataLoader runtime JAR into the add-on automatically via [`scripts/prepare-opendataloader.mjs`](./scripts/prepare-opendataloader.mjs).
+`npm start`, `npm run build`, and `npm run release` vendor the OpenDataLoader runtime JAR into the add-on automatically via [`scripts/prepare-opendataloader.mjs`](./scripts/prepare-opendataloader.mjs).
 
 ## Creating a GitHub release
 
@@ -240,7 +247,7 @@ Release publishing is tag-driven. Keep the package version and the tag aligned:
 
 1. Update `package.json` and `package-lock.json` to the release version on `main`.
 2. Merge that version bump to `main`.
-3. Create and push the matching tag, for example `git tag v0.0.4 && git push origin v0.0.4`.
+3. Create and push the matching tag, for example `git tag "v<version>" && git push origin "v<version>"`.
 4. The Release workflow now runs `scripts/check-release-tag-version.mjs` before publishing. It fails fast if the ref name does not exactly match `v${package.json.version}`.
 
 If you use `workflow_dispatch`, run it from the matching release tag ref. Branch refs are rejected by the same guard.
