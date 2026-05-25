@@ -194,6 +194,13 @@ Gemini 모드는 더 가벼운 로컬 CLI 경로입니다. 현재 코드베이�
 - **Paper Mastery (이해도 점검)**
 - **Workspace/chat prompt assembly**
 
+이 표면 전반에서 Paper Pilot은 가능한 경우 현재 논문의 전체 워크스페이스
+콘텐츠를 먼저 사용하도록 프롬프트합니다. 메타데이터와 초록은 방향 잡기 또는
+폴백 맥락이며, 초록만으로 답해야 해 신뢰도에 영향이 있으면 그 제한을
+드러내도록 요구합니다. 또한 논문이 직접 말하는 내용, 독자에게 유용한 해석,
+외부/웹 근거를 구분하고, 가능하면 섹션, 페이지, 그림, 표 근거 위치를 함께
+제시하도록 합니다.
+
 정확한 출력 형태와 가드레일은 [`docs/prompt-contracts.md`](./docs/prompt-contracts.md)에서 확인할 수 있습니다.
 
 ## 요구 사항
@@ -240,7 +247,7 @@ OpenDataLoader 패키징 메모:
 
 1. `main`에서 `package.json`과 `package-lock.json`을 릴리즈 버전으로 올립니다.
 2. 그 버전 변경 커밋을 `main`에 머지합니다.
-3. 일치하는 태그를 만들고 푸시합니다. 예: `git tag v0.0.4 && git push origin v0.0.4`
+3. 일치하는 태그를 만들고 푸시합니다. 예: `git tag "v<version>" && git push origin "v<version>"`
 4. Release 워크플로우는 배포 전에 `scripts/check-release-tag-version.mjs`를 실행합니다. ref 이름이 `v${package.json.version}`과 정확히 일치하지 않으면 즉시 실패합니다.
 
 `workflow_dispatch`를 사용할 때도 같은 릴리즈 태그 ref에서 실행해야 합니다. 브랜치 ref에서는 같은 가드에 의해 실패합니다.

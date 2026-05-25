@@ -192,6 +192,11 @@ Gemini 模式是更轻量的本地 CLI 路径。当前代码库已经包含：
 - **Paper Mastery（理解度检查）**
 - **Workspace/chat prompt assembly**
 
+在这些 surface 中，Paper Pilot 会提示模型优先使用当前论文工作区中的全文内容。
+元数据和摘要只作为定向或回退上下文；如果只能基于摘要回答并影响信心，输出应
+明确说明这一限制。Prompt 还要求区分论文直接主张、面向读者的解释，以及外部/
+网页发现；可用时标出章节、页码、图或表。
+
 精确的输出形状与约束可见 [`docs/prompt-contracts.md`](./docs/prompt-contracts.md)。
 
 ## 环境要求
@@ -238,7 +243,7 @@ OpenDataLoader 打包说明：
 
 1. 在 `main` 上把 `package.json` 和 `package-lock.json` 更新到目标发布版本。
 2. 将这次版本更新合并到 `main`。
-3. 创建并推送匹配的标签，例如 `git tag v0.0.4 && git push origin v0.0.4`。
+3. 创建并推送匹配的标签，例如 `git tag "v<version>" && git push origin "v<version>"`。
 4. Release 工作流现在会在发布前运行 `scripts/check-release-tag-version.mjs`。如果 ref 名称与 `v${package.json.version}` 不完全一致，会立即失败。
 
 如果使用 `workflow_dispatch`，也必须从匹配的发布标签 ref 运行。分支 ref 会被同一个校验拒绝。
