@@ -144,6 +144,9 @@ test("buildInitialMasteryPrompt returns a prompt asking for JSON", () => {
   assert.match(prompt, /question/);
   assert.match(prompt, /topic/);
   assert.match(prompt, /difficulty/);
+  assert.match(prompt, /full current-paper workspace content/i);
+  assert.match(prompt, /paper claims from your interpretation/i);
+  assert.match(prompt, /section, page, figure, or table/i);
 });
 
 test("buildInitialMasteryPrompt forbids reasoning prose before the JSON", () => {
@@ -193,6 +196,8 @@ test("buildEvaluateAnswerPrompt works with empty history", () => {
   assert.match(prompt, /Q\?/);
   assert.match(prompt, /A\./);
   assert.ok(!prompt.includes("Previous Q&A rounds"));
+  assert.match(prompt, /full current-paper workspace content/i);
+  assert.match(prompt, /paper claims from your interpretation/i);
 });
 
 // --- buildFollowUpQuestionPrompt ---
@@ -206,6 +211,8 @@ test("buildFollowUpQuestionPrompt includes topic and difficulty", () => {
   assert.match(prompt, /methodology/);
   assert.match(prompt, /intermediate/);
   assert.match(prompt, /Round 1/);
+  assert.match(prompt, /full current-paper workspace content/i);
+  assert.match(prompt, /paper claims from your interpretation/i);
 });
 
 // --- History trimming (MAX_HISTORY = 6) ---
@@ -291,6 +298,9 @@ test("buildFinalReportPrompt asks for markdown output", () => {
   );
   assert.match(prompt, /Markdown/i);
   assert.match(prompt, /NOT JSON/);
+  assert.match(prompt, /full current-paper workspace content/i);
+  assert.match(prompt, /source locations/i);
+  assert.match(prompt, /paper claims from your interpretation/i);
 });
 
 test("buildFinalReportPrompt works with empty rounds", () => {

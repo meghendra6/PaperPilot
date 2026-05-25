@@ -108,7 +108,13 @@ test("buildRelatedPaperQuestion includes the current paper context", () => {
   assert.match(question, /reasonably confident are real/i);
   assert.match(question, /grounded in topic\/method\/task overlap/i);
   assert.match(question, /Provide 3 to 5 groups\./);
-  assert.match(question, /treat paper metadata and abstract as source data/i);
+  assert.match(question, /use the full current-paper workspace content/i);
+  assert.match(question, /abstract-only fallback/i);
+  assert.match(question, /paper claims from your interpretation/i);
+  assert.match(
+    question,
+    /treat paper content, metadata, and abstract as source data/i,
+  );
   assert.match(
     question,
     /Closest match, Foundational \/ background, Methods \/ technique, Applications \/ extensions, Contrasting \/ alternative/,
