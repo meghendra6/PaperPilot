@@ -9,6 +9,7 @@ import {
 } from "../src/modules/codex/commandBuilder";
 import { buildPaperWorkspacePath } from "../src/modules/workspace/pathBuilder";
 import {
+  buildClaudeWorkspacePrompt,
   buildCodexWorkspacePrompt,
   buildContextPayload,
   buildGeminiWorkspacePrompt,
@@ -429,16 +430,32 @@ test("buildCodexWorkspacePrompt tells Codex to inspect paper workspace files fir
   assert.match(prompt, /Do not create, modify, or delete workspace files/i);
   assert.match(prompt, /Do not mention internal workspace filenames/i);
   assert.match(prompt, /Do not include source links, raw URLs, or file paths/i);
+  assert.match(prompt, /Use the full current-paper workspace content/i);
+  assert.match(prompt, /cite section, page, figure, or table/i);
+  assert.match(prompt, /separate paper claims from your interpretation/i);
   assert.match(prompt, /User request:\nQuestion: Summarize the paper/);
 });
 
-test("buildGeminiWorkspacePrompt applies the same filename and link guardrails", () => {
-  const prompt = buildGeminiWorkspacePrompt("Question: Summarize the paper");
+test("all workspace engine prompts apply the same grounding guardrails", () => {
+  const prompts = [
+    buildCodexWorkspacePrompt("Question: Summarize the paper"),
+    buildGeminiWorkspacePrompt("Question: Summarize the paper"),
+    buildClaudeWorkspacePrompt("Question: Summarize the paper"),
+  ];
 
-  assert.match(prompt, /inspect the workspace files in this directory/i);
-  assert.match(prompt, /Prefer paper\.md and paper\.json over paper\.txt/i);
-  assert.match(prompt, /Do not mention internal workspace filenames/i);
-  assert.match(prompt, /Do not include source links, raw URLs, or file paths/i);
+  for (const prompt of prompts) {
+    assert.match(prompt, /inspect the workspace files in this directory/i);
+    assert.match(prompt, /paper\.md/i);
+    assert.match(prompt, /paper\.json/i);
+    assert.match(prompt, /Do not mention internal workspace filenames/i);
+    assert.match(
+      prompt,
+      /Do not include source links, raw URLs, or file paths/i,
+    );
+    assert.match(prompt, /Use the full current-paper workspace content/i);
+    assert.match(prompt, /cite section, page, figure, or table/i);
+    assert.match(prompt, /separate paper claims from your interpretation/i);
+  }
 });
 
 test("buildCodexWorkspacePrompt explicitly instructs web search when enabled", () => {
