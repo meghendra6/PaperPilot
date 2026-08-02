@@ -1,6 +1,9 @@
 import * as assert from "node:assert/strict";
 import { test } from "node:test";
-import { finishRunAfterCleanup } from "../src/modules/ai/runCompletion";
+import {
+  finishRunAfterCleanup,
+  stopDetachedRunProcess,
+} from "../src/modules/ai/runCompletion";
 
 test("run completion removes the old workspace before a nested completion starts", async () => {
   const events: string[] = [];
@@ -66,6 +69,9 @@ test("run completion still cleans and finalizes when persistence fails", async (
       complete: () => {
         events.push("not-called");
       },
+      incomplete: () => {
+        events.push("failed-callback");
+      },
       finalize: () => {
         events.push("finalized");
       },
@@ -73,7 +79,7 @@ test("run completion still cleans and finalizes when persistence fails", async (
     /persistence failure/,
   );
 
-  assert.deepEqual(events, ["cleaned", "finalized"]);
+  assert.deepEqual(events, ["cleaned", "failed-callback", "finalized"]);
 });
 
 test("run completion does not retry a failing cleanup", async () => {
@@ -97,4 +103,90 @@ test("run completion does not retry a failing cleanup", async () => {
 
   assert.equal(cleanupCalls, 1);
   assert.equal(finalized, true);
+});
+
+test("run completion skips a stale terminal callback after cleanup", async () => {
+  const events: string[] = [];
+
+  await finishRunAfterCleanup({
+    prepare: () => {
+      events.push("persisted");
+    },
+    cleanup: () => {
+      events.push("cleaned");
+    },
+    shouldComplete: () => false,
+    complete: () => {
+      events.push("stale-callback");
+    },
+    incomplete: () => {
+      events.push("failure-callback");
+    },
+    finalize: () => {
+      events.push("finalized");
+    },
+  });
+
+  assert.deepEqual(events, ["persisted", "cleaned", "finalized"]);
+});
+
+test("run completion reports cleanup failure without starting the success callback", async () => {
+  const events: string[] = [];
+
+  await assert.rejects(
+    finishRunAfterCleanup({
+      prepare: () => {
+        events.push("persisted");
+      },
+      cleanup: () => {
+        events.push("cleanup-failed");
+        throw new Error("cleanup failure");
+      },
+      complete: () => {
+        events.push("success-callback");
+      },
+      incomplete: () => {
+        events.push("failure-callback");
+      },
+      finalize: () => {
+        events.push("finalized");
+      },
+    }),
+    /cleanup failure/,
+  );
+
+  assert.deepEqual(events, [
+    "persisted",
+    "cleanup-failed",
+    "failure-callback",
+    "finalized",
+  ]);
+});
+
+test("detached process cleanup only executes a numeric pid", async () => {
+  const previousZotero = (globalThis as { Zotero?: unknown }).Zotero;
+  const calls: Array<{ command: string; args: string[] }> = [];
+  (globalThis as { Zotero?: unknown }).Zotero = {
+    Utilities: {
+      Internal: {
+        exec: async (command: string, args: string[]) => {
+          calls.push({ command, args });
+        },
+      },
+    },
+  };
+
+  try {
+    await stopDetachedRunProcess("1234");
+    await stopDetachedRunProcess("1234; touch /tmp/not-allowed");
+  } finally {
+    (globalThis as { Zotero?: unknown }).Zotero = previousZotero;
+  }
+
+  assert.deepEqual(calls, [
+    {
+      command: "/bin/zsh",
+      args: ["-lc", "kill 1234 >/dev/null 2>&1 || true"],
+    },
+  ]);
 });

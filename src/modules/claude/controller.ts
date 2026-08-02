@@ -1,10 +1,14 @@
 import { addMessage, setMessageContent } from "../components/ChatMessage";
 import {
+  getActiveReaderRunMode,
+  isReaderRunTokenActive,
   markReaderRunFinished,
   markReaderRunStarted,
-  notifyReaderPaneStateChanged,
 } from "../ai/runPresentation";
-import { finishRunAfterCleanup } from "../ai/runCompletion";
+import {
+  finishRunAfterCleanup,
+  stopDetachedRunProcess,
+} from "../ai/runCompletion";
 import { sanitizeAssistantText } from "../message/assistantOutput";
 import { sessionHistoryService } from "../session/sessionHistoryService";
 import { cleanupWorkspaceIfEnabled } from "../workspace/cleanup";
@@ -38,7 +42,10 @@ export async function handleClaudeQuestion(params: {
     assistantText: string;
   }) => void | Promise<void>;
 }) {
-  if (isClaudeRunActiveForItem(params.itemID)) {
+  if (
+    isClaudeRunActiveForItem(params.itemID) ||
+    getActiveReaderRunMode(params.itemID)
+  ) {
     const assistantText =
       "A Claude Code run is already active for this paper. Wait for it to finish before starting another request.";
     if (!params.suppressChatMessages) {
@@ -52,6 +59,8 @@ export async function handleClaudeQuestion(params: {
     return;
   }
 
+  const runToken = markReaderRunStarted(params.itemID, "claude_code");
+
   const result = await startClaudeRunForQuestion({
     itemID: params.itemID,
     title: params.sessionTitle,
@@ -60,45 +69,78 @@ export async function handleClaudeQuestion(params: {
     selectedText: params.selectedText,
     annotationIDs: params.annotationIDs,
     resumeSessionId: params.resumeSessionId,
-  }).catch((error) => {
-    params.streamingIndicator.style.display = "none";
-    notifyReaderPaneStateChanged(params.itemID);
-    throw error;
+  }).catch(async (error) => {
+    const detail = error instanceof Error ? error.message : String(error);
+    const assistantText = `Claude Code could not start: ${detail}`;
+    try {
+      if (!params.suppressChatMessages) {
+        addMessage(params.chatMessages, assistantText, "ai");
+      }
+      await params.onComplete?.({ success: false, assistantText });
+    } finally {
+      params.streamingIndicator.style.display = "none";
+      markReaderRunFinished(params.itemID, runToken);
+    }
+    return undefined;
   });
 
-  if (!result.ok) {
-    await finishRunAfterCleanup({
-      prepare: async () => {
-        if (!params.suppressChatMessages) {
-          addMessage(
-            params.chatMessages,
-            `Claude Code error: ${result.error}`,
-            "ai",
-          );
-        }
-        await sessionHistoryService.persistAssistantTurn({
-          itemID: params.itemID,
-          sessionId: params.sessionId,
-          mode: "claude_code",
-          paperTitle: params.paperTitle || params.sessionTitle,
-          assistantText: result.error,
-          success: false,
-          suppressMessage: params.suppressChatMessages,
-        });
-        params.streamingIndicator.style.display = "none";
-      },
-      cleanup: () => cleanupWorkspaceIfEnabled(result.workspacePath),
-      complete: () =>
-        params.onComplete?.({
-          success: false,
-          assistantText: result.error,
-        }),
-      finalize: () => notifyReaderPaneStateChanged(params.itemID),
-    });
+  if (!result) return;
+
+  if (!isReaderRunTokenActive(params.itemID, runToken)) {
+    if (result.ok) await stopDetachedRunProcess(result.processId);
+    await cleanupWorkspaceIfEnabled(result.workspacePath);
+    params.streamingIndicator.style.display = "none";
     return;
   }
 
-  const runToken = markReaderRunStarted(params.itemID, "claude_code");
+  if (!result.ok) {
+    try {
+      await finishRunAfterCleanup({
+        prepare: async () => {
+          if (!params.suppressChatMessages) {
+            addMessage(
+              params.chatMessages,
+              `Claude Code error: ${result.error}`,
+              "ai",
+            );
+          }
+          await sessionHistoryService.persistAssistantTurn({
+            itemID: params.itemID,
+            sessionId: params.sessionId,
+            mode: "claude_code",
+            paperTitle: params.paperTitle || params.sessionTitle,
+            assistantText: result.error,
+            success: false,
+            suppressMessage: params.suppressChatMessages,
+          });
+          params.streamingIndicator.style.display = "none";
+        },
+        cleanup: () => cleanupWorkspaceIfEnabled(result.workspacePath),
+        shouldComplete: () => isReaderRunTokenActive(params.itemID, runToken),
+        complete: () =>
+          params.onComplete?.({
+            success: false,
+            assistantText: result.error,
+          }),
+        incomplete: () =>
+          params.onComplete?.({
+            success: false,
+            assistantText: "Claude Code could not finalize this run.",
+          }),
+        finalize: () => markReaderRunFinished(params.itemID, runToken),
+      });
+    } catch {
+      if (!params.suppressChatMessages) {
+        addMessage(
+          params.chatMessages,
+          "Claude Code could not finalize this run.",
+          "ai",
+        );
+      }
+    }
+    return;
+  }
+
   const assistantMessage = params.suppressChatMessages
     ? undefined
     : addMessage(params.chatMessages, "Starting Claude Code run…", "ai");
@@ -137,29 +179,45 @@ export async function handleClaudeQuestion(params: {
     }
 
     const success = progress.exitCode === "0";
-    await finishRunAfterCleanup({
-      prepare: async () => {
-        await sessionHistoryService.persistAssistantTurn({
-          itemID: params.itemID,
-          sessionId: params.sessionId,
-          mode: "claude_code",
-          paperTitle: params.paperTitle || params.sessionTitle,
-          assistantText,
-          success,
-          rawEvent: progress.rawOutput,
-          resumeSessionId: params.resumeSessionId,
-          suppressMessage: params.suppressChatMessages,
-        });
-        clearClaudeRunStateForItem(params.itemID);
-        params.streamingIndicator.style.display = "none";
-      },
-      cleanup: () => cleanupWorkspaceIfEnabled(result.workspacePath),
-      complete: () => params.onComplete?.({ success, assistantText }),
-      finalize: () => {
-        clearClaudeRunStateForItem(params.itemID);
-        markReaderRunFinished(params.itemID, runToken);
-      },
-    });
+    try {
+      await finishRunAfterCleanup({
+        prepare: async () => {
+          await sessionHistoryService.persistAssistantTurn({
+            itemID: params.itemID,
+            sessionId: params.sessionId,
+            mode: "claude_code",
+            paperTitle: params.paperTitle || params.sessionTitle,
+            assistantText,
+            success,
+            rawEvent: progress.rawOutput,
+            resumeSessionId: params.resumeSessionId,
+            suppressMessage: params.suppressChatMessages,
+          });
+          clearClaudeRunStateForItem(params.itemID);
+          params.streamingIndicator.style.display = "none";
+        },
+        cleanup: () => cleanupWorkspaceIfEnabled(result.workspacePath),
+        shouldComplete: () => isReaderRunTokenActive(params.itemID, runToken),
+        complete: () => params.onComplete?.({ success, assistantText }),
+        incomplete: () =>
+          params.onComplete?.({
+            success: false,
+            assistantText: "Claude Code could not finalize this run.",
+          }),
+        finalize: () => {
+          clearClaudeRunStateForItem(params.itemID);
+          markReaderRunFinished(params.itemID, runToken);
+        },
+      });
+    } catch {
+      if (!params.suppressChatMessages) {
+        addMessage(
+          params.chatMessages,
+          "Claude Code could not finalize this run.",
+          "ai",
+        );
+      }
+    }
   }, 800);
 
   addon.data.claudeRunPollers?.set(params.itemID, poller);

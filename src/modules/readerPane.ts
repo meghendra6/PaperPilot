@@ -461,6 +461,15 @@ export function registerPaperPilotPaneSection() {
         let renamingSessionId: string | undefined;
 
         const clearSessionRuntimeState = async () => {
+          const activeMode = getActiveReaderRunMode(item.id);
+          if (activeMode) {
+            addMessage(
+              chatMessages,
+              `${getModeLabel(activeMode)} is still running for this paper. Wait for it to finish or cancel it before changing sessions.`,
+              "ai",
+            );
+            return false;
+          }
           await stopCodexRunSilently({
             itemID: item.id,
           });
@@ -472,6 +481,7 @@ export function registerPaperPilotPaneSection() {
           });
           clearReaderActionDraft();
           renderStreamingIndicator(streamingIndicator, false);
+          return true;
         };
 
         const resetBlankSessionState = () => {
@@ -486,8 +496,9 @@ export function registerPaperPilotPaneSection() {
         };
 
         const clearBlankSessionState = async () => {
-          await clearSessionRuntimeState();
+          if (!(await clearSessionRuntimeState())) return false;
           resetBlankSessionState();
+          return true;
         };
 
         const updateWorkbenchSummary = (markUpdated = false) => {
@@ -587,7 +598,7 @@ export function registerPaperPilotPaneSection() {
               ) {
                 return;
               }
-              await clearBlankSessionState();
+              if (!(await clearBlankSessionState())) return;
               await sessionHistoryService.deleteAllSavedSessions({
                 itemID: item.id,
               });
@@ -707,7 +718,7 @@ export function registerPaperPilotPaneSection() {
             openButton.textContent = "Open";
             openButton.disabled = currentSessionId === entry.sessionId;
             openButton.addEventListener("click", async () => {
-              await clearSessionRuntimeState();
+              if (!(await clearSessionRuntimeState())) return;
               await sessionHistoryService.openSavedSession({
                 itemID: item.id,
                 sessionId: entry.sessionId,
@@ -785,7 +796,7 @@ export function registerPaperPilotPaneSection() {
                 const deletingCurrent =
                   addon.data.currentSessionId === entry.sessionId;
                 if (deletingCurrent) {
-                  await clearSessionRuntimeState();
+                  if (!(await clearSessionRuntimeState())) return;
                 }
                 await sessionHistoryService.deleteSavedSession({
                   itemID: item.id,
@@ -2029,7 +2040,7 @@ export function registerPaperPilotPaneSection() {
 
         newSessionButton.addEventListener("click", async () => {
           const mode = getModeForItem(item.id);
-          await clearSessionRuntimeState();
+          if (!(await clearSessionRuntimeState())) return;
           await sessionHistoryService.startNewSessionDraft({
             itemID: item.id,
             mode,

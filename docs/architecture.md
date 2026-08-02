@@ -91,7 +91,10 @@ polled**:
 
 1. `controller.handleXQuestion` refuses to start if a run is already active for
    this `itemID`.
-2. `runner.startXRunForQuestion`:
+2. Before workspace preparation, the controller registers an item-scoped
+   activity in `ai/runPresentation.ts`. This keeps provider and session guards
+   active if Zotero rebuilds the pane during extraction or process spawn.
+3. `runner.startXRunForQuestion`:
    - resolves the executable path and reads prefs (model, sandbox, permissions)
    - computes the workspace path: `{workspaceRoot}/{itemID}-{slugified-title}`
      (`workspace/pathBuilder.ts`)
@@ -103,13 +106,13 @@ polled**:
    - builds the CLI argv and wraps it in a **detached background shell script**
      (`codex/shell.ts` for Codex; inline in the runner for Claude and Gemini)
    - runs `Zotero.Utilities.Internal.exec("/bin/zsh", ["-lc", script])`
-3. The script redirects stdout+stderr to an output file, writes the exit code to
+4. The script redirects stdout+stderr to an output file, writes the exit code to
    a separate file when done, and echoes the pid to a third file. `exec` returns
    as soon as the background job is spawned.
-4. `controller` starts a `setInterval` at **800 ms** that reads the output file,
+5. `controller` starts a `setInterval` at **800 ms** that reads the output file,
    renders partial text into the chat bubble, and stops once the exit-code file
    is non-empty.
-5. On completion the controller sanitizes the text
+6. On completion the controller sanitizes the text
    (`message/assistantOutput.ts`), persists the turn via
    `session/sessionHistoryService.ts`, updates run state, and calls
    `workspace/cleanup.ts`. `ai/runCompletion.ts` guarantees that cleanup
@@ -118,7 +121,8 @@ polled**:
    activity in `ai/runPresentation.ts`; the currently mounted pane then
    re-renders from persisted session/workflow state. This keeps a run connected
    to the visible pane even when Zotero rebuilds its DOM during a paper or tab
-   switch.
+   switch. Session replacement is blocked until this terminal transition has
+   finished, and stale tokens cannot invoke workflow callbacks.
 
 Per-engine file names inside the workspace:
 

@@ -70,6 +70,17 @@ export function getActiveReaderRunMode(itemID: number): EngineMode | undefined {
   return activeRunsByItem.get(itemID)?.at(-1)?.mode;
 }
 
+export function isReaderRunTokenActive(
+  itemID: number,
+  token: ReaderRunToken,
+): boolean {
+  return Boolean(
+    activeRunsByItem
+      .get(itemID)
+      ?.some((candidate) => candidate.token === token),
+  );
+}
+
 export function notifyReaderPaneStateChanged(itemID: number): void {
   emit({ type: "state_changed", itemID });
 }

@@ -35,6 +35,7 @@ Use this checklist inside real Zotero 7, 8, and 9 runtimes before claiming readi
 - [ ] Complete a workbench or related-papers action while its section is collapsed and confirm only its summary/update dot changes—the section must not open itself
 - [ ] Open the engine/model popover, switch each engine, save a model/effort selection, and confirm the existing preferences update
 - [ ] While a provider run is active, attempt to switch providers and confirm the switch is blocked without clearing the active poller; after completion, switching works normally
+- [ ] During workspace preparation and terminal cleanup, attempt New session, saved-session Open/Delete, and Codex Cancel; confirm session replacement is blocked and no old workflow result appears in a new session
 - [ ] Confirm the engine/model popover closes on outside click and Escape; Escape returns focus to its trigger
 - [ ] Fill the pane with chat, recommendation, session, and mastery content; confirm chat keeps at least 120px and each expanded section scrolls internally without pushing the composer away
 - [ ] Type one and many lines in the composer; confirm it grows from 72px to at most 180px, then scrolls internally

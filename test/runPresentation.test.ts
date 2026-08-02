@@ -3,6 +3,7 @@ import { test } from "node:test";
 import {
   finishReaderRunsForMode,
   getActiveReaderRunMode,
+  isReaderRunTokenActive,
   markReaderRunFinished,
   markReaderRunStarted,
   notifyReaderPaneStateChanged,
@@ -25,8 +26,10 @@ test("reader run presentation is item-scoped and keeps the newest active run", (
 
   assert.equal(getActiveReaderRunMode(9101), "claude_code");
   assert.equal(getActiveReaderRunMode(9102), "gemini_cli");
+  assert.equal(isReaderRunTokenActive(9101, codex), true);
 
   markReaderRunFinished(9101, codex);
+  assert.equal(isReaderRunTokenActive(9101, codex), false);
   assert.equal(getActiveReaderRunMode(9101), "claude_code");
 
   markReaderRunFinished(9101, claude);
