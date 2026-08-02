@@ -13,6 +13,11 @@ import { getStatusLabel } from "./ai/statusLabels";
 import { getProviderDescriptorForItem } from "./ai/providerRegistry";
 import type { EngineMode } from "./ai/types";
 import {
+  getActiveReaderRunMode,
+  notifyReaderPaneStateChanged,
+  subscribeToReaderRunEvents,
+} from "./ai/runPresentation";
+import {
   buildCodexRunState,
   getCodexRunStateForItem,
   isCodexRunActiveForItem,
@@ -205,7 +210,7 @@ export function registerPaperPilotPaneSection() {
         </div>
       </div>
     `,
-    onRender: ({ body, item, setSectionSummary }) => {
+    onRender: ({ body, item, setSectionSummary: setHostSectionSummary }) => {
       paneCleanupByBody.get(body)?.();
       const template = paneTemplateByBody.get(body);
       if (template) {
@@ -263,6 +268,10 @@ export function registerPaperPilotPaneSection() {
         () => sessionsSection.dispose(),
       ];
       let disposed = false;
+      const isCurrentRender = () => !disposed;
+      const setSectionSummary = (summary: string) => {
+        if (isCurrentRender()) setHostSectionSummary(summary);
+      };
       const cleanup = () => {
         if (disposed) return;
         disposed = true;
@@ -529,12 +538,14 @@ export function registerPaperPilotPaneSection() {
             draftCard,
             streamingIndicator,
             setSectionSummary,
+            isCurrent: isCurrentRender,
           });
           if (disposed) return;
           await renderSessionHistory();
           if (disposed) return;
           updateWorkbenchSummary();
           updateRelatedSummary();
+          hydrateMasteryState();
         };
 
         const renderSessionHistory = async () => {
@@ -801,7 +812,21 @@ export function registerPaperPilotPaneSection() {
         };
 
         const cleanupComposerSizing = installChatComposerAutosize(input);
-        cleanupTasks.push(cleanupComposerSizing);
+        const unsubscribeFromRunEvents = subscribeToReaderRunEvents(
+          item.id,
+          (event) => {
+            if (!isCurrentRender()) return;
+            if (event.type === "started") {
+              const activeLabel = getModeLabel(event.mode);
+              renderModeHeader(modeChip, modeStatus, activeLabel, "running");
+              renderStreamingIndicator(streamingIndicator, true);
+              setSectionSummary(`${activeLabel} · Running`);
+              return;
+            }
+            void rerenderPane();
+          },
+        );
+        cleanupTasks.push(cleanupComposerSizing, unsubscribeFromRunEvents);
         void rerenderPane();
         renderRelatedRecommendationState(
           relatedRecommendButton,
@@ -1021,6 +1046,7 @@ export function registerPaperPilotPaneSection() {
             addMessage(chatMessages, `Auto-highlight error: ${message}`, "ai");
           }
           workbenchSection.markUpdated();
+          notifyReaderPaneStateChanged(item.id);
         });
 
         pastSessionsButton.addEventListener("click", async () => {
@@ -1260,6 +1286,7 @@ export function registerPaperPilotPaneSection() {
             String(item.getField("title") || ""),
           );
           updateRelatedSummary(true);
+          notifyReaderPaneStateChanged(item.id);
         });
 
         // --- Paper Mastery handlers ---
@@ -1497,7 +1524,10 @@ export function registerPaperPilotPaneSection() {
           }
         }
 
-        function showMasteryQuestion(question: string) {
+        function showMasteryQuestion(
+          question: string,
+          options: { focus?: boolean; clearAnswer?: boolean } = {},
+        ) {
           clearHistoryDotSelection();
           if (masteryQuestion) {
             masteryQuestion.replaceChildren(
@@ -1507,8 +1537,8 @@ export function registerPaperPilotPaneSection() {
           }
           if (masteryAnswer) {
             masteryAnswer.style.display = "";
-            masteryAnswer.value = "";
-            masteryAnswer.focus();
+            if (options.clearAnswer !== false) masteryAnswer.value = "";
+            if (options.focus !== false) masteryAnswer.focus();
           }
           if (masteryActionsDiv) {
             masteryActionsDiv.style.display = "";
@@ -1550,7 +1580,7 @@ export function registerPaperPilotPaneSection() {
           masteryFeedback.style.display = "";
         }
 
-        function showMasteryCompletion(
+        function renderMasteryCompletion(
           state: import("./comprehensionCheck/types").ComprehensionCheckState,
         ) {
           const understood = state.rounds.filter((r) => r.understood).length;
@@ -1576,35 +1606,119 @@ export function registerPaperPilotPaneSection() {
             masteryActionsDiv.style.display = "none";
           }
           if (masteryStatus) {
-            masteryStatus.textContent = "Complete";
+            masteryStatus.textContent = state.running
+              ? "Generating final report..."
+              : "Complete";
           }
           if (masteryReport) {
-            masteryReport.textContent = "Generating final report...";
-            masteryReport.style.display = "";
-            sendMasteryPrompt(
-              buildFinalReportPrompt(state.rounds, state.topics),
-              (assistantText) => {
-                const s = getMasteryState(item.id);
-                if (s) {
-                  s.running = false;
-                  setMasteryState(item.id, s);
-                }
-                masteryReport.replaceChildren(
-                  renderMarkdownFragment(
-                    assistantText,
-                    masteryReport.ownerDocument!,
-                  ),
-                );
-              },
-              () => {
-                const s = getMasteryState(item.id);
-                if (s) {
-                  s.running = false;
-                  setMasteryState(item.id, s);
-                }
-                masteryReport.textContent = "Could not generate final report.";
-              },
-            );
+            if (state.finalReport) {
+              masteryReport.replaceChildren(
+                renderMarkdownFragment(
+                  state.finalReport,
+                  masteryReport.ownerDocument!,
+                ),
+              );
+              masteryReport.style.display = "";
+            } else if (state.finalReportError) {
+              masteryReport.textContent = state.finalReportError;
+              masteryReport.style.display = "";
+            } else if (state.running) {
+              masteryReport.textContent = "Generating final report...";
+              masteryReport.style.display = "";
+            } else {
+              masteryReport.replaceChildren();
+              masteryReport.style.display = "none";
+            }
+          }
+        }
+
+        function showMasteryCompletion(
+          state: import("./comprehensionCheck/types").ComprehensionCheckState,
+        ) {
+          if (state.finalReport || state.finalReportError) {
+            renderMasteryCompletion(state);
+            return;
+          }
+
+          state.running = true;
+          state.status = "Generating final report...";
+          setMasteryState(item.id, state);
+          renderMasteryCompletion(state);
+          sendMasteryPrompt(
+            buildFinalReportPrompt(state.rounds, state.topics),
+            (assistantText) => {
+              const s = getMasteryState(item.id);
+              if (s) {
+                s.running = false;
+                s.status = "Complete";
+                s.finalReport = assistantText;
+                s.finalReportError = undefined;
+                setMasteryState(item.id, s);
+                renderMasteryCompletion(s);
+              }
+            },
+            () => {
+              const s = getMasteryState(item.id);
+              if (s) {
+                s.running = false;
+                s.status = "Complete";
+                s.finalReportError = "Could not generate final report.";
+                setMasteryState(item.id, s);
+                renderMasteryCompletion(s);
+              }
+            },
+          );
+        }
+
+        function hydrateMasteryState() {
+          const state = getMasteryState(item.id);
+          const hasProgress = Boolean(
+            state &&
+              (state.phase !== "idle" ||
+                state.status ||
+                state.rounds.length ||
+                state.currentQuestion),
+          );
+          if (!state || !hasProgress) {
+            if (masterySection) masterySection.style.display = "none";
+            if (paperMasteryBtn) paperMasteryBtn.textContent = "Paper Mastery";
+            return;
+          }
+
+          if (masterySection) masterySection.style.display = "";
+          if (masteryStatus) masteryStatus.textContent = state.status;
+          updateMasteryProgressDots(state);
+          if (paperMasteryBtn) {
+            paperMasteryBtn.textContent =
+              state.phase === "complete"
+                ? "Restart Paper Mastery"
+                : "Resume Paper Mastery";
+          }
+
+          if (masteryReport) {
+            masteryReport.replaceChildren();
+            masteryReport.style.display = "none";
+          }
+          if (state.phase === "complete") {
+            renderMasteryCompletion(state);
+            return;
+          }
+          if (state.currentQuestion) {
+            showMasteryQuestion(state.currentQuestion, {
+              focus: false,
+              clearAnswer: false,
+            });
+          } else {
+            if (masteryQuestion) masteryQuestion.style.display = "none";
+            if (masteryAnswer) masteryAnswer.style.display = "none";
+            if (masteryActionsDiv) masteryActionsDiv.style.display = "none";
+          }
+          if (
+            state.phase === "generating-question" ||
+            state.phase === "evaluating"
+          ) {
+            if (masteryAnswer) masteryAnswer.style.display = "none";
+            if (masteryActionsDiv) masteryActionsDiv.style.display = "none";
           }
         }
 
@@ -1653,9 +1767,27 @@ export function registerPaperPilotPaneSection() {
           if (!masterySection) {
             return;
           }
-          if (getMasteryState(item.id)?.running) {
+          const existingState = getMasteryState(item.id);
+          if (
+            existingState?.running ||
+            (existingState &&
+              existingState.phase !== "idle" &&
+              existingState.phase !== "complete")
+          ) {
+            hydrateMasteryState();
             return;
           }
+          if (
+            existingState?.phase === "complete" &&
+            !confirmDestructive(
+              paperMasteryBtn.ownerDocument,
+              "Restart Paper Mastery",
+              "Start Paper Mastery over? The current questions, answers, and final report will be replaced.",
+            )
+          ) {
+            return;
+          }
+          clearMasteryState(item.id);
           masterySection.style.display = "";
           const state = buildInitialMasteryState();
           state.phase = "generating-question";
@@ -1689,6 +1821,7 @@ export function registerPaperPilotPaneSection() {
               }
               const s = getMasteryState(item.id) ?? buildInitialMasteryState();
               s.phase = "awaiting-answer";
+              s.running = false;
               s.currentQuestion = parsed.question;
               s.status = `Topic: ${parsed.topic} (${parsed.difficulty})`;
               s.topics.push({
@@ -1815,6 +1948,7 @@ export function registerPaperPilotPaneSection() {
                   }
                   const st = getMasteryState(item.id) ?? s;
                   st.phase = "awaiting-answer";
+                  st.running = false;
                   st.currentQuestion = parsed.question;
                   st.status = `Topic: ${parsed.topic} (${parsed.difficulty})`;
                   st.topics.push({
@@ -1896,6 +2030,7 @@ export function registerPaperPilotPaneSection() {
             runStateCard,
             item.id,
             item.getField("title"),
+            isCurrentRender,
           );
           addMessage(
             chatMessages,
@@ -2162,6 +2297,12 @@ function getModeShortLabel(mode?: EngineMode) {
   return "Codex";
 }
 
+function getModeLabel(mode: EngineMode) {
+  if (mode === "gemini_cli") return "Gemini CLI";
+  if (mode === "claude_code") return "Claude Code";
+  return "Codex CLI";
+}
+
 async function renderPaneState(params: {
   itemID: number;
   itemTitle: string;
@@ -2195,6 +2336,7 @@ async function renderPaneState(params: {
   draftCard: HTMLElement;
   streamingIndicator: HTMLElement;
   setSectionSummary: (summary: string) => void;
+  isCurrent?: () => boolean;
 }) {
   const defaultMode = getDefaultMode();
   const mode = getModeForItem(params.itemID);
@@ -2279,7 +2421,22 @@ async function renderPaneState(params: {
       params.runStateCard,
       params.itemID,
       params.itemTitle,
+      params.isCurrent,
     );
+  }
+
+  if (params.isCurrent && !params.isCurrent()) return;
+  const activeRunMode = getActiveReaderRunMode(params.itemID);
+  if (activeRunMode) {
+    const activeLabel = getModeLabel(activeRunMode);
+    renderModeHeader(
+      params.modeChip,
+      params.modeStatus,
+      activeLabel,
+      "running",
+    );
+    renderStreamingIndicator(params.streamingIndicator, true);
+    params.setSectionSummary(`${activeLabel} · Running`);
   }
 }
 
@@ -2706,14 +2863,18 @@ async function refreshCodexStatus(
   runStateCard: HTMLElement,
   itemID: number,
   itemTitle: string,
+  isCurrent: () => boolean = () => true,
 ) {
   try {
+    if (!isCurrent() || getActiveReaderRunMode(itemID)) return;
     renderModeHeader(chip, status, "Codex CLI", "checking");
     const loginState = await probeCodexLoginState();
+    if (!isCurrent() || getActiveReaderRunMode(itemID)) return;
     const workspaceRoot = String(
       getPref("codexWorkspaceRoot") || "/tmp/zotero-paper-ai",
     );
     const workspaceWritable = await probeWorkspaceWritable(workspaceRoot);
+    if (!isCurrent() || getActiveReaderRunMode(itemID)) return;
     renderModeHeader(chip, status, "Codex CLI", loginState);
     status.textContent = `${status.textContent}${workspaceWritable ? "" : " · workspace not writable"}`;
     setSectionSummary(`Codex CLI · ${getStatusLabel(loginState)}`);
@@ -2726,6 +2887,7 @@ async function refreshCodexStatus(
       workspaceWritable,
     );
   } catch {
+    if (!isCurrent() || getActiveReaderRunMode(itemID)) return;
     renderModeHeader(chip, status, "Codex CLI", "error");
     setSectionSummary("Codex CLI · Error");
     renderRunStateCard(

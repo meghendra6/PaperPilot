@@ -1,4 +1,9 @@
 import { addMessage, setMessageContent } from "../components/ChatMessage";
+import {
+  markReaderRunFinished,
+  markReaderRunStarted,
+  notifyReaderPaneStateChanged,
+} from "../ai/runPresentation";
 import { sanitizeAssistantText } from "../message/assistantOutput";
 import { sessionHistoryService } from "../session/sessionHistoryService";
 import { cleanupWorkspaceIfEnabled } from "../workspace/cleanup";
@@ -65,39 +70,54 @@ export async function handleCodexQuestion(params: {
     annotationIDs: params.annotationIDs,
     useResume: params.useResume,
     resumeSessionId: params.resumeSessionId,
+  }).catch((error) => {
+    notifyReaderPaneStateChanged(params.itemID);
+    throw error;
   });
 
   if (!result.ok) {
-    const loginState = classifyCodexLoginFailure(result.error);
-    if (!params.suppressChatMessages) {
-      addMessage(params.chatMessages, `Codex CLI error: ${result.error}`, "ai");
-    }
-    await sessionHistoryService.persistAssistantTurn({
-      itemID: params.itemID,
-      sessionId: params.sessionId,
-      mode: "codex_cli",
-      paperTitle: params.paperTitle || params.sessionTitle,
-      assistantText: result.error,
-      success: false,
-      suppressMessage: params.suppressChatMessages,
-    });
-    setCodexRunStateForItem(params.itemID, {
-      ...buildCodexRunState({
+    try {
+      const loginState = classifyCodexLoginFailure(result.error);
+      if (!params.suppressChatMessages) {
+        addMessage(
+          params.chatMessages,
+          `Codex CLI error: ${result.error}`,
+          "ai",
+        );
+      }
+      await sessionHistoryService.persistAssistantTurn({
         itemID: params.itemID,
-        title: params.sessionTitle,
-        loginState,
-      }),
-      latestEventType: "error",
-    });
-    params.streamingIndicator.style.display = "none";
-    params.onComplete?.({
-      success: false,
-      assistantText: result.error,
-    });
-    await cleanupWorkspaceIfEnabled(result.workspacePath);
+        sessionId: params.sessionId,
+        mode: "codex_cli",
+        paperTitle: params.paperTitle || params.sessionTitle,
+        assistantText: result.error,
+        success: false,
+        suppressMessage: params.suppressChatMessages,
+      });
+      setCodexRunStateForItem(params.itemID, {
+        ...buildCodexRunState({
+          itemID: params.itemID,
+          title: params.sessionTitle,
+          loginState,
+        }),
+        latestEventType: "error",
+      });
+      params.streamingIndicator.style.display = "none";
+      params.onComplete?.({
+        success: false,
+        assistantText: result.error,
+      });
+    } finally {
+      try {
+        await cleanupWorkspaceIfEnabled(result.workspacePath);
+      } finally {
+        notifyReaderPaneStateChanged(params.itemID);
+      }
+    }
     return;
   }
 
+  const runToken = markReaderRunStarted(params.itemID, "codex_cli");
   const assistantMessage = params.suppressChatMessages
     ? undefined
     : addMessage(params.chatMessages, "Starting Codex CLI run…", "ai");
@@ -174,35 +194,42 @@ export async function handleCodexQuestion(params: {
           typeof event.thread_id === "string",
       )?.thread_id as string | undefined;
 
-    await sessionHistoryService.persistAssistantTurn({
-      itemID: params.itemID,
-      sessionId: params.sessionId,
-      mode: "codex_cli",
-      paperTitle: params.paperTitle || params.sessionTitle,
-      assistantText,
-      success,
-      rawEvent: progress.rawOutput,
-      resumeSessionId: resumedThreadId,
-      suppressMessage: params.suppressChatMessages,
-    });
-    setCodexRunStateForItem(params.itemID, {
-      ...buildCodexRunState({
+    try {
+      await sessionHistoryService.persistAssistantTurn({
         itemID: params.itemID,
-        title: params.sessionTitle,
-        loginState: success
-          ? "ready"
-          : classifyCodexLoginFailure(assistantText),
-      }),
-      processId: result.processId,
-      runStatus: success ? "completed" : "error",
-      latestEventType: progress.latestEventType,
-    });
-    params.streamingIndicator.style.display = "none";
-    params.onComplete?.({
-      success,
-      assistantText,
-    });
-    await cleanupWorkspaceIfEnabled(result.workspacePath);
+        sessionId: params.sessionId,
+        mode: "codex_cli",
+        paperTitle: params.paperTitle || params.sessionTitle,
+        assistantText,
+        success,
+        rawEvent: progress.rawOutput,
+        resumeSessionId: resumedThreadId,
+        suppressMessage: params.suppressChatMessages,
+      });
+      setCodexRunStateForItem(params.itemID, {
+        ...buildCodexRunState({
+          itemID: params.itemID,
+          title: params.sessionTitle,
+          loginState: success
+            ? "ready"
+            : classifyCodexLoginFailure(assistantText),
+        }),
+        processId: result.processId,
+        runStatus: success ? "completed" : "error",
+        latestEventType: progress.latestEventType,
+      });
+      params.streamingIndicator.style.display = "none";
+      params.onComplete?.({
+        success,
+        assistantText,
+      });
+    } finally {
+      try {
+        await cleanupWorkspaceIfEnabled(result.workspacePath);
+      } finally {
+        markReaderRunFinished(params.itemID, runToken);
+      }
+    }
   }, 800);
 
   addon.data.codexRunPollers?.set(params.itemID, poller);

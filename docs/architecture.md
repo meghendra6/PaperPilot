@@ -54,6 +54,7 @@ scrolls independently from expanded section bodies.
 | `types.ts`            | `EngineMode = "codex_cli" \| "claude_code" \| "gemini_cli"`              |
 | `modeStore.ts`        | default mode from prefs, per-item override in `addon.data.modeOverrides` |
 | `providerRegistry.ts` | mode → provider descriptor (label, status)                               |
+| `runPresentation.ts`  | item-scoped active-run events that reconnect rebuilt pane DOM            |
 | `workspaceRun.ts`     | mode-dispatching helpers: start a run, read progress, extract text       |
 
 `workspaceRun.ts` is the shared entry point used by non-chat workflows (research
@@ -110,7 +111,10 @@ polled**:
 5. On completion the controller sanitizes the text
    (`message/assistantOutput.ts`), persists the turn via
    `session/sessionHistoryService.ts`, updates run state, and calls
-   `workspace/cleanup.ts`.
+   `workspace/cleanup.ts`. It also closes the item-scoped activity in
+   `ai/runPresentation.ts`; the currently mounted pane then re-renders from
+   persisted session/workflow state. This keeps a run connected to the visible
+   pane even when Zotero rebuilds its DOM during a paper or tab switch.
 
 Per-engine file names inside the workspace:
 
@@ -183,6 +187,11 @@ Two layers, easy to confuse:
 workflows pass `suppressChatMessages`, but sessions saved before that existed
 still contain the JSON, so the filter detects it heuristically at replay time.
 It ignores fenced code blocks so legitimate JSON in chat stays visible.
+
+Paper Mastery state includes its completed Markdown report, so a custom-section
+refresh can hydrate both an awaiting question and a completed session without
+starting another model run. Restarting a completed mastery session is an
+explicit, confirmed replacement of that saved state.
 
 Zotero-facing persistence is separate: `note/paperArtifactNote.ts` writes child
 notes, and `workspace/artifactBundle.ts` packages collection-linked artifact sets.

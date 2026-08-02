@@ -1,3 +1,4 @@
+import { finishReaderRunsForMode } from "../ai/runPresentation";
 import { clearCodexPollerForItem } from "./poller";
 import { clearCodexRunStateForItem } from "./runState";
 
@@ -20,5 +21,6 @@ export async function stopCodexRunSilently(params: {
   if (runState && params.clearRunState !== false) {
     clearCodexRunStateForItem(params.itemID);
   }
+  finishReaderRunsForMode(params.itemID, "codex_cli");
   return runState;
 }

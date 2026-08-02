@@ -1,3 +1,4 @@
+import { finishReaderRunsForMode } from "../ai/runPresentation";
 import { clearClaudePollerForItem } from "./poller";
 import { clearClaudeRunStateForItem } from "./runState";
 
@@ -20,5 +21,6 @@ export async function stopClaudeRunSilently(params: {
   if (runState && params.clearRunState !== false) {
     clearClaudeRunStateForItem(params.itemID);
   }
+  finishReaderRunsForMode(params.itemID, "claude_code");
   return runState;
 }

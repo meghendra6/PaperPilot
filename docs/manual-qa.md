@@ -39,6 +39,9 @@ Use this checklist inside real Zotero 7, 8, and 9 runtimes before claiming readi
 - [ ] Type one and many lines in the composer; confirm it grows from 72px to at most 180px, then scrolls internally
 - [ ] Confirm the removed drag handle has no visible target or pointer behavior and the Send button submits the same way as Enter
 - [ ] Switch away from and back to the paper (or refresh the custom section) and confirm exactly one header and three disclosure triggers remain, with no duplicate listeners or console errors
+- [ ] Start a run on paper A, switch to paper B and back to A before completion, and confirm A still shows `Running` until the final persisted answer replaces it in the rebuilt pane
+- [ ] Refresh the custom section with Paper Mastery awaiting an answer and after completion; confirm the current question, score, and final report rehydrate without starting a second run
+- [ ] Click `Restart Paper Mastery` after completion and confirm cancellation preserves the old session while confirmation explicitly replaces it
 
 ## 2. Mode behavior
 
@@ -153,12 +156,12 @@ Use this checklist inside real Zotero 7, 8, and 9 runtimes before claiming readi
 - [ ] Built `.xpi` contains `chrome/content/vendor/opendataloader/opendataloader-pdf-cli.jar`
 - [ ] No console/runtime errors during pane render and action triggers
 
-## Session history popover and silent-turn QA (2026-04-16)
+## Session history and silent-turn QA (2026-04-16)
 
 After running mastery and one or more workbench tools (research brief, contributions, limitations, follow-ups, paper compare) on a paper, then opening "Past sessions":
 
-- The popover anchors below the "Past sessions" button and does NOT push the chat down.
-- Clicking outside the popover or pressing Escape closes it. Escape returns focus to the trigger button.
+- The session list stays inside the bounded `Past sessions` disclosure body and scrolls internally instead of pushing the composer away.
+- The disclosure opens and closes with mouse, Enter, and Space while preserving its expanded state.
 - Each row is a single line: title (with optional Current / cards-saved badges), meta line, an Open button, and a kebab (⋯) button. Rename and Delete live inside the kebab menu.
 - Delete and Delete all show a confirmation dialog. Cancel keeps the data.
 - Reopening a session that previously ran mastery / workbench tools shows the natural chat transcript in the message list (prose markdown), with NO raw JSON lines.

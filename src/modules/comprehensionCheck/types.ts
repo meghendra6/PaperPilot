@@ -26,4 +26,6 @@ export interface ComprehensionCheckState {
   rounds: MasteryRound[];
   topics: MasteryTopic[];
   currentQuestion?: string;
+  finalReport?: string;
+  finalReportError?: string;
 }

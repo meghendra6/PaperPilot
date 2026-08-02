@@ -1,3 +1,4 @@
+import { finishReaderRunsForMode } from "../ai/runPresentation";
 import { clearGeminiPollerForItem } from "./poller";
 import { clearGeminiRunStateForItem } from "./runState";
 
@@ -20,5 +21,6 @@ export async function stopGeminiRunSilently(params: {
   if (runState && params.clearRunState !== false) {
     clearGeminiRunStateForItem(params.itemID);
   }
+  finishReaderRunsForMode(params.itemID, "gemini_cli");
   return runState;
 }
