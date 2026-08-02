@@ -27,6 +27,7 @@ import {
   mergeModelOptions,
   normalizeClaudeModel,
   normalizeCodexModel,
+  normalizeCodexModelList,
   normalizeCodexReasoningEffort,
   normalizeGeminiModel,
   normalizeGeminiModelList,
@@ -48,7 +49,7 @@ test("buildCodexExecCommand builds the expected first-question command", () => {
   assert.deepEqual(
     buildCodexExecCommand({
       cd: "/tmp/paper-workspace",
-      model: "gpt-5.5",
+      model: "gpt-5.6-terra",
       sandbox: "read-only",
       approvalMode: "never",
       skipGitRepoCheck: true,
@@ -62,7 +63,7 @@ test("buildCodexExecCommand builds the expected first-question command", () => {
       "--cd",
       "/tmp/paper-workspace",
       "--model",
-      "gpt-5.5",
+      "gpt-5.6-terra",
       "--sandbox",
       "read-only",
       "--skip-git-repo-check",
@@ -75,7 +76,7 @@ test("buildCodexExecCommand adds web search before exec when enabled", () => {
   assert.deepEqual(
     buildCodexExecCommand({
       cd: "/tmp/paper-workspace",
-      model: "gpt-5.5",
+      model: "gpt-5.6-terra",
       webSearchEnabled: true,
     }),
     [
@@ -86,7 +87,7 @@ test("buildCodexExecCommand adds web search before exec when enabled", () => {
       "--cd",
       "/tmp/paper-workspace",
       "--model",
-      "gpt-5.5",
+      "gpt-5.6-terra",
       "--sandbox",
       "read-only",
       "-",
@@ -98,7 +99,7 @@ test("buildCodexExecCommand normalizes legacy approval mode labels", () => {
   assert.deepEqual(
     buildCodexExecCommand({
       cd: "/tmp/paper-workspace",
-      model: "gpt-5.5",
+      model: "gpt-5.6-terra",
       approvalMode: "suggested",
     }),
     [
@@ -110,7 +111,7 @@ test("buildCodexExecCommand normalizes legacy approval mode labels", () => {
       "--cd",
       "/tmp/paper-workspace",
       "--model",
-      "gpt-5.5",
+      "gpt-5.6-terra",
       "--sandbox",
       "read-only",
       "-",
@@ -128,7 +129,7 @@ test("buildCodexExecCommand includes image flag when provided", () => {
   assert.deepEqual(
     buildCodexExecCommand({
       cd: "/tmp/paper-workspace",
-      model: "gpt-5.5",
+      model: "gpt-5.6-terra",
       imagePath: "/tmp/paper-workspace/figure.png",
     }),
     [
@@ -138,7 +139,7 @@ test("buildCodexExecCommand includes image flag when provided", () => {
       "--cd",
       "/tmp/paper-workspace",
       "--model",
-      "gpt-5.5",
+      "gpt-5.6-terra",
       "--sandbox",
       "read-only",
       "--image",
@@ -218,7 +219,7 @@ test("buildContextPayload assembles a prompt preview from question and selection
 test("deriveCodexRunState derives workspace path and status from login state", () => {
   const state = deriveCodexRunState({
     workspaceRoot: "/tmp/workspaces",
-    model: "gpt-5.5",
+    model: "gpt-5.6-terra",
     itemID: 7,
     title: "Attention Is All You Need",
     loginState: "ready",
@@ -226,7 +227,7 @@ test("deriveCodexRunState derives workspace path and status from login state", (
 
   assert.deepEqual(state, {
     workspacePath: "/tmp/workspaces/7-attention-is-all-you-need",
-    model: "gpt-5.5",
+    model: "gpt-5.6-terra",
     reasoningEffort: undefined,
     loginState: "ready",
     runStatus: "ready",
@@ -286,31 +287,27 @@ test("parseCodexOutputText returns only final assistant message text from agent_
 });
 
 test("parseAllowedModels parses a comma-separated model list", () => {
-  assert.deepEqual(parseAllowedModels("gpt-5.5, gemini-3.1-pro-preview ,"), [
-    "gpt-5.5",
-    "gemini-3.1-pro-preview",
-  ]);
+  assert.deepEqual(
+    parseAllowedModels("gpt-5.6-terra, gemini-3.1-pro-preview ,"),
+    ["gpt-5.6-terra", "gemini-3.1-pro-preview"],
+  );
 });
 
 test("mergeModelOptions keeps recent-first unique order", () => {
   assert.deepEqual(
     mergeModelOptions(
-      ["gpt-5.5", "gemini-3.1-pro-preview"],
+      ["gpt-5.6-terra", "gemini-3.1-pro-preview"],
       ["gemini-3.1-pro-preview", "gemini-3-flash-preview"],
     ),
-    ["gpt-5.5", "gemini-3.1-pro-preview", "gemini-3-flash-preview"],
+    ["gpt-5.6-terra", "gemini-3.1-pro-preview", "gemini-3-flash-preview"],
   );
 });
 
-test("getCodexBuiltInModelCatalog exposes the Codex CLI model catalog", () => {
+test("getCodexBuiltInModelCatalog exposes only current recommended models", () => {
   assert.deepEqual(getCodexBuiltInModels(), [
     "gpt-5.6-sol",
     "gpt-5.6-terra",
     "gpt-5.6-luna",
-    "gpt-5.5",
-    "gpt-5.4",
-    "gpt-5.4-mini",
-    "gpt-5.3-codex-spark",
   ]);
 
   const catalog = getCodexBuiltInModelCatalog();
@@ -322,36 +319,41 @@ test("getCodexBuiltInModelCatalog exposes the Codex CLI model catalog", () => {
     reasoningEfforts: ["low", "medium", "high", "xhigh", "max", "ultra"],
     defaultReasoningEffort: "low",
   });
-  assert.deepEqual(bySlug.get("gpt-5.5"), {
-    slug: "gpt-5.5",
-    displayName: "GPT-5.5",
-    reasoningEfforts: ["low", "medium", "high", "xhigh"],
+  assert.deepEqual(bySlug.get("gpt-5.6-terra"), {
+    slug: "gpt-5.6-terra",
+    displayName: "GPT-5.6-Terra",
+    reasoningEfforts: ["low", "medium", "high", "xhigh", "max", "ultra"],
     defaultReasoningEffort: "medium",
   });
-  assert.deepEqual(
-    bySlug.get("gpt-5.3-codex-spark")?.defaultReasoningEffort,
-    "high",
-  );
 });
 
 test("normalizeCodexModel keeps known catalog slugs and coerces unknown models to the default", () => {
   assert.equal(normalizeCodexModel("gpt-5.6-sol"), "gpt-5.6-sol");
-  assert.equal(normalizeCodexModel("gpt-5.5"), "gpt-5.5");
-  assert.equal(normalizeCodexModel("gpt-5.4-mini"), "gpt-5.4-mini");
-  assert.equal(normalizeCodexModel("gpt-5-codex"), "gpt-5.6-sol");
+  assert.equal(normalizeCodexModel("gpt-5.6-terra"), "gpt-5.6-terra");
+  assert.equal(normalizeCodexModel("retired-model"), "gpt-5.6-sol");
   assert.equal(normalizeCodexModel(""), "gpt-5.6-sol");
 });
 
+test("normalizeCodexModelList removes retired saved options from the picker", () => {
+  assert.deepEqual(
+    normalizeCodexModelList(["retired-model", "gpt-5.6-terra"]),
+    ["gpt-5.6-sol", "gpt-5.6-terra"],
+  );
+});
+
 test("normalizeCodexReasoningEffort validates efforts against the selected model", () => {
-  // Model-aware: gpt-5.6-sol supports max/ultra; gpt-5.5 does not.
+  // Model-aware: gpt-5.6-sol supports ultra; gpt-5.6-luna does not.
   assert.equal(normalizeCodexReasoningEffort("ultra", "gpt-5.6-sol"), "ultra");
   assert.equal(normalizeCodexReasoningEffort("max", "gpt-5.6-luna"), "max");
-  assert.equal(normalizeCodexReasoningEffort("ultra", "gpt-5.5"), "medium");
+  assert.equal(
+    normalizeCodexReasoningEffort("ultra", "gpt-5.6-luna"),
+    "medium",
+  );
   // Invalid effort falls back to the model's own default.
   assert.equal(normalizeCodexReasoningEffort("", "gpt-5.6-sol"), "low");
   assert.equal(
-    normalizeCodexReasoningEffort("unsupported", "gpt-5.3-codex-spark"),
-    "high",
+    normalizeCodexReasoningEffort("unsupported", "retired-model"),
+    "medium",
   );
   // Without a model, validate against the default model's efforts.
   assert.equal(normalizeCodexReasoningEffort("xhigh"), "xhigh");

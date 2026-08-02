@@ -16,7 +16,8 @@ interface CodexBuiltInModel {
   defaultReasoningEffort: string;
 }
 
-// Mirrors the Codex CLI model catalog (visibility: list) as of codex-cli 0.145+.
+// Keeps PaperPilot's picker on the current recommended GPT-5.6 models.
+// Unknown or retired saved values normalize to the default model below.
 const CODEX_BUILT_IN_MODEL_CATALOG: CodexBuiltInModel[] = [
   {
     slug: "gpt-5.6-sol",
@@ -35,30 +36,6 @@ const CODEX_BUILT_IN_MODEL_CATALOG: CodexBuiltInModel[] = [
     displayName: "GPT-5.6-Luna",
     reasoningEfforts: ["low", "medium", "high", "xhigh", "max"],
     defaultReasoningEffort: "medium",
-  },
-  {
-    slug: "gpt-5.5",
-    displayName: "GPT-5.5",
-    reasoningEfforts: ["low", "medium", "high", "xhigh"],
-    defaultReasoningEffort: "medium",
-  },
-  {
-    slug: "gpt-5.4",
-    displayName: "GPT-5.4",
-    reasoningEfforts: ["low", "medium", "high", "xhigh"],
-    defaultReasoningEffort: "medium",
-  },
-  {
-    slug: "gpt-5.4-mini",
-    displayName: "GPT-5.4-Mini",
-    reasoningEfforts: ["low", "medium", "high", "xhigh"],
-    defaultReasoningEffort: "medium",
-  },
-  {
-    slug: "gpt-5.3-codex-spark",
-    displayName: "GPT-5.3-Codex-Spark",
-    reasoningEfforts: ["low", "medium", "high", "xhigh"],
-    defaultReasoningEffort: "high",
   },
 ];
 

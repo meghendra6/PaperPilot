@@ -427,7 +427,7 @@ test("SessionHistoryService honors prompts-only persistence for snapshots", asyn
     sessionStore.update(503, "codex_cli", undefined, (existing) => {
       existing.lastModel = {
         mode: "codex_cli",
-        model: "gpt-5.5",
+        model: "gpt-5.6-terra",
         reasoningEffort: "medium",
       };
     });
@@ -490,7 +490,7 @@ test("SessionHistoryService honors prompts-only persistence for snapshots", asyn
     assert.equal(persisted?.mastery, undefined);
     assert.deepEqual(persisted?.lastModel, {
       mode: "codex_cli",
-      model: "gpt-5.5",
+      model: "gpt-5.6-terra",
       reasoningEffort: "medium",
     });
 

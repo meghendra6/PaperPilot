@@ -43,7 +43,7 @@ test("stopCodexRunSilently kills the active pid and clears run state and poller 
   try {
     setCodexRunStateForItem(77, {
       workspacePath: "/tmp/paperpilot/77",
-      model: "gpt-5.5",
+      model: "gpt-5.6-terra",
       loginState: "ready",
       runStatus: "running",
       latestEventType: "spawned",
@@ -115,7 +115,7 @@ test("isCodexRunActiveForItem reports active poller or running state", () => {
     ).addon?.data?.codexRunPollers?.delete(77);
     setCodexRunStateForItem(77, {
       workspacePath: "/tmp/paperpilot/77",
-      model: "gpt-5.5",
+      model: "gpt-5.6-terra",
       loginState: "ready",
       runStatus: "running",
       latestEventType: "spawned",
