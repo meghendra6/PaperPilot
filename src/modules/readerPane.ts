@@ -2104,8 +2104,6 @@ export function registerPaperPilotPaneSection() {
                 (!evalResult.nextTopic && s.rounds.length >= MIN_ROUNDS) ||
                 s.rounds.length >= MAX_ROUNDS
               ) {
-                s.phase = "complete";
-                setMasteryState(item.id, s);
                 await showMasteryCompletion(s, continuationToken);
                 return;
               }
@@ -2127,10 +2125,6 @@ export function registerPaperPilotPaneSection() {
                   const parsed = parseMasteryQuestionResponse(nextText);
                   if (!parsed) {
                     const fst = getMasteryState(item.id);
-                    if (fst) {
-                      fst.phase = "complete";
-                      setMasteryState(item.id, fst);
-                    }
                     await showMasteryCompletion(
                       fst ?? s,
                       nextContinuationToken,
