@@ -7,6 +7,7 @@ import { promisify } from "node:util";
 import {
   buildKillProcessTreeScript,
   finishRunAfterCleanup,
+  settleLatePreparedRun,
   stopDetachedRunProcess,
 } from "../src/modules/ai/runCompletion";
 import {
@@ -295,6 +296,66 @@ test("detached process cleanup surfaces executor failures", async () => {
   } finally {
     (globalThis as { Zotero?: unknown }).Zotero = previousZotero;
   }
+});
+
+test("started process cleanup requires a valid pid", async () => {
+  await assert.rejects(
+    stopDetachedRunProcess(undefined, { requireProcessId: true }),
+    /valid pid/i,
+  );
+  await assert.rejects(
+    stopDetachedRunProcess("not-a-pid", { requireProcessId: true }),
+    /valid pid/i,
+  );
+});
+
+test("late preparation retains ownership when process termination fails", async () => {
+  const events: string[] = [];
+  const result = await settleLatePreparedRun({
+    stop: () => {
+      events.push("stop-failed");
+      throw new Error("could not stop");
+    },
+    cleanup: () => {
+      events.push("unsafe-cleanup");
+    },
+    settle: () => {
+      events.push("unsafe-settle");
+    },
+    onStopFailure: () => {
+      events.push("reported-stop-failure");
+    },
+  });
+
+  assert.equal(result, "stop_failed");
+  assert.deepEqual(events, ["stop-failed", "reported-stop-failure"]);
+});
+
+test("late preparation settles even when workspace cleanup fails", async () => {
+  const events: string[] = [];
+  const result = await settleLatePreparedRun({
+    stop: () => {
+      events.push("stopped");
+    },
+    cleanup: () => {
+      events.push("cleanup-failed");
+      throw new Error("could not clean");
+    },
+    settle: () => {
+      events.push("settled");
+    },
+    onCleanupFailure: () => {
+      events.push("reported-cleanup-failure");
+    },
+  });
+
+  assert.equal(result, "settled");
+  assert.deepEqual(events, [
+    "stopped",
+    "cleanup-failed",
+    "reported-cleanup-failure",
+    "settled",
+  ]);
 });
 
 test("run completion keeps the parent guard available for an explicit nested handoff", async () => {

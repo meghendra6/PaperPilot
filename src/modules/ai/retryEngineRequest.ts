@@ -6,15 +6,14 @@ import { sessionHistoryService } from "../session/sessionHistoryService";
 import { sessionStore } from "../session/sessionStore";
 import { getActiveReaderRunMode } from "./runPresentation";
 import {
+  claimRetryEngineRequest,
   getLastEngineRequest,
   getPendingEngineCompletion,
+  isReaderSessionTransitionActive,
+  isRetryEngineRequestPending,
+  releaseRetryEngineRequest,
 } from "./runLifecycle";
-
-const retryClaims = new Set<number>();
-
-export function isRetryEngineRequestPending(itemID: number): boolean {
-  return retryClaims.has(itemID);
-}
+import { isWorkspaceRunReservedForItem } from "./workspaceRun";
 
 export async function retryLastEngineQuestion(params: {
   itemID: number;
@@ -23,8 +22,10 @@ export async function retryLastEngineQuestion(params: {
   streamingIndicator: HTMLElement;
 }) {
   if (
-    retryClaims.has(params.itemID) ||
+    isRetryEngineRequestPending(params.itemID) ||
     getPendingEngineCompletion(params.itemID) ||
+    isWorkspaceRunReservedForItem(params.itemID) ||
+    isReaderSessionTransitionActive(params.itemID) ||
     getActiveReaderRunMode(params.itemID)
   ) {
     addMessage(
@@ -34,7 +35,8 @@ export async function retryLastEngineQuestion(params: {
     );
     return;
   }
-  retryClaims.add(params.itemID);
+  const retryToken = claimRetryEngineRequest(params.itemID);
+  if (!retryToken) return;
 
   try {
     const last = getLastEngineRequest(params.itemID);
@@ -104,6 +106,6 @@ export async function retryLastEngineQuestion(params: {
       resumeSessionId: last.resumeSessionId,
     });
   } finally {
-    retryClaims.delete(params.itemID);
+    releaseRetryEngineRequest(params.itemID, retryToken);
   }
 }

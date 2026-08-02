@@ -1,4 +1,7 @@
-import { finishReaderRunsForMode } from "../ai/runPresentation";
+import {
+  finishReaderRunsForMode,
+  getActiveReaderRunMode,
+} from "../ai/runPresentation";
 import { stopDetachedRunProcess } from "../ai/runCompletion";
 import { clearClaudePollerForItem } from "./poller";
 import { clearClaudeRunStateForItem } from "./runState";
@@ -12,12 +15,16 @@ export async function stopClaudeRunSilently(params: {
   finishPresentation?: boolean;
 }) {
   const runState = addon.data.claudeRunStates?.get(params.itemID);
+  const shouldStopProcess = Boolean(
+    addon.data.claudeRunPollers?.has(params.itemID) ||
+      (runState && getActiveReaderRunMode(params.itemID) === "claude_code"),
+  );
   clearClaudePollerForItem(params.itemID);
   if (params.finishPresentation !== false) {
     finishReaderRunsForMode(params.itemID, "claude_code");
   }
-  const pid = runState?.processId;
-  await stopDetachedRunProcess(pid);
+  const pid = shouldStopProcess ? runState?.processId : undefined;
+  await stopDetachedRunProcess(pid, { requireProcessId: shouldStopProcess });
   if (runState && params.clearRunState !== false) {
     clearClaudeRunStateForItem(params.itemID);
   }

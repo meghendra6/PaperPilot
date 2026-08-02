@@ -3,12 +3,18 @@ import { test } from "node:test";
 import {
   advanceRunProgress,
   claimPendingEngineCompletion,
+  claimReaderSessionTransition,
+  claimRetryEngineRequest,
   clearPendingEngineCompletion,
   failRunProgress,
   getPendingEngineCompletion,
   hasLastEngineRequest,
+  isReaderSessionTransitionActive,
+  isRetryEngineRequestPending,
   registerPendingEngineCompletion,
   rememberLastEngineRequest,
+  releaseReaderSessionTransition,
+  releaseRetryEngineRequest,
   startRunProgress,
 } from "../src/modules/ai/runLifecycle";
 import { getRunProgressState } from "../src/modules/ai/runProgress";
@@ -47,6 +53,33 @@ test("pending engine completion is item-scoped and token-aware", () => {
     assert.equal(getPendingEngineCompletion(51), undefined);
   } finally {
     markReaderRunFinished(51, token);
+    (globalThis as { addon?: unknown }).addon = previousAddon;
+  }
+});
+
+test("session transitions and Retry use item-scoped atomic claims", () => {
+  const previousAddon = (globalThis as { addon?: unknown }).addon;
+  (globalThis as { addon?: unknown }).addon = { data: {} };
+
+  try {
+    const sessionToken = claimReaderSessionTransition(53);
+    assert.ok(sessionToken);
+    assert.equal(isReaderSessionTransitionActive(53), true);
+    assert.equal(claimReaderSessionTransition(53), undefined);
+    releaseReaderSessionTransition(53, Symbol("stale"));
+    assert.equal(isReaderSessionTransitionActive(53), true);
+    releaseReaderSessionTransition(53, sessionToken);
+    assert.equal(isReaderSessionTransitionActive(53), false);
+
+    const retryToken = claimRetryEngineRequest(53);
+    assert.ok(retryToken);
+    assert.equal(isRetryEngineRequestPending(53), true);
+    assert.equal(claimReaderSessionTransition(53), undefined);
+    releaseRetryEngineRequest(53, Symbol("stale"));
+    assert.equal(isRetryEngineRequestPending(53), true);
+    releaseRetryEngineRequest(53, retryToken);
+    assert.equal(isRetryEngineRequestPending(53), false);
+  } finally {
     (globalThis as { addon?: unknown }).addon = previousAddon;
   }
 });

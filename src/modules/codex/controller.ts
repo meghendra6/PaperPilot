@@ -15,10 +15,12 @@ import {
   getLastEngineRequest,
   getPendingEngineCompletion,
   isPendingEngineCompletionCurrent,
+  isReaderSessionTransitionActive,
   markPendingEnginePreparationSettled,
   persistRunFailure,
   registerPendingEngineCompletion,
   rememberLastEngineRequest,
+  reportRunStopFailure,
   startRunProgress,
 } from "../ai/runLifecycle";
 import { getRunProgressState } from "../ai/runProgress";
@@ -27,6 +29,7 @@ import { cancelActiveEngineRun } from "../ai/runControl";
 import { armRunTimeout, completeTimedOutRun } from "../ai/runTimeout";
 import {
   finishRunAfterCleanup,
+  settleLatePreparedRun,
   stopDetachedRunProcess,
 } from "../ai/runCompletion";
 import { sanitizeAssistantText } from "../message/assistantOutput";
@@ -84,7 +87,8 @@ export async function handleCodexQuestion(params: {
     ((getActiveReaderRunMode(params.itemID) ||
       getPendingEngineCompletion(params.itemID)) &&
       !continuingParent) ||
-    (isWorkspaceRunReservedForItem(params.itemID) && !continuingParent)
+    (isWorkspaceRunReservedForItem(params.itemID) && !continuingParent) ||
+    (isReaderSessionTransitionActive(params.itemID) && !continuingParent)
   ) {
     const assistantText =
       "A Codex CLI run is already active for this paper. Cancel it or wait for it to finish before starting another request.";
@@ -224,27 +228,38 @@ export async function handleCodexQuestion(params: {
 
   if (!isReaderRunTokenActive(params.itemID, runToken)) {
     cancelTimeout();
-    try {
-      await finishRunAfterCleanup({
-        prepare: () =>
-          result.ok ? stopDetachedRunProcess(result.processId) : undefined,
-        cleanup: () =>
-          isPendingEngineCompletionCurrent(params.itemID, runToken) &&
-          !pendingCompletion.cleanupClaimed
-            ? cleanupWorkspaceIfEnabled(result.workspacePath)
-            : undefined,
-        complete: () => undefined,
-        finalize: () => {
-          params.streamingIndicator.style.display = "none";
-          markPendingEnginePreparationSettled(params.itemID, runToken);
-        },
-      });
-    } catch (error) {
-      addon.data.ztoolkit?.log(
-        "Paper Pilot Codex late-run cleanup failed:",
-        error,
-      );
-    }
+    await settleLatePreparedRun({
+      stop: () =>
+        result.ok
+          ? stopDetachedRunProcess(result.processId, { requireProcessId: true })
+          : undefined,
+      cleanup: () =>
+        isPendingEngineCompletionCurrent(params.itemID, runToken) &&
+        !pendingCompletion.cleanupClaimed
+          ? cleanupWorkspaceIfEnabled(result.workspacePath)
+          : undefined,
+      settle: () => {
+        params.streamingIndicator.style.display = "none";
+        markPendingEnginePreparationSettled(params.itemID, runToken);
+      },
+      onStopFailure: (error) => {
+        reportRunStopFailure({
+          itemID: params.itemID,
+          engine: "codex_cli",
+          token: runToken,
+          rawError: `Paper Pilot could not confirm late Codex process termination: ${error instanceof Error ? error.message : String(error)}`,
+        });
+        addon.data.ztoolkit?.log(
+          "Paper Pilot Codex late-run termination failed:",
+          error,
+        );
+      },
+      onCleanupFailure: (error) =>
+        addon.data.ztoolkit?.log(
+          "Paper Pilot Codex late-run cleanup failed:",
+          error,
+        ),
+    });
     return;
   }
   markPendingEnginePreparationSettled(params.itemID, runToken);
@@ -440,7 +455,6 @@ export async function handleCodexQuestion(params: {
                 ? "ready"
                 : classifyCodexLoginFailure(progress.rawOutput),
             }),
-            processId: result.processId,
             runStatus: success ? "completed" : "error",
             latestEventType: progress.latestEventType,
           });

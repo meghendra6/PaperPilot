@@ -112,7 +112,9 @@ async function waitForWorkspaceText(params: {
   let stopError: unknown;
   if (!completed) {
     try {
-      await stopDetachedRunProcess(started.processId);
+      await stopDetachedRunProcess(started.processId, {
+        requireProcessId: true,
+      });
     } catch (error) {
       stopError = error;
     }

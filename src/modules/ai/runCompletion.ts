@@ -75,13 +75,43 @@ export function buildKillProcessTreeScript(processId: string): string {
 
 export async function stopDetachedRunProcess(
   processId?: string,
+  options: { requireProcessId?: boolean } = {},
 ): Promise<void> {
-  if (!processId || !/^\d+$/.test(processId)) return;
+  if (!processId || !/^\d+$/.test(processId)) {
+    if (options.requireProcessId) {
+      throw new Error("The started CLI process did not provide a valid pid.");
+    }
+    return;
+  }
   const result = await Zotero.Utilities.Internal.exec("/bin/zsh", [
     "-lc",
     buildKillProcessTreeScript(processId),
   ]);
   if (result instanceof Error) throw result;
+}
+
+export async function settleLatePreparedRun(params: {
+  stop: () => void | Promise<void>;
+  cleanup: () => unknown | Promise<unknown>;
+  settle: () => void;
+  onStopFailure?: (error: unknown) => void;
+  onCleanupFailure?: (error: unknown) => void;
+}): Promise<"settled" | "stop_failed"> {
+  try {
+    await params.stop();
+  } catch (error) {
+    params.onStopFailure?.(error);
+    return "stop_failed";
+  }
+
+  try {
+    await params.cleanup();
+  } catch (error) {
+    params.onCleanupFailure?.(error);
+  } finally {
+    params.settle();
+  }
+  return "settled";
 }
 
 export async function finishRunAfterCleanup(params: {

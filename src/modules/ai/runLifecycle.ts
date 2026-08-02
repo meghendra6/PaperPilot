@@ -52,6 +52,92 @@ function pendingCompletions(): Map<number, PendingEngineCompletion> {
   >;
 }
 
+type ReaderLifecycleClaimKind = "direct_workspace" | "retry" | "session";
+
+interface ReaderLifecycleClaim {
+  kind: ReaderLifecycleClaimKind;
+  token: symbol;
+}
+
+function readerLifecycleClaims(): Map<number, ReaderLifecycleClaim> {
+  return (addon.data.readerLifecycleClaims ??= new Map()) as Map<
+    number,
+    ReaderLifecycleClaim
+  >;
+}
+
+function claimReaderLifecycle(
+  itemID: number,
+  kind: ReaderLifecycleClaimKind,
+): symbol | undefined {
+  if (readerLifecycleClaims().has(itemID)) return undefined;
+  const token = Symbol(`${itemID}:${kind}`);
+  readerLifecycleClaims().set(itemID, { kind, token });
+  return token;
+}
+
+function releaseReaderLifecycle(itemID: number, token: symbol): void {
+  if (readerLifecycleClaims().get(itemID)?.token === token) {
+    readerLifecycleClaims().delete(itemID);
+  }
+}
+
+function hasReaderLifecycleClaim(
+  itemID: number,
+  kind: ReaderLifecycleClaimKind,
+): boolean {
+  return readerLifecycleClaims().get(itemID)?.kind === kind;
+}
+
+export function claimRetryEngineRequest(itemID: number): symbol | undefined {
+  return claimReaderLifecycle(itemID, "retry");
+}
+
+export function releaseRetryEngineRequest(itemID: number, token: symbol): void {
+  releaseReaderLifecycle(itemID, token);
+}
+
+export function isRetryEngineRequestPending(itemID: number): boolean {
+  return hasReaderLifecycleClaim(itemID, "retry");
+}
+
+export function claimDirectWorkspaceRun(itemID: number): symbol | undefined {
+  return claimReaderLifecycle(itemID, "direct_workspace");
+}
+
+export function releaseDirectWorkspaceRun(itemID: number, token: symbol): void {
+  releaseReaderLifecycle(itemID, token);
+}
+
+export function isDirectWorkspaceRunClaimed(itemID: number): boolean {
+  return hasReaderLifecycleClaim(itemID, "direct_workspace");
+}
+
+export function isDirectWorkspaceRunClaimCurrent(
+  itemID: number,
+  token: symbol,
+): boolean {
+  const claim = readerLifecycleClaims().get(itemID);
+  return claim?.kind === "direct_workspace" && claim.token === token;
+}
+
+export function claimReaderSessionTransition(
+  itemID: number,
+): symbol | undefined {
+  return claimReaderLifecycle(itemID, "session");
+}
+
+export function releaseReaderSessionTransition(
+  itemID: number,
+  token: symbol,
+): void {
+  releaseReaderLifecycle(itemID, token);
+}
+
+export function isReaderSessionTransitionActive(itemID: number): boolean {
+  return hasReaderLifecycleClaim(itemID, "session");
+}
+
 export function rememberLastEngineRequest(
   itemID: number,
   request: LastEngineRequest,

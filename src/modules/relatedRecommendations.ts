@@ -403,13 +403,20 @@ export async function generateRelatedPaperGroups(params: {
   itemID: number;
   itemTitle: string;
   onStatus?: (status: string) => void;
+  onSuccess?: (result: {
+    groups: RecommendationGroup[];
+    rawOutput: string;
+  }) => void | Promise<void>;
+  onFailure?: (error: unknown) => void | Promise<void>;
 }) {
   const mode = getModeForItem(params.itemID);
   const reservationToken = claimWorkspaceRunReservation(mode, params.itemID);
   if (!reservationToken) {
-    throw new Error(
+    const error = new Error(
       getWorkspaceEngineActiveMessage(mode, "related-paper recommendations"),
     );
+    await params.onFailure?.(error);
+    throw error;
   }
 
   let releaseReservation = true;
@@ -486,7 +493,9 @@ export async function generateRelatedPaperGroups(params: {
     let stopError: unknown;
     if (!completed) {
       try {
-        await stopDetachedRunProcess(result.processId);
+        await stopDetachedRunProcess(result.processId, {
+          requireProcessId: true,
+        });
       } catch (error) {
         stopError = error;
       }
@@ -502,7 +511,11 @@ export async function generateRelatedPaperGroups(params: {
     if (!recommendationResult) {
       throw new Error("Related paper generation produced no result.");
     }
+    await params.onSuccess?.(recommendationResult);
     return recommendationResult;
+  } catch (error) {
+    await params.onFailure?.(error);
+    throw error;
   } finally {
     if (releaseReservation) {
       releaseWorkspaceRunReservation(params.itemID, reservationToken);

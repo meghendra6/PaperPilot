@@ -3,9 +3,15 @@ import { isClaudeRunActiveForItem } from "../claude/runState";
 import { isCodexRunActiveForItem } from "../codex/runState";
 import { isGeminiRunActiveForItem } from "../gemini/runState";
 import { cleanupPaperWorkspaceForItemIfEnabled } from "../workspace/cleanup";
-import { getPendingEngineCompletion } from "./runLifecycle";
-
-const workspaceRunReservations = new Map<number, symbol>();
+import {
+  claimDirectWorkspaceRun,
+  getPendingEngineCompletion,
+  isDirectWorkspaceRunClaimed,
+  isDirectWorkspaceRunClaimCurrent,
+  isReaderSessionTransitionActive,
+  isRetryEngineRequestPending,
+  releaseDirectWorkspaceRun,
+} from "./runLifecycle";
 
 export interface WorkspaceRunResult {
   ok: true;
@@ -51,8 +57,10 @@ export function getWorkspaceEngineActiveMessage(
 
 export function isWorkspaceRunActiveForItem(mode: EngineMode, itemID: number) {
   if (
-    workspaceRunReservations.has(itemID) ||
-    getPendingEngineCompletion(itemID)
+    isDirectWorkspaceRunClaimed(itemID) ||
+    getPendingEngineCompletion(itemID) ||
+    isReaderSessionTransitionActive(itemID) ||
+    isRetryEngineRequestPending(itemID)
   ) {
     return true;
   }
@@ -70,22 +78,18 @@ export function claimWorkspaceRunReservation(
   itemID: number,
 ): symbol | undefined {
   if (isWorkspaceRunActiveForItem(mode, itemID)) return undefined;
-  const token = Symbol(`${itemID}:${mode}:workspace`);
-  workspaceRunReservations.set(itemID, token);
-  return token;
+  return claimDirectWorkspaceRun(itemID);
 }
 
 export function releaseWorkspaceRunReservation(
   itemID: number,
   token: symbol,
 ): void {
-  if (workspaceRunReservations.get(itemID) === token) {
-    workspaceRunReservations.delete(itemID);
-  }
+  releaseDirectWorkspaceRun(itemID, token);
 }
 
 export function isWorkspaceRunReservedForItem(itemID: number): boolean {
-  return workspaceRunReservations.has(itemID);
+  return isDirectWorkspaceRunClaimed(itemID);
 }
 
 export async function startWorkspaceTextRun(params: {
@@ -98,8 +102,10 @@ export async function startWorkspaceTextRun(params: {
   question: string;
 }): Promise<WorkspaceRunResult | FailedWorkspaceRun> {
   if (
-    workspaceRunReservations.get(params.reservationItemID) !==
-    params.reservationToken
+    !isDirectWorkspaceRunClaimCurrent(
+      params.reservationItemID,
+      params.reservationToken,
+    )
   ) {
     throw new Error(
       getWorkspaceEngineActiveMessage(params.mode, "this workspace task"),

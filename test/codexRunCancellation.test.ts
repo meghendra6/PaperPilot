@@ -128,3 +128,52 @@ test("isCodexRunActiveForItem reports active poller or running state", () => {
     (globalThis as { addon?: unknown }).addon = previousAddon;
   }
 });
+
+test("stopCodexRunSilently clears terminal state without signaling its stale pid", async () => {
+  const previousAddon = (globalThis as { addon?: unknown }).addon;
+  const previousZotero = (globalThis as { Zotero?: unknown }).Zotero;
+  let execCalled = false;
+  (globalThis as { addon?: unknown }).addon = {
+    data: {
+      codexRunStates: new Map([
+        [
+          78,
+          {
+            workspacePath: "/tmp/paperpilot/78",
+            model: "gpt-5.6-sol",
+            loginState: "ready",
+            runStatus: "completed",
+            latestEventType: "completed",
+            processId: "4123",
+          },
+        ],
+      ]),
+      codexRunPollers: new Map(),
+    },
+  };
+  (globalThis as { Zotero?: unknown }).Zotero = {
+    Utilities: {
+      Internal: {
+        exec: async () => {
+          execCalled = true;
+        },
+      },
+    },
+  };
+
+  try {
+    await stopCodexRunSilently({ itemID: 78 });
+    assert.equal(execCalled, false);
+    assert.equal(
+      (
+        globalThis as {
+          addon?: { data?: { codexRunStates?: Map<number, unknown> } };
+        }
+      ).addon?.data?.codexRunStates?.has(78),
+      false,
+    );
+  } finally {
+    (globalThis as { addon?: unknown }).addon = previousAddon;
+    (globalThis as { Zotero?: unknown }).Zotero = previousZotero;
+  }
+});

@@ -109,11 +109,14 @@ import {
 } from "./ui/runProgressCard";
 import { getRunProgressState } from "./ai/runProgress";
 import { cancelActiveEngineRun } from "./ai/runControl";
+import { retryLastEngineQuestion } from "./ai/retryEngineRequest";
 import {
+  claimReaderSessionTransition,
+  getPendingEngineCompletion,
+  isReaderSessionTransitionActive,
   isRetryEngineRequestPending,
-  retryLastEngineQuestion,
-} from "./ai/retryEngineRequest";
-import { getPendingEngineCompletion } from "./ai/runLifecycle";
+  releaseReaderSessionTransition,
+} from "./ai/runLifecycle";
 import { isWorkspaceRunReservedForItem } from "./ai/workspaceRun";
 
 const paneCleanupByBody = new WeakMap<HTMLElement, () => void>();
@@ -532,12 +535,13 @@ export function registerPaperPilotPaneSection() {
         let sessionHistoryOpen = sessionsSection.isExpanded();
         let renamingSessionId: string | undefined;
 
-        const clearSessionRuntimeState = async () => {
+        const beginSessionRuntimeTransition = async () => {
           const activeMode = getActiveReaderRunMode(item.id);
           const lifecycleReserved = Boolean(
             getPendingEngineCompletion(item.id) ||
               isWorkspaceRunReservedForItem(item.id) ||
-              isRetryEngineRequestPending(item.id),
+              isRetryEngineRequestPending(item.id) ||
+              isReaderSessionTransitionActive(item.id),
           );
           if (activeMode || lifecycleReserved) {
             addMessage(
@@ -545,20 +549,49 @@ export function registerPaperPilotPaneSection() {
               `${getModeLabel(activeMode ?? getModeForItem(item.id))} is still running or finishing for this paper. Wait for it to settle before changing sessions.`,
               "ai",
             );
-            return false;
+            return undefined;
           }
-          await stopCodexRunSilently({
-            itemID: item.id,
-          });
-          await stopClaudeRunSilently({
-            itemID: item.id,
-          });
-          await stopGeminiRunSilently({
-            itemID: item.id,
-          });
-          clearReaderActionDraft();
-          renderStreamingIndicator(streamingIndicator, false);
-          return true;
+          const transitionToken = claimReaderSessionTransition(item.id);
+          if (!transitionToken) return undefined;
+          try {
+            await stopCodexRunSilently({
+              itemID: item.id,
+            });
+            await stopClaudeRunSilently({
+              itemID: item.id,
+            });
+            await stopGeminiRunSilently({
+              itemID: item.id,
+            });
+            clearReaderActionDraft();
+            renderStreamingIndicator(streamingIndicator, false);
+            return transitionToken;
+          } catch (error) {
+            releaseReaderSessionTransition(item.id, transitionToken);
+            addon.data.ztoolkit?.log(
+              "Paper Pilot session transition cleanup failed:",
+              error,
+            );
+            addMessage(
+              chatMessages,
+              "Paper Pilot could not safely change sessions because a local process could not be stopped. Try Cancel again or restart Zotero.",
+              "ai",
+            );
+            return undefined;
+          }
+        };
+
+        const runSessionRuntimeTransition = async (
+          action: () => void | Promise<void>,
+        ) => {
+          const transitionToken = await beginSessionRuntimeTransition();
+          if (!transitionToken) return false;
+          try {
+            await action();
+            return true;
+          } finally {
+            releaseReaderSessionTransition(item.id, transitionToken);
+          }
         };
 
         const resetBlankSessionState = () => {
@@ -570,12 +603,6 @@ export function registerPaperPilotPaneSection() {
           addon.data.relatedRecommendationStates?.delete(item.id);
           clearMasteryState(item.id);
           input.value = "";
-        };
-
-        const clearBlankSessionState = async () => {
-          if (!(await clearSessionRuntimeState())) return false;
-          resetBlankSessionState();
-          return true;
         };
 
         const updateWorkbenchSummary = (markUpdated = false) => {
@@ -675,13 +702,15 @@ export function registerPaperPilotPaneSection() {
               ) {
                 return;
               }
-              if (!(await clearBlankSessionState())) return;
-              await sessionHistoryService.deleteAllSavedSessions({
-                itemID: item.id,
+              await runSessionRuntimeTransition(async () => {
+                resetBlankSessionState();
+                await sessionHistoryService.deleteAllSavedSessions({
+                  itemID: item.id,
+                });
+                sessionHistoryOpen = false;
+                sessionsSection.setExpanded(false);
+                await rerenderPane();
               });
-              sessionHistoryOpen = false;
-              sessionsSection.setExpanded(false);
-              await rerenderPane();
             });
             headerActions.appendChild(deleteAllButton);
             header.appendChild(headerActions);
@@ -795,16 +824,17 @@ export function registerPaperPilotPaneSection() {
             openButton.textContent = "Open";
             openButton.disabled = currentSessionId === entry.sessionId;
             openButton.addEventListener("click", async () => {
-              if (!(await clearSessionRuntimeState())) return;
-              await sessionHistoryService.openSavedSession({
-                itemID: item.id,
-                sessionId: entry.sessionId,
+              await runSessionRuntimeTransition(async () => {
+                await sessionHistoryService.openSavedSession({
+                  itemID: item.id,
+                  sessionId: entry.sessionId,
+                });
+                input.value = "";
+                sessionHistoryOpen = false;
+                sessionsSection.setExpanded(false);
+                renamingSessionId = undefined;
+                await rerenderPane();
               });
-              input.value = "";
-              sessionHistoryOpen = false;
-              sessionsSection.setExpanded(false);
-              renamingSessionId = undefined;
-              await rerenderPane();
             });
             rowActions.appendChild(openButton);
 
@@ -873,15 +903,21 @@ export function registerPaperPilotPaneSection() {
                 const deletingCurrent =
                   addon.data.currentSessionId === entry.sessionId;
                 if (deletingCurrent) {
-                  if (!(await clearSessionRuntimeState())) return;
+                  await runSessionRuntimeTransition(async () => {
+                    await sessionHistoryService.deleteSavedSession({
+                      itemID: item.id,
+                      sessionId: entry.sessionId,
+                    });
+                    resetBlankSessionState();
+                    renamingSessionId = undefined;
+                    await rerenderPane();
+                  });
+                  return;
                 }
                 await sessionHistoryService.deleteSavedSession({
                   itemID: item.id,
                   sessionId: entry.sessionId,
                 });
-                if (deletingCurrent) {
-                  resetBlankSessionState();
-                }
                 renamingSessionId = undefined;
                 await rerenderPane();
               });
@@ -933,7 +969,8 @@ export function registerPaperPilotPaneSection() {
             streamingIndicator.style.display === "flex" ||
             Boolean(getPendingEngineCompletion(item.id)) ||
             isWorkspaceRunReservedForItem(item.id) ||
-            isRetryEngineRequestPending(item.id);
+            isRetryEngineRequestPending(item.id) ||
+            isReaderSessionTransitionActive(item.id);
           if (!activeMode && !preparing) return true;
           addMessage(
             chatMessages,
@@ -1343,7 +1380,7 @@ export function registerPaperPilotPaneSection() {
             String(item.getField("title") || ""),
           );
           try {
-            const result = await generateRelatedPaperGroups({
+            await generateRelatedPaperGroups({
               itemID: item.id,
               itemTitle: item.getField("title"),
               onStatus: (status) => {
@@ -1363,21 +1400,34 @@ export function registerPaperPilotPaneSection() {
                   String(item.getField("title") || ""),
                 );
               },
+              onSuccess: async (result) => {
+                addon.data.relatedRecommendationStates?.set(item.id, {
+                  running: false,
+                  status: `Found ${result.groups.reduce((count, group) => count + group.papers.length, 0)} recommendations`,
+                  groups: result.groups,
+                });
+                await sessionHistoryService.persistActiveSession({
+                  itemID: item.id,
+                  paperTitle: String(item.getField("title") || ""),
+                });
+              },
+              onFailure: async (error) => {
+                addon.data.relatedRecommendationStates?.set(item.id, {
+                  running: false,
+                  status:
+                    error instanceof Error
+                      ? error.message
+                      : "Related paper recommendation failed.",
+                  groups: [],
+                });
+                await sessionHistoryService.persistActiveSession({
+                  itemID: item.id,
+                  paperTitle: String(item.getField("title") || ""),
+                });
+              },
             });
-            addon.data.relatedRecommendationStates?.set(item.id, {
-              running: false,
-              status: `Found ${result.groups.reduce((count, group) => count + group.papers.length, 0)} recommendations`,
-              groups: result.groups,
-            });
-          } catch (error) {
-            addon.data.relatedRecommendationStates?.set(item.id, {
-              running: false,
-              status:
-                error instanceof Error
-                  ? error.message
-                  : "Related paper recommendation failed.",
-              groups: [],
-            });
+          } catch {
+            // Failure state and persistence are handled while reserved above.
           }
           renderRelatedRecommendationState(
             relatedRecommendButton,
@@ -1389,10 +1439,6 @@ export function registerPaperPilotPaneSection() {
             String(item.getField("title") || ""),
           );
           updateRelatedSummary(true);
-          await sessionHistoryService.persistActiveSession({
-            itemID: item.id,
-            paperTitle: String(item.getField("title") || ""),
-          });
           notifyReaderPaneStateChanged(item.id);
         });
 
@@ -2149,17 +2195,18 @@ export function registerPaperPilotPaneSection() {
 
         newSessionButton.addEventListener("click", async () => {
           const mode = getModeForItem(item.id);
-          if (!(await clearSessionRuntimeState())) return;
-          await sessionHistoryService.startNewSessionDraft({
-            itemID: item.id,
-            mode,
-            paperTitle: String(item.getField("title") || ""),
+          await runSessionRuntimeTransition(async () => {
+            await sessionHistoryService.startNewSessionDraft({
+              itemID: item.id,
+              mode,
+              paperTitle: String(item.getField("title") || ""),
+            });
+            resetBlankSessionState();
+            sessionHistoryOpen = false;
+            sessionsSection.setExpanded(false);
+            renamingSessionId = undefined;
+            await rerenderPane();
           });
-          resetBlankSessionState();
-          sessionHistoryOpen = false;
-          sessionsSection.setExpanded(false);
-          renamingSessionId = undefined;
-          await rerenderPane();
         });
 
         codexAuthButton.addEventListener("click", async () => {
@@ -3144,7 +3191,8 @@ function getActiveRunMessage(mode: EngineMode, itemID: number) {
   if (
     getPendingEngineCompletion(itemID) ||
     isWorkspaceRunReservedForItem(itemID) ||
-    isRetryEngineRequestPending(itemID)
+    isRetryEngineRequestPending(itemID) ||
+    isReaderSessionTransitionActive(itemID)
   ) {
     return "A run is already starting, running, or finishing for this paper. Wait for it to settle before starting another request.";
   }

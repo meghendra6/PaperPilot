@@ -121,7 +121,13 @@ polled**:
    therefore do not outlive the card, including wrappers that ignore `TERM`.
    If the executor cannot confirm termination, the active owner and pid (or the
    direct-workflow reservation) remain in place and workspace cleanup is not
-   claimed; the UI reports the stop failure instead of unlocking unsafely.
+   claimed; the UI reports the stop failure instead of unlocking unsafely. A
+   started result or run state must provide a numeric pid—missing pid data is a
+   stop failure, not a successful no-op. The no-pid no-op is reserved for a
+   cancellation that happens before any process exists.
+   Terminal Codex state never retains a killable pid; session cleanup only
+   signals a pid while a poller, running state, or active presentation token
+   proves that it still belongs to the current run.
 5. `controller` starts a `setInterval` at **800 ms** that reads the output file,
    advances the shared card to `Running`, and stops once the exit-code file is
    non-empty. Codex displays structured assistant output when one is available;
@@ -150,7 +156,12 @@ polled**:
    workspace. Direct Auto Highlight and Related Papers runs use the same
    item-scoped reservation boundary, so controller and direct workspace runs
    cannot overlap either. Pending controller completion, direct reservations,
-   and Retry claims also block session replacement until their owner settles.
+   and Retry claims also block session replacement until their owner settles;
+   Retry admission checks the direct reservation before persisting another user
+   turn, and direct admission checks the Retry claim. Session Open/New/Delete
+   acquires its own item token before the first cleanup await and keeps it until
+   the session mutation and pane rerender complete. Related Papers invokes its
+   state/persistence callback before releasing the direct reservation.
    If preparation throws after creating a stable workspace, the controller or
    direct-run dispatcher computes that same path and applies configured cleanup.
 
