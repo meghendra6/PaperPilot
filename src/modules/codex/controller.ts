@@ -4,6 +4,8 @@ import {
   isReaderRunTokenActive,
   markReaderRunFinished,
   markReaderRunStarted,
+  type ReaderRunCompletionResult,
+  type ReaderRunToken,
 } from "../ai/runPresentation";
 import {
   finishRunAfterCleanup,
@@ -26,6 +28,23 @@ import { classifyCodexLoginFailure } from "./statusClassification";
 declare const addon: any;
 export { stopCodexRunSilently } from "./stopRun";
 
+function getPendingCompletions() {
+  return (addon.data.codexPendingCompletions ??= new Map()) as Map<
+    number,
+    {
+      token: ReaderRunToken;
+      onComplete?: (result: ReaderRunCompletionResult) => void | Promise<void>;
+    }
+  >;
+}
+
+function clearPendingCompletion(itemID: number, token: ReaderRunToken) {
+  const pendingCompletions = getPendingCompletions();
+  if (pendingCompletions.get(itemID)?.token === token) {
+    pendingCompletions.delete(itemID);
+  }
+}
+
 export async function handleCodexQuestion(params: {
   itemID: number;
   sessionId: string;
@@ -39,14 +58,16 @@ export async function handleCodexQuestion(params: {
   chatMessages: HTMLElement;
   streamingIndicator: HTMLElement;
   suppressChatMessages?: boolean;
-  onComplete?: (result: {
-    success: boolean;
-    assistantText: string;
-  }) => void | Promise<void>;
+  continuationToken?: ReaderRunToken;
+  onComplete?: (result: ReaderRunCompletionResult) => void | Promise<void>;
 }) {
+  const continuingParent = Boolean(
+    params.continuationToken &&
+      isReaderRunTokenActive(params.itemID, params.continuationToken),
+  );
   if (
     isCodexRunActiveForItem(params.itemID) ||
-    getActiveReaderRunMode(params.itemID)
+    (getActiveReaderRunMode(params.itemID) && !continuingParent)
   ) {
     const assistantText =
       "A Codex CLI run is already active for this paper. Cancel it or wait for it to finish before starting another request.";
@@ -145,6 +166,7 @@ export async function handleCodexQuestion(params: {
           params.onComplete?.({
             success: false,
             assistantText: result.error,
+            continuationToken: runToken,
           }),
         incomplete: () =>
           params.onComplete?.({
@@ -180,12 +202,18 @@ export async function handleCodexQuestion(params: {
     runStatus: "running",
     latestEventType: "spawned",
   });
+  getPendingCompletions().set(params.itemID, {
+    token: runToken,
+    onComplete: params.onComplete,
+  });
 
   const poller = setInterval(async () => {
     const progress = await readCodexRunProgress({
       outputPath: result.outputPath,
       exitCodePath: result.exitCodePath,
     });
+
+    if (!isReaderRunTokenActive(params.itemID, runToken)) return;
 
     if (assistantMessage) {
       const displayText = sanitizeAssistantText(
@@ -271,13 +299,21 @@ export async function handleCodexQuestion(params: {
         },
         cleanup: () => cleanupWorkspaceIfEnabled(result.workspacePath),
         shouldComplete: () => isReaderRunTokenActive(params.itemID, runToken),
-        complete: () => params.onComplete?.({ success, assistantText }),
+        complete: () =>
+          params.onComplete?.({
+            success,
+            assistantText,
+            continuationToken: runToken,
+          }),
         incomplete: () =>
           params.onComplete?.({
             success: false,
             assistantText: "Codex CLI could not finalize this run.",
           }),
-        finalize: () => markReaderRunFinished(params.itemID, runToken),
+        finalize: () => {
+          clearPendingCompletion(params.itemID, runToken);
+          markReaderRunFinished(params.itemID, runToken);
+        },
       });
     } catch {
       if (!params.suppressChatMessages) {
@@ -348,6 +384,28 @@ export async function cancelCodexRun(params: {
       runStatus: "error",
       latestEventType: "cancelled",
     });
+  }
+  const pending = getPendingCompletions().get(params.itemID);
+  try {
+    const completeCancellation = () =>
+      pending?.onComplete?.({
+        success: false,
+        assistantText: "Codex run cancelled.",
+      });
+    await finishRunAfterCleanup({
+      prepare: () => undefined,
+      cleanup: () =>
+        runState?.workspacePath
+          ? cleanupWorkspaceIfEnabled(runState.workspacePath)
+          : undefined,
+      complete: completeCancellation,
+      incomplete: completeCancellation,
+      finalize: () => {
+        if (pending) clearPendingCompletion(params.itemID, pending.token);
+      },
+    });
+  } catch {
+    // The cancellation callback has already unlocked any silent workflow.
   }
   addMessage(params.chatMessages, "Codex run cancelled.", "ai");
 }

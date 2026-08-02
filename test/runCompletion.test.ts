@@ -4,6 +4,12 @@ import {
   finishRunAfterCleanup,
   stopDetachedRunProcess,
 } from "../src/modules/ai/runCompletion";
+import {
+  getActiveReaderRunMode,
+  isReaderRunTokenActive,
+  markReaderRunFinished,
+  markReaderRunStarted,
+} from "../src/modules/ai/runPresentation";
 
 test("run completion removes the old workspace before a nested completion starts", async () => {
   const events: string[] = [];
@@ -189,4 +195,26 @@ test("detached process cleanup only executes a numeric pid", async () => {
       args: ["-lc", "kill 1234 >/dev/null 2>&1 || true"],
     },
   ]);
+});
+
+test("run completion keeps the parent guard available for an explicit nested handoff", async () => {
+  const itemID = 9301;
+  const parent = markReaderRunStarted(itemID, "codex_cli");
+  let child: symbol | undefined;
+
+  await finishRunAfterCleanup({
+    prepare: () => undefined,
+    cleanup: () => undefined,
+    shouldComplete: () => isReaderRunTokenActive(itemID, parent),
+    complete: () => {
+      assert.equal(isReaderRunTokenActive(itemID, parent), true);
+      child = markReaderRunStarted(itemID, "codex_cli");
+    },
+    finalize: () => markReaderRunFinished(itemID, parent),
+  });
+
+  assert.equal(getActiveReaderRunMode(itemID), "codex_cli");
+  assert.ok(child);
+  markReaderRunFinished(itemID, child);
+  assert.equal(getActiveReaderRunMode(itemID), undefined);
 });

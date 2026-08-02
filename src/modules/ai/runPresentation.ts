@@ -7,6 +7,12 @@ export type ReaderRunEvent =
 
 export type ReaderRunToken = symbol;
 
+export type ReaderRunCompletionResult = {
+  success: boolean;
+  assistantText: string;
+  continuationToken?: ReaderRunToken;
+};
+
 type ActiveRun = {
   mode: EngineMode;
   token: ReaderRunToken;

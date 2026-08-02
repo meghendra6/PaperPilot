@@ -69,6 +69,7 @@ function onShutdown(): void {
   addon.data.geminiRunPollers?.forEach((_poller, itemID) =>
     clearGeminiPollerForItem(itemID),
   );
+  addon.data.codexPendingCompletions?.clear();
   unregisterReaderActionPlaceholders();
   ztoolkit.unregisterAll();
   addon.data.dialog?.window?.close();

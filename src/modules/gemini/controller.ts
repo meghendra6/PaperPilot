@@ -4,6 +4,8 @@ import {
   isReaderRunTokenActive,
   markReaderRunFinished,
   markReaderRunStarted,
+  type ReaderRunCompletionResult,
+  type ReaderRunToken,
 } from "../ai/runPresentation";
 import {
   finishRunAfterCleanup,
@@ -37,14 +39,16 @@ export async function handleGeminiQuestion(params: {
   chatMessages: HTMLElement;
   streamingIndicator: HTMLElement;
   suppressChatMessages?: boolean;
-  onComplete?: (result: {
-    success: boolean;
-    assistantText: string;
-  }) => void | Promise<void>;
+  continuationToken?: ReaderRunToken;
+  onComplete?: (result: ReaderRunCompletionResult) => void | Promise<void>;
 }) {
+  const continuingParent = Boolean(
+    params.continuationToken &&
+      isReaderRunTokenActive(params.itemID, params.continuationToken),
+  );
   if (
     isGeminiRunActiveForItem(params.itemID) ||
-    getActiveReaderRunMode(params.itemID)
+    (getActiveReaderRunMode(params.itemID) && !continuingParent)
   ) {
     const assistantText =
       "A Gemini CLI run is already active for this paper. Wait for it to finish before starting another request.";
@@ -121,6 +125,7 @@ export async function handleGeminiQuestion(params: {
           params.onComplete?.({
             success: false,
             assistantText: result.error,
+            continuationToken: runToken,
           }),
         incomplete: () =>
           params.onComplete?.({
@@ -154,6 +159,8 @@ export async function handleGeminiQuestion(params: {
       outputPath: result.outputPath,
       exitCodePath: result.exitCodePath,
     });
+
+    if (!isReaderRunTokenActive(params.itemID, runToken)) return;
 
     if (assistantMessage) {
       setMessageContent(
@@ -198,7 +205,12 @@ export async function handleGeminiQuestion(params: {
         },
         cleanup: () => cleanupWorkspaceIfEnabled(result.workspacePath),
         shouldComplete: () => isReaderRunTokenActive(params.itemID, runToken),
-        complete: () => params.onComplete?.({ success, assistantText }),
+        complete: () =>
+          params.onComplete?.({
+            success,
+            assistantText,
+            continuationToken: runToken,
+          }),
         incomplete: () =>
           params.onComplete?.({
             success: false,

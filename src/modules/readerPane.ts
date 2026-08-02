@@ -14,8 +14,11 @@ import { getProviderDescriptorForItem } from "./ai/providerRegistry";
 import type { EngineMode } from "./ai/types";
 import {
   getActiveReaderRunMode,
+  isReaderRunTokenActive,
   notifyReaderPaneStateChanged,
   subscribeToReaderRunEvents,
+  type ReaderRunCompletionResult,
+  type ReaderRunToken,
 } from "./ai/runPresentation";
 import {
   buildCodexRunState,
@@ -1660,6 +1663,7 @@ export function registerPaperPilotPaneSection() {
 
         function showMasteryCompletion(
           state: import("./comprehensionCheck/types").ComprehensionCheckState,
+          continuationToken?: ReaderRunToken,
         ) {
           if (state.finalReport || state.finalReportError) {
             renderMasteryCompletion(state);
@@ -1701,6 +1705,7 @@ export function registerPaperPilotPaneSection() {
                 });
               }
             },
+            continuationToken,
           );
         }
 
@@ -1758,8 +1763,14 @@ export function registerPaperPilotPaneSection() {
 
         async function sendMasteryPrompt(
           prompt: string,
-          onSuccess: (assistantText: string) => void | Promise<void>,
-          onFailure?: () => void | Promise<void>,
+          onSuccess: (
+            assistantText: string,
+            continuationToken?: ReaderRunToken,
+          ) => void | Promise<void>,
+          onFailure?: (
+            continuationToken?: ReaderRunToken,
+          ) => void | Promise<void>,
+          continuationToken?: ReaderRunToken,
         ) {
           const itemID = item.id;
           const { mode, placeholderResponse } =
@@ -1778,18 +1789,30 @@ export function registerPaperPilotPaneSection() {
               {
                 silentUserMessage: true,
                 suppressChatMessages: true,
+                continuationToken,
                 onComplete: async (result) => {
                   if (result.success) {
-                    await onSuccess(result.assistantText);
+                    await onSuccess(
+                      result.assistantText,
+                      result.continuationToken,
+                    );
                   } else {
-                    await onFailure?.();
+                    await onFailure?.(result.continuationToken);
                   }
+                  await sessionHistoryService.persistActiveSession({
+                    itemID,
+                    paperTitle: String(item.getField("title") || ""),
+                  });
                   workbenchSection.markUpdated();
                 },
               },
             );
           } catch {
             await onFailure?.();
+            await sessionHistoryService.persistActiveSession({
+              itemID,
+              paperTitle: String(item.getField("title") || ""),
+            });
             workbenchSection.markUpdated();
           } finally {
             input.value = savedInput;
@@ -1916,7 +1939,7 @@ export function registerPaperPilotPaneSection() {
           };
           await sendMasteryPrompt(
             buildEvaluateAnswerPrompt(question, answer, state.rounds),
-            async (assistantText) => {
+            async (assistantText, continuationToken) => {
               const evalResult = parseMasteryEvaluationResponse(assistantText);
               if (!evalResult) {
                 resetSubmitOnFail();
@@ -1952,7 +1975,7 @@ export function registerPaperPilotPaneSection() {
               ) {
                 s.phase = "complete";
                 setMasteryState(item.id, s);
-                showMasteryCompletion(s);
+                showMasteryCompletion(s, continuationToken);
                 return;
               }
 
@@ -1969,7 +1992,7 @@ export function registerPaperPilotPaneSection() {
                   evalResult.nextTopic ?? "general understanding",
                   evalResult.nextDifficulty,
                 ),
-                (nextText) => {
+                (nextText, nextContinuationToken) => {
                   const parsed = parseMasteryQuestionResponse(nextText);
                   if (!parsed) {
                     const fst = getMasteryState(item.id);
@@ -1977,7 +2000,7 @@ export function registerPaperPilotPaneSection() {
                       fst.phase = "complete";
                       setMasteryState(item.id, fst);
                     }
-                    showMasteryCompletion(fst ?? s);
+                    showMasteryCompletion(fst ?? s, nextContinuationToken);
                     return;
                   }
                   const st = getMasteryState(item.id) ?? s;
@@ -2004,10 +2027,15 @@ export function registerPaperPilotPaneSection() {
                   const fst = getMasteryState(item.id);
                   if (fst) {
                     fst.phase = "complete";
+                    fst.running = false;
+                    fst.status = "Complete";
+                    fst.finalReportError =
+                      "Paper Mastery stopped before the next question was generated.";
                     setMasteryState(item.id, fst);
                   }
-                  showMasteryCompletion(fst ?? s);
+                  renderMasteryCompletion(fst ?? s);
                 },
+                continuationToken,
               );
             },
             resetSubmitOnFail,
@@ -3437,10 +3465,8 @@ async function handleUserInput(
     displayQuestion?: string;
     silentUserMessage?: boolean;
     suppressChatMessages?: boolean;
-    onComplete?: (result: {
-      success: boolean;
-      assistantText: string;
-    }) => void | Promise<void>;
+    continuationToken?: ReaderRunToken;
+    onComplete?: (result: ReaderRunCompletionResult) => void | Promise<void>;
   },
 ) {
   const question = input.value.trim();
@@ -3449,7 +3475,11 @@ async function handleUserInput(
   }
 
   const activeRunMessage = getActiveRunMessage(mode, itemID);
-  if (activeRunMessage) {
+  const continuingParent = Boolean(
+    options?.continuationToken &&
+      isReaderRunTokenActive(itemID, options.continuationToken),
+  );
+  if (activeRunMessage && !continuingParent) {
     if (options?.silentUserMessage) {
       input.value = "";
       input.style.height = `${CHAT_INPUT_MIN_HEIGHT}px`;
@@ -3519,6 +3549,7 @@ async function handleUserInput(
         chatMessages,
         streamingIndicator,
         suppressChatMessages: options?.suppressChatMessages,
+        continuationToken: options?.continuationToken,
         onComplete: options?.onComplete,
       });
       return;
@@ -3548,6 +3579,7 @@ async function handleUserInput(
         chatMessages,
         streamingIndicator,
         suppressChatMessages: options?.suppressChatMessages,
+        continuationToken: options?.continuationToken,
         onComplete: options?.onComplete,
       });
       return;
@@ -3577,6 +3609,7 @@ async function handleUserInput(
         chatMessages,
         streamingIndicator,
         suppressChatMessages: options?.suppressChatMessages,
+        continuationToken: options?.continuationToken,
         onComplete: options?.onComplete,
       });
       return;

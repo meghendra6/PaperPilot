@@ -122,7 +122,10 @@ polled**:
    re-renders from persisted session/workflow state. This keeps a run connected
    to the visible pane even when Zotero rebuilds its DOM during a paper or tab
    switch. Session replacement is blocked until this terminal transition has
-   finished, and stale tokens cannot invoke workflow callbacks.
+   finished, and stale tokens cannot invoke workflow callbacks. A workflow that
+   intentionally chains another run (Paper Mastery follow-up or final report)
+   passes the active parent token as an explicit continuation guard; unrelated
+   requests remain blocked.
 
 Per-engine file names inside the workspace:
 
