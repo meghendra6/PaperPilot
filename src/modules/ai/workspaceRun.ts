@@ -1,8 +1,11 @@
 import type { EngineMode } from "./types";
 import { isClaudeRunActiveForItem } from "../claude/runState";
-import { parseCodexOutputText } from "../codex/outputParser";
 import { isCodexRunActiveForItem } from "../codex/runState";
 import { isGeminiRunActiveForItem } from "../gemini/runState";
+import { cleanupPaperWorkspaceForItemIfEnabled } from "../workspace/cleanup";
+import { getPendingEngineCompletion } from "./runLifecycle";
+
+const workspaceRunReservations = new Map<number, symbol>();
 
 export interface WorkspaceRunResult {
   ok: true;
@@ -47,6 +50,12 @@ export function getWorkspaceEngineActiveMessage(
 }
 
 export function isWorkspaceRunActiveForItem(mode: EngineMode, itemID: number) {
+  if (
+    workspaceRunReservations.has(itemID) ||
+    getPendingEngineCompletion(itemID)
+  ) {
+    return true;
+  }
   if (mode === "claude_code") {
     return isClaudeRunActiveForItem(itemID);
   }
@@ -56,41 +65,84 @@ export function isWorkspaceRunActiveForItem(mode: EngineMode, itemID: number) {
   return isCodexRunActiveForItem(itemID);
 }
 
+export function claimWorkspaceRunReservation(
+  mode: EngineMode,
+  itemID: number,
+): symbol | undefined {
+  if (isWorkspaceRunActiveForItem(mode, itemID)) return undefined;
+  const token = Symbol(`${itemID}:${mode}:workspace`);
+  workspaceRunReservations.set(itemID, token);
+  return token;
+}
+
+export function releaseWorkspaceRunReservation(
+  itemID: number,
+  token: symbol,
+): void {
+  if (workspaceRunReservations.get(itemID) === token) {
+    workspaceRunReservations.delete(itemID);
+  }
+}
+
+export function isWorkspaceRunReservedForItem(itemID: number): boolean {
+  return workspaceRunReservations.has(itemID);
+}
+
 export async function startWorkspaceTextRun(params: {
   mode: EngineMode;
   itemID: number;
+  reservationItemID: number;
+  reservationToken: symbol;
   title: string;
   sessionId: string;
   question: string;
 }): Promise<WorkspaceRunResult | FailedWorkspaceRun> {
-  if (params.mode === "claude_code") {
-    const { startClaudeRunForQuestion } = await import("../claude/runner");
-    return startClaudeRunForQuestion({
-      itemID: params.itemID,
-      title: params.title,
-      sessionId: params.sessionId,
-      question: params.question,
-    });
+  if (
+    workspaceRunReservations.get(params.reservationItemID) !==
+    params.reservationToken
+  ) {
+    throw new Error(
+      getWorkspaceEngineActiveMessage(params.mode, "this workspace task"),
+    );
   }
 
-  if (params.mode === "gemini_cli") {
-    const { startGeminiRunForQuestion } = await import("../gemini/runner");
-    return startGeminiRunForQuestion({
+  try {
+    let result: WorkspaceRunResult | FailedWorkspaceRun;
+    if (params.mode === "claude_code") {
+      const { startClaudeRunForQuestion } = await import("../claude/runner");
+      result = await startClaudeRunForQuestion({
+        itemID: params.itemID,
+        title: params.title,
+        sessionId: params.sessionId,
+        question: params.question,
+      });
+    } else if (params.mode === "gemini_cli") {
+      const { startGeminiRunForQuestion } = await import("../gemini/runner");
+      result = await startGeminiRunForQuestion({
+        itemID: params.itemID,
+        title: params.title,
+        sessionId: params.sessionId,
+        question: params.question,
+      });
+    } else {
+      const { startCodexRunForQuestion } = await import("../codex/runner");
+      result = await startCodexRunForQuestion({
+        itemID: params.itemID,
+        title: params.title,
+        sessionId: params.sessionId,
+        question: params.question,
+        useResume: false,
+      });
+    }
+
+    return result;
+  } catch (error) {
+    await cleanupPaperWorkspaceForItemIfEnabled({
       itemID: params.itemID,
       title: params.title,
-      sessionId: params.sessionId,
-      question: params.question,
     });
+    throw error;
   }
-
-  const { startCodexRunForQuestion } = await import("../codex/runner");
-  return startCodexRunForQuestion({
-    itemID: params.itemID,
-    title: params.title,
-    sessionId: params.sessionId,
-    question: params.question,
-    useResume: false,
-  });
 }
 
 export async function readWorkspaceRunProgress(
@@ -116,23 +168,11 @@ export async function readWorkspaceRunProgress(
 }
 
 export function extractWorkspaceRunText(
-  mode: EngineMode,
+  _mode: EngineMode,
   progress: Pick<
     WorkspaceRunProgress,
     "rawOutput" | "parsedOutput" | "exitCode"
   >,
 ) {
-  if (mode === "codex_cli") {
-    if (progress.exitCode === "0") return progress.parsedOutput;
-    return (
-      progress.parsedOutput ||
-      parseCodexOutputText(progress.rawOutput) ||
-      progress.rawOutput
-    );
-  }
-
-  return (
-    progress.parsedOutput ||
-    (progress.exitCode === "0" ? "" : progress.rawOutput)
-  );
+  return progress.parsedOutput;
 }

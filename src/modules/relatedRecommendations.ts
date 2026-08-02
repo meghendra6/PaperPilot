@@ -1,11 +1,14 @@
 import { getModeForItem } from "./ai/modeStore";
 import {
+  claimWorkspaceRunReservation,
   extractWorkspaceRunText,
   getWorkspaceEngineActiveMessage,
-  isWorkspaceRunActiveForItem,
+  getWorkspaceEngineLabel,
   readWorkspaceRunProgress,
+  releaseWorkspaceRunReservation,
   startWorkspaceTextRun,
 } from "./ai/workspaceRun";
+import { stopDetachedRunProcess } from "./ai/runCompletion";
 
 declare const Zotero: any;
 
@@ -402,65 +405,107 @@ export async function generateRelatedPaperGroups(params: {
   onStatus?: (status: string) => void;
 }) {
   const mode = getModeForItem(params.itemID);
-  if (isWorkspaceRunActiveForItem(mode, params.itemID)) {
+  const reservationToken = claimWorkspaceRunReservation(mode, params.itemID);
+  if (!reservationToken) {
     throw new Error(
       getWorkspaceEngineActiveMessage(mode, "related-paper recommendations"),
     );
   }
 
-  const { sessionStore } = await import("./session/sessionStore");
-  const { cleanupWorkspaceIfEnabled } = await import("./workspace/cleanup");
-  const item = await Zotero.Items.getAsync(params.itemID);
-  const session = sessionStore.touch(params.itemID, mode, params.itemTitle);
-  params.onStatus?.("Finding related papers…");
-
-  const result = await startWorkspaceTextRun({
-    mode,
-    itemID: params.itemID,
-    title: params.itemTitle,
-    sessionId: session.sessionId,
-    question: buildRelatedPaperQuestion(item),
-  });
-
-  if (!result.ok) {
-    await cleanupWorkspaceIfEnabled(result.workspacePath);
-    throw new Error(result.error);
-  }
-
-  let attempts = 0;
-  let completed = false;
+  let releaseReservation = true;
   try {
-    while (attempts < 300) {
-      const progress = await readWorkspaceRunProgress(mode, {
-        outputPath: result.outputPath,
-        stderrPath: result.stderrPath,
-        exitCodePath: result.exitCodePath,
-      });
-      if (progress.completed) {
-        completed = true;
-        const responseText = extractWorkspaceRunText(mode, progress);
-        if (progress.exitCode !== "0") {
-          throw new Error(responseText || "Related paper generation failed.");
-        }
-        params.onStatus?.("Grouping recommendations…");
-        const parsed = parseRelatedPaperResponse(responseText);
-        const candidates = await getLibraryItemCandidates(item.libraryID);
-        return {
-          groups: attachExistingItems(parsed.groups, candidates),
-          rawOutput: progress.rawOutput,
-        };
-      }
+    const { sessionStore } = await import("./session/sessionStore");
+    const { cleanupWorkspaceIfEnabled } = await import("./workspace/cleanup");
+    const item = await Zotero.Items.getAsync(params.itemID);
+    const session = sessionStore.touch(params.itemID, mode, params.itemTitle);
+    params.onStatus?.("Finding related papers…");
 
-      await new Promise((resolve) => setTimeout(resolve, 800));
-      attempts += 1;
+    const result = await startWorkspaceTextRun({
+      mode,
+      itemID: params.itemID,
+      reservationItemID: params.itemID,
+      reservationToken,
+      title: params.itemTitle,
+      sessionId: session.sessionId,
+      question: buildRelatedPaperQuestion(item),
+    }).catch(() => {
+      throw new Error(
+        `${getWorkspaceEngineLabel(mode)} related-paper run could not start.`,
+      );
+    });
+
+    if (!result.ok) {
+      await cleanupWorkspaceIfEnabled(result.workspacePath);
+      throw new Error(
+        `${getWorkspaceEngineLabel(mode)} related-paper run could not start.`,
+      );
     }
 
-    throw new Error(
-      "Timed out while waiting for related paper recommendations.",
-    );
+    let attempts = 0;
+    let completed = false;
+    let recommendationResult:
+      | { groups: RecommendationGroup[]; rawOutput: string }
+      | undefined;
+    let runError: unknown;
+    try {
+      while (attempts < 300) {
+        const progress = await readWorkspaceRunProgress(mode, {
+          outputPath: result.outputPath,
+          stderrPath: result.stderrPath,
+          exitCodePath: result.exitCodePath,
+        });
+        if (progress.completed) {
+          completed = true;
+          const responseText = extractWorkspaceRunText(mode, progress);
+          if (progress.exitCode !== "0") {
+            throw new Error(responseText || "Related paper generation failed.");
+          }
+          params.onStatus?.("Grouping recommendations…");
+          const parsed = parseRelatedPaperResponse(responseText);
+          const candidates = await getLibraryItemCandidates(item.libraryID);
+          recommendationResult = {
+            groups: attachExistingItems(parsed.groups, candidates),
+            rawOutput: progress.rawOutput,
+          };
+          break;
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 800));
+        attempts += 1;
+      }
+
+      if (!completed) {
+        throw new Error(
+          "Timed out while waiting for related paper recommendations.",
+        );
+      }
+    } catch (error) {
+      runError = error;
+    }
+
+    let stopError: unknown;
+    if (!completed) {
+      try {
+        await stopDetachedRunProcess(result.processId);
+      } catch (error) {
+        stopError = error;
+      }
+    }
+    if (stopError) {
+      releaseReservation = false;
+      throw new Error(
+        `${getWorkspaceEngineLabel(mode)} related-paper process could not be stopped. Its workspace remains reserved until Zotero restarts.`,
+      );
+    }
+    await cleanupWorkspaceIfEnabled(result.workspacePath);
+    if (runError) throw runError;
+    if (!recommendationResult) {
+      throw new Error("Related paper generation produced no result.");
+    }
+    return recommendationResult;
   } finally {
-    if (completed) {
-      await cleanupWorkspaceIfEnabled(result.workspacePath);
+    if (releaseReservation) {
+      releaseWorkspaceRunReservation(params.itemID, reservationToken);
     }
   }
 }

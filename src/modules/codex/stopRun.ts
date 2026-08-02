@@ -17,12 +17,9 @@ export async function stopCodexRunSilently(params: {
     finishReaderRunsForMode(params.itemID, "codex_cli");
   }
   const pid = runState?.processId;
-  try {
-    await stopDetachedRunProcess(pid);
-  } finally {
-    if (runState && params.clearRunState !== false) {
-      clearCodexRunStateForItem(params.itemID);
-    }
+  await stopDetachedRunProcess(pid);
+  if (runState && params.clearRunState !== false) {
+    clearCodexRunStateForItem(params.itemID);
   }
   return runState;
 }

@@ -109,7 +109,12 @@ import {
 } from "./ui/runProgressCard";
 import { getRunProgressState } from "./ai/runProgress";
 import { cancelActiveEngineRun } from "./ai/runControl";
-import { retryLastEngineQuestion } from "./ai/retryEngineRequest";
+import {
+  isRetryEngineRequestPending,
+  retryLastEngineQuestion,
+} from "./ai/retryEngineRequest";
+import { getPendingEngineCompletion } from "./ai/runLifecycle";
+import { isWorkspaceRunReservedForItem } from "./ai/workspaceRun";
 
 const paneCleanupByBody = new WeakMap<HTMLElement, () => void>();
 const paneTemplateByBody = new WeakMap<HTMLElement, HTMLElement>();
@@ -473,14 +478,19 @@ export function registerPaperPilotPaneSection() {
             onCancel: async () => {
               const state = getRunProgressState(item.id);
               const cancelled = await cancelActiveEngineRun(item.id);
+              const updatedState = getRunProgressState(item.id);
               addMessage(
                 chatMessages,
                 cancelled
                   ? `${getModeLabel(state?.engine ?? getModeForItem(item.id))} run cancelled.`
-                  : "No cancellable run is active for this paper.",
+                  : updatedState?.failure?.userMessage ||
+                      "No cancellable run is active for this paper.",
                 "ai",
               );
-              renderStreamingIndicator(streamingIndicator, false);
+              renderStreamingIndicator(
+                streamingIndicator,
+                Boolean(getActiveReaderRunMode(item.id)),
+              );
               runProgressCard.render(getRunProgressState(item.id));
             },
             onRetry: () =>
@@ -524,10 +534,15 @@ export function registerPaperPilotPaneSection() {
 
         const clearSessionRuntimeState = async () => {
           const activeMode = getActiveReaderRunMode(item.id);
-          if (activeMode) {
+          const lifecycleReserved = Boolean(
+            getPendingEngineCompletion(item.id) ||
+              isWorkspaceRunReservedForItem(item.id) ||
+              isRetryEngineRequestPending(item.id),
+          );
+          if (activeMode || lifecycleReserved) {
             addMessage(
               chatMessages,
-              `${getModeLabel(activeMode)} is still running for this paper. Wait for it to finish or cancel it before changing sessions.`,
+              `${getModeLabel(activeMode ?? getModeForItem(item.id))} is still running or finishing for this paper. Wait for it to settle before changing sessions.`,
               "ai",
             );
             return false;
@@ -914,7 +929,11 @@ export function registerPaperPilotPaneSection() {
 
         const canChangeProvider = () => {
           const activeMode = getActiveReaderRunMode(item.id);
-          const preparing = streamingIndicator.style.display === "flex";
+          const preparing =
+            streamingIndicator.style.display === "flex" ||
+            Boolean(getPendingEngineCompletion(item.id)) ||
+            isWorkspaceRunReservedForItem(item.id) ||
+            isRetryEngineRequestPending(item.id);
           if (!activeMode && !preparing) return true;
           addMessage(
             chatMessages,
@@ -1720,7 +1739,7 @@ export function registerPaperPilotPaneSection() {
           }
         }
 
-        function showMasteryCompletion(
+        async function showMasteryCompletion(
           state: import("./comprehensionCheck/types").ComprehensionCheckState,
           continuationToken?: ReaderRunToken,
         ) {
@@ -1733,7 +1752,7 @@ export function registerPaperPilotPaneSection() {
           state.status = "Generating final report...";
           setMasteryState(item.id, state);
           renderMasteryCompletion(state);
-          sendMasteryPrompt(
+          await sendMasteryPrompt(
             buildFinalReportPrompt(state.rounds, state.topics),
             async (assistantText) => {
               const s = getMasteryState(item.id);
@@ -2034,7 +2053,7 @@ export function registerPaperPilotPaneSection() {
               ) {
                 s.phase = "complete";
                 setMasteryState(item.id, s);
-                showMasteryCompletion(s, continuationToken);
+                await showMasteryCompletion(s, continuationToken);
                 return;
               }
 
@@ -2051,7 +2070,7 @@ export function registerPaperPilotPaneSection() {
                   evalResult.nextTopic ?? "general understanding",
                   evalResult.nextDifficulty,
                 ),
-                (nextText, nextContinuationToken) => {
+                async (nextText, nextContinuationToken) => {
                   const parsed = parseMasteryQuestionResponse(nextText);
                   if (!parsed) {
                     const fst = getMasteryState(item.id);
@@ -2059,7 +2078,10 @@ export function registerPaperPilotPaneSection() {
                       fst.phase = "complete";
                       setMasteryState(item.id, fst);
                     }
-                    showMasteryCompletion(fst ?? s, nextContinuationToken);
+                    await showMasteryCompletion(
+                      fst ?? s,
+                      nextContinuationToken,
+                    );
                     return;
                   }
                   const st = getMasteryState(item.id) ?? s;
@@ -2101,7 +2123,7 @@ export function registerPaperPilotPaneSection() {
           );
         });
 
-        masteryEnd?.addEventListener("click", () => {
+        masteryEnd?.addEventListener("click", async () => {
           const state = getMasteryState(item.id);
           if (!state) {
             return;
@@ -2116,7 +2138,7 @@ export function registerPaperPilotPaneSection() {
           if (state.rounds.length > 0) {
             state.phase = "complete";
             setMasteryState(item.id, state);
-            showMasteryCompletion(state);
+            await showMasteryCompletion(state);
           } else {
             if (masterySection) {
               masterySection.style.display = "none";
@@ -3119,6 +3141,14 @@ function renderStreamingIndicator(
 }
 
 function getActiveRunMessage(mode: EngineMode, itemID: number) {
+  if (
+    getPendingEngineCompletion(itemID) ||
+    isWorkspaceRunReservedForItem(itemID) ||
+    isRetryEngineRequestPending(itemID)
+  ) {
+    return "A run is already starting, running, or finishing for this paper. Wait for it to settle before starting another request.";
+  }
+
   if (mode === "codex_cli" && isCodexRunActiveForItem(itemID)) {
     return "A Codex CLI run is already active for this paper. Cancel it or wait for it to finish before starting another request.";
   }

@@ -8,6 +8,8 @@ import {
   claimPendingEngineCompletion,
   getPendingEngineCompletion,
   markPendingEngineTerminalSettled,
+  releasePendingEngineCompletionClaim,
+  reportRunStopFailure,
 } from "./runLifecycle";
 import { markReaderRunFinished } from "./runPresentation";
 
@@ -20,12 +22,6 @@ export async function cancelActiveEngineRun(itemID: number): Promise<boolean> {
 
   pending.cancelTimeout?.();
   const workspacePath = pending.workspacePath;
-  pending.cleanupClaimed = Boolean(workspacePath);
-  advanceRunProgress(itemID, pending.token, {
-    type: "cancelled",
-    canRetry: pending.retryable,
-  });
-  markReaderRunFinished(itemID, pending.token);
 
   try {
     if (pending.mode === "claude_code") {
@@ -35,9 +31,24 @@ export async function cancelActiveEngineRun(itemID: number): Promise<boolean> {
     } else {
       await stopCodexRunSilently({ itemID, finishPresentation: false });
     }
-  } catch {
-    // Continue releasing UI/workflow state even if process termination fails.
+  } catch (error) {
+    releasePendingEngineCompletionClaim(itemID, pending.token, "cancel");
+    const detail = error instanceof Error ? error.message : String(error);
+    reportRunStopFailure({
+      itemID,
+      engine: pending.mode,
+      token: pending.token,
+      rawError: `Paper Pilot could not confirm process termination: ${detail}`,
+    });
+    return false;
   }
+
+  pending.cleanupClaimed = Boolean(workspacePath);
+  advanceRunProgress(itemID, pending.token, {
+    type: "cancelled",
+    canRetry: pending.retryable,
+  });
+  markReaderRunFinished(itemID, pending.token);
 
   const completeCancellation = () =>
     pending.onComplete?.({

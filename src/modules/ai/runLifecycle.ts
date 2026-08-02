@@ -1,4 +1,8 @@
-import { classifyRunFailure, type RunFailureSource } from "./runFailure";
+import {
+  classifyRunFailure,
+  getEngineLabel,
+  type RunFailureSource,
+} from "./runFailure";
 import {
   createRunProgressState,
   getRunProgressState,
@@ -107,6 +111,21 @@ export function claimPendingEngineCompletion(
   return pending;
 }
 
+export function releasePendingEngineCompletionClaim(
+  itemID: number,
+  token: ReaderRunToken,
+  claim: NonNullable<PendingEngineCompletion["terminalClaim"]>,
+): void {
+  const pending = getPendingEngineCompletion(itemID);
+  if (
+    pending?.token === token &&
+    pending.terminalClaim === claim &&
+    !pending.terminalSettled
+  ) {
+    pending.terminalClaim = undefined;
+  }
+}
+
 export function markPendingEnginePreparationSettled(
   itemID: number,
   token: ReaderRunToken,
@@ -184,6 +203,31 @@ export function failRunProgress(params: {
     failure,
     canRetry: params.canRetry ?? hasLastEngineRequest(params.itemID),
   });
+  setRunProgressState(next);
+  notifyReaderPaneStateChanged(params.itemID);
+  return next;
+}
+
+export function reportRunStopFailure(params: {
+  itemID: number;
+  engine: EngineMode;
+  token: ReaderRunToken;
+  rawError: string;
+}): RunProgressState | undefined {
+  const current = getRunProgressState(params.itemID);
+  if (!current || current.token !== params.token) return undefined;
+  const failure = {
+    kind: "unknown" as const,
+    engine: params.engine,
+    userMessage: `${getEngineLabel(params.engine)} could not be stopped. Try Cancel again before starting or changing sessions.`,
+    rawError: params.rawError,
+  };
+  const next = {
+    ...current,
+    updatedAt: Date.now(),
+    failure,
+    canRetry: false,
+  };
   setRunProgressState(next);
   notifyReaderPaneStateChanged(params.itemID);
   return next;

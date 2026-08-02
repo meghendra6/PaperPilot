@@ -1,5 +1,9 @@
 import * as assert from "node:assert/strict";
+import { execFile, spawn } from "node:child_process";
+import { once } from "node:events";
+import { existsSync } from "node:fs";
 import { test } from "node:test";
+import { promisify } from "node:util";
 import {
   buildKillProcessTreeScript,
   finishRunAfterCleanup,
@@ -11,6 +15,8 @@ import {
   markReaderRunFinished,
   markReaderRunStarted,
 } from "../src/modules/ai/runPresentation";
+
+const execFileAsync = promisify(execFile);
 
 test("run completion removes the old workspace before a nested completion starts", async () => {
   const events: string[] = [];
@@ -112,13 +118,81 @@ test("run completion does not retry a failing cleanup", async () => {
   assert.equal(finalized, true);
 });
 
-test("process termination walks descendants before killing the recorded pid", () => {
+test("process termination waits and escalates before releasing the recorded pid", () => {
   const script = buildKillProcessTreeScript("4321");
-  assert.match(script, /pgrep -P "\$1"/);
-  assert.match(script, /kill_run_tree "\$child"/);
-  assert.match(script, /kill "\$1"/);
-  assert.match(script, /kill_run_tree 4321$/);
+  assert.match(script, /pgrep -P "\$pid"/);
+  assert.match(script, /signal_run_tree "\$child" "\$signal"/);
+  assert.match(script, /kill -STOP "\$pid"/);
+  assert.match(script, /kill -KILL "\$pid"/);
+  assert.match(script, /terminate_run_tree 4321$/);
 });
+
+test(
+  "process termination kills a TERM-ignoring process and its descendants",
+  {
+    skip:
+      !existsSync("/bin/zsh") ||
+      !existsSync("/usr/bin/pgrep") ||
+      process.platform !== "darwin",
+  },
+  async () => {
+    const child = spawn(
+      "/bin/zsh",
+      ["-lc", 'trap "" TERM; while true; do /bin/sleep 5; done'],
+      { stdio: "ignore" },
+    );
+    assert.ok(child.pid);
+    const childPid = child.pid;
+    let descendants: number[] = [];
+
+    try {
+      for (let attempt = 0; attempt < 20 && !descendants.length; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 25));
+        const result = await execFileAsync("/usr/bin/pgrep", [
+          "-P",
+          String(childPid),
+        ]).catch(() => ({ stdout: "" }));
+        descendants = String(result.stdout || "")
+          .trim()
+          .split(/\s+/)
+          .filter(Boolean)
+          .map(Number);
+      }
+      assert.ok(descendants.length > 0);
+
+      await execFileAsync("/bin/zsh", [
+        "-lc",
+        buildKillProcessTreeScript(String(childPid)),
+      ]);
+      if (child.exitCode === null && child.signalCode === null) {
+        await Promise.race([
+          once(child, "exit"),
+          new Promise((_, reject) =>
+            setTimeout(
+              () => reject(new Error("recorded process did not exit")),
+              1_000,
+            ),
+          ),
+        ]);
+      }
+
+      for (const pid of [childPid, ...descendants]) {
+        assert.throws(
+          () => process.kill(pid, 0),
+          (error: NodeJS.ErrnoException) => error.code === "ESRCH",
+        );
+      }
+    } finally {
+      for (const pid of [childPid, ...descendants]) {
+        try {
+          process.kill(pid, "SIGKILL");
+        } catch {
+          // Already stopped by the helper.
+        }
+      }
+    }
+  },
+);
 
 test("run completion skips a stale terminal callback after cleanup", async () => {
   const events: string[] = [];
@@ -204,6 +278,23 @@ test("detached process cleanup only executes a numeric pid", async () => {
       args: ["-lc", buildKillProcessTreeScript("1234")],
     },
   ]);
+});
+
+test("detached process cleanup surfaces executor failures", async () => {
+  const previousZotero = (globalThis as { Zotero?: unknown }).Zotero;
+  (globalThis as { Zotero?: unknown }).Zotero = {
+    Utilities: {
+      Internal: {
+        exec: async () => new Error("termination failed"),
+      },
+    },
+  };
+
+  try {
+    await assert.rejects(stopDetachedRunProcess("1234"), /termination failed/);
+  } finally {
+    (globalThis as { Zotero?: unknown }).Zotero = previousZotero;
+  }
 });
 
 test("run completion keeps the parent guard available for an explicit nested handoff", async () => {

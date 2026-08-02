@@ -31,7 +31,10 @@ import {
 } from "../ai/runCompletion";
 import { sanitizeAssistantText } from "../message/assistantOutput";
 import { sessionHistoryService } from "../session/sessionHistoryService";
-import { cleanupWorkspaceIfEnabled } from "../workspace/cleanup";
+import {
+  cleanupPaperWorkspaceForItemIfEnabled,
+  cleanupWorkspaceIfEnabled,
+} from "../workspace/cleanup";
 import { clearCodexPollerForItem } from "./poller";
 import {
   buildCodexRunState,
@@ -41,6 +44,7 @@ import {
 import { readCodexRunProgress, startCodexRunForQuestion } from "./runner";
 import { stopCodexRunSilently } from "./stopRun";
 import { classifyCodexLoginFailure } from "./statusClassification";
+import { isWorkspaceRunReservedForItem } from "../ai/workspaceRun";
 
 declare const addon: any;
 export { stopCodexRunSilently } from "./stopRun";
@@ -79,7 +83,8 @@ export async function handleCodexQuestion(params: {
     isCodexRunActiveForItem(params.itemID) ||
     ((getActiveReaderRunMode(params.itemID) ||
       getPendingEngineCompletion(params.itemID)) &&
-      !continuingParent)
+      !continuingParent) ||
+    (isWorkspaceRunReservedForItem(params.itemID) && !continuingParent)
   ) {
     const assistantText =
       "A Codex CLI run is already active for this paper. Cancel it or wait for it to finish before starting another request.";
@@ -166,6 +171,10 @@ export async function handleCodexQuestion(params: {
     resumeSessionId: params.resumeSessionId,
   }).catch(async (error) => {
     cancelTimeout();
+    await cleanupPaperWorkspaceForItemIfEnabled({
+      itemID: params.itemID,
+      title: params.sessionTitle,
+    });
     if (!isReaderRunTokenActive(params.itemID, runToken)) {
       markPendingEnginePreparationSettled(params.itemID, runToken);
       return undefined;
@@ -215,15 +224,27 @@ export async function handleCodexQuestion(params: {
 
   if (!isReaderRunTokenActive(params.itemID, runToken)) {
     cancelTimeout();
-    if (result.ok) await stopDetachedRunProcess(result.processId);
-    if (
-      isPendingEngineCompletionCurrent(params.itemID, runToken) &&
-      !pendingCompletion.cleanupClaimed
-    ) {
-      await cleanupWorkspaceIfEnabled(result.workspacePath);
-      params.streamingIndicator.style.display = "none";
+    try {
+      await finishRunAfterCleanup({
+        prepare: () =>
+          result.ok ? stopDetachedRunProcess(result.processId) : undefined,
+        cleanup: () =>
+          isPendingEngineCompletionCurrent(params.itemID, runToken) &&
+          !pendingCompletion.cleanupClaimed
+            ? cleanupWorkspaceIfEnabled(result.workspacePath)
+            : undefined,
+        complete: () => undefined,
+        finalize: () => {
+          params.streamingIndicator.style.display = "none";
+          markPendingEnginePreparationSettled(params.itemID, runToken);
+        },
+      });
+    } catch (error) {
+      addon.data.ztoolkit?.log(
+        "Paper Pilot Codex late-run cleanup failed:",
+        error,
+      );
     }
-    markPendingEnginePreparationSettled(params.itemID, runToken);
     return;
   }
   markPendingEnginePreparationSettled(params.itemID, runToken);
@@ -523,9 +544,13 @@ export async function cancelCodexRun(params: {
   chatMessages: HTMLElement;
 }) {
   const cancelled = await cancelActiveEngineRun(params.itemID);
+  const updatedState = getRunProgressState(params.itemID);
   addMessage(
     params.chatMessages,
-    cancelled ? "Codex run cancelled." : "No cancellable Codex run is active.",
+    cancelled
+      ? "Codex run cancelled."
+      : updatedState?.failure?.userMessage ||
+          "No cancellable Codex run is active.",
     "ai",
   );
 }

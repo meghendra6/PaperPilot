@@ -17,12 +17,9 @@ export async function stopClaudeRunSilently(params: {
     finishReaderRunsForMode(params.itemID, "claude_code");
   }
   const pid = runState?.processId;
-  try {
-    await stopDetachedRunProcess(pid);
-  } finally {
-    if (runState && params.clearRunState !== false) {
-      clearClaudeRunStateForItem(params.itemID);
-    }
+  await stopDetachedRunProcess(pid);
+  if (runState && params.clearRunState !== false) {
+    clearClaudeRunStateForItem(params.itemID);
   }
   return runState;
 }

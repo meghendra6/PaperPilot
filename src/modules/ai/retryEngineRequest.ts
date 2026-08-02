@@ -12,6 +12,10 @@ import {
 
 const retryClaims = new Set<number>();
 
+export function isRetryEngineRequestPending(itemID: number): boolean {
+  return retryClaims.has(itemID);
+}
+
 export async function retryLastEngineQuestion(params: {
   itemID: number;
   itemTitle: string;
@@ -59,6 +63,15 @@ export async function retryLastEngineQuestion(params: {
       paperTitle: last.paperTitle || params.itemTitle,
       text: last.question,
     });
+    if (sessionStore.get(params.itemID)?.sessionId !== last.sessionId) {
+      addMessage(
+        params.chatMessages,
+        "The active session changed before Retry could start. Return to the original session and try again.",
+        "ai",
+      );
+      params.streamingIndicator.style.display = "none";
+      return;
+    }
     const common = {
       itemID: params.itemID,
       sessionId: last.sessionId,

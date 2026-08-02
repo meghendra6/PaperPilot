@@ -7,6 +7,8 @@ import {
   isPendingEngineCompletionCurrent,
   markPendingEngineTerminalSettled,
   persistRunFailure,
+  releasePendingEngineCompletionClaim,
+  reportRunStopFailure,
 } from "./runLifecycle";
 import {
   getRunProgressState,
@@ -71,8 +73,22 @@ export async function completeTimedOutRun(params: {
   );
   if (!pending) return;
   const workspacePath = pending.workspacePath ?? params.workspacePath;
-  pending.cleanupClaimed = Boolean(workspacePath);
   const rawError = `${params.engineLabel} exceeded the 30-minute run limit.`;
+  try {
+    await Promise.resolve(params.stop());
+  } catch (error) {
+    releasePendingEngineCompletionClaim(params.itemID, params.token, "timeout");
+    const detail = error instanceof Error ? error.message : String(error);
+    reportRunStopFailure({
+      itemID: params.itemID,
+      engine: params.engine,
+      token: params.token,
+      rawError: `Paper Pilot could not confirm process termination after timeout: ${detail}`,
+    });
+    return;
+  }
+
+  pending.cleanupClaimed = Boolean(workspacePath);
   const failurePromise = persistRunFailure({
     itemID: params.itemID,
     sessionId: params.sessionId,
@@ -100,7 +116,6 @@ export async function completeTimedOutRun(params: {
       }),
   );
   markReaderRunFinished(params.itemID, params.token);
-  await Promise.resolve(params.stop()).catch(() => undefined);
   const failure = await failurePromise;
   if (!isPendingEngineCompletionCurrent(params.itemID, params.token)) return;
   params.onMessage?.(failure.userMessage);

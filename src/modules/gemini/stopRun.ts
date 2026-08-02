@@ -17,12 +17,9 @@ export async function stopGeminiRunSilently(params: {
     finishReaderRunsForMode(params.itemID, "gemini_cli");
   }
   const pid = runState?.processId;
-  try {
-    await stopDetachedRunProcess(pid);
-  } finally {
-    if (runState && params.clearRunState !== false) {
-      clearGeminiRunStateForItem(params.itemID);
-    }
+  await stopDetachedRunProcess(pid);
+  if (runState && params.clearRunState !== false) {
+    clearGeminiRunStateForItem(params.itemID);
   }
   return runState;
 }

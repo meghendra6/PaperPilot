@@ -115,8 +115,13 @@ polled**:
    - runs `Zotero.Utilities.Internal.exec("/bin/zsh", ["-lc", script])`
 4. The script writes stdout and stderr to separate files, writes the exit code
    when done, and records the detached shell pid. `exec` returns as soon as the
-   background job is spawned. Cancellation walks the recorded process tree
-   before clearing engine state, so pipeline children do not outlive the card.
+   background job is spawned. Cancellation sends `TERM` to the recorded process
+   tree, waits for a bounded grace period, then freezes and `KILL`s any survivors
+   before verifying termination and clearing engine state. Pipeline children
+   therefore do not outlive the card, including wrappers that ignore `TERM`.
+   If the executor cannot confirm termination, the active owner and pid (or the
+   direct-workflow reservation) remain in place and workspace cleanup is not
+   claimed; the UI reports the stop failure instead of unlocking unsafely.
 5. `controller` starts a `setInterval` at **800 ms** that reads the output file,
    advances the shared card to `Running`, and stops once the exit-code file is
    non-empty. Codex displays structured assistant output when one is available;
@@ -142,16 +147,23 @@ polled**:
    parent finalizer cannot overwrite a chained child. Cancellation during
    workspace preparation keeps a per-item barrier until the old runner settles
    and finishes cleanup, preventing a retry from sharing or deleting its stable
-   workspace.
+   workspace. Direct Auto Highlight and Related Papers runs use the same
+   item-scoped reservation boundary, so controller and direct workspace runs
+   cannot overlap either. Pending controller completion, direct reservations,
+   and Retry claims also block session replacement until their owner settles.
+   If preparation throws after creating a stable workspace, the controller or
+   direct-run dispatcher computes that same path and applies configured cleanup.
 
 Failures are classified in `ai/runFailure.ts`. Workspace and timeout sources
 take precedence over string matching; executable and login patterns cover all
 three CLIs. Session history stores the safe `userMessage` as replayable text and
 keeps raw stderr only in `rawEvent`, which the run card exposes under a collapsed
-Raw logs disclosure. `ui/runProgressCard.ts` renders the same progress, cancel,
-retry, settings, and login-help surface for every engine. Only normal chat turns
-enter `addon.data.lastEngineRequests`; silent Workbench and Paper Mastery runs
-continue to use their own workflow buttons.
+Raw logs disclosure. Direct workspace workflows likewise derive visible text
+only from parsed stdout; a non-zero exit without parsed stdout becomes a generic
+workflow error instead of exposing stderr. `ui/runProgressCard.ts` renders the
+same progress, cancel, retry, settings, and login-help surface for every engine.
+Only normal chat turns enter `addon.data.lastEngineRequests`; silent Workbench
+and Paper Mastery runs continue to use their own workflow buttons.
 
 Per-engine file names inside the workspace:
 

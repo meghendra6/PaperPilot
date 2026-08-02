@@ -29,7 +29,10 @@ import { getRunProgressState } from "../ai/runProgress";
 import { armRunTimeout, completeTimedOutRun } from "../ai/runTimeout";
 import { sanitizeAssistantText } from "../message/assistantOutput";
 import { sessionHistoryService } from "../session/sessionHistoryService";
-import { cleanupWorkspaceIfEnabled } from "../workspace/cleanup";
+import {
+  cleanupPaperWorkspaceForItemIfEnabled,
+  cleanupWorkspaceIfEnabled,
+} from "../workspace/cleanup";
 import { clearClaudePollerForItem } from "./poller";
 import {
   clearClaudeRunStateForItem,
@@ -38,6 +41,7 @@ import {
 } from "./runState";
 import { startClaudeRunForQuestion, readClaudeRunProgress } from "./runner";
 import { stopClaudeRunSilently } from "./stopRun";
+import { isWorkspaceRunReservedForItem } from "../ai/workspaceRun";
 
 declare const addon: any;
 
@@ -76,7 +80,8 @@ export async function handleClaudeQuestion(params: {
     isClaudeRunActiveForItem(params.itemID) ||
     ((getActiveReaderRunMode(params.itemID) ||
       getPendingEngineCompletion(params.itemID)) &&
-      !continuingParent)
+      !continuingParent) ||
+    (isWorkspaceRunReservedForItem(params.itemID) && !continuingParent)
   ) {
     const assistantText =
       "A Claude Code run is already active for this paper. Wait for it to finish before starting another request.";
@@ -161,6 +166,10 @@ export async function handleClaudeQuestion(params: {
     resumeSessionId: params.resumeSessionId,
   }).catch(async (error) => {
     cancelTimeout();
+    await cleanupPaperWorkspaceForItemIfEnabled({
+      itemID: params.itemID,
+      title: params.sessionTitle,
+    });
     if (!isReaderRunTokenActive(params.itemID, runToken)) {
       markPendingEnginePreparationSettled(params.itemID, runToken);
       return undefined;
@@ -209,15 +218,27 @@ export async function handleClaudeQuestion(params: {
 
   if (!isReaderRunTokenActive(params.itemID, runToken)) {
     cancelTimeout();
-    if (result.ok) await stopDetachedRunProcess(result.processId);
-    if (
-      isPendingEngineCompletionCurrent(params.itemID, runToken) &&
-      !pendingCompletion.cleanupClaimed
-    ) {
-      await cleanupWorkspaceIfEnabled(result.workspacePath);
-      params.streamingIndicator.style.display = "none";
+    try {
+      await finishRunAfterCleanup({
+        prepare: () =>
+          result.ok ? stopDetachedRunProcess(result.processId) : undefined,
+        cleanup: () =>
+          isPendingEngineCompletionCurrent(params.itemID, runToken) &&
+          !pendingCompletion.cleanupClaimed
+            ? cleanupWorkspaceIfEnabled(result.workspacePath)
+            : undefined,
+        complete: () => undefined,
+        finalize: () => {
+          params.streamingIndicator.style.display = "none";
+          markPendingEnginePreparationSettled(params.itemID, runToken);
+        },
+      });
+    } catch (error) {
+      addon.data.ztoolkit?.log(
+        "Paper Pilot Claude late-run cleanup failed:",
+        error,
+      );
     }
-    markPendingEnginePreparationSettled(params.itemID, runToken);
     return;
   }
   markPendingEnginePreparationSettled(params.itemID, runToken);
