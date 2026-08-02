@@ -9,7 +9,7 @@ pref("__prefsPrefix__.responseLanguage", "English");
 // Claude Code
 pref("__prefsPrefix__.claudeExecutablePath", "");
 pref("__prefsPrefix__.claudeDefaultModel", "sonnet");
-pref("__prefsPrefix__.claudeAllowedModels", "sonnet, opus");
+pref("__prefsPrefix__.claudeAllowedModels", "sonnet, opus, haiku, fable");
 pref("__prefsPrefix__.claudePermissionMode", "default");
 
 // Gemini CLI
@@ -22,9 +22,12 @@ pref(
 
 // Codex CLI
 pref("__prefsPrefix__.codexExecutablePath", "");
-pref("__prefsPrefix__.codexDefaultModel", "gpt-5.5");
+pref("__prefsPrefix__.codexDefaultModel", "gpt-5.6-sol");
 pref("__prefsPrefix__.codexReasoningEffort", "medium");
-pref("__prefsPrefix__.codexAllowedModels", "gpt-5.5");
+pref(
+  "__prefsPrefix__.codexAllowedModels",
+  "gpt-5.6-sol, gpt-5.6-terra, gpt-5.6-luna, gpt-5.5",
+);
 pref("__prefsPrefix__.codexEnableWebSearch", true);
 pref("__prefsPrefix__.codexSandboxMode", "workspace-write");
 pref("__prefsPrefix__.codexApprovalMode", "never");

@@ -2077,10 +2077,14 @@ export function registerPaperPilotPaneSection() {
           } else if (activeMode === "claude_code") {
             setPref("claudeDefaultModel", normalizeClaudeModel(savedModel));
           } else {
-            setPref("codexDefaultModel", normalizeCodexModel(savedModel));
+            const normalizedCodexModel = normalizeCodexModel(savedModel);
+            setPref("codexDefaultModel", normalizedCodexModel);
             setPref(
               "codexReasoningEffort",
-              normalizeCodexReasoningEffort(savedReasoningEffort || "medium"),
+              normalizeCodexReasoningEffort(
+                savedReasoningEffort || "",
+                normalizedCodexModel,
+              ),
             );
           }
           rememberRecentCodexModel(
@@ -2989,7 +2993,7 @@ function getFallbackModelForMode(mode: EngineMode) {
   if (mode === "claude_code") {
     return "sonnet";
   }
-  return "gpt-5.5";
+  return "gpt-5.6-sol";
 }
 
 function getBuiltInModelsForMode(mode: EngineMode) {
@@ -3058,6 +3062,7 @@ async function renderModelHistory(
       ? ""
       : normalizeCodexReasoningEffort(
           String(getPref("codexReasoningEffort") || "medium"),
+          selectedValue,
         ),
   );
   const catalog =
