@@ -4,16 +4,19 @@ Thanks for contributing to Paper Pilot.
 
 ## Scope
 
-This repository contains a Zotero 7 plugin that adds an AI reader workbench with local CLI integrations such as Codex CLI and Gemini CLI.
+This repository contains a Zotero 7-9 plugin that adds an AI reader workbench with local CLI integrations: Codex CLI, Claude Code, and Gemini CLI.
 
 ## Development environment
 
 Recommended baseline:
 
-- Zotero 7
+- Zotero 7, 8, or 9
 - Node.js 20+
 - npm
+- Java 11+ if you want OpenDataLoader-backed structured PDF extraction instead of the text fallback
 - at least one local provider CLI if you want to validate real provider flows
+
+`scripts/doctor.sh` runs a quick local setup check.
 
 ## Core local commands
 
@@ -27,12 +30,17 @@ npm run build
 
 ## Project map
 
+Start with [`docs/architecture.md`](./docs/architecture.md) for how the pieces fit together and how a single AI run actually executes.
+
 Important areas to understand before making changes:
 
 - `src/modules/readerPane.ts` — main reader UI and workflow wiring
+- `src/modules/ai/` — engine mode union, per-paper mode override, provider registry, shared run helpers
 - `src/modules/codex/` — Codex CLI execution, status, shell, parsing, and command building
+- `src/modules/claude/` — Claude Code execution flow
 - `src/modules/gemini/` — Gemini CLI execution flow
 - `src/modules/context/` — paper context retrieval and workspace artifact generation
+- `src/modules/workspace/` — workspace paths, writability probe, cleanup, collection artifact bundles
 - `src/modules/autoHighlight/` — highlight extraction workflow
 - `src/modules/researchBrief.ts` — structured brief generation
 - `src/modules/paperTools.ts` — contributions/limitations/follow-ups prompts and parsing
@@ -41,6 +49,8 @@ Important areas to understand before making changes:
 - `src/modules/comprehensionCheck/` — Paper Mastery prompts, parser, and session state
 - `src/modules/session/` — paper-scoped session history, snapshot apply/capture, silent-turn filter
 - `test/` — regression tests for prompts, parsing, and workflow logic
+
+Coding agents should also read [`AGENTS.md`](./AGENTS.md), which carries the same expectations in agent-facing form.
 
 ## Contribution guidelines
 
