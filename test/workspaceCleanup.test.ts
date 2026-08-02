@@ -99,3 +99,41 @@ test("cleanupWorkspaceIfEnabled refuses paths that do not look like generated pa
     (globalThis as { IOUtils?: unknown }).IOUtils = previousIOUtils;
   }
 });
+
+test("item cleanup resolves the same stable workspace path after preparation throws", async () => {
+  const previousZotero = (globalThis as { Zotero?: unknown }).Zotero;
+  const previousIOUtils = (globalThis as { IOUtils?: unknown }).IOUtils;
+  const removed: string[] = [];
+
+  (globalThis as { Zotero?: unknown }).Zotero = {
+    Prefs: {
+      get: (key: string) => {
+        if (key.endsWith("codexAutoCleanWorkspace")) return true;
+        if (key.endsWith("codexWorkspaceRoot")) return "/tmp/custom-root";
+        return undefined;
+      },
+    },
+  };
+  (globalThis as { IOUtils?: unknown }).IOUtils = {
+    remove: async (path: string) => {
+      removed.push(path);
+    },
+  };
+
+  try {
+    const { cleanupPaperWorkspaceForItemIfEnabled } = await import(
+      "../src/modules/workspace/cleanup"
+    );
+    assert.equal(
+      await cleanupPaperWorkspaceForItemIfEnabled({
+        itemID: 73,
+        title: "Stable Workspace",
+      }),
+      true,
+    );
+    assert.deepEqual(removed, ["/tmp/custom-root/73-stable-workspace"]);
+  } finally {
+    (globalThis as { Zotero?: unknown }).Zotero = previousZotero;
+    (globalThis as { IOUtils?: unknown }).IOUtils = previousIOUtils;
+  }
+});

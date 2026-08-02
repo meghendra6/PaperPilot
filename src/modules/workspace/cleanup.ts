@@ -1,4 +1,5 @@
 import { getPref } from "../../utils/prefs";
+import { buildPaperWorkspacePath } from "./pathBuilder";
 
 declare const IOUtils: any;
 declare const Zotero: any;
@@ -50,4 +51,20 @@ export async function cleanupWorkspaceIfEnabled(workspacePath: string) {
   } catch {
     return false;
   }
+}
+
+export async function cleanupPaperWorkspaceForItemIfEnabled(params: {
+  itemID: number;
+  title: string;
+}) {
+  const workspaceRoot = String(
+    getPref("codexWorkspaceRoot") || "/tmp/zotero-paper-ai",
+  );
+  return cleanupWorkspaceIfEnabled(
+    buildPaperWorkspacePath({
+      root: workspaceRoot,
+      itemID: params.itemID,
+      title: params.title,
+    }),
+  );
 }

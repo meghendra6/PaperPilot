@@ -182,8 +182,6 @@ export function createPaneHeader(params: {
     codexAuthButton,
     codexDeviceAuthButton,
     codexRecheckButton,
-    codexRetryButton,
-    codexCancelButton,
   );
 
   const policyWarning = doc.createElement("div");

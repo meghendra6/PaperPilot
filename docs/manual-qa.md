@@ -35,7 +35,10 @@ Use this checklist inside real Zotero 7, 8, and 9 runtimes before claiming readi
 - [ ] Complete a workbench or related-papers action while its section is collapsed and confirm only its summary/update dot changes—the section must not open itself
 - [ ] Open the engine/model popover, switch each engine, save a model/effort selection, and confirm the existing preferences update
 - [ ] While a provider run is active, attempt to switch providers and confirm the switch is blocked without clearing the active poller; after completion, switching works normally
-- [ ] During workspace preparation and terminal cleanup, attempt New session, saved-session Open/Delete, and Codex Cancel; confirm session replacement is blocked and no old workflow result appears in a new session
+- [ ] During workspace preparation, Retry persistence, a direct Auto Highlight/Related run, and terminal cleanup, attempt New session and saved-session Open/Delete; confirm session replacement is blocked and no old workflow result appears in a new session
+- [ ] Delay the session-transition cleanup await, then try chat, Retry, Auto Highlight, and Related Papers; confirm the transition token blocks every new admission until Open/New/Delete and rerender finish
+- [ ] Delay normal chat reader-context/user-turn persistence, then try New/Open/Delete and a direct workflow; confirm the chat admission token blocks them until the controller owns the run
+- [ ] While New/Open/Delete owns the session-transition token, click Workbench, Compare, initial/submit Mastery, and End Mastery/final-report actions; confirm none enters a running state or persists an old-session completion callback
 - [ ] Complete one Paper Mastery evaluation that generates a follow-up question and one that generates the final report; confirm both nested runs start after the parent cleanup instead of reporting an active-run conflict
 - [ ] Cancel a running Codex-backed Workbench or Paper Mastery request; confirm its workflow leaves the running/evaluating state, remains cancelled after the next poll interval, and can be started again
 - [ ] Confirm the engine/model popover closes on outside click and Escape; Escape returns focus to its trigger
@@ -47,6 +50,34 @@ Use this checklist inside real Zotero 7, 8, and 9 runtimes before claiming readi
 - [ ] Refresh the custom section with Paper Mastery awaiting an answer and after completion; confirm the current question, score, and final report rehydrate without starting a second run
 - [ ] Click `Restart Paper Mastery` after completion and confirm cancellation preserves the old session while confirmation explicitly replaces it
 
+### Reader pane redesign — Phase C run feedback
+
+- [ ] Run each engine and confirm the compact card advances through `Preparing workspace`, `Running`, and `Finishing`, with elapsed time updating once per second
+- [ ] Start a run on paper A, open paper B, and confirm B never shows A's progress, cancel, failure, or Retry state; return to A and confirm its state remains connected
+- [ ] Cancel a running Codex, Claude, and Gemini request from the same card; confirm the process stops, silent workflows unlock, and no later poll overwrites `Cancelled`
+- [ ] Cancel each engine while it still says `Preparing workspace`, immediately try to start or Retry another request, and confirm the replacement is blocked until the old preparation/cleanup settles; confirm the replacement workspace is not deleted
+- [ ] While a chat run is preparing or a cancelled preparation is settling, try Auto Highlight and Related Papers; then reverse the order and try chat while either direct workflow is running. Confirm every overlapping request is blocked per paper
+- [ ] For a CLI wrapper that starts child processes and ignores `TERM`, cancel the run and confirm the recorded process and its descendants are no longer alive after the bounded `KILL` escalation
+- [ ] Force the process-stop executor to fail; confirm chat keeps the active pid/Cancel ownership, direct workflows keep their item reservation, no workspace cleanup/replacement starts, and the UI reports that termination was not confirmed
+- [ ] Cancel during workspace preparation, then make the late process's first stop fail; confirm the same run returns to Running with Cancel, and a second Cancel can terminate and settle it without restarting Zotero
+- [ ] Return a started run without a numeric pid; confirm Cancel/timeout treats it as an unconfirmed stop and retains the same lifecycle barrier rather than unlocking
+- [ ] Return pid `0` or `1`; confirm it is rejected before any kill command is executed and the run remains owned for safe recovery/restart
+- [ ] Leave an old completed Codex state with a recorded pid, then change sessions; confirm the terminal pid is cleared without signaling that process
+- [ ] Force Codex assistant-turn persistence to fail after process completion; confirm pending ownership settles but the terminal Codex state contains no pid and session cleanup signals nothing
+- [ ] Fail one normal chat request for each engine, click Retry, and confirm the same question runs through the original engine; confirm Workbench/Mastery failures do not replace this retry target
+- [ ] Double-click Retry and confirm only one user turn/run is created; switch to another saved session and confirm the old failure card does not replay its request into the new session
+- [ ] While Retry persistence is delayed, start Auto Highlight/Related Papers and reverse the order; confirm the second claim is rejected before another user turn or direct workflow side effect is stored
+- [ ] Click Related Papers while Retry or a session transition owns the item; confirm rejection does not clear existing groups or persist a failure into either session
+- [ ] Set the Claude/Gemini executable path to a missing binary and confirm the card says the executable was not found, offers `Open settings`, and opens the fixed Paper Pilot preference pane
+- [ ] Set the Codex path to a missing binary: when another healthy Codex candidate exists, confirm the existing resolver recovers to it; in an environment/test seam with no healthy candidate, confirm the same executable-missing card and settings action
+- [ ] Test logged-out Codex and Claude states; confirm the card classifies authentication, offers `Login help`, and keeps raw CLI output under the collapsed `Raw logs` disclosure
+- [ ] Use a successful CLI wrapper that prints `answer` to stdout and a unique local-path marker to stderr; confirm only `answer` reaches live/restored chat and the marker remains diagnostic-only
+- [ ] Make Auto Highlight and Related Papers exit non-zero with only a unique local-path marker on stderr; confirm both surfaces show a generic failure and never render the marker
+- [ ] Force workspace artifact writing to throw after the per-paper directory is created; with automatic cleanup enabled, confirm the partial stable workspace is removed before a replacement can start
+- [ ] Exercise a non-writable workspace and the timeout lifecycle test seam; confirm they become `workspace_error` and `timeout`, not guessed login/executable failures
+- [ ] Complete a Paper Mastery turn that immediately starts a follow-up; confirm the child stays `Preparing`/`Running`, retains its PID/Cancel action, and the parent does not replace it with `Completed`
+- [ ] Refresh or destroy the pane during a run and confirm only one elapsed timer remains; after a terminal state, no timer continues updating the detached pane
+
 ## 2. Mode behavior
 
 - [ ] Switch to `Gemini CLI`
@@ -54,7 +85,7 @@ Use this checklist inside real Zotero 7, 8, and 9 runtimes before claiming readi
 - [ ] Switch to `Claude Code`
 - [ ] Confirm Claude Code model controls and mode messaging update correctly
 - [ ] Switch to `Codex CLI`
-- [ ] Confirm Codex run-state card and model controls render
+- [ ] Confirm the unified run-progress card and Codex model controls render
 - [ ] Confirm per-paper mode override does not affect another document unexpectedly
 
 ## 3. Reader actions

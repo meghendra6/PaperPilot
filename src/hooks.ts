@@ -2,7 +2,10 @@ import { config } from "../package.json";
 import { getString, initLocale } from "./utils/locale";
 import { registerPrefsScripts } from "./modules/preferenceScript";
 import { createZToolkit } from "./utils/ztoolkit";
-import { registerPaperPilotPaneSection } from "./modules/readerPane";
+import {
+  disposeReaderPaneRunProgressCards,
+  registerPaperPilotPaneSection,
+} from "./modules/readerPane";
 import { clearClaudePollerForItem } from "./modules/claude/poller";
 import { clearCodexPollerForItem } from "./modules/codex/poller";
 import { clearGeminiPollerForItem } from "./modules/gemini/poller";
@@ -10,6 +13,7 @@ import {
   registerReaderActionPlaceholders,
   unregisterReaderActionPlaceholders,
 } from "./modules/readerActions";
+import { PAPER_PILOT_PREF_PANE_ID } from "./modules/ui/runProgressCard";
 
 async function onStartup() {
   await Promise.all([
@@ -19,7 +23,7 @@ async function onStartup() {
   ]);
 
   initLocale();
-  registerPreferencePane();
+  await registerPreferencePane();
   registerPaperPilotPaneSection();
   registerReaderActionPlaceholders();
   await Promise.all(Zotero.getMainWindows().map(onMainWindowLoad));
@@ -50,8 +54,9 @@ async function onMainWindowLoad(win: Window) {
   registerPaperPilotPaneSection();
 }
 
-function registerPreferencePane() {
-  Zotero.PreferencePanes.register({
+async function registerPreferencePane() {
+  await Zotero.PreferencePanes.register({
+    id: PAPER_PILOT_PREF_PANE_ID,
     pluginID: config.addonID,
     src: `${rootURI}chrome/content/preferences.xhtml`,
     label: getString("prefs-title"),
@@ -60,6 +65,7 @@ function registerPreferencePane() {
 }
 
 function onShutdown(): void {
+  disposeReaderPaneRunProgressCards();
   addon.data.codexRunPollers?.forEach((_poller, itemID) =>
     clearCodexPollerForItem(itemID),
   );
@@ -69,7 +75,11 @@ function onShutdown(): void {
   addon.data.geminiRunPollers?.forEach((_poller, itemID) =>
     clearGeminiPollerForItem(itemID),
   );
-  addon.data.codexPendingCompletions?.clear();
+  addon.data.pendingEngineCompletions?.forEach((pending) =>
+    pending.cancelTimeout?.(),
+  );
+  addon.data.pendingEngineCompletions?.clear();
+  addon.data.runProgressStates?.clear();
   unregisterReaderActionPlaceholders();
   ztoolkit.unregisterAll();
   addon.data.dialog?.window?.close();

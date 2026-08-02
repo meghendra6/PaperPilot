@@ -7,6 +7,7 @@ import {
   setGeminiRunStateForItem,
 } from "../src/modules/gemini/runState";
 import { stopGeminiRunSilently } from "../src/modules/gemini/stopRun";
+import { buildKillProcessTreeScript } from "../src/modules/ai/runCompletion";
 
 test("stopGeminiRunSilently kills the active pid and clears run state and poller state", async () => {
   const previousAddon = (globalThis as { addon?: unknown }).addon;
@@ -37,7 +38,7 @@ test("stopGeminiRunSilently kills the active pid and clears run state and poller
     assert.deepEqual(execCalls, [
       {
         command: "/bin/zsh",
-        args: ["-lc", "kill 5234 >/dev/null 2>&1 || true"],
+        args: ["-lc", buildKillProcessTreeScript("5234")],
       },
     ]);
     assert.equal(

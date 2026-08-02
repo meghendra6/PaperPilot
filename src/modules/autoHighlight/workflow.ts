@@ -16,10 +16,14 @@ import { formatAutoHighlightSummary } from "./status";
 import type { AutoHighlightResult } from "./types";
 import {
   extractWorkspaceRunText,
+  claimWorkspaceRunReservation,
   getWorkspaceEngineLabel,
+  getWorkspaceEngineActiveMessage,
   readWorkspaceRunProgress,
+  releaseWorkspaceRunReservation,
   startWorkspaceTextRun,
 } from "../ai/workspaceRun";
+import { stopDetachedRunProcess } from "../ai/runCompletion";
 import { getModeForItem } from "../ai/modeStore";
 import { cleanupWorkspaceIfEnabled } from "../workspace/cleanup";
 
@@ -46,6 +50,8 @@ async function getActiveReader() {
 async function waitForWorkspaceText(params: {
   itemID: number;
   modeItemID: number;
+  reservationToken: symbol;
+  onTerminationFailure: () => void;
   title: string;
   question: string;
   onStatus?: (status: string) => void;
@@ -55,21 +61,28 @@ async function waitForWorkspaceText(params: {
   const started = await startWorkspaceTextRun({
     mode,
     itemID: params.itemID,
+    reservationItemID: params.modeItemID,
+    reservationToken: params.reservationToken,
     title: params.title,
     sessionId: `auto-highlight-${params.itemID}`,
     question: params.question,
+  }).catch(() => {
+    throw new Error(`${engineLabel} highlight run could not start.`);
   });
 
   if (!started.ok) {
     await cleanupWorkspaceIfEnabled(started.workspacePath);
-    throw new Error(started.error);
+    throw new Error(`${engineLabel} highlight run could not start.`);
   }
 
   let completed = false;
+  let responseText: string | undefined;
+  let runError: unknown;
   try {
     for (let attempts = 0; attempts < 300; attempts += 1) {
       const progress = await readWorkspaceRunProgress(mode, {
         outputPath: started.outputPath,
+        stderrPath: started.stderrPath,
         exitCodePath: started.exitCodePath,
       });
 
@@ -79,7 +92,8 @@ async function waitForWorkspaceText(params: {
         if (progress.exitCode !== "0") {
           throw new Error(parsedText || `${engineLabel} highlight run failed.`);
         }
-        return parsedText;
+        responseText = parsedText;
+        break;
       }
 
       if (attempts === 0) {
@@ -88,12 +102,32 @@ async function waitForWorkspaceText(params: {
       await sleep(800);
     }
 
-    throw new Error(`${engineLabel} highlight run timed out.`);
-  } finally {
-    if (completed) {
-      await cleanupWorkspaceIfEnabled(started.workspacePath);
+    if (!completed) {
+      throw new Error(`${engineLabel} highlight run timed out.`);
+    }
+  } catch (error) {
+    runError = error;
+  }
+
+  let stopError: unknown;
+  if (!completed) {
+    try {
+      await stopDetachedRunProcess(started.processId, {
+        requireProcessId: true,
+      });
+    } catch (error) {
+      stopError = error;
     }
   }
+  if (stopError) {
+    params.onTerminationFailure();
+    throw new Error(
+      `${engineLabel} highlight process could not be stopped. Its workspace remains reserved until Zotero restarts.`,
+    );
+  }
+  await cleanupWorkspaceIfEnabled(started.workspacePath);
+  if (runError) throw runError;
+  return responseText ?? "";
 }
 
 async function resolveOpenPDFAttachment(itemID: number) {
@@ -126,90 +160,114 @@ export async function runAutoHighlightWorkflow(params: {
   itemTitle: string;
   onStatus?: (status: string) => void;
 }): Promise<{ result: AutoHighlightResult; summary: string }> {
-  const { attachment, reader } = await resolveOpenPDFAttachment(params.itemID);
-
-  const rawResponse = await waitForWorkspaceText({
-    itemID: attachment.id,
-    modeItemID: params.itemID,
-    title: params.itemTitle,
-    question: buildAutoHighlightQuestion(DEFAULT_AUTO_HIGHLIGHT_LIMIT),
-    onStatus: params.onStatus,
-  });
-  const candidates = await parseHighlightCandidatesWithRepair({
-    itemID: attachment.id,
-    title: params.itemTitle,
-    rawResponse,
-    onStatus: params.onStatus,
-    requestText: (requestParams) =>
-      waitForWorkspaceText({
-        ...requestParams,
-        modeItemID: params.itemID,
-      }),
-  });
-
-  params.onStatus?.("Matching quotes to PDF…");
-  const filePath = await attachment.getFilePathAsync();
-  if (!filePath) {
-    throw new Error("Could not locate the current PDF file on disk.");
-  }
-
-  const pages =
-    reader?.type === "pdf"
-      ? await extractPdfTextPagesFromReader(
-          reader as Parameters<typeof extractPdfTextPagesFromReader>[0],
-        )
-      : await extractPdfTextPages(filePath);
-  if (!pages.length) {
-    throw new Error("Could not extract readable PDF text geometry.");
-  }
-
-  const existingAnnotations = attachment.getAnnotations();
-  const createdItems: Zotero.Item[] = [];
-  let skipped = 0;
-  let unmatched = 0;
-
-  for (const candidate of candidates) {
-    const match = matchQuoteInPages(candidate.quote, pages);
-    if (!match) {
-      unmatched += 1;
-      continue;
-    }
-
-    if (isDuplicateHighlight(existingAnnotations, match)) {
-      skipped += 1;
-      continue;
-    }
-
-    const payload = buildHighlightAnnotationJSON(match);
-    const saved = await Zotero.Annotations.saveFromJSON(
-      attachment,
-      payload as unknown as Parameters<
-        typeof Zotero.Annotations.saveFromJSON
-      >[1],
+  const mode = getModeForItem(params.itemID);
+  const reservationToken = claimWorkspaceRunReservation(mode, params.itemID);
+  if (!reservationToken) {
+    throw new Error(
+      getWorkspaceEngineActiveMessage(mode, "automatic highlighting"),
     );
-    existingAnnotations.push(saved);
-    createdItems.push(saved);
   }
 
-  if (
-    createdItems.length &&
-    reader?.itemID === attachment.id &&
-    reader.setAnnotations
-  ) {
-    await reader.setAnnotations(createdItems);
-  }
-
-  const result: AutoHighlightResult = {
-    created: createdItems.length,
-    skipped,
-    unmatched,
-    totalCandidates: candidates.length,
+  let releaseReservation = true;
+  const retainReservationAfterStopFailure = () => {
+    releaseReservation = false;
   };
-  const summary = formatAutoHighlightSummary(result);
+  try {
+    const { attachment, reader } = await resolveOpenPDFAttachment(
+      params.itemID,
+    );
 
-  if (!result.created && !result.skipped) {
-    throw new Error(summary);
+    const rawResponse = await waitForWorkspaceText({
+      itemID: attachment.id,
+      modeItemID: params.itemID,
+      reservationToken,
+      onTerminationFailure: retainReservationAfterStopFailure,
+      title: params.itemTitle,
+      question: buildAutoHighlightQuestion(DEFAULT_AUTO_HIGHLIGHT_LIMIT),
+      onStatus: params.onStatus,
+    });
+    const candidates = await parseHighlightCandidatesWithRepair({
+      itemID: attachment.id,
+      title: params.itemTitle,
+      rawResponse,
+      onStatus: params.onStatus,
+      requestText: (requestParams) =>
+        waitForWorkspaceText({
+          ...requestParams,
+          modeItemID: params.itemID,
+          reservationToken,
+          onTerminationFailure: retainReservationAfterStopFailure,
+        }),
+    });
+
+    params.onStatus?.("Matching quotes to PDF…");
+    const filePath = await attachment.getFilePathAsync();
+    if (!filePath) {
+      throw new Error("Could not locate the current PDF file on disk.");
+    }
+
+    const pages =
+      reader?.type === "pdf"
+        ? await extractPdfTextPagesFromReader(
+            reader as Parameters<typeof extractPdfTextPagesFromReader>[0],
+          )
+        : await extractPdfTextPages(filePath);
+    if (!pages.length) {
+      throw new Error("Could not extract readable PDF text geometry.");
+    }
+
+    const existingAnnotations = attachment.getAnnotations();
+    const createdItems: Zotero.Item[] = [];
+    let skipped = 0;
+    let unmatched = 0;
+
+    for (const candidate of candidates) {
+      const match = matchQuoteInPages(candidate.quote, pages);
+      if (!match) {
+        unmatched += 1;
+        continue;
+      }
+
+      if (isDuplicateHighlight(existingAnnotations, match)) {
+        skipped += 1;
+        continue;
+      }
+
+      const payload = buildHighlightAnnotationJSON(match);
+      const saved = await Zotero.Annotations.saveFromJSON(
+        attachment,
+        payload as unknown as Parameters<
+          typeof Zotero.Annotations.saveFromJSON
+        >[1],
+      );
+      existingAnnotations.push(saved);
+      createdItems.push(saved);
+    }
+
+    if (
+      createdItems.length &&
+      reader?.itemID === attachment.id &&
+      reader.setAnnotations
+    ) {
+      await reader.setAnnotations(createdItems);
+    }
+
+    const result: AutoHighlightResult = {
+      created: createdItems.length,
+      skipped,
+      unmatched,
+      totalCandidates: candidates.length,
+    };
+    const summary = formatAutoHighlightSummary(result);
+
+    if (!result.created && !result.skipped) {
+      throw new Error(summary);
+    }
+
+    return { result, summary };
+  } finally {
+    if (releaseReservation) {
+      releaseWorkspaceRunReservation(params.itemID, reservationToken);
+    }
   }
-
-  return { result, summary };
 }

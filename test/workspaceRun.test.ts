@@ -2,10 +2,23 @@ import { test } from "node:test";
 import * as assert from "node:assert/strict";
 
 import {
+  claimWorkspaceRunReservation,
   extractWorkspaceRunText,
   getWorkspaceEngineActiveMessage,
   getWorkspaceEngineLabel,
+  isWorkspaceRunReservedForItem,
+  releaseWorkspaceRunReservation,
 } from "../src/modules/ai/workspaceRun";
+import {
+  claimChatEngineRequest,
+  claimReaderSessionTransition,
+  claimRetryEngineRequest,
+  clearPendingEngineCompletion,
+  registerPendingEngineCompletion,
+  releaseReaderSessionTransition,
+  releaseChatEngineRequest,
+  releaseRetryEngineRequest,
+} from "../src/modules/ai/runLifecycle";
 
 test("workspace run labels cover all configured engines", () => {
   assert.equal(getWorkspaceEngineLabel("codex_cli"), "Codex CLI");
@@ -23,11 +36,12 @@ test("workspace run active messages name the selected engine and task", () => {
   );
 });
 
-test("workspace run text extraction preserves plain text and parses Codex JSONL output", () => {
+test("workspace run text extraction uses parsed stdout without raw stderr fallback", () => {
   assert.equal(
     extractWorkspaceRunText("claude_code", {
       rawOutput: "Plain Claude answer",
       parsedOutput: "Plain Claude answer",
+      exitCode: "0",
     }),
     "Plain Claude answer",
   );
@@ -35,8 +49,78 @@ test("workspace run text extraction preserves plain text and parses Codex JSONL 
     extractWorkspaceRunText("codex_cli", {
       rawOutput:
         '{"type":"item.completed","item":{"type":"agent_message","message":"Codex final answer"}}\n{"type":"reasoning","text":"hidden"}',
-      parsedOutput: "",
+      parsedOutput: "Codex final answer",
+      exitCode: "0",
     }),
     "Codex final answer",
   );
+  assert.equal(
+    extractWorkspaceRunText("claude_code", {
+      rawOutput: "/Users/private/paper stderr marker",
+      parsedOutput: "",
+      exitCode: "1",
+    }),
+    "",
+  );
+  assert.equal(
+    extractWorkspaceRunText("codex_cli", {
+      rawOutput:
+        '{"type":"error","message":"/Users/private/paper stderr marker"}',
+      parsedOutput: "",
+      exitCode: "1",
+    }),
+    "",
+  );
+});
+
+test("workspace reservations block direct runs and pending controller preparation", () => {
+  const previousAddon = (globalThis as { addon?: unknown }).addon;
+  (globalThis as { addon?: unknown }).addon = {
+    data: {
+      pendingEngineCompletions: new Map(),
+      codexRunStates: new Map(),
+      codexRunPollers: new Map(),
+      claudeRunStates: new Map(),
+      claudeRunPollers: new Map(),
+      geminiRunStates: new Map(),
+      geminiRunPollers: new Map(),
+    },
+  };
+
+  try {
+    const reservation = claimWorkspaceRunReservation("codex_cli", 44);
+    assert.ok(reservation);
+    assert.equal(isWorkspaceRunReservedForItem(44), true);
+    assert.equal(claimWorkspaceRunReservation("claude_code", 44), undefined);
+    assert.equal(claimRetryEngineRequest(44), undefined);
+    releaseWorkspaceRunReservation(44, Symbol("stale"));
+    assert.equal(isWorkspaceRunReservedForItem(44), true);
+    releaseWorkspaceRunReservation(44, reservation);
+
+    const controllerToken = Symbol("controller-preparation");
+    registerPendingEngineCompletion(44, {
+      mode: "gemini_cli",
+      token: controllerToken,
+      retryable: false,
+    });
+    assert.equal(claimWorkspaceRunReservation("codex_cli", 44), undefined);
+    clearPendingEngineCompletion(44, controllerToken);
+
+    const retryToken = claimRetryEngineRequest(44);
+    assert.ok(retryToken);
+    assert.equal(claimWorkspaceRunReservation("codex_cli", 44), undefined);
+    releaseRetryEngineRequest(44, retryToken);
+
+    const sessionTransition = claimReaderSessionTransition(44);
+    assert.ok(sessionTransition);
+    assert.equal(claimWorkspaceRunReservation("codex_cli", 44), undefined);
+    releaseReaderSessionTransition(44, sessionTransition);
+
+    const chatToken = claimChatEngineRequest(44);
+    assert.ok(chatToken);
+    assert.equal(claimWorkspaceRunReservation("codex_cli", 44), undefined);
+    releaseChatEngineRequest(44, chatToken);
+  } finally {
+    (globalThis as { addon?: unknown }).addon = previousAddon;
+  }
 });

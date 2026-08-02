@@ -49,14 +49,20 @@ scrolls independently from expanded section bodies.
 
 `src/modules/ai/` is the thin layer over the three engines.
 
-| File                  | Role                                                                     |
-| --------------------- | ------------------------------------------------------------------------ |
-| `types.ts`            | `EngineMode = "codex_cli" \| "claude_code" \| "gemini_cli"`              |
-| `modeStore.ts`        | default mode from prefs, per-item override in `addon.data.modeOverrides` |
-| `providerRegistry.ts` | mode → provider descriptor (label, status)                               |
-| `runCompletion.ts`    | cleanup-before-callback ordering for terminal controller transitions     |
-| `runPresentation.ts`  | item-scoped active-run events that reconnect rebuilt pane DOM            |
-| `workspaceRun.ts`     | mode-dispatching helpers: start a run, read progress, extract text       |
+| File                    | Role                                                                     |
+| ----------------------- | ------------------------------------------------------------------------ |
+| `types.ts`              | `EngineMode = "codex_cli" \| "claude_code" \| "gemini_cli"`              |
+| `modeStore.ts`          | default mode from prefs, per-item override in `addon.data.modeOverrides` |
+| `providerRegistry.ts`   | mode → provider descriptor (label, status)                               |
+| `runCompletion.ts`      | cleanup-before-callback ordering for terminal controller transitions     |
+| `runControl.ts`         | engine-neutral cancellation and silent-workflow release                  |
+| `runFailure.ts`         | source-first failure classification and safe user messages               |
+| `runLifecycle.ts`       | shared progress, retry, and token-aware completion state                 |
+| `runPresentation.ts`    | item-scoped active-run events that reconnect rebuilt pane DOM            |
+| `runProgress.ts`        | pure phase transitions and absolute-deadline calculation                 |
+| `runTimeout.ts`         | one watchdog and timeout completion path shared by all engines           |
+| `retryEngineRequest.ts` | engine-neutral retry dispatch for the last normal chat request           |
+| `workspaceRun.ts`       | mode-dispatching helpers: start a run, read progress, extract text       |
 
 `workspaceRun.ts` is the shared entry point used by non-chat workflows (research
 brief, paper tools, compare, auto-highlight, mastery). It dynamically imports
@@ -93,7 +99,8 @@ polled**:
    this `itemID`.
 2. Before workspace preparation, the controller registers an item-scoped
    activity in `ai/runPresentation.ts`. This keeps provider and session guards
-   active if Zotero rebuilds the pane during extraction or process spawn.
+   active if Zotero rebuilds the pane during extraction or process spawn. It
+   also creates `addon.data.runProgressStates[itemID]` in `Preparing workspace`.
 3. `runner.startXRunForQuestion`:
    - resolves the executable path and reads prefs (model, sandbox, permissions)
    - computes the workspace path: `{workspaceRoot}/{itemID}-{slugified-title}`
@@ -106,12 +113,33 @@ polled**:
    - builds the CLI argv and wraps it in a **detached background shell script**
      (`codex/shell.ts` for Codex; inline in the runner for Claude and Gemini)
    - runs `Zotero.Utilities.Internal.exec("/bin/zsh", ["-lc", script])`
-4. The script redirects stdout+stderr to an output file, writes the exit code to
-   a separate file when done, and echoes the pid to a third file. `exec` returns
-   as soon as the background job is spawned.
+4. The script writes stdout and stderr to separate files, writes the exit code
+   when done, and records the detached shell pid. `exec` returns as soon as the
+   background job is spawned. Cancellation sends `TERM` to the recorded process
+   tree, waits for a bounded grace period, then freezes and `KILL`s any survivors
+   before verifying termination and clearing engine state. Pipeline children
+   therefore do not outlive the card, including wrappers that ignore `TERM`.
+   If the executor cannot confirm termination, the active owner and pid (or the
+   direct-workflow reservation) remain in place and workspace cleanup is not
+   claimed; the UI reports the stop failure instead of unlocking unsafely. A
+   started result or run state must provide a numeric pid—missing pid data is a
+   stop failure, not a successful no-op. The no-pid no-op is reserved for a
+   cancellation that happens before any process exists.
+   Terminal Codex state never retains a killable pid; session cleanup only
+   signals a pid while a poller, running state, or active presentation token
+   proves that it still belongs to the current run. Codex terminalizes that
+   process state before session persistence, so a persistence failure cannot
+   leave a stale killable pid after pending ownership is released. If a process appears after
+   preparation was cancelled and its first stop cannot be confirmed, the same
+   run token is restored to `Running` with Cancel available for another bounded
+   termination attempt; ownership is not released in between.
 5. `controller` starts a `setInterval` at **800 ms** that reads the output file,
-   renders partial text into the chat bubble, and stops once the exit-code file
-   is non-empty.
+   advances the shared card to `Running`, and stops once the exit-code file is
+   non-empty. Codex displays structured assistant output when one is available;
+   no controller renders raw in-flight output. A separate card timer updates
+   only the elapsed-time node every second. The shared watchdog enforces a
+   30-minute absolute limit from workspace preparation onward without treating
+   an empty Claude/Gemini output file as a stall.
 6. On completion the controller sanitizes the text
    (`message/assistantOutput.ts`), persists the turn via
    `session/sessionHistoryService.ts`, updates run state, and calls
@@ -125,15 +153,47 @@ polled**:
    finished, and stale tokens cannot invoke workflow callbacks. A workflow that
    intentionally chains another run (Paper Mastery follow-up or final report)
    passes the active parent token as an explicit continuation guard; unrelated
-   requests remain blocked.
+   requests remain blocked. Progress and terminal completion are generation
+   owned: one controller/timeout/cancel path can claim a token, and an older
+   parent finalizer cannot overwrite a chained child. Cancellation during
+   workspace preparation keeps a per-item barrier until the old runner settles
+   and finishes cleanup, preventing a retry from sharing or deleting its stable
+   workspace. Direct Auto Highlight and Related Papers runs use the same
+   item-scoped reservation boundary, so controller and direct workspace runs
+   cannot overlap either. Pending controller completion, direct reservations,
+   and Retry claims also block session replacement until their owner settles;
+   Normal chat acquires an admission token before reader-context and user-turn
+   persistence awaits; Retry and direct workflows acquire the same mutually
+   exclusive item-token kind before their first side effect. Silent Workbench,
+   Compare, and Mastery workflows enter `running` and enable their persistence
+   callback only after that chat admission succeeds; rejected admission invokes
+   no completion callback. Session
+   Open/New/Delete acquires its own item token before the first cleanup await and
+   keeps it until the session mutation and pane rerender complete. Related Papers
+   invokes its state/persistence callback before releasing the direct
+   reservation, and a rejected reservation invokes no workflow persistence
+   callback.
+   If preparation throws after creating a stable workspace, the controller or
+   direct-run dispatcher computes that same path and applies configured cleanup.
+
+Failures are classified in `ai/runFailure.ts`. Workspace and timeout sources
+take precedence over string matching; executable and login patterns cover all
+three CLIs. Session history stores the safe `userMessage` as replayable text and
+keeps raw stderr only in `rawEvent`, which the run card exposes under a collapsed
+Raw logs disclosure. Direct workspace workflows likewise derive visible text
+only from parsed stdout; a non-zero exit without parsed stdout becomes a generic
+workflow error instead of exposing stderr. `ui/runProgressCard.ts` renders the
+same progress, cancel, retry, settings, and login-help surface for every engine.
+Only normal chat turns enter `addon.data.lastEngineRequests`; silent Workbench
+and Paper Mastery runs continue to use their own workflow buttons.
 
 Per-engine file names inside the workspace:
 
-| Engine | prompt              | output               | exit code         | pid              |
-| ------ | ------------------- | -------------------- | ----------------- | ---------------- |
-| Codex  | `prompt.txt`        | `codex-output.jsonl` | `codex-exit.txt`  | `codex-pid.txt`  |
-| Claude | `claude-prompt.txt` | `claude-output.txt`  | `claude-exit.txt` | `claude-pid.txt` |
-| Gemini | `gemini-prompt.txt` | `gemini-output.txt`  | `gemini-exit.txt` | `gemini-pid.txt` |
+| Engine | prompt              | stdout               | stderr              | exit code         | pid              |
+| ------ | ------------------- | -------------------- | ------------------- | ----------------- | ---------------- |
+| Codex  | `prompt.txt`        | `codex-output.jsonl` | `codex-stderr.log`  | `codex-exit.txt`  | `codex-pid.txt`  |
+| Claude | `claude-prompt.txt` | `claude-output.txt`  | `claude-stderr.log` | `claude-exit.txt` | `claude-pid.txt` |
+| Gemini | `gemini-prompt.txt` | `gemini-output.txt`  | `gemini-stderr.log` | `gemini-exit.txt` | `gemini-pid.txt` |
 
 Codex emits JSONL events, so `outputParser.ts` extracts the assistant text and
 the resumable `thread_id`. Claude runs with `-p --output-format text` and Gemini

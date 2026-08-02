@@ -327,7 +327,7 @@
 .pp-run-state {
   flex: 0 1 auto;
   min-height: 0;
-  max-height: 72px;
+  max-height: 132px;
   margin: 6px 0;
   padding: 6px 8px;
   overflow-y: auto;
@@ -337,7 +337,51 @@
   border: 1px solid var(--pp-border-status-info);
   font-size: var(--pp-font-size-sm);
   color: var(--pp-text-run-state);
+  white-space: normal;
+}
+
+.pp-run-progress__header,
+.pp-run-progress__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pp-run-progress__header span {
+  flex: 1;
+  color: var(--pp-text-secondary);
+}
+
+.pp-run-progress__header time {
+  color: var(--pp-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.pp-run-progress__body:not(:empty),
+.pp-run-progress__actions:not(:empty) {
+  margin-top: 6px;
+}
+
+.pp-run-progress__message {
+  color: var(--pp-text-primary);
+}
+
+.pp-run-progress__body details {
+  margin-top: 5px;
+}
+
+.pp-run-progress__body summary {
+  cursor: pointer;
+  color: var(--pp-text-link);
+}
+
+.pp-run-progress__body pre {
+  max-height: 72px;
+  margin: 5px 0 0;
+  overflow: auto;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--pp-text-muted);
 }
 
 /* ============================================================

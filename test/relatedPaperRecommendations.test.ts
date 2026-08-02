@@ -8,10 +8,47 @@ import {
   buildRelatedPaperQuestion,
   chooseCollectionForRecommendation,
   findExistingLibraryItem,
+  generateRelatedPaperGroups,
   normalizeDOI,
   openRecommendedPaper,
   parseRelatedPaperResponse,
 } from "../src/modules/relatedRecommendations";
+import {
+  claimRetryEngineRequest,
+  releaseRetryEngineRequest,
+} from "../src/modules/ai/runLifecycle";
+
+test("rejected Related admission does not invoke persistence callbacks", async () => {
+  const previousAddon = (globalThis as { addon?: unknown }).addon;
+  (globalThis as { addon?: unknown }).addon = {
+    data: { modeOverrides: new Map([[91, "codex_cli"]]) },
+  };
+  const retryToken = claimRetryEngineRequest(91);
+  assert.ok(retryToken);
+  let reservedCallbacks = 0;
+  let failureCallbacks = 0;
+
+  try {
+    await assert.rejects(
+      generateRelatedPaperGroups({
+        itemID: 91,
+        itemTitle: "Paper",
+        onReserved: () => {
+          reservedCallbacks += 1;
+        },
+        onFailure: () => {
+          failureCallbacks += 1;
+        },
+      }),
+      /already active/i,
+    );
+    assert.equal(reservedCallbacks, 0);
+    assert.equal(failureCallbacks, 0);
+  } finally {
+    releaseRetryEngineRequest(91, retryToken);
+    (globalThis as { addon?: unknown }).addon = previousAddon;
+  }
+});
 
 test("parseRelatedPaperResponse extracts fenced JSON and sorts preferred categories and scores", () => {
   const response = parseRelatedPaperResponse(`Here you go:\n\n\

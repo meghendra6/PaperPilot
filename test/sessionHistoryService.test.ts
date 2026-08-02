@@ -667,6 +667,51 @@ test("SessionHistoryService.persistAssistantTurn with suppressMessage skips chat
   }
 });
 
+test("SessionHistoryService keeps raw failure diagnostics out of replayed message text", async () => {
+  const { globals, repository, service } = createService({
+    saveDocumentSessions: true,
+    privacyStoreLocalHistory: true,
+    privacySavePromptsOnly: false,
+    privacySaveResponses: true,
+  });
+
+  try {
+    const session = service.ensureDraftSession({
+      itemID: 603,
+      mode: "claude_code",
+    });
+    const userMessage =
+      "Claude Code executable could not be found. Check its path in Paper Pilot settings.";
+    const rawError = "secret-local-stderr-marker: ENOENT /private/bin/claude";
+
+    await service.persistAssistantTurn({
+      itemID: 603,
+      sessionId: session.sessionId,
+      mode: "claude_code",
+      paperTitle: "Failure replay paper",
+      assistantText: userMessage,
+      success: false,
+      rawEvent: rawError,
+    });
+
+    const liveMessage = messageStore.listRaw(session.sessionId).at(-1);
+    assert.equal(liveMessage?.text, userMessage);
+    assert.equal(liveMessage?.text.includes(rawError), false);
+    assert.equal(liveMessage?.rawEvent, rawError);
+
+    const saved = await repository.readSessionSnapshot(603, session.sessionId);
+    const savedMessage = saved?.messages?.at(-1);
+    assert.equal(savedMessage?.text, userMessage);
+    assert.equal(savedMessage?.text.includes(rawError), false);
+    assert.equal(savedMessage?.rawEvent, rawError);
+
+    messageStore.clear(session.sessionId);
+    sessionStore.reset(603, "claude_code");
+  } finally {
+    globals.restore();
+  }
+});
+
 test("SessionHistoryService.persistAssistantTurn with suppressMessage skips message push on the late-completion branch", async () => {
   const { globals, repository, service } = createService({
     saveDocumentSessions: true,

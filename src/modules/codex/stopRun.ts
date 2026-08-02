@@ -1,4 +1,8 @@
-import { finishReaderRunsForMode } from "../ai/runPresentation";
+import {
+  finishReaderRunsForMode,
+  getActiveReaderRunMode,
+} from "../ai/runPresentation";
+import { stopDetachedRunProcess } from "../ai/runCompletion";
 import { clearCodexPollerForItem } from "./poller";
 import { clearCodexRunStateForItem } from "./runState";
 
@@ -8,17 +12,22 @@ declare const Zotero: any;
 export async function stopCodexRunSilently(params: {
   itemID: number;
   clearRunState?: boolean;
+  finishPresentation?: boolean;
 }) {
   const runState = addon.data.codexRunStates?.get(params.itemID);
+  const shouldStopProcess = Boolean(
+    addon.data.codexRunPollers?.has(params.itemID) ||
+      runState?.runStatus === "running" ||
+      (runState && getActiveReaderRunMode(params.itemID) === "codex_cli"),
+  );
   clearCodexPollerForItem(params.itemID);
-  finishReaderRunsForMode(params.itemID, "codex_cli");
-  const pid = runState?.processId;
-  if (pid) {
-    await Zotero.Utilities.Internal.exec("/bin/zsh", [
-      "-lc",
-      `kill ${pid} >/dev/null 2>&1 || true`,
-    ]);
+  if (params.finishPresentation !== false) {
+    finishReaderRunsForMode(params.itemID, "codex_cli");
   }
+  const pid = shouldStopProcess ? runState?.processId : undefined;
+  await stopDetachedRunProcess(pid, {
+    requireProcessId: shouldStopProcess,
+  });
   if (runState && params.clearRunState !== false) {
     clearCodexRunStateForItem(params.itemID);
   }
