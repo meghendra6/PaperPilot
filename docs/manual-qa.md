@@ -21,6 +21,7 @@ Use this checklist inside real Zotero 7, 8, and 9 runtimes before claiming readi
 
 - [ ] In Zotero light mode, confirm the pane background, text, dividers, inputs, and buttons blend with the native item pane
 - [ ] In Zotero dark mode, confirm the same surfaces follow the native theme without low-contrast text or borders
+- [ ] Confirm body links and 11–12px accent labels remain readable in both themes; native accent binding is limited to non-text indicators and borders
 - [ ] Temporarily unset the inspected Zotero theme variables and confirm Paper Pilot falls back to its light/dark literals
 - [ ] Tab through every native button, input, select, and textarea and confirm the native-colored focus ring remains visible
 - [ ] On Windows, confirm focus uses Zotero's visible inner and outer ring; on macOS/Linux, confirm the native single ring remains visible

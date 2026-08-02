@@ -63,7 +63,7 @@
   --pp-border-compare-ready: #cfe9d6;
 
   --pp-border-hr: #d1d5db;
-  --pp-text-link: var(--accent-blue, #2563eb);
+  --pp-text-link: #2563eb;
   --pp-accent: var(--accent-blue, #2563eb);
   --pp-focus-color: var(--color-focus-border, #2563eb);
   --pp-focus-width: var(--width-focus-border, 2px);
@@ -151,7 +151,7 @@
     --pp-border-compare-ready: #2a4032;
 
     --pp-border-hr: #4a4f58;
-    --pp-text-link: var(--accent-blue, #60a5fa);
+    --pp-text-link: #60a5fa;
     --pp-accent: var(--accent-blue, #2563eb);
     --pp-focus-color: var(--color-focus-border, #60a5fa);
     --pp-focus-width: var(--width-focus-border, 2px);
@@ -1453,7 +1453,7 @@
 }
 
 .pp-mastery-history-section--question .pp-mastery-history-label {
-  color: var(--pp-accent, #1976d2);
+  color: var(--pp-text-link);
 }
 
 .pp-mastery-history-section--answer .pp-mastery-history-label {
