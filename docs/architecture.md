@@ -127,7 +127,12 @@ polled**:
    cancellation that happens before any process exists.
    Terminal Codex state never retains a killable pid; session cleanup only
    signals a pid while a poller, running state, or active presentation token
-   proves that it still belongs to the current run.
+   proves that it still belongs to the current run. Codex terminalizes that
+   process state before session persistence, so a persistence failure cannot
+   leave a stale killable pid after pending ownership is released. If a process appears after
+   preparation was cancelled and its first stop cannot be confirmed, the same
+   run token is restored to `Running` with Cancel available for another bounded
+   termination attempt; ownership is not released in between.
 5. `controller` starts a `setInterval` at **800 ms** that reads the output file,
    advances the shared card to `Running`, and stops once the exit-code file is
    non-empty. Codex displays structured assistant output when one is available;
@@ -157,11 +162,14 @@ polled**:
    item-scoped reservation boundary, so controller and direct workspace runs
    cannot overlap either. Pending controller completion, direct reservations,
    and Retry claims also block session replacement until their owner settles;
-   Retry admission checks the direct reservation before persisting another user
-   turn, and direct admission checks the Retry claim. Session Open/New/Delete
-   acquires its own item token before the first cleanup await and keeps it until
-   the session mutation and pane rerender complete. Related Papers invokes its
-   state/persistence callback before releasing the direct reservation.
+   Normal chat acquires an admission token before reader-context and user-turn
+   persistence awaits; Retry and direct workflows acquire the same mutually
+   exclusive item-token kind before their first side effect. Session
+   Open/New/Delete acquires its own item token before the first cleanup await and
+   keeps it until the session mutation and pane rerender complete. Related Papers
+   invokes its state/persistence callback before releasing the direct
+   reservation, and a rejected reservation invokes no workflow persistence
+   callback.
    If preparation throws after creating a stable workspace, the controller or
    direct-run dispatcher computes that same path and applies configured cleanup.
 

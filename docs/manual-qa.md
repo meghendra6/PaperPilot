@@ -37,6 +37,7 @@ Use this checklist inside real Zotero 7, 8, and 9 runtimes before claiming readi
 - [ ] While a provider run is active, attempt to switch providers and confirm the switch is blocked without clearing the active poller; after completion, switching works normally
 - [ ] During workspace preparation, Retry persistence, a direct Auto Highlight/Related run, and terminal cleanup, attempt New session and saved-session Open/Delete; confirm session replacement is blocked and no old workflow result appears in a new session
 - [ ] Delay the session-transition cleanup await, then try chat, Retry, Auto Highlight, and Related Papers; confirm the transition token blocks every new admission until Open/New/Delete and rerender finish
+- [ ] Delay normal chat reader-context/user-turn persistence, then try New/Open/Delete and a direct workflow; confirm the chat admission token blocks them until the controller owns the run
 - [ ] Complete one Paper Mastery evaluation that generates a follow-up question and one that generates the final report; confirm both nested runs start after the parent cleanup instead of reporting an active-run conflict
 - [ ] Cancel a running Codex-backed Workbench or Paper Mastery request; confirm its workflow leaves the running/evaluating state, remains cancelled after the next poll interval, and can be started again
 - [ ] Confirm the engine/model popover closes on outside click and Escape; Escape returns focus to its trigger
@@ -57,11 +58,14 @@ Use this checklist inside real Zotero 7, 8, and 9 runtimes before claiming readi
 - [ ] While a chat run is preparing or a cancelled preparation is settling, try Auto Highlight and Related Papers; then reverse the order and try chat while either direct workflow is running. Confirm every overlapping request is blocked per paper
 - [ ] For a CLI wrapper that starts child processes and ignores `TERM`, cancel the run and confirm the recorded process and its descendants are no longer alive after the bounded `KILL` escalation
 - [ ] Force the process-stop executor to fail; confirm chat keeps the active pid/Cancel ownership, direct workflows keep their item reservation, no workspace cleanup/replacement starts, and the UI reports that termination was not confirmed
+- [ ] Cancel during workspace preparation, then make the late process's first stop fail; confirm the same run returns to Running with Cancel, and a second Cancel can terminate and settle it without restarting Zotero
 - [ ] Return a started run without a numeric pid; confirm Cancel/timeout treats it as an unconfirmed stop and retains the same lifecycle barrier rather than unlocking
 - [ ] Leave an old completed Codex state with a recorded pid, then change sessions; confirm the terminal pid is cleared without signaling that process
+- [ ] Force Codex assistant-turn persistence to fail after process completion; confirm pending ownership settles but the terminal Codex state contains no pid and session cleanup signals nothing
 - [ ] Fail one normal chat request for each engine, click Retry, and confirm the same question runs through the original engine; confirm Workbench/Mastery failures do not replace this retry target
 - [ ] Double-click Retry and confirm only one user turn/run is created; switch to another saved session and confirm the old failure card does not replay its request into the new session
 - [ ] While Retry persistence is delayed, start Auto Highlight/Related Papers and reverse the order; confirm the second claim is rejected before another user turn or direct workflow side effect is stored
+- [ ] Click Related Papers while Retry or a session transition owns the item; confirm rejection does not clear existing groups or persist a failure into either session
 - [ ] Set the Claude/Gemini executable path to a missing binary and confirm the card says the executable was not found, offers `Open settings`, and opens the fixed Paper Pilot preference pane
 - [ ] Set the Codex path to a missing binary: when another healthy Codex candidate exists, confirm the existing resolver recovers to it; in an environment/test seam with no healthy candidate, confirm the same executable-missing card and settings action
 - [ ] Test logged-out Codex and Claude states; confirm the card classifies authentication, offers `Login help`, and keeps raw CLI output under the collapsed `Raw logs` disclosure

@@ -9,11 +9,9 @@ import {
   claimRetryEngineRequest,
   getLastEngineRequest,
   getPendingEngineCompletion,
-  isReaderSessionTransitionActive,
-  isRetryEngineRequestPending,
+  isReaderLifecycleClaimActive,
   releaseRetryEngineRequest,
 } from "./runLifecycle";
-import { isWorkspaceRunReservedForItem } from "./workspaceRun";
 
 export async function retryLastEngineQuestion(params: {
   itemID: number;
@@ -22,10 +20,8 @@ export async function retryLastEngineQuestion(params: {
   streamingIndicator: HTMLElement;
 }) {
   if (
-    isRetryEngineRequestPending(params.itemID) ||
+    isReaderLifecycleClaimActive(params.itemID) ||
     getPendingEngineCompletion(params.itemID) ||
-    isWorkspaceRunReservedForItem(params.itemID) ||
-    isReaderSessionTransitionActive(params.itemID) ||
     getActiveReaderRunMode(params.itemID)
   ) {
     addMessage(

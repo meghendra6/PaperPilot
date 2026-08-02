@@ -24,7 +24,7 @@ import {
   persistRunFailure,
   registerPendingEngineCompletion,
   rememberLastEngineRequest,
-  reportRunStopFailure,
+  recoverLatePreparedRunStopFailure,
   startRunProgress,
 } from "../ai/runLifecycle";
 import { classifyRunFailure } from "../ai/runFailure";
@@ -237,10 +237,16 @@ export async function handleClaudeQuestion(params: {
         markPendingEnginePreparationSettled(params.itemID, runToken);
       },
       onStopFailure: (error) => {
-        reportRunStopFailure({
+        if (result.ok) {
+          setClaudeRunStateForItem(params.itemID, {
+            processId: result.processId,
+          });
+        }
+        recoverLatePreparedRunStopFailure({
           itemID: params.itemID,
           engine: "claude_code",
           token: runToken,
+          processId: result.ok ? result.processId : undefined,
           rawError: `Paper Pilot could not confirm late Claude process termination: ${error instanceof Error ? error.message : String(error)}`,
         });
         addon.data.ztoolkit?.log(

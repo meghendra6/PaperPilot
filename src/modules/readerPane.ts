@@ -111,13 +111,13 @@ import { getRunProgressState } from "./ai/runProgress";
 import { cancelActiveEngineRun } from "./ai/runControl";
 import { retryLastEngineQuestion } from "./ai/retryEngineRequest";
 import {
+  claimChatEngineRequest,
   claimReaderSessionTransition,
   getPendingEngineCompletion,
-  isReaderSessionTransitionActive,
-  isRetryEngineRequestPending,
+  isReaderLifecycleClaimActive,
+  releaseChatEngineRequest,
   releaseReaderSessionTransition,
 } from "./ai/runLifecycle";
-import { isWorkspaceRunReservedForItem } from "./ai/workspaceRun";
 
 const paneCleanupByBody = new WeakMap<HTMLElement, () => void>();
 const paneTemplateByBody = new WeakMap<HTMLElement, HTMLElement>();
@@ -539,9 +539,7 @@ export function registerPaperPilotPaneSection() {
           const activeMode = getActiveReaderRunMode(item.id);
           const lifecycleReserved = Boolean(
             getPendingEngineCompletion(item.id) ||
-              isWorkspaceRunReservedForItem(item.id) ||
-              isRetryEngineRequestPending(item.id) ||
-              isReaderSessionTransitionActive(item.id),
+              isReaderLifecycleClaimActive(item.id),
           );
           if (activeMode || lifecycleReserved) {
             addMessage(
@@ -968,9 +966,7 @@ export function registerPaperPilotPaneSection() {
           const preparing =
             streamingIndicator.style.display === "flex" ||
             Boolean(getPendingEngineCompletion(item.id)) ||
-            isWorkspaceRunReservedForItem(item.id) ||
-            isRetryEngineRequestPending(item.id) ||
-            isReaderSessionTransitionActive(item.id);
+            isReaderLifecycleClaimActive(item.id);
           if (!activeMode && !preparing) return true;
           addMessage(
             chatMessages,
@@ -1365,24 +1361,14 @@ export function registerPaperPilotPaneSection() {
         });
 
         relatedRecommendButton.addEventListener("click", async () => {
-          addon.data.relatedRecommendationStates?.set(item.id, {
-            running: true,
-            status: "Finding related papers…",
-            groups: getRelatedRecommendationState(item.id).groups,
-          });
-          renderRelatedRecommendationState(
-            relatedRecommendButton,
-            relatedStatus,
-            relatedGroups,
-            compareButton,
-            compareHelper,
-            item.id,
-            String(item.getField("title") || ""),
-          );
+          let reservationOwned = false;
           try {
             await generateRelatedPaperGroups({
               itemID: item.id,
               itemTitle: item.getField("title"),
+              onReserved: () => {
+                reservationOwned = true;
+              },
               onStatus: (status) => {
                 const state = getRelatedRecommendationState(item.id);
                 addon.data.relatedRecommendationStates?.set(item.id, {
@@ -1426,8 +1412,17 @@ export function registerPaperPilotPaneSection() {
                 });
               },
             });
-          } catch {
-            // Failure state and persistence are handled while reserved above.
+          } catch (error) {
+            if (!reservationOwned) {
+              addMessage(
+                chatMessages,
+                error instanceof Error
+                  ? error.message
+                  : "Related paper recommendations could not start.",
+                "ai",
+              );
+              return;
+            }
           }
           renderRelatedRecommendationState(
             relatedRecommendButton,
@@ -3190,9 +3185,7 @@ function renderStreamingIndicator(
 function getActiveRunMessage(mode: EngineMode, itemID: number) {
   if (
     getPendingEngineCompletion(itemID) ||
-    isWorkspaceRunReservedForItem(itemID) ||
-    isRetryEngineRequestPending(itemID) ||
-    isReaderSessionTransitionActive(itemID)
+    isReaderLifecycleClaimActive(itemID)
   ) {
     return "A run is already starting, running, or finishing for this paper. Wait for it to settle before starting another request.";
   }
@@ -3588,6 +3581,17 @@ async function handleUserInput(
     return;
   }
 
+  const admissionToken = claimChatEngineRequest(itemID);
+  if (!admissionToken) {
+    const assistantText =
+      "A run is already starting, running, or finishing for this paper. Wait for it to settle before starting another request.";
+    if (!options?.suppressChatMessages) {
+      addMessage(chatMessages, assistantText, "ai");
+    }
+    await options?.onComplete?.({ success: false, assistantText });
+    return;
+  }
+
   ztoolkit.log("Placeholder question:", question);
   if (!options?.silentUserMessage) {
     addMessage(chatMessages, options?.displayQuestion || question, "user");
@@ -3734,6 +3738,7 @@ async function handleUserInput(
       assistantText,
     });
   } finally {
+    releaseChatEngineRequest(itemID, admissionToken);
     if (
       mode !== "codex_cli" &&
       mode !== "claude_code" &&

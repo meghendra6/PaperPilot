@@ -12,6 +12,7 @@ import {
 } from "./runProgress";
 import {
   notifyReaderPaneStateChanged,
+  restoreReaderRunOwnership,
   type ReaderRunCompletionResult,
   type ReaderRunToken,
 } from "./runPresentation";
@@ -52,7 +53,11 @@ function pendingCompletions(): Map<number, PendingEngineCompletion> {
   >;
 }
 
-type ReaderLifecycleClaimKind = "direct_workspace" | "retry" | "session";
+type ReaderLifecycleClaimKind =
+  | "chat_admission"
+  | "direct_workspace"
+  | "retry"
+  | "session";
 
 interface ReaderLifecycleClaim {
   kind: ReaderLifecycleClaimKind;
@@ -91,6 +96,22 @@ function hasReaderLifecycleClaim(
 
 export function claimRetryEngineRequest(itemID: number): symbol | undefined {
   return claimReaderLifecycle(itemID, "retry");
+}
+
+export function claimChatEngineRequest(itemID: number): symbol | undefined {
+  return claimReaderLifecycle(itemID, "chat_admission");
+}
+
+export function releaseChatEngineRequest(itemID: number, token: symbol): void {
+  releaseReaderLifecycle(itemID, token);
+}
+
+export function isChatEngineRequestPending(itemID: number): boolean {
+  return hasReaderLifecycleClaim(itemID, "chat_admission");
+}
+
+export function isReaderLifecycleClaimActive(itemID: number): boolean {
+  return readerLifecycleClaims().has(itemID);
 }
 
 export function releaseRetryEngineRequest(itemID: number, token: symbol): void {
@@ -312,6 +333,47 @@ export function reportRunStopFailure(params: {
     ...current,
     updatedAt: Date.now(),
     failure,
+    canRetry: false,
+  };
+  setRunProgressState(next);
+  notifyReaderPaneStateChanged(params.itemID);
+  return next;
+}
+
+export function recoverLatePreparedRunStopFailure(params: {
+  itemID: number;
+  engine: EngineMode;
+  token: ReaderRunToken;
+  processId?: string;
+  rawError: string;
+}): RunProgressState | undefined {
+  const pending = getPendingEngineCompletion(params.itemID);
+  const current = getRunProgressState(params.itemID);
+  if (
+    !pending ||
+    pending.token !== params.token ||
+    !current ||
+    current.token !== params.token
+  ) {
+    return undefined;
+  }
+
+  pending.terminalClaim = undefined;
+  pending.terminalSettled = false;
+  pending.preparationSettled = true;
+  restoreReaderRunOwnership(params.itemID, params.engine, params.token);
+
+  const next: RunProgressState = {
+    ...current,
+    phase: "running",
+    updatedAt: Date.now(),
+    processId: params.processId,
+    failure: {
+      kind: "unknown",
+      engine: params.engine,
+      userMessage: `${getEngineLabel(params.engine)} could not be stopped. Try Cancel again or restart Zotero before starting or changing sessions.`,
+      rawError: params.rawError,
+    },
     canRetry: false,
   };
   setRunProgressState(next);

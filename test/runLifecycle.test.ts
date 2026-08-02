@@ -2,6 +2,7 @@ import * as assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   advanceRunProgress,
+  claimChatEngineRequest,
   claimPendingEngineCompletion,
   claimReaderSessionTransition,
   claimRetryEngineRequest,
@@ -13,12 +14,15 @@ import {
   isRetryEngineRequestPending,
   registerPendingEngineCompletion,
   rememberLastEngineRequest,
+  recoverLatePreparedRunStopFailure,
   releaseReaderSessionTransition,
+  releaseChatEngineRequest,
   releaseRetryEngineRequest,
   startRunProgress,
 } from "../src/modules/ai/runLifecycle";
 import { getRunProgressState } from "../src/modules/ai/runProgress";
 import {
+  getActiveReaderRunMode,
   markReaderRunFinished,
   markReaderRunStarted,
 } from "../src/modules/ai/runPresentation";
@@ -57,6 +61,54 @@ test("pending engine completion is item-scoped and token-aware", () => {
   }
 });
 
+test("late stop failure restores cancellation ownership for another attempt", () => {
+  const previousAddon = (globalThis as { addon?: unknown }).addon;
+  (globalThis as { addon?: unknown }).addon = {
+    data: {
+      pendingEngineCompletions: new Map(),
+      runProgressStates: new Map(),
+    },
+  };
+  const token = markReaderRunStarted(54, "codex_cli");
+
+  try {
+    startRunProgress(54, "codex_cli", token);
+    registerPendingEngineCompletion(54, {
+      mode: "codex_cli",
+      token,
+      retryable: true,
+      terminalClaim: "cancel",
+      terminalSettled: true,
+    });
+    advanceRunProgress(54, token, { type: "cancelled", canRetry: true });
+    markReaderRunFinished(54, token);
+
+    const state = recoverLatePreparedRunStopFailure({
+      itemID: 54,
+      engine: "codex_cli",
+      token,
+      processId: "9054",
+      rawError: "termination executor failed",
+    });
+
+    assert.equal(state?.phase, "running");
+    assert.equal(state?.processId, "9054");
+    assert.match(state?.failure?.userMessage ?? "", /Try Cancel again/i);
+    assert.equal(getActiveReaderRunMode(54), "codex_cli");
+    assert.equal(getPendingEngineCompletion(54)?.terminalClaim, undefined);
+    assert.equal(getPendingEngineCompletion(54)?.terminalSettled, false);
+    assert.equal(getPendingEngineCompletion(54)?.preparationSettled, true);
+    assert.equal(
+      claimPendingEngineCompletion(54, token, "cancel")?.terminalClaim,
+      "cancel",
+    );
+  } finally {
+    markReaderRunFinished(54, token);
+    clearPendingEngineCompletion(54, token);
+    (globalThis as { addon?: unknown }).addon = previousAddon;
+  }
+});
+
 test("session transitions and Retry use item-scoped atomic claims", () => {
   const previousAddon = (globalThis as { addon?: unknown }).addon;
   (globalThis as { addon?: unknown }).addon = { data: {} };
@@ -79,6 +131,14 @@ test("session transitions and Retry use item-scoped atomic claims", () => {
     assert.equal(isRetryEngineRequestPending(53), true);
     releaseRetryEngineRequest(53, retryToken);
     assert.equal(isRetryEngineRequestPending(53), false);
+
+    const chatToken = claimChatEngineRequest(53);
+    assert.ok(chatToken);
+    assert.equal(claimRetryEngineRequest(53), undefined);
+    assert.equal(claimReaderSessionTransition(53), undefined);
+    releaseChatEngineRequest(53, Symbol("stale"));
+    assert.equal(claimRetryEngineRequest(53), undefined);
+    releaseChatEngineRequest(53, chatToken);
   } finally {
     (globalThis as { addon?: unknown }).addon = previousAddon;
   }

@@ -8,8 +8,7 @@ import {
   getPendingEngineCompletion,
   isDirectWorkspaceRunClaimed,
   isDirectWorkspaceRunClaimCurrent,
-  isReaderSessionTransitionActive,
-  isRetryEngineRequestPending,
+  isReaderLifecycleClaimActive,
   releaseDirectWorkspaceRun,
 } from "./runLifecycle";
 
@@ -57,10 +56,8 @@ export function getWorkspaceEngineActiveMessage(
 
 export function isWorkspaceRunActiveForItem(mode: EngineMode, itemID: number) {
   if (
-    isDirectWorkspaceRunClaimed(itemID) ||
-    getPendingEngineCompletion(itemID) ||
-    isReaderSessionTransitionActive(itemID) ||
-    isRetryEngineRequestPending(itemID)
+    isReaderLifecycleClaimActive(itemID) ||
+    getPendingEngineCompletion(itemID)
   ) {
     return true;
   }

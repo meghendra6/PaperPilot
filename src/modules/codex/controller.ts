@@ -20,7 +20,7 @@ import {
   persistRunFailure,
   registerPendingEngineCompletion,
   rememberLastEngineRequest,
-  reportRunStopFailure,
+  recoverLatePreparedRunStopFailure,
   startRunProgress,
 } from "../ai/runLifecycle";
 import { getRunProgressState } from "../ai/runProgress";
@@ -41,6 +41,7 @@ import {
 import { clearCodexPollerForItem } from "./poller";
 import {
   buildCodexRunState,
+  clearCodexRunStateForItem,
   isCodexRunActiveForItem,
   setCodexRunStateForItem,
 } from "./runState";
@@ -243,10 +244,23 @@ export async function handleCodexQuestion(params: {
         markPendingEnginePreparationSettled(params.itemID, runToken);
       },
       onStopFailure: (error) => {
-        reportRunStopFailure({
+        if (result.ok) {
+          setCodexRunStateForItem(params.itemID, {
+            ...buildCodexRunState({
+              itemID: params.itemID,
+              title: params.sessionTitle,
+              loginState: "ready",
+            }),
+            processId: result.processId,
+            runStatus: "running",
+            latestEventType: "spawned",
+          });
+        }
+        recoverLatePreparedRunStopFailure({
           itemID: params.itemID,
           engine: "codex_cli",
           token: runToken,
+          processId: result.ok ? result.processId : undefined,
           rawError: `Paper Pilot could not confirm late Codex process termination: ${error instanceof Error ? error.message : String(error)}`,
         });
         addon.data.ztoolkit?.log(
@@ -384,6 +398,7 @@ export async function handleCodexQuestion(params: {
     }
 
     clearCodexPollerForItem(params.itemID);
+    clearCodexRunStateForItem(params.itemID);
     advanceRunProgress(params.itemID, runToken, { type: "finishing" });
 
     const rawAssistantText =
@@ -420,6 +435,19 @@ export async function handleCodexQuestion(params: {
           typeof event.thread_id === "string",
       )?.thread_id as string | undefined;
 
+    setCodexRunStateForItem(params.itemID, {
+      ...buildCodexRunState({
+        itemID: params.itemID,
+        title: params.sessionTitle,
+        loginState: success
+          ? "ready"
+          : classifyCodexLoginFailure(progress.rawOutput),
+      }),
+      runStatus: success ? "completed" : "error",
+      latestEventType: progress.latestEventType,
+    });
+    params.streamingIndicator.style.display = "none";
+
     try {
       await finishRunAfterCleanup({
         prepare: async () => {
@@ -447,18 +475,6 @@ export async function handleCodexQuestion(params: {
               suppressMessage: params.suppressChatMessages,
             });
           }
-          setCodexRunStateForItem(params.itemID, {
-            ...buildCodexRunState({
-              itemID: params.itemID,
-              title: params.sessionTitle,
-              loginState: success
-                ? "ready"
-                : classifyCodexLoginFailure(progress.rawOutput),
-            }),
-            runStatus: success ? "completed" : "error",
-            latestEventType: progress.latestEventType,
-          });
-          params.streamingIndicator.style.display = "none";
         },
         cleanup: () => cleanupWorkspaceIfEnabled(result.workspacePath),
         shouldComplete: () =>

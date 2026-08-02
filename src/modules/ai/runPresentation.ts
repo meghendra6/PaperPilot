@@ -56,6 +56,18 @@ export function markReaderRunFinished(
   emit({ type: "finished", itemID, mode: run.mode });
 }
 
+export function restoreReaderRunOwnership(
+  itemID: number,
+  mode: EngineMode,
+  token: ReaderRunToken,
+): void {
+  const runs = activeRunsByItem.get(itemID) ?? [];
+  if (runs.some((candidate) => candidate.token === token)) return;
+  runs.push({ mode, token });
+  activeRunsByItem.set(itemID, runs);
+  emit({ type: "started", itemID, mode });
+}
+
 export function finishReaderRunsForMode(
   itemID: number,
   mode: EngineMode,

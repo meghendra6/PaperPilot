@@ -10,11 +10,13 @@ import {
   releaseWorkspaceRunReservation,
 } from "../src/modules/ai/workspaceRun";
 import {
+  claimChatEngineRequest,
   claimReaderSessionTransition,
   claimRetryEngineRequest,
   clearPendingEngineCompletion,
   registerPendingEngineCompletion,
   releaseReaderSessionTransition,
+  releaseChatEngineRequest,
   releaseRetryEngineRequest,
 } from "../src/modules/ai/runLifecycle";
 
@@ -113,6 +115,11 @@ test("workspace reservations block direct runs and pending controller preparatio
     assert.ok(sessionTransition);
     assert.equal(claimWorkspaceRunReservation("codex_cli", 44), undefined);
     releaseReaderSessionTransition(44, sessionTransition);
+
+    const chatToken = claimChatEngineRequest(44);
+    assert.ok(chatToken);
+    assert.equal(claimWorkspaceRunReservation("codex_cli", 44), undefined);
+    releaseChatEngineRequest(44, chatToken);
   } finally {
     (globalThis as { addon?: unknown }).addon = previousAddon;
   }

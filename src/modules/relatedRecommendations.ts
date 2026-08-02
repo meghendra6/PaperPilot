@@ -402,6 +402,7 @@ export async function getLibraryItemCandidates(libraryID: number) {
 export async function generateRelatedPaperGroups(params: {
   itemID: number;
   itemTitle: string;
+  onReserved?: () => void;
   onStatus?: (status: string) => void;
   onSuccess?: (result: {
     groups: RecommendationGroup[];
@@ -412,15 +413,14 @@ export async function generateRelatedPaperGroups(params: {
   const mode = getModeForItem(params.itemID);
   const reservationToken = claimWorkspaceRunReservation(mode, params.itemID);
   if (!reservationToken) {
-    const error = new Error(
+    throw new Error(
       getWorkspaceEngineActiveMessage(mode, "related-paper recommendations"),
     );
-    await params.onFailure?.(error);
-    throw error;
   }
 
   let releaseReservation = true;
   try {
+    params.onReserved?.();
     const { sessionStore } = await import("./session/sessionStore");
     const { cleanupWorkspaceIfEnabled } = await import("./workspace/cleanup");
     const item = await Zotero.Items.getAsync(params.itemID);
