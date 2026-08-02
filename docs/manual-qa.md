@@ -23,6 +23,7 @@ Use this checklist inside real Zotero 7, 8, and 9 runtimes before claiming readi
 - [ ] In Zotero dark mode, confirm the same surfaces follow the native theme without low-contrast text or borders
 - [ ] Temporarily unset the inspected Zotero theme variables and confirm Paper Pilot falls back to its light/dark literals
 - [ ] Tab through every native button, input, select, and textarea and confirm the native-colored focus ring remains visible
+- [ ] On Windows, confirm focus uses Zotero's visible inner and outer ring; on macOS/Linux, confirm the native single ring remains visible
 - [ ] Confirm primary, secondary, and ghost buttons have restrained hover/active feedback and disabled controls do not move
 
 ## 2. Mode behavior
