@@ -13,8 +13,12 @@ import {
 } from "../ai/runCompletion";
 import {
   advanceRunProgress,
+  claimPendingEngineCompletion,
   clearPendingEngineCompletion,
   failRunProgress,
+  getPendingEngineCompletion,
+  isPendingEngineCompletionCurrent,
+  markPendingEnginePreparationSettled,
   persistRunFailure,
   registerPendingEngineCompletion,
   rememberLastEngineRequest,
@@ -58,9 +62,21 @@ export async function handleClaudeQuestion(params: {
     params.continuationToken &&
       isReaderRunTokenActive(params.itemID, params.continuationToken),
   );
+  if (params.continuationToken && !continuingParent) {
+    const assistantText =
+      "The previous Claude Code run is no longer active, so this follow-up was not started.";
+    if (!params.suppressChatMessages) {
+      addMessage(params.chatMessages, assistantText, "ai");
+    }
+    params.streamingIndicator.style.display = "none";
+    await params.onComplete?.({ success: false, assistantText });
+    return;
+  }
   if (
     isClaudeRunActiveForItem(params.itemID) ||
-    (getActiveReaderRunMode(params.itemID) && !continuingParent)
+    ((getActiveReaderRunMode(params.itemID) ||
+      getPendingEngineCompletion(params.itemID)) &&
+      !continuingParent)
   ) {
     const assistantText =
       "A Claude Code run is already active for this paper. Wait for it to finish before starting another request.";
@@ -89,7 +105,7 @@ export async function handleClaudeQuestion(params: {
   }
 
   const runToken = markReaderRunStarted(params.itemID, "claude_code");
-  startRunProgress(params.itemID, "claude_code");
+  startRunProgress(params.itemID, "claude_code", runToken);
   let assistantMessage: HTMLElement | null | undefined = null;
   const pendingCompletion = {
     mode: "claude_code" as const,
@@ -98,6 +114,10 @@ export async function handleClaudeQuestion(params: {
     onComplete: params.onComplete,
     workspacePath: undefined as string | undefined,
     cancelTimeout: undefined as (() => void) | undefined,
+    cleanupClaimed: false,
+    terminalClaim: undefined as "controller" | "cancel" | "timeout" | undefined,
+    preparationSettled: false,
+    terminalSettled: false,
   };
   registerPendingEngineCompletion(params.itemID, pendingCompletion);
   const cancelTimeout = armRunTimeout({
@@ -114,7 +134,11 @@ export async function handleClaudeQuestion(params: {
         token: runToken,
         workspacePath: pendingCompletion.workspacePath,
         suppressMessage: params.suppressChatMessages,
-        stop: () => stopClaudeRunSilently({ itemID: params.itemID }),
+        stop: () =>
+          stopClaudeRunSilently({
+            itemID: params.itemID,
+            finishPresentation: false,
+          }),
         onMessage: (message) => {
           if (assistantMessage) {
             setMessageContent(assistantMessage, message, "ai");
@@ -137,16 +161,23 @@ export async function handleClaudeQuestion(params: {
     resumeSessionId: params.resumeSessionId,
   }).catch(async (error) => {
     cancelTimeout();
-    clearPendingEngineCompletion(params.itemID, runToken);
-    if (!isReaderRunTokenActive(params.itemID, runToken)) return undefined;
+    if (!isReaderRunTokenActive(params.itemID, runToken)) {
+      markPendingEnginePreparationSettled(params.itemID, runToken);
+      return undefined;
+    }
+    if (!claimPendingEngineCompletion(params.itemID, runToken, "controller")) {
+      return undefined;
+    }
+    markPendingEnginePreparationSettled(params.itemID, runToken);
     const detail = error instanceof Error ? error.message : String(error);
     const assistantText = failRunProgress({
       itemID: params.itemID,
       engine: "claude_code",
+      token: runToken,
       rawError: detail,
       source: "workspace",
       canRetry: !params.suppressChatMessages,
-    }).failure!.userMessage;
+    })!.failure!.userMessage;
     try {
       await sessionHistoryService
         .persistAssistantTurn({
@@ -166,6 +197,7 @@ export async function handleClaudeQuestion(params: {
       await params.onComplete?.({ success: false, assistantText });
     } finally {
       params.streamingIndicator.style.display = "none";
+      clearPendingEngineCompletion(params.itemID, runToken);
       markReaderRunFinished(params.itemID, runToken);
     }
     return undefined;
@@ -177,15 +209,24 @@ export async function handleClaudeQuestion(params: {
 
   if (!isReaderRunTokenActive(params.itemID, runToken)) {
     cancelTimeout();
-    clearPendingEngineCompletion(params.itemID, runToken);
     if (result.ok) await stopDetachedRunProcess(result.processId);
-    await cleanupWorkspaceIfEnabled(result.workspacePath);
-    params.streamingIndicator.style.display = "none";
+    if (
+      isPendingEngineCompletionCurrent(params.itemID, runToken) &&
+      !pendingCompletion.cleanupClaimed
+    ) {
+      await cleanupWorkspaceIfEnabled(result.workspacePath);
+      params.streamingIndicator.style.display = "none";
+    }
+    markPendingEnginePreparationSettled(params.itemID, runToken);
     return;
   }
+  markPendingEnginePreparationSettled(params.itemID, runToken);
 
   if (!result.ok) {
     cancelTimeout();
+    if (!claimPendingEngineCompletion(params.itemID, runToken, "controller")) {
+      return;
+    }
     let failureMessage = "Claude Code could not start this run.";
     try {
       await finishRunAfterCleanup({
@@ -196,6 +237,7 @@ export async function handleClaudeQuestion(params: {
             sessionTitle: params.sessionTitle,
             paperTitle: params.paperTitle,
             engine: "claude_code",
+            token: runToken,
             rawError: result.error,
             source: "spawn",
             suppressMessage: params.suppressChatMessages,
@@ -243,28 +285,32 @@ export async function handleClaudeQuestion(params: {
   setClaudeRunStateForItem(params.itemID, {
     processId: result.processId,
   });
-  advanceRunProgress(params.itemID, {
+  advanceRunProgress(params.itemID, runToken, {
     type: "spawned",
     processId: result.processId,
   });
   const poller = setInterval(async () => {
     const progress = await readClaudeRunProgress({
       outputPath: result.outputPath,
+      stderrPath: result.stderrPath,
       exitCodePath: result.exitCodePath,
     });
 
     if (!isReaderRunTokenActive(params.itemID, runToken)) return;
 
-    if (assistantMessage) {
-      setMessageContent(assistantMessage, "Running Claude Code…", "ai");
+    if (!progress.completed) {
+      if (assistantMessage) {
+        setMessageContent(assistantMessage, "Running Claude Code…", "ai");
+      }
+      return;
     }
 
-    if (!progress.completed) {
+    if (!claimPendingEngineCompletion(params.itemID, runToken, "controller")) {
       return;
     }
 
     clearClaudePollerForItem(params.itemID);
-    advanceRunProgress(params.itemID, { type: "finishing" });
+    advanceRunProgress(params.itemID, runToken, { type: "finishing" });
 
     const rawAssistantText =
       progress.parsedOutput ||
@@ -299,11 +345,15 @@ export async function handleClaudeQuestion(params: {
             resumeSessionId: params.resumeSessionId,
             suppressMessage: params.suppressChatMessages,
           });
-          clearClaudeRunStateForItem(params.itemID);
+          if (isPendingEngineCompletionCurrent(params.itemID, runToken)) {
+            clearClaudeRunStateForItem(params.itemID);
+          }
           params.streamingIndicator.style.display = "none";
         },
         cleanup: () => cleanupWorkspaceIfEnabled(result.workspacePath),
-        shouldComplete: () => isReaderRunTokenActive(params.itemID, runToken),
+        shouldComplete: () =>
+          isReaderRunTokenActive(params.itemID, runToken) &&
+          isPendingEngineCompletionCurrent(params.itemID, runToken),
         complete: () =>
           params.onComplete?.({
             success,
@@ -314,11 +364,12 @@ export async function handleClaudeQuestion(params: {
           assistantText = failRunProgress({
             itemID: params.itemID,
             engine: "claude_code",
+            token: runToken,
             rawError:
               error instanceof Error ? error.message : String(error || ""),
             source: "process_exit",
             canRetry: !params.suppressChatMessages,
-          }).failure!.userMessage;
+          })!.failure!.userMessage;
           return params.onComplete?.({
             success: false,
             assistantText,
@@ -326,21 +377,26 @@ export async function handleClaudeQuestion(params: {
         },
         finalize: () => {
           cancelTimeout();
-          if (success) {
-            if (getRunProgressState(params.itemID)?.phase !== "failed") {
-              advanceRunProgress(params.itemID, { type: "completed" });
+          if (isPendingEngineCompletionCurrent(params.itemID, runToken)) {
+            if (success) {
+              if (getRunProgressState(params.itemID)?.phase !== "failed") {
+                advanceRunProgress(params.itemID, runToken, {
+                  type: "completed",
+                });
+              }
+            } else {
+              failRunProgress({
+                itemID: params.itemID,
+                engine: "claude_code",
+                token: runToken,
+                rawError: terminalFailure!.rawError,
+                source: "process_exit",
+                canRetry: !params.suppressChatMessages,
+              });
             }
-          } else {
-            failRunProgress({
-              itemID: params.itemID,
-              engine: "claude_code",
-              rawError: terminalFailure!.rawError,
-              source: "process_exit",
-              canRetry: !params.suppressChatMessages,
-            });
+            clearPendingEngineCompletion(params.itemID, runToken);
+            clearClaudeRunStateForItem(params.itemID);
           }
-          clearPendingEngineCompletion(params.itemID, runToken);
-          clearClaudeRunStateForItem(params.itemID);
           markReaderRunFinished(params.itemID, runToken);
         },
       });

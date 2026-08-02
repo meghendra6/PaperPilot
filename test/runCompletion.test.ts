@@ -1,6 +1,7 @@
 import * as assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  buildKillProcessTreeScript,
   finishRunAfterCleanup,
   stopDetachedRunProcess,
 } from "../src/modules/ai/runCompletion";
@@ -111,6 +112,14 @@ test("run completion does not retry a failing cleanup", async () => {
   assert.equal(finalized, true);
 });
 
+test("process termination walks descendants before killing the recorded pid", () => {
+  const script = buildKillProcessTreeScript("4321");
+  assert.match(script, /pgrep -P "\$1"/);
+  assert.match(script, /kill_run_tree "\$child"/);
+  assert.match(script, /kill "\$1"/);
+  assert.match(script, /kill_run_tree 4321$/);
+});
+
 test("run completion skips a stale terminal callback after cleanup", async () => {
   const events: string[] = [];
 
@@ -192,7 +201,7 @@ test("detached process cleanup only executes a numeric pid", async () => {
   assert.deepEqual(calls, [
     {
       command: "/bin/zsh",
-      args: ["-lc", "kill 1234 >/dev/null 2>&1 || true"],
+      args: ["-lc", buildKillProcessTreeScript("1234")],
     },
   ]);
 });

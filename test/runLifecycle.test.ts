@@ -1,13 +1,17 @@
 import * as assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  advanceRunProgress,
+  claimPendingEngineCompletion,
   clearPendingEngineCompletion,
   failRunProgress,
   getPendingEngineCompletion,
   hasLastEngineRequest,
   registerPendingEngineCompletion,
   rememberLastEngineRequest,
+  startRunProgress,
 } from "../src/modules/ai/runLifecycle";
+import { getRunProgressState } from "../src/modules/ai/runProgress";
 import {
   markReaderRunFinished,
   markReaderRunStarted,
@@ -58,6 +62,8 @@ test("silent failure remains non-retryable even when a chat request exists", () 
   };
 
   try {
+    const token = Symbol("run-61");
+    startRunProgress(61, "gemini_cli", token);
     rememberLastEngineRequest(61, {
       mode: "gemini_cli",
       sessionId: "session-61",
@@ -68,12 +74,81 @@ test("silent failure remains non-retryable even when a chat request exists", () 
     const state = failRunProgress({
       itemID: 61,
       engine: "gemini_cli",
+      token,
       rawError: "command not found",
       source: "spawn",
       canRetry: false,
     });
-    assert.equal(state.failure?.kind, "executable_missing");
-    assert.equal(state.canRetry, false);
+    assert.equal(state?.failure?.kind, "executable_missing");
+    assert.equal(state?.canRetry, false);
+  } finally {
+    (globalThis as { addon?: unknown }).addon = previousAddon;
+  }
+});
+
+test("terminal completion can be claimed only once for a run token", () => {
+  const previousAddon = (globalThis as { addon?: unknown }).addon;
+  (globalThis as { addon?: unknown }).addon = {
+    data: { pendingEngineCompletions: new Map() },
+  };
+  const token = Symbol("run-71");
+
+  try {
+    registerPendingEngineCompletion(71, {
+      mode: "codex_cli",
+      token,
+      retryable: true,
+    });
+    assert.equal(
+      claimPendingEngineCompletion(71, token, "controller")?.terminalClaim,
+      "controller",
+    );
+    assert.equal(claimPendingEngineCompletion(71, token, "timeout"), undefined);
+    assert.equal(
+      claimPendingEngineCompletion(71, Symbol("stale"), "cancel"),
+      undefined,
+    );
+  } finally {
+    (globalThis as { addon?: unknown }).addon = previousAddon;
+  }
+});
+
+test("a parent finalizer cannot overwrite child-owned progress", () => {
+  const previousAddon = (globalThis as { addon?: unknown }).addon;
+  (globalThis as { addon?: unknown }).addon = {
+    data: {
+      pendingEngineCompletions: new Map(),
+      runProgressStates: new Map(),
+      lastEngineRequests: new Map(),
+    },
+  };
+  const parent = Symbol("parent");
+  const child = Symbol("child");
+
+  try {
+    startRunProgress(72, "claude_code", parent);
+    registerPendingEngineCompletion(72, {
+      mode: "claude_code",
+      token: parent,
+      retryable: false,
+    });
+    claimPendingEngineCompletion(72, parent, "controller");
+
+    startRunProgress(72, "claude_code", child);
+    registerPendingEngineCompletion(72, {
+      mode: "claude_code",
+      token: child,
+      retryable: false,
+    });
+    advanceRunProgress(72, child, { type: "spawned", processId: "902" });
+
+    assert.equal(
+      advanceRunProgress(72, parent, { type: "completed" }),
+      undefined,
+    );
+    assert.equal(getRunProgressState(72)?.token, child);
+    assert.equal(getRunProgressState(72)?.phase, "running");
+    assert.equal(getPendingEngineCompletion(72)?.token, child);
   } finally {
     (globalThis as { addon?: unknown }).addon = previousAddon;
   }

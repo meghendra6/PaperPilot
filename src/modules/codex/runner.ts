@@ -27,11 +27,14 @@ import {
 import { parseCodexOutput } from "./outputParser";
 import { buildBackgroundCodexShellScript } from "./shell";
 
+declare const Zotero: any;
+
 export interface StartedCodexRun {
   ok: true;
   workspacePath: string;
   promptPreview: string;
   outputPath: string;
+  stderrPath: string;
   exitCodePath: string;
   pidPath: string;
   processId?: string;
@@ -109,12 +112,12 @@ export async function startCodexRunForQuestion(params: {
   const readerContext = await getCurrentReaderContext();
   payload.pageNumber = readerContext.pageIndex;
 
-  const item = (await Zotero.Items.getAsync(params.itemID)) as Zotero.Item;
+  const item = (await Zotero.Items.getAsync(params.itemID)) as any;
   const authors =
     typeof item.getCreators === "function"
       ? item
           .getCreators()
-          .map((creator) =>
+          .map((creator: { firstName?: string; lastName?: string }) =>
             [creator.firstName, creator.lastName]
               .filter(Boolean)
               .join(" ")
@@ -123,7 +126,7 @@ export async function startCodexRunForQuestion(params: {
           .filter(Boolean)
       : [];
   const attachmentID = !item.isAttachment()
-    ? item.getAttachments().find((id) => {
+    ? item.getAttachments().find((id: number) => {
         const attachment = Zotero.Items.get(id);
         return (
           attachment.attachmentContentType === "application/pdf" ||
@@ -182,6 +185,7 @@ export async function startCodexRunForQuestion(params: {
 
   const promptPath = `${workspacePath}/prompt.txt`;
   const outputPath = `${workspacePath}/codex-output.jsonl`;
+  const stderrPath = `${workspacePath}/codex-stderr.log`;
   const exitCodePath = `${workspacePath}/codex-exit.txt`;
   const pidPath = `${workspacePath}/codex-pid.txt`;
   const paperPath = `${workspacePath}/paper.txt`;
@@ -264,6 +268,7 @@ export async function startCodexRunForQuestion(params: {
   const script = buildBackgroundCodexShellScript({
     promptPath,
     outputPath,
+    stderrPath,
     exitCodePath,
     pidPath,
     command,
@@ -290,6 +295,7 @@ export async function startCodexRunForQuestion(params: {
     workspacePath,
     promptPreview: codexPrompt,
     outputPath,
+    stderrPath,
     exitCodePath,
     pidPath,
     processId,
@@ -298,10 +304,13 @@ export async function startCodexRunForQuestion(params: {
 
 export async function readCodexRunProgress(paths: {
   outputPath: string;
+  stderrPath: string;
   exitCodePath: string;
 }) {
-  const rawOutput = await readTextFile(paths.outputPath);
-  const parsed = parseCodexOutput(rawOutput);
+  const stdout = await readTextFile(paths.outputPath);
+  const stderr = await readTextFile(paths.stderrPath);
+  const rawOutput = [stdout, stderr].filter(Boolean).join("\n");
+  const parsed = parseCodexOutput(stdout);
   const exitCode = (await readTextFile(paths.exitCodePath)).trim();
 
   return {

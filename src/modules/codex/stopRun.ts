@@ -1,4 +1,5 @@
 import { finishReaderRunsForMode } from "../ai/runPresentation";
+import { stopDetachedRunProcess } from "../ai/runCompletion";
 import { clearCodexPollerForItem } from "./poller";
 import { clearCodexRunStateForItem } from "./runState";
 
@@ -8,19 +9,20 @@ declare const Zotero: any;
 export async function stopCodexRunSilently(params: {
   itemID: number;
   clearRunState?: boolean;
+  finishPresentation?: boolean;
 }) {
   const runState = addon.data.codexRunStates?.get(params.itemID);
   clearCodexPollerForItem(params.itemID);
-  finishReaderRunsForMode(params.itemID, "codex_cli");
-  const pid = runState?.processId;
-  if (pid) {
-    await Zotero.Utilities.Internal.exec("/bin/zsh", [
-      "-lc",
-      `kill ${pid} >/dev/null 2>&1 || true`,
-    ]);
+  if (params.finishPresentation !== false) {
+    finishReaderRunsForMode(params.itemID, "codex_cli");
   }
-  if (runState && params.clearRunState !== false) {
-    clearCodexRunStateForItem(params.itemID);
+  const pid = runState?.processId;
+  try {
+    await stopDetachedRunProcess(pid);
+  } finally {
+    if (runState && params.clearRunState !== false) {
+      clearCodexRunStateForItem(params.itemID);
+    }
   }
   return runState;
 }

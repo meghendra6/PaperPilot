@@ -31,6 +31,7 @@ export function buildCodexShellScript(params: {
 export function buildBackgroundCodexShellScript(params: {
   promptPath: string;
   outputPath: string;
+  stderrPath: string;
   exitCodePath: string;
   pidPath: string;
   command: string[];
@@ -40,10 +41,10 @@ export function buildBackgroundCodexShellScript(params: {
   const outputDir = params.outputPath.replace(/\/[^/]+$/, "");
   return [
     `mkdir -p ${shellEscape(outputDir)}`,
-    `rm -f ${shellEscape(params.outputPath)} ${shellEscape(params.exitCodePath)} ${shellEscape(params.pidPath)}`,
+    `rm -f ${shellEscape(params.outputPath)} ${shellEscape(params.stderrPath)} ${shellEscape(params.exitCodePath)} ${shellEscape(params.pidPath)}`,
     ...buildShellEnvironmentExports(params.environment),
     `(` +
-      `cat ${shellEscape(params.promptPath)} | ${command} > ${shellEscape(params.outputPath)} 2>&1; ` +
+      `cat ${shellEscape(params.promptPath)} | ${command} > ${shellEscape(params.outputPath)} 2> ${shellEscape(params.stderrPath)}; ` +
       `printf '%s' $? > ${shellEscape(params.exitCodePath)}` +
       `) & echo $! > ${shellEscape(params.pidPath)}`,
   ].join(" && ");

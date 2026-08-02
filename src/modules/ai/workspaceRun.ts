@@ -9,6 +9,7 @@ export interface WorkspaceRunResult {
   workspacePath: string;
   promptPreview: string;
   outputPath: string;
+  stderrPath: string;
   exitCodePath: string;
   pidPath: string;
   processId?: string;
@@ -96,6 +97,7 @@ export async function readWorkspaceRunProgress(
   mode: EngineMode,
   paths: {
     outputPath: string;
+    stderrPath: string;
     exitCodePath: string;
   },
 ): Promise<WorkspaceRunProgress> {
@@ -115,15 +117,22 @@ export async function readWorkspaceRunProgress(
 
 export function extractWorkspaceRunText(
   mode: EngineMode,
-  progress: Pick<WorkspaceRunProgress, "rawOutput" | "parsedOutput">,
+  progress: Pick<
+    WorkspaceRunProgress,
+    "rawOutput" | "parsedOutput" | "exitCode"
+  >,
 ) {
   if (mode === "codex_cli") {
+    if (progress.exitCode === "0") return progress.parsedOutput;
     return (
-      parseCodexOutputText(progress.rawOutput) ||
       progress.parsedOutput ||
+      parseCodexOutputText(progress.rawOutput) ||
       progress.rawOutput
     );
   }
 
-  return progress.parsedOutput || progress.rawOutput;
+  return (
+    progress.parsedOutput ||
+    (progress.exitCode === "0" ? "" : progress.rawOutput)
+  );
 }

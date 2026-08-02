@@ -7,6 +7,7 @@ import {
   setCodexRunStateForItem,
 } from "../src/modules/codex/runState";
 import { stopCodexRunSilently } from "../src/modules/codex/stopRun";
+import { buildKillProcessTreeScript } from "../src/modules/ai/runCompletion";
 import {
   isReaderRunTokenActive,
   markReaderRunStarted,
@@ -59,7 +60,7 @@ test("stopCodexRunSilently kills the active pid and clears run state and poller 
     assert.deepEqual(execCalls, [
       {
         command: "/bin/zsh",
-        args: ["-lc", "kill 4123 >/dev/null 2>&1 || true"],
+        args: ["-lc", buildKillProcessTreeScript("4123")],
       },
     ]);
     assert.equal(

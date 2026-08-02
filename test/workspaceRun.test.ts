@@ -28,6 +28,7 @@ test("workspace run text extraction preserves plain text and parses Codex JSONL 
     extractWorkspaceRunText("claude_code", {
       rawOutput: "Plain Claude answer",
       parsedOutput: "Plain Claude answer",
+      exitCode: "0",
     }),
     "Plain Claude answer",
   );
@@ -35,7 +36,8 @@ test("workspace run text extraction preserves plain text and parses Codex JSONL 
     extractWorkspaceRunText("codex_cli", {
       rawOutput:
         '{"type":"item.completed","item":{"type":"agent_message","message":"Codex final answer"}}\n{"type":"reasoning","text":"hidden"}',
-      parsedOutput: "",
+      parsedOutput: "Codex final answer",
+      exitCode: "0",
     }),
     "Codex final answer",
   );

@@ -433,6 +433,7 @@ export async function generateRelatedPaperGroups(params: {
     while (attempts < 300) {
       const progress = await readWorkspaceRunProgress(mode, {
         outputPath: result.outputPath,
+        stderrPath: result.stderrPath,
         exitCodePath: result.exitCodePath,
       });
       if (progress.completed) {

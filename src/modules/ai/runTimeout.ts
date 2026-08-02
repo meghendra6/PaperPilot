@@ -1,8 +1,11 @@
 import { cleanupWorkspaceIfEnabled } from "../workspace/cleanup";
 import { finishRunAfterCleanup } from "./runCompletion";
+import { classifyRunFailure } from "./runFailure";
 import {
-  clearPendingEngineCompletion,
+  claimPendingEngineCompletion,
   failRunProgress,
+  isPendingEngineCompletionCurrent,
+  markPendingEngineTerminalSettled,
   persistRunFailure,
 } from "./runLifecycle";
 import {
@@ -14,6 +17,7 @@ import type {
   ReaderRunCompletionResult,
   ReaderRunToken,
 } from "./runPresentation";
+import { markReaderRunFinished } from "./runPresentation";
 import type { EngineMode } from "./types";
 
 export function armRunTimeout(params: {
@@ -60,14 +64,22 @@ export async function completeTimedOutRun(params: {
   onMessage?: (message: string) => void;
   onComplete?: (result: ReaderRunCompletionResult) => void | Promise<void>;
 }): Promise<void> {
-  await Promise.resolve(params.stop()).catch(() => undefined);
+  const pending = claimPendingEngineCompletion(
+    params.itemID,
+    params.token,
+    "timeout",
+  );
+  if (!pending) return;
+  const workspacePath = pending.workspacePath ?? params.workspacePath;
+  pending.cleanupClaimed = Boolean(workspacePath);
   const rawError = `${params.engineLabel} exceeded the 30-minute run limit.`;
-  const failure = await persistRunFailure({
+  const failurePromise = persistRunFailure({
     itemID: params.itemID,
     sessionId: params.sessionId,
     sessionTitle: params.sessionTitle,
     paperTitle: params.paperTitle,
     engine: params.engine,
+    token: params.token,
     rawError,
     source: "timeout",
     suppressMessage: params.suppressMessage,
@@ -76,11 +88,21 @@ export async function completeTimedOutRun(params: {
       failRunProgress({
         itemID: params.itemID,
         engine: params.engine,
+        token: params.token,
         rawError,
         source: "timeout",
         canRetry: !params.suppressMessage,
-      }).failure!,
+      })?.failure ??
+      classifyRunFailure({
+        engine: params.engine,
+        rawError,
+        source: "timeout",
+      }),
   );
+  markReaderRunFinished(params.itemID, params.token);
+  await Promise.resolve(params.stop()).catch(() => undefined);
+  const failure = await failurePromise;
+  if (!isPendingEngineCompletionCurrent(params.itemID, params.token)) return;
   params.onMessage?.(failure.userMessage);
 
   const complete = () =>
@@ -92,12 +114,11 @@ export async function completeTimedOutRun(params: {
     await finishRunAfterCleanup({
       prepare: () => undefined,
       cleanup: () =>
-        params.workspacePath
-          ? cleanupWorkspaceIfEnabled(params.workspacePath)
-          : undefined,
+        workspacePath ? cleanupWorkspaceIfEnabled(workspacePath) : undefined,
       complete,
       incomplete: complete,
-      finalize: () => clearPendingEngineCompletion(params.itemID, params.token),
+      finalize: () =>
+        markPendingEngineTerminalSettled(params.itemID, params.token),
     });
   } catch {
     // The callback has already released silent workflow state.

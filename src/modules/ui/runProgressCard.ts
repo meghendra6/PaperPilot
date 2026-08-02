@@ -51,7 +51,16 @@ export function createRunProgressCard(params: {
     button.type = "button";
     button.className = "pp-btn pp-btn--secondary";
     button.textContent = label;
-    button.addEventListener("click", () => void action());
+    let busy = false;
+    button.addEventListener("click", () => {
+      if (busy) return;
+      busy = true;
+      button.disabled = true;
+      void Promise.resolve(action()).finally(() => {
+        busy = false;
+        button.disabled = false;
+      });
+    });
     return button;
   };
 

@@ -1,12 +1,24 @@
 declare const Zotero: any;
 
+export function buildKillProcessTreeScript(processId: string): string {
+  return [
+    "kill_run_tree() {",
+    '  for child in $(/usr/bin/pgrep -P "$1" 2>/dev/null || true); do',
+    '    kill_run_tree "$child"',
+    "  done",
+    '  kill "$1" >/dev/null 2>&1 || true',
+    "}",
+    `kill_run_tree ${processId}`,
+  ].join("\n");
+}
+
 export async function stopDetachedRunProcess(
   processId?: string,
 ): Promise<void> {
   if (!processId || !/^\d+$/.test(processId)) return;
   await Zotero.Utilities.Internal.exec("/bin/zsh", [
     "-lc",
-    `kill ${processId} >/dev/null 2>&1 || true`,
+    buildKillProcessTreeScript(processId),
   ]);
 }
 

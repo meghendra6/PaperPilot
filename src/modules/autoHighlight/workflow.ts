@@ -70,6 +70,7 @@ async function waitForWorkspaceText(params: {
     for (let attempts = 0; attempts < 300; attempts += 1) {
       const progress = await readWorkspaceRunProgress(mode, {
         outputPath: started.outputPath,
+        stderrPath: started.stderrPath,
         exitCodePath: started.exitCodePath,
       });
 

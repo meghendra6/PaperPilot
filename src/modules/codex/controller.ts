@@ -9,9 +9,13 @@ import {
 } from "../ai/runPresentation";
 import {
   advanceRunProgress,
+  claimPendingEngineCompletion,
   clearPendingEngineCompletion,
   failRunProgress,
   getLastEngineRequest,
+  getPendingEngineCompletion,
+  isPendingEngineCompletionCurrent,
+  markPendingEnginePreparationSettled,
   persistRunFailure,
   registerPendingEngineCompletion,
   rememberLastEngineRequest,
@@ -61,9 +65,21 @@ export async function handleCodexQuestion(params: {
     params.continuationToken &&
       isReaderRunTokenActive(params.itemID, params.continuationToken),
   );
+  if (params.continuationToken && !continuingParent) {
+    const assistantText =
+      "The previous Codex CLI run is no longer active, so this follow-up was not started.";
+    if (!params.suppressChatMessages) {
+      addMessage(params.chatMessages, assistantText, "ai");
+    }
+    params.streamingIndicator.style.display = "none";
+    await params.onComplete?.({ success: false, assistantText });
+    return;
+  }
   if (
     isCodexRunActiveForItem(params.itemID) ||
-    (getActiveReaderRunMode(params.itemID) && !continuingParent)
+    ((getActiveReaderRunMode(params.itemID) ||
+      getPendingEngineCompletion(params.itemID)) &&
+      !continuingParent)
   ) {
     const assistantText =
       "A Codex CLI run is already active for this paper. Cancel it or wait for it to finish before starting another request.";
@@ -93,7 +109,7 @@ export async function handleCodexQuestion(params: {
   }
 
   const runToken = markReaderRunStarted(params.itemID, "codex_cli");
-  startRunProgress(params.itemID, "codex_cli");
+  startRunProgress(params.itemID, "codex_cli", runToken);
   let assistantMessage: HTMLElement | null | undefined = null;
   const pendingCompletion = {
     mode: "codex_cli" as const,
@@ -102,6 +118,10 @@ export async function handleCodexQuestion(params: {
     onComplete: params.onComplete,
     workspacePath: undefined as string | undefined,
     cancelTimeout: undefined as (() => void) | undefined,
+    cleanupClaimed: false,
+    terminalClaim: undefined as "controller" | "cancel" | "timeout" | undefined,
+    preparationSettled: false,
+    terminalSettled: false,
   };
   registerPendingEngineCompletion(params.itemID, pendingCompletion);
   const cancelTimeout = armRunTimeout({
@@ -118,7 +138,11 @@ export async function handleCodexQuestion(params: {
         token: runToken,
         workspacePath: pendingCompletion.workspacePath,
         suppressMessage: params.suppressChatMessages,
-        stop: () => stopCodexRunSilently({ itemID: params.itemID }),
+        stop: () =>
+          stopCodexRunSilently({
+            itemID: params.itemID,
+            finishPresentation: false,
+          }),
         onMessage: (message) => {
           if (assistantMessage) {
             setMessageContent(assistantMessage, message, "ai");
@@ -142,17 +166,24 @@ export async function handleCodexQuestion(params: {
     resumeSessionId: params.resumeSessionId,
   }).catch(async (error) => {
     cancelTimeout();
-    clearPendingEngineCompletion(params.itemID, runToken);
-    if (!isReaderRunTokenActive(params.itemID, runToken)) return undefined;
+    if (!isReaderRunTokenActive(params.itemID, runToken)) {
+      markPendingEnginePreparationSettled(params.itemID, runToken);
+      return undefined;
+    }
+    if (!claimPendingEngineCompletion(params.itemID, runToken, "controller")) {
+      return undefined;
+    }
+    markPendingEnginePreparationSettled(params.itemID, runToken);
     const detail = error instanceof Error ? error.message : String(error);
     const state = failRunProgress({
       itemID: params.itemID,
       engine: "codex_cli",
+      token: runToken,
       rawError: detail,
       source: "workspace",
       canRetry: !params.suppressChatMessages,
     });
-    const assistantText = state.failure!.userMessage;
+    const assistantText = state!.failure!.userMessage;
     try {
       await sessionHistoryService
         .persistAssistantTurn({
@@ -172,6 +203,7 @@ export async function handleCodexQuestion(params: {
       await params.onComplete?.({ success: false, assistantText });
     } finally {
       params.streamingIndicator.style.display = "none";
+      clearPendingEngineCompletion(params.itemID, runToken);
       markReaderRunFinished(params.itemID, runToken);
     }
     return undefined;
@@ -183,15 +215,24 @@ export async function handleCodexQuestion(params: {
 
   if (!isReaderRunTokenActive(params.itemID, runToken)) {
     cancelTimeout();
-    clearPendingEngineCompletion(params.itemID, runToken);
     if (result.ok) await stopDetachedRunProcess(result.processId);
-    await cleanupWorkspaceIfEnabled(result.workspacePath);
-    params.streamingIndicator.style.display = "none";
+    if (
+      isPendingEngineCompletionCurrent(params.itemID, runToken) &&
+      !pendingCompletion.cleanupClaimed
+    ) {
+      await cleanupWorkspaceIfEnabled(result.workspacePath);
+      params.streamingIndicator.style.display = "none";
+    }
+    markPendingEnginePreparationSettled(params.itemID, runToken);
     return;
   }
+  markPendingEnginePreparationSettled(params.itemID, runToken);
 
   if (!result.ok) {
     cancelTimeout();
+    if (!claimPendingEngineCompletion(params.itemID, runToken, "controller")) {
+      return;
+    }
     let failureMessage = "Codex CLI could not start this run.";
     try {
       await finishRunAfterCleanup({
@@ -203,6 +244,7 @@ export async function handleCodexQuestion(params: {
             sessionTitle: params.sessionTitle,
             paperTitle: params.paperTitle,
             engine: "codex_cli",
+            token: runToken,
             rawError: result.error,
             source: "spawn",
             suppressMessage: params.suppressChatMessages,
@@ -266,28 +308,28 @@ export async function handleCodexQuestion(params: {
     runStatus: "running",
     latestEventType: "spawned",
   });
-  advanceRunProgress(params.itemID, {
+  advanceRunProgress(params.itemID, runToken, {
     type: "spawned",
     processId: result.processId,
   });
   const poller = setInterval(async () => {
     const progress = await readCodexRunProgress({
       outputPath: result.outputPath,
+      stderrPath: result.stderrPath,
       exitCodePath: result.exitCodePath,
     });
 
     if (!isReaderRunTokenActive(params.itemID, runToken)) return;
 
-    if (assistantMessage) {
-      const displayText = sanitizeAssistantText(
-        progress.structuredOutput && progress.parsedOutput
-          ? progress.parsedOutput
-          : "Running Codex CLI…",
-      );
-      setMessageContent(assistantMessage, displayText, "ai");
-    }
-
     if (!progress.completed) {
+      if (assistantMessage) {
+        const displayText = sanitizeAssistantText(
+          progress.structuredOutput && progress.parsedOutput
+            ? progress.parsedOutput
+            : "Running Codex CLI…",
+        );
+        setMessageContent(assistantMessage, displayText, "ai");
+      }
       setCodexRunStateForItem(params.itemID, {
         ...buildCodexRunState({
           itemID: params.itemID,
@@ -301,12 +343,15 @@ export async function handleCodexQuestion(params: {
       return;
     }
 
+    if (!claimPendingEngineCompletion(params.itemID, runToken, "controller")) {
+      return;
+    }
+
     clearCodexPollerForItem(params.itemID);
-    advanceRunProgress(params.itemID, { type: "finishing" });
+    advanceRunProgress(params.itemID, runToken, { type: "finishing" });
 
     const rawAssistantText =
       progress.parsedOutput ||
-      (!progress.structuredOutput ? progress.rawOutput : "") ||
       "Codex CLI ran successfully, but returned no assistant message.";
     const success = progress.exitCode === "0";
     let assistantText = sanitizeAssistantText(rawAssistantText);
@@ -381,7 +426,9 @@ export async function handleCodexQuestion(params: {
           params.streamingIndicator.style.display = "none";
         },
         cleanup: () => cleanupWorkspaceIfEnabled(result.workspacePath),
-        shouldComplete: () => isReaderRunTokenActive(params.itemID, runToken),
+        shouldComplete: () =>
+          isReaderRunTokenActive(params.itemID, runToken) &&
+          isPendingEngineCompletionCurrent(params.itemID, runToken),
         complete: () =>
           params.onComplete?.({
             success,
@@ -392,11 +439,12 @@ export async function handleCodexQuestion(params: {
           const message = failRunProgress({
             itemID: params.itemID,
             engine: "codex_cli",
+            token: runToken,
             rawError:
               error instanceof Error ? error.message : String(error || ""),
             source: "process_exit",
             canRetry: !params.suppressChatMessages,
-          }).failure!.userMessage;
+          })!.failure!.userMessage;
           return params.onComplete?.({
             success: false,
             assistantText: message,
@@ -404,20 +452,25 @@ export async function handleCodexQuestion(params: {
         },
         finalize: () => {
           cancelTimeout();
-          if (success) {
-            if (getRunProgressState(params.itemID)?.phase !== "failed") {
-              advanceRunProgress(params.itemID, { type: "completed" });
+          if (isPendingEngineCompletionCurrent(params.itemID, runToken)) {
+            if (success) {
+              if (getRunProgressState(params.itemID)?.phase !== "failed") {
+                advanceRunProgress(params.itemID, runToken, {
+                  type: "completed",
+                });
+              }
+            } else {
+              failRunProgress({
+                itemID: params.itemID,
+                engine: "codex_cli",
+                token: runToken,
+                rawError: terminalFailure!.rawError,
+                source: "process_exit",
+                canRetry: !params.suppressChatMessages,
+              });
             }
-          } else {
-            failRunProgress({
-              itemID: params.itemID,
-              engine: "codex_cli",
-              rawError: terminalFailure!.rawError,
-              source: "process_exit",
-              canRetry: !params.suppressChatMessages,
-            });
+            clearPendingEngineCompletion(params.itemID, runToken);
           }
-          clearPendingEngineCompletion(params.itemID, runToken);
           markReaderRunFinished(params.itemID, runToken);
         },
       });

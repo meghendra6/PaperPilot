@@ -8,6 +8,7 @@ test("buildBackgroundCodexShellScript exports environment before running codex",
   const script = buildBackgroundCodexShellScript({
     promptPath: "/tmp/prompt.txt",
     outputPath: "/tmp/out.jsonl",
+    stderrPath: "/tmp/stderr.log",
     exitCodePath: "/tmp/exit.txt",
     pidPath: "/tmp/pid.txt",
     command: ["/opt/homebrew/bin/codex", "exec", "-"],
@@ -24,6 +25,7 @@ test("buildBackgroundCodexShellScript exports environment before running codex",
     script,
     /export PATH='\/Users\/meghendra\/\.nvm\/versions\/node\/v20\.16\.0\/bin:\/usr\/bin:\/bin'/,
   );
+  assert.match(script, /2> '\/tmp\/stderr\.log'/);
   assert.match(
     script,
     /cat '\/tmp\/prompt\.txt' \| '\/opt\/homebrew\/bin\/codex' 'exec' '-'/,
@@ -34,6 +36,7 @@ test("buildBackgroundCodexShellScript quotes paths with apostrophes", () => {
   const script = buildBackgroundCodexShellScript({
     promptPath: "/tmp/Paper Pilot/Smith's paper/prompt.txt",
     outputPath: "/tmp/Paper Pilot/Smith's paper/out.jsonl",
+    stderrPath: "/tmp/Paper Pilot/Smith's paper/stderr.log",
     exitCodePath: "/tmp/Paper Pilot/Smith's paper/exit.txt",
     pidPath: "/tmp/Paper Pilot/Smith's paper/pid.txt",
     command: ["/opt/Homebrew Tools/codex's bin/codex", "exec", "-"],

@@ -113,9 +113,10 @@ polled**:
    - builds the CLI argv and wraps it in a **detached background shell script**
      (`codex/shell.ts` for Codex; inline in the runner for Claude and Gemini)
    - runs `Zotero.Utilities.Internal.exec("/bin/zsh", ["-lc", script])`
-4. The script redirects stdout+stderr to an output file, writes the exit code to
-   a separate file when done, and echoes the pid to a third file. `exec` returns
-   as soon as the background job is spawned.
+4. The script writes stdout and stderr to separate files, writes the exit code
+   when done, and records the detached shell pid. `exec` returns as soon as the
+   background job is spawned. Cancellation walks the recorded process tree
+   before clearing engine state, so pipeline children do not outlive the card.
 5. `controller` starts a `setInterval` at **800 ms** that reads the output file,
    advances the shared card to `Running`, and stops once the exit-code file is
    non-empty. Codex displays structured assistant output when one is available;
@@ -136,7 +137,12 @@ polled**:
    finished, and stale tokens cannot invoke workflow callbacks. A workflow that
    intentionally chains another run (Paper Mastery follow-up or final report)
    passes the active parent token as an explicit continuation guard; unrelated
-   requests remain blocked.
+   requests remain blocked. Progress and terminal completion are generation
+   owned: one controller/timeout/cancel path can claim a token, and an older
+   parent finalizer cannot overwrite a chained child. Cancellation during
+   workspace preparation keeps a per-item barrier until the old runner settles
+   and finishes cleanup, preventing a retry from sharing or deleting its stable
+   workspace.
 
 Failures are classified in `ai/runFailure.ts`. Workspace and timeout sources
 take precedence over string matching; executable and login patterns cover all
@@ -149,11 +155,11 @@ continue to use their own workflow buttons.
 
 Per-engine file names inside the workspace:
 
-| Engine | prompt              | output               | exit code         | pid              |
-| ------ | ------------------- | -------------------- | ----------------- | ---------------- |
-| Codex  | `prompt.txt`        | `codex-output.jsonl` | `codex-exit.txt`  | `codex-pid.txt`  |
-| Claude | `claude-prompt.txt` | `claude-output.txt`  | `claude-exit.txt` | `claude-pid.txt` |
-| Gemini | `gemini-prompt.txt` | `gemini-output.txt`  | `gemini-exit.txt` | `gemini-pid.txt` |
+| Engine | prompt              | stdout               | stderr              | exit code         | pid              |
+| ------ | ------------------- | -------------------- | ------------------- | ----------------- | ---------------- |
+| Codex  | `prompt.txt`        | `codex-output.jsonl` | `codex-stderr.log`  | `codex-exit.txt`  | `codex-pid.txt`  |
+| Claude | `claude-prompt.txt` | `claude-output.txt`  | `claude-stderr.log` | `claude-exit.txt` | `claude-pid.txt` |
+| Gemini | `gemini-prompt.txt` | `gemini-output.txt`  | `gemini-stderr.log` | `gemini-exit.txt` | `gemini-pid.txt` |
 
 Codex emits JSONL events, so `outputParser.ts` extracts the assistant text and
 the resumable `thread_id`. Claude runs with `-p --output-format text` and Gemini

@@ -10,6 +10,7 @@ import { checkShellSyntax } from "./helpers/shellSyntax";
 type BuildClaudeCommand = (params: {
   promptPath: string;
   outputPath: string;
+  stderrPath: string;
   exitCodePath: string;
   pidPath: string;
   workspacePath: string;
@@ -29,6 +30,7 @@ test("buildClaudeCommand streams the prompt file into Claude Code print mode", (
   const script = buildClaudeCommand!({
     promptPath: "/tmp/Paper Pilot/Smith's paper/claude-prompt.txt",
     outputPath: "/tmp/Paper Pilot/Smith's paper/claude-output.txt",
+    stderrPath: "/tmp/Paper Pilot/Smith's paper/claude-stderr.log",
     exitCodePath: "/tmp/Paper Pilot/Smith's paper/claude-exit.txt",
     pidPath: "/tmp/Paper Pilot/Smith's paper/claude-pid.txt",
     workspacePath: "/tmp/Paper Pilot/Smith's paper",
@@ -51,6 +53,10 @@ test("buildClaudeCommand streams the prompt file into Claude Code print mode", (
   assert.match(script, /--resume 'claude-thread-7'/);
   assert.match(script, /--permission-mode 'default'/);
   assert.match(script, /--setting-sources project,local/);
+  assert.match(
+    script,
+    /2> '\/tmp\/Paper Pilot\/Smith'\\''s paper\/claude-stderr\.log'/,
+  );
 });
 
 test("buildClaudeCommand uses Claude Code continue mode for the latest session marker", () => {
@@ -63,6 +69,7 @@ test("buildClaudeCommand uses Claude Code continue mode for the latest session m
   const script = buildClaudeCommand!({
     promptPath: "/tmp/paper/claude-prompt.txt",
     outputPath: "/tmp/paper/claude-output.txt",
+    stderrPath: "/tmp/paper/claude-stderr.log",
     exitCodePath: "/tmp/paper/claude-exit.txt",
     pidPath: "/tmp/paper/claude-pid.txt",
     workspacePath: "/tmp/paper",
@@ -74,4 +81,31 @@ test("buildClaudeCommand uses Claude Code continue mode for the latest session m
 
   assert.match(script, / --continue /);
   assert.doesNotMatch(script, /--resume 'latest'/);
+});
+
+test("Claude progress keeps successful stderr out of parsed assistant text", async () => {
+  const previousZotero = (globalThis as { Zotero?: unknown }).Zotero;
+  (globalThis as { Zotero?: unknown }).Zotero = {
+    File: {
+      getContentsAsync: async (path: string) =>
+        path.endsWith("output.txt")
+          ? "answer"
+          : path.endsWith("stderr.log")
+            ? "secret-local-stderr-marker"
+            : "0",
+    },
+  };
+
+  try {
+    const progress = await claudeRunner.readClaudeRunProgress({
+      outputPath: "/tmp/output.txt",
+      stderrPath: "/tmp/stderr.log",
+      exitCodePath: "/tmp/exit.txt",
+    });
+    assert.equal(progress.parsedOutput, "answer");
+    assert.match(progress.rawOutput, /secret-local-stderr-marker/);
+    assert.doesNotMatch(progress.parsedOutput, /secret-local-stderr-marker/);
+  } finally {
+    (globalThis as { Zotero?: unknown }).Zotero = previousZotero;
+  }
 });

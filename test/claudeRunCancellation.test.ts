@@ -7,6 +7,7 @@ import {
   setClaudeRunStateForItem,
 } from "../src/modules/claude/runState";
 import { stopClaudeRunSilently } from "../src/modules/claude/stopRun";
+import { buildKillProcessTreeScript } from "../src/modules/ai/runCompletion";
 
 test("stopClaudeRunSilently kills the active pid and clears run state and poller state", async () => {
   const previousAddon = (globalThis as { addon?: unknown }).addon;
@@ -37,7 +38,7 @@ test("stopClaudeRunSilently kills the active pid and clears run state and poller
     assert.deepEqual(execCalls, [
       {
         command: "/bin/zsh",
-        args: ["-lc", "kill 6789 >/dev/null 2>&1 || true"],
+        args: ["-lc", buildKillProcessTreeScript("6789")],
       },
     ]);
     assert.equal(

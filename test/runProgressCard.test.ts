@@ -12,6 +12,8 @@ class FakeElement {
   textContent = "";
   type = "";
   className = "";
+  disabled = false;
+  listeners = new Map<string, () => void>();
 
   constructor(ownerDocument: FakeDocument) {
     this.ownerDocument = ownerDocument;
@@ -38,7 +40,13 @@ class FakeElement {
     this.attributes.delete(name);
   }
 
-  addEventListener() {}
+  addEventListener(name: string, listener: () => void) {
+    this.listeners.set(name, listener);
+  }
+
+  click() {
+    this.listeners.get("click")?.();
+  }
 }
 
 class FakeDocument {
@@ -76,6 +84,7 @@ test("run progress card owns one timer and dispose is idempotent", () => {
     const preparing = createRunProgressState({
       itemID: 71,
       engine: "codex_cli",
+      token: Symbol("run-71"),
       now: 100,
     });
 
@@ -98,4 +107,49 @@ test("run progress card owns one timer and dispose is idempotent", () => {
     globalThis.setInterval = originalSetInterval;
     globalThis.clearInterval = originalClearInterval;
   }
+});
+
+test("run progress actions ignore a second click while the first is pending", async () => {
+  const doc = new FakeDocument();
+  const container = new FakeElement(doc);
+  let resolveRetry: (() => void) | undefined;
+  let retries = 0;
+  const retryPending = new Promise<void>((resolve) => {
+    resolveRetry = resolve;
+  });
+  const card = createRunProgressCard({
+    container: container as unknown as HTMLElement,
+    actions: {
+      onCancel() {},
+      onRetry() {
+        retries += 1;
+        return retryPending;
+      },
+      onOpenSettings() {},
+      onShowLoginHelp() {},
+    },
+  });
+  const failed = {
+    ...createRunProgressState({
+      itemID: 72,
+      engine: "codex_cli",
+      token: Symbol("run-72"),
+      now: 100,
+    }),
+    phase: "failed" as const,
+    canRetry: true,
+  };
+
+  card.render(failed);
+  const retry = container.children[2].children[0];
+  retry.click();
+  retry.click();
+  assert.equal(retries, 1);
+  assert.equal(retry.disabled, true);
+
+  resolveRetry?.();
+  await retryPending;
+  await Promise.resolve();
+  assert.equal(retry.disabled, false);
+  card.dispose();
 });

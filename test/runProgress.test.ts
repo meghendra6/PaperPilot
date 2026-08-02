@@ -16,6 +16,7 @@ test("run progress follows preparing, running, finishing, and completed", () => 
   const preparing = createRunProgressState({
     itemID: 12,
     engine: "codex_cli",
+    token: Symbol("run-12"),
     now: 100,
   });
   const running = transitionRunProgress(preparing, {
@@ -43,6 +44,7 @@ test("run progress records workspace failure and retry availability", () => {
   const preparing = createRunProgressState({
     itemID: 13,
     engine: "claude_code",
+    token: Symbol("run-13"),
     now: 100,
   });
   const failure = classifyRunFailure({
@@ -66,6 +68,7 @@ test("run timeout is absolute and terminal phases do not time out", () => {
   const preparing = createRunProgressState({
     itemID: 14,
     engine: "gemini_cli",
+    token: Symbol("run-14"),
     now: 100,
   });
   assert.equal(isRunTimedOut(preparing, 100 + RUN_TIMEOUT_MS - 1), false);
@@ -94,6 +97,7 @@ test("run progress storage keeps paper items isolated", () => {
       createRunProgressState({
         itemID: 21,
         engine: "codex_cli",
+        token: Symbol("run-21"),
         now: 100,
       }),
     );
@@ -101,6 +105,7 @@ test("run progress storage keeps paper items isolated", () => {
       createRunProgressState({
         itemID: 22,
         engine: "gemini_cli",
+        token: Symbol("run-22"),
         now: 200,
       }),
     );
@@ -140,6 +145,7 @@ test("absolute timeout guard is scheduled from the preparing start time", () => 
       createRunProgressState({
         itemID: 31,
         engine: "claude_code",
+        token: Symbol("run-31"),
         now: 100,
       }),
     );

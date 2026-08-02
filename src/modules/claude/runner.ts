@@ -24,6 +24,7 @@ export interface StartedClaudeRun {
   workspacePath: string;
   promptPreview: string;
   outputPath: string;
+  stderrPath: string;
   exitCodePath: string;
   pidPath: string;
   processId?: string;
@@ -88,6 +89,7 @@ async function readTextFile(path: string) {
 export function buildClaudeCommand(params: {
   promptPath: string;
   outputPath: string;
+  stderrPath: string;
   exitCodePath: string;
   pidPath: string;
   workspacePath: string;
@@ -111,11 +113,11 @@ export function buildClaudeCommand(params: {
 
   return [
     `mkdir -p ${shellEscape(outputDir)}`,
-    `rm -f ${shellEscape(params.outputPath)} ${shellEscape(params.exitCodePath)} ${shellEscape(params.pidPath)}`,
+    `rm -f ${shellEscape(params.outputPath)} ${shellEscape(params.stderrPath)} ${shellEscape(params.exitCodePath)} ${shellEscape(params.pidPath)}`,
     ...environmentLines,
     `(` +
       `cd ${shellEscape(params.workspacePath)} && ` +
-      `cat ${shellEscape(params.promptPath)} | ${shellEscape(params.executablePath)} -p --output-format text --model ${shellEscape(params.model)} ${resumePart} --permission-mode ${shellEscape(permissionMode)} --setting-sources project,local > ${shellEscape(params.outputPath)} 2>&1; ` +
+      `cat ${shellEscape(params.promptPath)} | ${shellEscape(params.executablePath)} -p --output-format text --model ${shellEscape(params.model)} ${resumePart} --permission-mode ${shellEscape(permissionMode)} --setting-sources project,local > ${shellEscape(params.outputPath)} 2> ${shellEscape(params.stderrPath)}; ` +
       `printf '%s' $? > ${shellEscape(params.exitCodePath)}` +
       `) & echo $! > ${shellEscape(params.pidPath)}`,
   ].join(" && ");
@@ -244,6 +246,7 @@ export async function startClaudeRunForQuestion(params: {
 
   const promptPath = `${workspacePath}/claude-prompt.txt`;
   const outputPath = `${workspacePath}/claude-output.txt`;
+  const stderrPath = `${workspacePath}/claude-stderr.log`;
   const exitCodePath = `${workspacePath}/claude-exit.txt`;
   const pidPath = `${workspacePath}/claude-pid.txt`;
   const paperPath = `${workspacePath}/paper.txt`;
@@ -291,6 +294,7 @@ export async function startClaudeRunForQuestion(params: {
   const script = buildClaudeCommand({
     promptPath,
     outputPath,
+    stderrPath,
     exitCodePath,
     pidPath,
     workspacePath,
@@ -319,6 +323,7 @@ export async function startClaudeRunForQuestion(params: {
     workspacePath,
     promptPreview: claudePrompt,
     outputPath,
+    stderrPath,
     exitCodePath,
     pidPath,
     processId,
@@ -327,16 +332,19 @@ export async function startClaudeRunForQuestion(params: {
 
 export async function readClaudeRunProgress(paths: {
   outputPath: string;
+  stderrPath: string;
   exitCodePath: string;
 }) {
-  const rawOutput = await readTextFile(paths.outputPath);
+  const stdout = await readTextFile(paths.outputPath);
+  const stderr = await readTextFile(paths.stderrPath);
+  const rawOutput = [stdout, stderr].filter(Boolean).join("\n");
   const exitCode = (await readTextFile(paths.exitCodePath)).trim();
 
   return {
     rawOutput,
-    parsedOutput: rawOutput.trim(),
+    parsedOutput: stdout.trim(),
     structuredOutput: false,
-    latestEventType: rawOutput ? "text" : "unknown",
+    latestEventType: stdout ? "text" : stderr ? "diagnostic" : "unknown",
     completed: exitCode.length > 0,
     exitCode,
   };

@@ -1,4 +1,5 @@
 import type { RunFailure } from "./runFailure";
+import type { ReaderRunToken } from "./runPresentation";
 import type { EngineMode } from "./types";
 
 declare const addon: any;
@@ -16,6 +17,7 @@ export type RunProgressPhase =
 export interface RunProgressState {
   itemID: number;
   engine: EngineMode;
+  token: ReaderRunToken;
   phase: RunProgressPhase;
   startedAt: number;
   updatedAt: number;
@@ -34,12 +36,14 @@ export type RunProgressEvent =
 export function createRunProgressState(params: {
   itemID: number;
   engine: EngineMode;
+  token: ReaderRunToken;
   now?: number;
 }): RunProgressState {
   const now = params.now ?? Date.now();
   return {
     itemID: params.itemID,
     engine: params.engine,
+    token: params.token,
     phase: "preparing",
     startedAt: now,
     updatedAt: now,

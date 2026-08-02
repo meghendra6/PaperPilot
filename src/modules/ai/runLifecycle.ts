@@ -35,6 +35,10 @@ export interface PendingEngineCompletion {
   retryable: boolean;
   cancelTimeout?: () => void;
   onComplete?: (result: ReaderRunCompletionResult) => void | Promise<void>;
+  terminalClaim?: "controller" | "cancel" | "timeout";
+  cleanupClaimed?: boolean;
+  preparationSettled?: boolean;
+  terminalSettled?: boolean;
 }
 
 function pendingCompletions(): Map<number, PendingEngineCompletion> {
@@ -83,11 +87,52 @@ export function clearPendingEngineCompletion(
   }
 }
 
+export function isPendingEngineCompletionCurrent(
+  itemID: number,
+  token: ReaderRunToken,
+): boolean {
+  return getPendingEngineCompletion(itemID)?.token === token;
+}
+
+export function claimPendingEngineCompletion(
+  itemID: number,
+  token: ReaderRunToken,
+  claim: NonNullable<PendingEngineCompletion["terminalClaim"]>,
+): PendingEngineCompletion | undefined {
+  const pending = getPendingEngineCompletion(itemID);
+  if (!pending || pending.token !== token || pending.terminalClaim) {
+    return undefined;
+  }
+  pending.terminalClaim = claim;
+  return pending;
+}
+
+export function markPendingEnginePreparationSettled(
+  itemID: number,
+  token: ReaderRunToken,
+): void {
+  const pending = getPendingEngineCompletion(itemID);
+  if (!pending || pending.token !== token) return;
+  pending.preparationSettled = true;
+  if (pending.terminalSettled) pendingCompletions().delete(itemID);
+}
+
+export function markPendingEngineTerminalSettled(
+  itemID: number,
+  token: ReaderRunToken,
+): void {
+  const pending = getPendingEngineCompletion(itemID);
+  if (!pending || pending.token !== token) return;
+  pending.terminalSettled = true;
+  if (pending.preparationSettled) pendingCompletions().delete(itemID);
+}
+
 export function startRunProgress(
   itemID: number,
   engine: EngineMode,
+  token: ReaderRunToken,
 ): RunProgressState {
-  const state = createRunProgressState({ itemID, engine });
+  const state = createRunProgressState({ itemID, engine, token });
   setRunProgressState(state);
   notifyReaderPaneStateChanged(itemID);
   return state;
@@ -95,6 +140,7 @@ export function startRunProgress(
 
 export function advanceRunProgress(
   itemID: number,
+  token: ReaderRunToken,
   event:
     | { type: "spawned"; processId?: string }
     | { type: "finishing" }
@@ -102,7 +148,7 @@ export function advanceRunProgress(
     | { type: "cancelled"; canRetry?: boolean },
 ): RunProgressState | undefined {
   const current = getRunProgressState(itemID);
-  if (!current) return undefined;
+  if (!current || current.token !== token) return undefined;
   const next = transitionRunProgress(current, {
     ...event,
     at: Date.now(),
@@ -118,13 +164,19 @@ export function advanceRunProgress(
 export function failRunProgress(params: {
   itemID: number;
   engine: EngineMode;
+  token: ReaderRunToken;
   rawError: string;
   source: RunFailureSource;
   canRetry?: boolean;
-}): RunProgressState {
+}): RunProgressState | undefined {
   const current =
     getRunProgressState(params.itemID) ??
-    createRunProgressState({ itemID: params.itemID, engine: params.engine });
+    createRunProgressState({
+      itemID: params.itemID,
+      engine: params.engine,
+      token: params.token,
+    });
+  if (current.token !== params.token) return undefined;
   const failure = classifyRunFailure(params);
   const next = transitionRunProgress(current, {
     type: "failed",
@@ -143,6 +195,7 @@ export async function persistRunFailure(params: {
   sessionTitle: string;
   paperTitle?: string;
   engine: EngineMode;
+  token: ReaderRunToken;
   rawError: string;
   source: RunFailureSource;
   suppressMessage?: boolean;
@@ -151,7 +204,13 @@ export async function persistRunFailure(params: {
     ...params,
     canRetry: !params.suppressMessage,
   });
-  const failure = state.failure!;
+  const failure =
+    state?.failure ??
+    classifyRunFailure({
+      engine: params.engine,
+      rawError: params.rawError,
+      source: params.source,
+    });
   await sessionHistoryService.persistAssistantTurn({
     itemID: params.itemID,
     sessionId: params.sessionId,
