@@ -116,9 +116,8 @@ Mastery prompt 會強制問題／評估回應為嚴格 JSON（禁止前置推理
 
 當你在 **Codex CLI**、**Claude Code** 或 **Gemini CLI** 模式下提問時，Paper Pilot 會為目前論文建立一個工作區，讓 CLI 在回答前先讀取本地論文脈絡。
 
-典型產物包括：
+所有引擎都會寫入的產物：
 
-- `CONTEXT_INDEX.md`
 - `paper.md`
 - `paper.json`
 - `paper.txt`
@@ -126,7 +125,8 @@ Mastery prompt 會強制問題／評估回應為嚴格 JSON（禁止前置推理
 - `recent-turns.json`
 - `metadata.json`
 - `annotations.json`
-- `figures/`
+
+Codex CLI 模式會額外寫入 `CONTEXT_INDEX.md`（檔案閱讀順序索引）與 `figures/` 目錄，因為只有 Codex 的 prompt 會指示引擎讀取該索引。
 
 `paper.md` 是結構化 Markdown 視圖，`paper.json` 記錄結構化 PDF 元素與擷取後設資料，`paper.txt` 作為相容／純文字退路保留。當 Java 可用時，`paper.md` 和 `paper.json` 由內建的 OpenDataLoader 執行時產生；若結構化擷取不可用，Paper Pilot 會退回到 Zotero `attachmentText`，並在 `metadata.json` 中記錄此情況。
 
@@ -389,4 +389,5 @@ npm run build
 - [`docs/images/README.md`](./docs/images/README.md)
 - [`CONTRIBUTING.md`](./CONTRIBUTING.md)
 - [`docs/manual-qa.md`](./docs/manual-qa.md)
+- [`docs/architecture.md`](./docs/architecture.md)
 - [`docs/prompt-contracts.md`](./docs/prompt-contracts.md)

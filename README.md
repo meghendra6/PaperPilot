@@ -111,9 +111,8 @@ Mastery prompts enforce strict JSON responses for questions and evaluations (no 
 
 When you ask a question in **Codex CLI**, **Claude Code**, or **Gemini CLI** mode, Paper Pilot writes a per-paper workspace so the CLI can inspect local paper context before answering.
 
-Typical artifacts include:
+Artifacts written for every engine:
 
-- `CONTEXT_INDEX.md`
 - `paper.md`
 - `paper.json`
 - `paper.txt`
@@ -121,7 +120,8 @@ Typical artifacts include:
 - `recent-turns.json`
 - `metadata.json`
 - `annotations.json`
-- `figures/`
+
+Codex CLI mode additionally writes `CONTEXT_INDEX.md` (a reading-order file map) and a `figures/` directory, because only the Codex prompt directs the engine to read that index.
 
 `paper.md` is the structured Markdown view, `paper.json` carries structured PDF elements plus extraction metadata, and `paper.txt` remains as the compatibility/plain-text fallback. When Java is unavailable, Paper Pilot records the fallback in `metadata.json`.
 
@@ -387,4 +387,5 @@ This project is licensed under **AGPL-3.0-or-later**.
 - [`docs/images/README.md`](./docs/images/README.md)
 - [`CONTRIBUTING.md`](./CONTRIBUTING.md)
 - [`docs/manual-qa.md`](./docs/manual-qa.md)
+- [`docs/architecture.md`](./docs/architecture.md)
 - [`docs/prompt-contracts.md`](./docs/prompt-contracts.md)

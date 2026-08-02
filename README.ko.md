@@ -110,9 +110,8 @@ Mastery 프롬프트는 질문/평가 응답을 엄격한 JSON으로 강제하�
 
 **Codex CLI**, **Claude Code**, **Gemini CLI** 모드에서 질문하면, Paper Pilot는 CLI가 답변 전에 로컬 논문 맥락을 확인할 수 있도록 논문별 워크스페이스를 생성합니다.
 
-대표적인 아티팩트:
+모든 엔진에서 생성되는 아티팩트:
 
-- `CONTEXT_INDEX.md`
 - `paper.md`
 - `paper.json`
 - `paper.txt`
@@ -120,7 +119,8 @@ Mastery 프롬프트는 질문/평가 응답을 엄격한 JSON으로 강제하�
 - `recent-turns.json`
 - `metadata.json`
 - `annotations.json`
-- `figures/`
+
+Codex CLI 모드에서는 `CONTEXT_INDEX.md`(파일 읽기 순서 맵)와 `figures/` 디렉터리를 추가로 생성합니다. 해당 인덱스를 읽도록 지시하는 프롬프트가 Codex 경로에만 있기 때문입니다.
 
 `paper.md`는 구조화 Markdown 추출 결과이고, `paper.json`은 구조화 PDF 요소와 추출 메타데이터를 담습니다. `paper.txt`는 하위 호환성과 평문 폴백 경로로 유지됩니다.
 
@@ -387,4 +387,5 @@ npm run build
 - [`docs/images/README.md`](./docs/images/README.md)
 - [`CONTRIBUTING.md`](./CONTRIBUTING.md)
 - [`docs/manual-qa.md`](./docs/manual-qa.md)
+- [`docs/architecture.md`](./docs/architecture.md)
 - [`docs/prompt-contracts.md`](./docs/prompt-contracts.md)

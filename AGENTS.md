@@ -1,31 +1,46 @@
 # AGENTS.md
 
 This file guides coding agents and contributors working in the Paper Pilot repository.
+It is the source of truth; [`CLAUDE.md`](./CLAUDE.md) points here rather than duplicating it.
 
 ## Project intent
 
-Paper Pilot is a Zotero 7 plugin that turns the PDF reader into an AI-assisted paper workbench. The repo mixes reader-pane UI code, local CLI provider integration, paper-context/workspace generation, and structured prompt/parsing logic.
+Paper Pilot is a Zotero 7-9 plugin that turns the PDF reader into an AI-assisted paper workbench. The repo mixes reader-pane UI code, local CLI provider integration, paper-context/workspace generation, and structured prompt/parsing logic.
+
+There is no server and no network model client: every AI run shells out to a local CLI (Codex CLI, Claude Code, or Gemini CLI) that the user already installed and authenticated.
 
 Default goal: make small, verifiable changes that keep the reader experience compact, paper-grounded, and honest about runtime limitations.
+
+Read [`docs/architecture.md`](./docs/architecture.md) before changing engine, workspace, or reader-pane internals.
 
 ## Repository map
 
 - `src/`
+  - `index.ts`, `addon.ts`, `hooks.ts`: singleton bootstrap, `addon.data` mutable state, Zotero lifecycle wiring
   - `modules/readerPane.ts`, `readerActions.ts`: reader UI wiring and action flow
+  - `modules/ai/`: `EngineMode` union, per-item mode overrides, provider registry, and the mode-dispatching `workspaceRun.ts` helpers
+  - `modules/codex/`, `modules/claude/`, `modules/gemini/`: one near-duplicate module per engine (`runner`, `controller`, `runState`, `poller`, `stopRun`); Codex carries the extra command/executable/model/status surface
+  - `modules/context/`: retrieval, chunk indexing, and workspace artifact construction
+  - `modules/workspace/`: workspace path building, writability probe, cleanup, redaction, collection artifact bundles
   - `modules/researchBrief.ts`, `paperTools.ts`, `paperCompare.ts`, `relatedRecommendations.ts`: structured paper workflows
   - `modules/comprehensionCheck/`: Paper Mastery prompts, parser, and round/topic state
   - `modules/session/`: paper-scoped session history service, snapshot capture/apply, and the silent-turn filter that keeps tool JSON out of replayed chat
   - `modules/.../prompt*.ts`, `modules/context/promptPreviewBuilder.ts`: prompt assembly and output-shape guardrails
   - `modules/paperArtifact*.ts`: persistence/reuse of paper artifacts
-  - `utils/`: shared helpers
-- `addon/`: Zotero addon bootstrap, prefs, and packaged addon resources
-- `scripts/prepare-opendataloader.mjs`: vendors the OpenDataLoader runtime before build/release
+  - `utils/`: shared helpers, including `prefs.ts` (`getPref`/`setPref`)
+- `addon/`: Zotero addon bootstrap, `prefs.js` defaults, `preferences.xhtml` settings UI, locales, and the vendored OpenDataLoader JAR
+- `scripts/prepare-opendataloader.mjs`: vendors the OpenDataLoader runtime before start/build/release
 - `scripts/zotero-plugin-cli.mjs`: development/build/release entrypoint
-- `typings/`: Zotero and project-specific type shims
+- `scripts/check-release-tag-version.mjs`: release guard that rejects a tag not matching `v${package.json.version}`
+- `scripts/doctor.sh`: local setup/environment check
+- `typings/`: Zotero and project-specific type shims, including the committed generated `prefs.d.ts`
 - `test/`: Node-based regression tests for prompts, parsing, workflow logic, CLI integration, and artifact generation
+- `docs/architecture.md`: how the pieces fit together and how a run actually executes
 - `docs/manual-qa.md`: required real-Zotero runtime checklist
 - `docs/prompt-contracts.md`: expected structured output shapes and prompt guardrails
 - `README*.md`: user-facing product and setup docs in multiple languages
+
+Local-only, not tracked: `.github/` except `workflows/` and `FUNDING.yml`, `docs/superpowers/`, `.worktrees/`, `reference/`, `build/`. Do not stage them and do not link to them from committed docs.
 
 ## Core command surface
 
@@ -36,6 +51,8 @@ Default goal: make small, verifiable changes that keep the reader experience com
 - `npm run build`: packages the Zotero add-on and vendors the OpenDataLoader runtime
 - `npx eslint <paths>` / `npx prettier --check <paths>`: preferred read-only lint/style checks on touched files
 - Avoid `npm run lint` as a default verification step because it runs write/fix operations across the repo
+
+Development baseline: Node 20+, npm, Zotero 7-9, Java 11+ for OpenDataLoader extraction at runtime, and at least one local CLI if you want to exercise a real engine path.
 
 ## Working principles
 
@@ -65,16 +82,37 @@ Default goal: make small, verifiable changes that keep the reader experience com
 
 ### Provider / workspace / CLI changes
 
-- Keep Codex CLI and Gemini CLI behavior scoped to the active paper.
-- Preserve workspace grounding behavior and compatibility fallbacks.
+- Keep Codex CLI, Claude Code, and Gemini CLI behavior scoped to the active paper. Run state, mode overrides, pollers, and card state are keyed by `itemID` in `addon.data`; leaking state across papers is the most common regression here.
+- Engine behavior that should be identical across the three belongs in `modules/ai/workspaceRun.ts`, not in cross-engine imports. The engine modules are deliberately near-duplicates for isolation.
+- Runs are file-based and polled, not streamed: the runner spawns a detached shell job that writes output, exit-code, and pid files, and the controller polls them every 800 ms. Preserve that contract when touching a runner or controller.
+- Preserve workspace grounding behavior and compatibility fallbacks, including the `extractionMethod` distinction between `opendataloader-pdf` and `zotero-attachment-text`.
+- A new workspace artifact is dead weight unless the prompt tells the engine to read it. Update the runner and the prompt together, and note that `CONTEXT_INDEX.md` and `figures/` are Codex-only today.
 - If you touch OpenDataLoader or packaging flow, verify the build path still vendors the runtime correctly.
 - Changes under `scripts/` are not covered by the repo ESLint config, so review changed `.mjs` files carefully and use targeted checks such as `node --check <file>` when relevant.
+
+### Preference changes
+
+Preferences are declared in three places that must stay in sync, or the setting silently does nothing:
+
+1. `addon/prefs.js` — runtime default
+2. `typings/prefs.d.ts` — generated by zotero-plugin-scaffold but committed
+3. `addon/chrome/content/preferences.xhtml` — the settings UI
+
+Read prefs through `utils/prefs.ts` (`getPref` / `setPref`), never `Zotero.Prefs` directly.
+
+### Test changes
+
+- Tests run on the Node test runner with `ts-node/register` and have no Zotero runtime. They cover pure logic only: prompt builders, parsers, command builders, path/artifact construction, state machines.
+- To make new code testable, read Zotero globals lazily instead of importing them at module scope. Follow the `getGlobalZotero()` pattern in `modules/session/sessionHistoryRepository.ts`.
+- Anything needing a real pane, subprocess, or Zotero item belongs in `docs/manual-qa.md`, not in a mocked test that pretends to cover it.
 
 ### Docs changes
 
 - Keep readiness claims conservative.
 - Preserve the distinction between automated verification and real Zotero runtime QA.
 - If shared product positioning or setup guidance changes, update translated README files that exist in-tree when the shared meaning changes.
+- Keep the agent-doc split intact: `AGENTS.md` is canonical, `CLAUDE.md` stays a thin pointer plus Claude Code specifics, and `CONTRIBUTING.md` stays human-contributor oriented. Do not fork the same guidance into all three.
+- Update `docs/architecture.md` when module boundaries, the run lifecycle, the workspace artifact set, or the persistence layers change.
 
 ## Verification expectations
 
