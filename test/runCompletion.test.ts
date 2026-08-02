@@ -307,6 +307,14 @@ test("started process cleanup requires a valid pid", async () => {
     stopDetachedRunProcess("not-a-pid", { requireProcessId: true }),
     /valid pid/i,
   );
+  await assert.rejects(
+    stopDetachedRunProcess("0", { requireProcessId: true }),
+    /valid pid/i,
+  );
+  await assert.rejects(
+    stopDetachedRunProcess("1", { requireProcessId: true }),
+    /valid pid/i,
+  );
 });
 
 test("late preparation retains ownership when process termination fails", async () => {

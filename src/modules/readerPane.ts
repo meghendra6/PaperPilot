@@ -1890,6 +1890,7 @@ export function registerPaperPilotPaneSection() {
             continuationToken?: ReaderRunToken,
           ) => void | Promise<void>,
           continuationToken?: ReaderRunToken,
+          onAdmitted?: () => void,
         ) {
           const itemID = item.id;
           const { mode, placeholderResponse } =
@@ -1909,6 +1910,7 @@ export function registerPaperPilotPaneSection() {
                 silentUserMessage: true,
                 suppressChatMessages: true,
                 continuationToken,
+                onAdmitted,
                 onComplete: async (result) => {
                   if (result.success) {
                     await onSuccess(
@@ -1963,17 +1965,19 @@ export function registerPaperPilotPaneSection() {
           ) {
             return;
           }
-          clearMasteryState(item.id);
-          masterySection.style.display = "";
           const state = buildInitialMasteryState();
-          state.phase = "generating-question";
-          state.running = true;
-          state.status = "Generating first question...";
-          setMasteryState(item.id, state);
-          if (masteryStatus) {
-            masteryStatus.textContent = state.status;
-          }
-          updateMasteryProgressDots(state);
+          const markAdmitted = () => {
+            clearMasteryState(item.id);
+            masterySection.style.display = "";
+            state.phase = "generating-question";
+            state.running = true;
+            state.status = "Generating first question...";
+            setMasteryState(item.id, state);
+            if (masteryStatus) {
+              masteryStatus.textContent = state.status;
+            }
+            updateMasteryProgressDots(state);
+          };
 
           const resetOnFail = () => {
             const fs = getMasteryState(item.id);
@@ -2013,6 +2017,8 @@ export function registerPaperPilotPaneSection() {
               updateMasteryProgressDots(s);
             },
             resetOnFail,
+            undefined,
+            markAdmitted,
           );
         });
 
@@ -2029,16 +2035,18 @@ export function registerPaperPilotPaneSection() {
             return;
           }
 
-          state.phase = "evaluating";
-          state.running = true;
-          state.status = "Evaluating your answer...";
-          setMasteryState(item.id, state);
-          if (masteryStatus) {
-            masteryStatus.textContent = state.status;
-          }
-          if (masterySubmit) {
-            masterySubmit.disabled = true;
-          }
+          const markAdmitted = () => {
+            state.phase = "evaluating";
+            state.running = true;
+            state.status = "Evaluating your answer...";
+            setMasteryState(item.id, state);
+            if (masteryStatus) {
+              masteryStatus.textContent = state.status;
+            }
+            if (masterySubmit) {
+              masterySubmit.disabled = true;
+            }
+          };
 
           const question = state.currentQuestion;
           const resetSubmitOnFail = () => {
@@ -2161,6 +2169,8 @@ export function registerPaperPilotPaneSection() {
               );
             },
             resetSubmitOnFail,
+            undefined,
+            markAdmitted,
           );
         });
 
@@ -3217,39 +3227,41 @@ async function runPaperArtifactRequest(params: {
 }) {
   const request = buildPaperArtifactRequest(params.item, params.kind);
   const existing = getPaperArtifactState(params.item.id);
-  setPaperArtifactState(params.item.id, {
-    running: true,
-    status: `Generating ${request.label.toLowerCase()}…`,
-    activeKind: params.kind,
-    cards: existing.cards,
-  });
+  const markAdmitted = () => {
+    setPaperArtifactState(params.item.id, {
+      running: true,
+      status: `Generating ${request.label.toLowerCase()}…`,
+      activeKind: params.kind,
+      cards: existing.cards,
+    });
 
-  renderPaperArtifactState(
-    params.statusElement.ownerDocument.querySelector(
-      "#chat-research-brief",
-    ) as HTMLButtonElement,
-    params.statusElement.ownerDocument.querySelector(
-      "#chat-tool-contributions",
-    ) as HTMLButtonElement,
-    params.statusElement.ownerDocument.querySelector(
-      "#chat-tool-limitations",
-    ) as HTMLButtonElement,
-    params.statusElement.ownerDocument.querySelector(
-      "#chat-tool-followups",
-    ) as HTMLButtonElement,
-    params.statusElement.ownerDocument.querySelector(
-      "#chat-tool-save-note",
-    ) as HTMLButtonElement,
-    params.statusElement.ownerDocument.querySelector(
-      "#chat-tool-save-collection",
-    ) as HTMLButtonElement,
-    params.statusElement.ownerDocument.querySelector(
-      "#chat-tool-clear",
-    ) as HTMLButtonElement,
-    params.statusElement,
-    params.cardsElement,
-    params.item.id,
-  );
+    renderPaperArtifactState(
+      params.statusElement.ownerDocument.querySelector(
+        "#chat-research-brief",
+      ) as HTMLButtonElement,
+      params.statusElement.ownerDocument.querySelector(
+        "#chat-tool-contributions",
+      ) as HTMLButtonElement,
+      params.statusElement.ownerDocument.querySelector(
+        "#chat-tool-limitations",
+      ) as HTMLButtonElement,
+      params.statusElement.ownerDocument.querySelector(
+        "#chat-tool-followups",
+      ) as HTMLButtonElement,
+      params.statusElement.ownerDocument.querySelector(
+        "#chat-tool-save-note",
+      ) as HTMLButtonElement,
+      params.statusElement.ownerDocument.querySelector(
+        "#chat-tool-save-collection",
+      ) as HTMLButtonElement,
+      params.statusElement.ownerDocument.querySelector(
+        "#chat-tool-clear",
+      ) as HTMLButtonElement,
+      params.statusElement,
+      params.cardsElement,
+      params.item.id,
+    );
+  };
 
   params.input.value = request.prompt;
   await handleUserInput(
@@ -3264,6 +3276,7 @@ async function runPaperArtifactRequest(params: {
       displayQuestion: request.label,
       silentUserMessage: true,
       suppressChatMessages: true,
+      onAdmitted: markAdmitted,
       onComplete: async ({ success, assistantText }) => {
         if (!success) {
           setPaperArtifactState(params.item.id, {
@@ -3415,40 +3428,46 @@ async function runPaperCompareRequest(params: {
   }
 
   const existing = getPaperArtifactState(params.item.id);
-  params.compareButton.disabled = true;
-  setPaperArtifactState(params.item.id, {
-    running: true,
-    status: "Generating paper comparison…",
-    activeKind: "paper-compare",
-    cards: existing.cards,
-  });
-  renderCompareButtonState(params.compareButton, params.item.id, currentTitle);
-  renderPaperArtifactState(
-    params.statusElement.ownerDocument.querySelector(
-      "#chat-research-brief",
-    ) as HTMLButtonElement,
-    params.statusElement.ownerDocument.querySelector(
-      "#chat-tool-contributions",
-    ) as HTMLButtonElement,
-    params.statusElement.ownerDocument.querySelector(
-      "#chat-tool-limitations",
-    ) as HTMLButtonElement,
-    params.statusElement.ownerDocument.querySelector(
-      "#chat-tool-followups",
-    ) as HTMLButtonElement,
-    params.statusElement.ownerDocument.querySelector(
-      "#chat-tool-save-note",
-    ) as HTMLButtonElement,
-    params.statusElement.ownerDocument.querySelector(
-      "#chat-tool-save-collection",
-    ) as HTMLButtonElement,
-    params.statusElement.ownerDocument.querySelector(
-      "#chat-tool-clear",
-    ) as HTMLButtonElement,
-    params.statusElement,
-    params.cardsElement,
-    params.item.id,
-  );
+  const markAdmitted = () => {
+    params.compareButton.disabled = true;
+    setPaperArtifactState(params.item.id, {
+      running: true,
+      status: "Generating paper comparison…",
+      activeKind: "paper-compare",
+      cards: existing.cards,
+    });
+    renderCompareButtonState(
+      params.compareButton,
+      params.item.id,
+      currentTitle,
+    );
+    renderPaperArtifactState(
+      params.statusElement.ownerDocument.querySelector(
+        "#chat-research-brief",
+      ) as HTMLButtonElement,
+      params.statusElement.ownerDocument.querySelector(
+        "#chat-tool-contributions",
+      ) as HTMLButtonElement,
+      params.statusElement.ownerDocument.querySelector(
+        "#chat-tool-limitations",
+      ) as HTMLButtonElement,
+      params.statusElement.ownerDocument.querySelector(
+        "#chat-tool-followups",
+      ) as HTMLButtonElement,
+      params.statusElement.ownerDocument.querySelector(
+        "#chat-tool-save-note",
+      ) as HTMLButtonElement,
+      params.statusElement.ownerDocument.querySelector(
+        "#chat-tool-save-collection",
+      ) as HTMLButtonElement,
+      params.statusElement.ownerDocument.querySelector(
+        "#chat-tool-clear",
+      ) as HTMLButtonElement,
+      params.statusElement,
+      params.cardsElement,
+      params.item.id,
+    );
+  };
 
   params.input.value = request.prompt;
   await handleUserInput(
@@ -3463,6 +3482,7 @@ async function runPaperCompareRequest(params: {
       displayQuestion: request.label,
       silentUserMessage: true,
       suppressChatMessages: true,
+      onAdmitted: markAdmitted,
       onComplete: async ({ success, assistantText }) => {
         if (!success) {
           setPaperArtifactState(params.item.id, {
@@ -3553,6 +3573,7 @@ async function handleUserInput(
     silentUserMessage?: boolean;
     suppressChatMessages?: boolean;
     continuationToken?: ReaderRunToken;
+    onAdmitted?: () => void;
     onComplete?: (result: ReaderRunCompletionResult) => void | Promise<void>;
   },
 ) {
@@ -3574,10 +3595,6 @@ async function handleUserInput(
     if (!options?.suppressChatMessages) {
       addMessage(chatMessages, activeRunMessage, "ai");
     }
-    await options?.onComplete?.({
-      success: false,
-      assistantText: activeRunMessage,
-    });
     return;
   }
 
@@ -3588,21 +3605,21 @@ async function handleUserInput(
     if (!options?.suppressChatMessages) {
       addMessage(chatMessages, assistantText, "ai");
     }
-    await options?.onComplete?.({ success: false, assistantText });
     return;
   }
 
-  ztoolkit.log("Placeholder question:", question);
-  if (!options?.silentUserMessage) {
-    addMessage(chatMessages, options?.displayQuestion || question, "user");
-  }
-  input.value = "";
-  input.style.height = `${CHAT_INPUT_MIN_HEIGHT}px`;
-  input.scrollTop = 0;
-  input.disabled = true;
-  renderStreamingIndicator(streamingIndicator, true);
-
   try {
+    options?.onAdmitted?.();
+    ztoolkit.log("Placeholder question:", question);
+    if (!options?.silentUserMessage) {
+      addMessage(chatMessages, options?.displayQuestion || question, "user");
+    }
+    input.value = "";
+    input.style.height = `${CHAT_INPUT_MIN_HEIGHT}px`;
+    input.scrollTop = 0;
+    input.disabled = true;
+    renderStreamingIndicator(streamingIndicator, true);
+
     const draft = addon.data.readerActionDraft;
     const readerContext: { selectedText?: string } | undefined = draft
       ? undefined

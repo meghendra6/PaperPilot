@@ -164,7 +164,10 @@ polled**:
    and Retry claims also block session replacement until their owner settles;
    Normal chat acquires an admission token before reader-context and user-turn
    persistence awaits; Retry and direct workflows acquire the same mutually
-   exclusive item-token kind before their first side effect. Session
+   exclusive item-token kind before their first side effect. Silent Workbench,
+   Compare, and Mastery workflows enter `running` and enable their persistence
+   callback only after that chat admission succeeds; rejected admission invokes
+   no completion callback. Session
    Open/New/Delete acquires its own item token before the first cleanup await and
    keeps it until the session mutation and pane rerender complete. Related Papers
    invokes its state/persistence callback before releasing the direct

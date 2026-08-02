@@ -77,7 +77,13 @@ export async function stopDetachedRunProcess(
   processId?: string,
   options: { requireProcessId?: boolean } = {},
 ): Promise<void> {
-  if (!processId || !/^\d+$/.test(processId)) {
+  const numericProcessId = Number(processId);
+  if (
+    !processId ||
+    !/^[1-9]\d*$/.test(processId) ||
+    !Number.isSafeInteger(numericProcessId) ||
+    numericProcessId <= 1
+  ) {
     if (options.requireProcessId) {
       throw new Error("The started CLI process did not provide a valid pid.");
     }
