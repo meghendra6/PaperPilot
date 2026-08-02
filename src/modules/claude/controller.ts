@@ -4,6 +4,7 @@ import {
   markReaderRunStarted,
   notifyReaderPaneStateChanged,
 } from "../ai/runPresentation";
+import { finishRunAfterCleanup } from "../ai/runCompletion";
 import { sanitizeAssistantText } from "../message/assistantOutput";
 import { sessionHistoryService } from "../session/sessionHistoryService";
 import { cleanupWorkspaceIfEnabled } from "../workspace/cleanup";
@@ -32,7 +33,10 @@ export async function handleClaudeQuestion(params: {
   chatMessages: HTMLElement;
   streamingIndicator: HTMLElement;
   suppressChatMessages?: boolean;
-  onComplete?: (result: { success: boolean; assistantText: string }) => void;
+  onComplete?: (result: {
+    success: boolean;
+    assistantText: string;
+  }) => void | Promise<void>;
 }) {
   if (isClaudeRunActiveForItem(params.itemID)) {
     const assistantText =
@@ -41,7 +45,7 @@ export async function handleClaudeQuestion(params: {
       addMessage(params.chatMessages, assistantText, "ai");
     }
     params.streamingIndicator.style.display = "none";
-    params.onComplete?.({
+    await params.onComplete?.({
       success: false,
       assistantText,
     });
@@ -57,40 +61,40 @@ export async function handleClaudeQuestion(params: {
     annotationIDs: params.annotationIDs,
     resumeSessionId: params.resumeSessionId,
   }).catch((error) => {
+    params.streamingIndicator.style.display = "none";
     notifyReaderPaneStateChanged(params.itemID);
     throw error;
   });
 
   if (!result.ok) {
-    try {
-      if (!params.suppressChatMessages) {
-        addMessage(
-          params.chatMessages,
-          `Claude Code error: ${result.error}`,
-          "ai",
-        );
-      }
-      await sessionHistoryService.persistAssistantTurn({
-        itemID: params.itemID,
-        sessionId: params.sessionId,
-        mode: "claude_code",
-        paperTitle: params.paperTitle || params.sessionTitle,
-        assistantText: result.error,
-        success: false,
-        suppressMessage: params.suppressChatMessages,
-      });
-      params.streamingIndicator.style.display = "none";
-      params.onComplete?.({
-        success: false,
-        assistantText: result.error,
-      });
-    } finally {
-      try {
-        await cleanupWorkspaceIfEnabled(result.workspacePath);
-      } finally {
-        notifyReaderPaneStateChanged(params.itemID);
-      }
-    }
+    await finishRunAfterCleanup({
+      prepare: async () => {
+        if (!params.suppressChatMessages) {
+          addMessage(
+            params.chatMessages,
+            `Claude Code error: ${result.error}`,
+            "ai",
+          );
+        }
+        await sessionHistoryService.persistAssistantTurn({
+          itemID: params.itemID,
+          sessionId: params.sessionId,
+          mode: "claude_code",
+          paperTitle: params.paperTitle || params.sessionTitle,
+          assistantText: result.error,
+          success: false,
+          suppressMessage: params.suppressChatMessages,
+        });
+        params.streamingIndicator.style.display = "none";
+      },
+      cleanup: () => cleanupWorkspaceIfEnabled(result.workspacePath),
+      complete: () =>
+        params.onComplete?.({
+          success: false,
+          assistantText: result.error,
+        }),
+      finalize: () => notifyReaderPaneStateChanged(params.itemID),
+    });
     return;
   }
 
@@ -133,32 +137,29 @@ export async function handleClaudeQuestion(params: {
     }
 
     const success = progress.exitCode === "0";
-    try {
-      await sessionHistoryService.persistAssistantTurn({
-        itemID: params.itemID,
-        sessionId: params.sessionId,
-        mode: "claude_code",
-        paperTitle: params.paperTitle || params.sessionTitle,
-        assistantText,
-        success,
-        rawEvent: progress.rawOutput,
-        resumeSessionId: params.resumeSessionId,
-        suppressMessage: params.suppressChatMessages,
-      });
-      clearClaudeRunStateForItem(params.itemID);
-      params.streamingIndicator.style.display = "none";
-      params.onComplete?.({
-        success,
-        assistantText,
-      });
-    } finally {
-      clearClaudeRunStateForItem(params.itemID);
-      try {
-        await cleanupWorkspaceIfEnabled(result.workspacePath);
-      } finally {
+    await finishRunAfterCleanup({
+      prepare: async () => {
+        await sessionHistoryService.persistAssistantTurn({
+          itemID: params.itemID,
+          sessionId: params.sessionId,
+          mode: "claude_code",
+          paperTitle: params.paperTitle || params.sessionTitle,
+          assistantText,
+          success,
+          rawEvent: progress.rawOutput,
+          resumeSessionId: params.resumeSessionId,
+          suppressMessage: params.suppressChatMessages,
+        });
+        clearClaudeRunStateForItem(params.itemID);
+        params.streamingIndicator.style.display = "none";
+      },
+      cleanup: () => cleanupWorkspaceIfEnabled(result.workspacePath),
+      complete: () => params.onComplete?.({ success, assistantText }),
+      finalize: () => {
+        clearClaudeRunStateForItem(params.itemID);
         markReaderRunFinished(params.itemID, runToken);
-      }
-    }
+      },
+    });
   }, 800);
 
   addon.data.claudeRunPollers?.set(params.itemID, poller);
