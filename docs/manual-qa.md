@@ -17,6 +17,14 @@ Use this checklist inside real Zotero 7, 8, and 9 runtimes before claiming readi
 - [ ] If paper-tool controls are present, confirm they do not crowd or overlap the existing mode/session controls
 - [ ] If structured brief cards are present, confirm they remain readable without pushing chat input off-screen
 
+### Reader pane redesign — Phase A theme bridge
+
+- [ ] In Zotero light mode, confirm the pane background, text, dividers, inputs, and buttons blend with the native item pane
+- [ ] In Zotero dark mode, confirm the same surfaces follow the native theme without low-contrast text or borders
+- [ ] Temporarily unset the inspected Zotero theme variables and confirm Paper Pilot falls back to its light/dark literals
+- [ ] Tab through every native button, input, select, and textarea and confirm the native-colored focus ring remains visible
+- [ ] Confirm primary, secondary, and ghost buttons have restrained hover/active feedback and disabled controls do not move
+
 ## 2. Mode behavior
 
 - [ ] Switch to `Gemini CLI`
