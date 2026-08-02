@@ -20,10 +20,12 @@ import {
   parseCodexOutputText,
 } from "../src/modules/codex/outputParser";
 import {
+  getClaudeBuiltInModels,
   getCodexBuiltInModelCatalog,
   getCodexBuiltInModels,
   getGeminiBuiltInModels,
   mergeModelOptions,
+  normalizeClaudeModel,
   normalizeCodexModel,
   normalizeCodexReasoningEffort,
   normalizeGeminiModel,
@@ -300,19 +302,76 @@ test("mergeModelOptions keeps recent-first unique order", () => {
   );
 });
 
-test("getCodexBuiltInModelCatalog exposes only gpt-5.5 reasoning options", () => {
-  assert.deepEqual(getCodexBuiltInModels(), ["gpt-5.5"]);
-  assert.deepEqual(getCodexBuiltInModelCatalog(), [
-    {
-      slug: "gpt-5.5",
-      displayName: "gpt-5.5",
-      reasoningEfforts: ["low", "medium", "high", "xhigh"],
-      defaultReasoningEffort: "medium",
-    },
+test("getCodexBuiltInModelCatalog exposes the Codex CLI model catalog", () => {
+  assert.deepEqual(getCodexBuiltInModels(), [
+    "gpt-5.6-sol",
+    "gpt-5.6-terra",
+    "gpt-5.6-luna",
+    "gpt-5.5",
+    "gpt-5.4",
+    "gpt-5.4-mini",
+    "gpt-5.3-codex-spark",
   ]);
-  assert.equal(normalizeCodexModel("gpt-5-codex"), "gpt-5.5");
+
+  const catalog = getCodexBuiltInModelCatalog();
+  const bySlug = new Map(catalog.map((model) => [model.slug, model]));
+
+  assert.deepEqual(bySlug.get("gpt-5.6-sol"), {
+    slug: "gpt-5.6-sol",
+    displayName: "GPT-5.6-Sol",
+    reasoningEfforts: ["low", "medium", "high", "xhigh", "max", "ultra"],
+    defaultReasoningEffort: "low",
+  });
+  assert.deepEqual(bySlug.get("gpt-5.5"), {
+    slug: "gpt-5.5",
+    displayName: "GPT-5.5",
+    reasoningEfforts: ["low", "medium", "high", "xhigh"],
+    defaultReasoningEffort: "medium",
+  });
+  assert.deepEqual(
+    bySlug.get("gpt-5.3-codex-spark")?.defaultReasoningEffort,
+    "high",
+  );
+});
+
+test("normalizeCodexModel keeps known catalog slugs and coerces unknown models to the default", () => {
+  assert.equal(normalizeCodexModel("gpt-5.6-sol"), "gpt-5.6-sol");
+  assert.equal(normalizeCodexModel("gpt-5.5"), "gpt-5.5");
+  assert.equal(normalizeCodexModel("gpt-5.4-mini"), "gpt-5.4-mini");
+  assert.equal(normalizeCodexModel("gpt-5-codex"), "gpt-5.6-sol");
+  assert.equal(normalizeCodexModel(""), "gpt-5.6-sol");
+});
+
+test("normalizeCodexReasoningEffort validates efforts against the selected model", () => {
+  // Model-aware: gpt-5.6-sol supports max/ultra; gpt-5.5 does not.
+  assert.equal(normalizeCodexReasoningEffort("ultra", "gpt-5.6-sol"), "ultra");
+  assert.equal(normalizeCodexReasoningEffort("max", "gpt-5.6-luna"), "max");
+  assert.equal(normalizeCodexReasoningEffort("ultra", "gpt-5.5"), "medium");
+  // Invalid effort falls back to the model's own default.
+  assert.equal(normalizeCodexReasoningEffort("", "gpt-5.6-sol"), "low");
+  assert.equal(
+    normalizeCodexReasoningEffort("unsupported", "gpt-5.3-codex-spark"),
+    "high",
+  );
+  // Without a model, validate against the default model's efforts.
   assert.equal(normalizeCodexReasoningEffort("xhigh"), "xhigh");
   assert.equal(normalizeCodexReasoningEffort("unsupported"), "medium");
+});
+
+test("getClaudeBuiltInModels exposes the Claude Code CLI aliases", () => {
+  assert.deepEqual(getClaudeBuiltInModels(), [
+    "sonnet",
+    "opus",
+    "haiku",
+    "fable",
+  ]);
+  // Family aliases collapse to the CLI alias; full names pass through so the
+  // CLI can resolve pinned model ids like claude-fable-5 itself.
+  assert.equal(normalizeClaudeModel("claude-haiku"), "haiku");
+  assert.equal(normalizeClaudeModel("claude-fable"), "fable");
+  assert.equal(normalizeClaudeModel("fable"), "fable");
+  assert.equal(normalizeClaudeModel("claude-fable-5"), "claude-fable-5");
+  assert.equal(normalizeClaudeModel(""), "sonnet");
 });
 
 test("getGeminiBuiltInModels exposes the supported Gemini CLI model list", () => {

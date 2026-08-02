@@ -156,7 +156,7 @@ Codex mode is the more workspace-oriented path. The current codebase includes su
 - executable discovery and validation
 - login/status checks
 - workspace writability checks
-- `gpt-5.5` model selection with `low`, `medium`, `high`, and `xhigh` reasoning effort options
+- model selection across the current Codex CLI catalog (`gpt-5.6-sol` default, plus `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-5.5`, and earlier), with per-model reasoning effort options up to `max`/`ultra` where supported
 - sandbox and approval settings
 - optional web-search toggle
 - resumable follow-up runs tied to the current paper

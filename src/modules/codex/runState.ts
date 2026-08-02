@@ -73,10 +73,11 @@ export function buildCodexRunState(params: {
     getPref("codexWorkspaceRoot") || "/tmp/zotero-paper-ai",
   );
   const model = normalizeCodexModel(
-    String(getPref("codexDefaultModel") || "gpt-5.5"),
+    String(getPref("codexDefaultModel") || "gpt-5.6-sol"),
   );
   const reasoningEffort = normalizeCodexReasoningEffort(
     String(getPref("codexReasoningEffort") || "medium"),
+    model,
   );
 
   return deriveCodexRunState({

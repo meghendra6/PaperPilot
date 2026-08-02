@@ -70,10 +70,11 @@ export async function startCodexRunForQuestion(params: {
     String(getPref("codexExecutablePath") || ""),
   );
   const model = normalizeCodexModel(
-    String(getPref("codexDefaultModel") || "gpt-5.5"),
+    String(getPref("codexDefaultModel") || "gpt-5.6-sol"),
   );
   const reasoningEffort = normalizeCodexReasoningEffort(
     String(getPref("codexReasoningEffort") || "medium"),
+    model,
   );
   const workspaceRoot = String(
     getPref("codexWorkspaceRoot") || "/tmp/zotero-paper-ai",

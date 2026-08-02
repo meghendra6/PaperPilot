@@ -9,9 +9,65 @@ export function mergeModelOptions(recent: string[], allowed: string[]) {
   return [...new Set([...recent, ...allowed])];
 }
 
-const CODEX_BUILT_IN_MODEL = "gpt-5.5";
-const CODEX_REASONING_EFFORTS = ["low", "medium", "high", "xhigh"];
+interface CodexBuiltInModel {
+  slug: string;
+  displayName: string;
+  reasoningEfforts: string[];
+  defaultReasoningEffort: string;
+}
+
+// Mirrors the Codex CLI model catalog (visibility: list) as of codex-cli 0.145+.
+const CODEX_BUILT_IN_MODEL_CATALOG: CodexBuiltInModel[] = [
+  {
+    slug: "gpt-5.6-sol",
+    displayName: "GPT-5.6-Sol",
+    reasoningEfforts: ["low", "medium", "high", "xhigh", "max", "ultra"],
+    defaultReasoningEffort: "low",
+  },
+  {
+    slug: "gpt-5.6-terra",
+    displayName: "GPT-5.6-Terra",
+    reasoningEfforts: ["low", "medium", "high", "xhigh", "max", "ultra"],
+    defaultReasoningEffort: "medium",
+  },
+  {
+    slug: "gpt-5.6-luna",
+    displayName: "GPT-5.6-Luna",
+    reasoningEfforts: ["low", "medium", "high", "xhigh", "max"],
+    defaultReasoningEffort: "medium",
+  },
+  {
+    slug: "gpt-5.5",
+    displayName: "GPT-5.5",
+    reasoningEfforts: ["low", "medium", "high", "xhigh"],
+    defaultReasoningEffort: "medium",
+  },
+  {
+    slug: "gpt-5.4",
+    displayName: "GPT-5.4",
+    reasoningEfforts: ["low", "medium", "high", "xhigh"],
+    defaultReasoningEffort: "medium",
+  },
+  {
+    slug: "gpt-5.4-mini",
+    displayName: "GPT-5.4-Mini",
+    reasoningEfforts: ["low", "medium", "high", "xhigh"],
+    defaultReasoningEffort: "medium",
+  },
+  {
+    slug: "gpt-5.3-codex-spark",
+    displayName: "GPT-5.3-Codex-Spark",
+    reasoningEfforts: ["low", "medium", "high", "xhigh"],
+    defaultReasoningEffort: "high",
+  },
+];
+
+const CODEX_DEFAULT_MODEL = CODEX_BUILT_IN_MODEL_CATALOG[0].slug;
 const CODEX_DEFAULT_REASONING_EFFORT = "medium";
+
+function findCodexBuiltInModel(slug: string) {
+  return CODEX_BUILT_IN_MODEL_CATALOG.find((model) => model.slug === slug);
+}
 
 const GEMINI_BUILT_IN_MODELS = [
   "gemini-3.1-pro-preview",
@@ -24,10 +80,14 @@ const GEMINI_MODEL_ALIASES: Record<string, string> = {
   "gemini-2.5-flash": "gemini-3-flash-preview",
 };
 
-const CLAUDE_BUILT_IN_MODELS = ["sonnet", "opus"];
+// Claude Code CLI aliases: each resolves to the latest model in that family
+// (sonnet → Sonnet 5, opus → Opus 5, haiku → Haiku 4.5, fable → Fable 5).
+const CLAUDE_BUILT_IN_MODELS = ["sonnet", "opus", "haiku", "fable"];
 const CLAUDE_MODEL_ALIASES: Record<string, string> = {
   "claude-sonnet": "sonnet",
   "claude-opus": "opus",
+  "claude-haiku": "haiku",
+  "claude-fable": "fable",
 };
 
 export function getGeminiBuiltInModels() {
@@ -80,25 +140,21 @@ export interface CachedCodexModel {
 }
 
 export function getCodexBuiltInModels() {
-  return [CODEX_BUILT_IN_MODEL];
+  return CODEX_BUILT_IN_MODEL_CATALOG.map((model) => model.slug);
 }
 
 export function getCodexBuiltInModelCatalog(): CachedCodexModel[] {
-  return [
-    {
-      slug: CODEX_BUILT_IN_MODEL,
-      displayName: CODEX_BUILT_IN_MODEL,
-      reasoningEfforts: [...CODEX_REASONING_EFFORTS],
-      defaultReasoningEffort: CODEX_DEFAULT_REASONING_EFFORT,
-    },
-  ];
+  return CODEX_BUILT_IN_MODEL_CATALOG.map((model) => ({
+    slug: model.slug,
+    displayName: model.displayName,
+    reasoningEfforts: [...model.reasoningEfforts],
+    defaultReasoningEffort: model.defaultReasoningEffort,
+  }));
 }
 
 export function normalizeCodexModel(model: string) {
   const normalized = model.trim();
-  return normalized === CODEX_BUILT_IN_MODEL
-    ? normalized
-    : CODEX_BUILT_IN_MODEL;
+  return findCodexBuiltInModel(normalized) ? normalized : CODEX_DEFAULT_MODEL;
 }
 
 export function normalizeCodexModelList(models: string[]) {
@@ -108,9 +164,17 @@ export function normalizeCodexModelList(models: string[]) {
   );
 }
 
-export function normalizeCodexReasoningEffort(reasoningEffort: string) {
+export function normalizeCodexReasoningEffort(
+  reasoningEffort: string,
+  model?: string,
+) {
+  const catalogModel = model ? findCodexBuiltInModel(model.trim()) : undefined;
+  const supportedEfforts = catalogModel
+    ? catalogModel.reasoningEfforts
+    : findCodexBuiltInModel(CODEX_DEFAULT_MODEL)!.reasoningEfforts;
   const normalized = reasoningEffort.trim();
-  return CODEX_REASONING_EFFORTS.includes(normalized)
-    ? normalized
-    : CODEX_DEFAULT_REASONING_EFFORT;
+  if (supportedEfforts.includes(normalized)) {
+    return normalized;
+  }
+  return catalogModel?.defaultReasoningEffort ?? CODEX_DEFAULT_REASONING_EFFORT;
 }
