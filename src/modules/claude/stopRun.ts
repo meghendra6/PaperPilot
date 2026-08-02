@@ -11,6 +11,7 @@ export async function stopClaudeRunSilently(params: {
 }) {
   const runState = addon.data.claudeRunStates?.get(params.itemID);
   clearClaudePollerForItem(params.itemID);
+  finishReaderRunsForMode(params.itemID, "claude_code");
   const pid = runState?.processId;
   if (pid) {
     await Zotero.Utilities.Internal.exec("/bin/zsh", [
@@ -21,6 +22,5 @@ export async function stopClaudeRunSilently(params: {
   if (runState && params.clearRunState !== false) {
     clearClaudeRunStateForItem(params.itemID);
   }
-  finishReaderRunsForMode(params.itemID, "claude_code");
   return runState;
 }

@@ -11,6 +11,7 @@ export async function stopGeminiRunSilently(params: {
 }) {
   const runState = addon.data.geminiRunStates?.get(params.itemID);
   clearGeminiPollerForItem(params.itemID);
+  finishReaderRunsForMode(params.itemID, "gemini_cli");
   const pid = runState?.processId;
   if (pid) {
     await Zotero.Utilities.Internal.exec("/bin/zsh", [
@@ -21,6 +22,5 @@ export async function stopGeminiRunSilently(params: {
   if (runState && params.clearRunState !== false) {
     clearGeminiRunStateForItem(params.itemID);
   }
-  finishReaderRunsForMode(params.itemID, "gemini_cli");
   return runState;
 }

@@ -7,11 +7,16 @@ import {
   setCodexRunStateForItem,
 } from "../src/modules/codex/runState";
 import { stopCodexRunSilently } from "../src/modules/codex/stopRun";
+import {
+  isReaderRunTokenActive,
+  markReaderRunStarted,
+} from "../src/modules/ai/runPresentation";
 
 test("stopCodexRunSilently kills the active pid and clears run state and poller state", async () => {
   const previousAddon = (globalThis as { addon?: unknown }).addon;
   const previousZotero = (globalThis as { Zotero?: unknown }).Zotero;
   const execCalls: Array<{ command: string; args: string[] }> = [];
+  let finishExec!: () => void;
 
   const interval = setInterval(() => undefined, 60_000);
 
@@ -26,6 +31,9 @@ test("stopCodexRunSilently kills the active pid and clears run state and poller 
       Internal: {
         exec: async (command: string, args: string[]) => {
           execCalls.push({ command, args });
+          await new Promise<void>((resolve) => {
+            finishExec = resolve;
+          });
         },
       },
     },
@@ -41,7 +49,12 @@ test("stopCodexRunSilently kills the active pid and clears run state and poller 
       processId: "4123",
     });
 
-    await stopCodexRunSilently({ itemID: 77 });
+    const runToken = markReaderRunStarted(77, "codex_cli");
+    const stopPromise = stopCodexRunSilently({ itemID: 77 });
+
+    assert.equal(isReaderRunTokenActive(77, runToken), false);
+    finishExec();
+    await stopPromise;
 
     assert.deepEqual(execCalls, [
       {

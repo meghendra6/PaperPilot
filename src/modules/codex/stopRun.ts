@@ -11,6 +11,7 @@ export async function stopCodexRunSilently(params: {
 }) {
   const runState = addon.data.codexRunStates?.get(params.itemID);
   clearCodexPollerForItem(params.itemID);
+  finishReaderRunsForMode(params.itemID, "codex_cli");
   const pid = runState?.processId;
   if (pid) {
     await Zotero.Utilities.Internal.exec("/bin/zsh", [
@@ -21,6 +22,5 @@ export async function stopCodexRunSilently(params: {
   if (runState && params.clearRunState !== false) {
     clearCodexRunStateForItem(params.itemID);
   }
-  finishReaderRunsForMode(params.itemID, "codex_cli");
   return runState;
 }
