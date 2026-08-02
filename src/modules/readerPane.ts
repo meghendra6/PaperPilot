@@ -1789,10 +1789,13 @@ export function registerPaperPilotPaneSection() {
             return;
           }
 
-          state.running = true;
-          state.status = "Generating final report...";
-          setMasteryState(item.id, state);
-          renderMasteryCompletion(state);
+          const markAdmitted = () => {
+            state.phase = "complete";
+            state.running = true;
+            state.status = "Generating final report...";
+            setMasteryState(item.id, state);
+            renderMasteryCompletion(state);
+          };
           await sendMasteryPrompt(
             buildFinalReportPrompt(state.rounds, state.topics),
             async (assistantText) => {
@@ -1825,6 +1828,7 @@ export function registerPaperPilotPaneSection() {
               }
             },
             continuationToken,
+            markAdmitted,
           );
         }
 
@@ -2187,8 +2191,6 @@ export function registerPaperPilotPaneSection() {
             return;
           }
           if (state.rounds.length > 0) {
-            state.phase = "complete";
-            setMasteryState(item.id, state);
             await showMasteryCompletion(state);
           } else {
             if (masterySection) {
