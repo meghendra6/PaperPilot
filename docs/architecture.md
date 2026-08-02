@@ -17,7 +17,8 @@ already installed and authenticated on the user's machine.
 
 ```text
 Zotero Reader (XUL/HTML pane)
-  └── src/modules/readerPane.ts        UI wiring, all reader-pane workflows
+  └── src/modules/readerPane.ts        pane assembly and workflow wiring
+        ├── modules/ui/                header, sections, composer sizing
         └── <engine>/controller.ts     run lifecycle + polling
               └── <engine>/runner.ts   workspace build + process launch
                     └── /bin/zsh -lc "<background script>"
@@ -34,6 +35,15 @@ registers the preference pane and reader pane section.
 Because state lives on `addon.data` keyed by `itemID`, **almost everything is
 paper-scoped**. Preserve that when adding features: leaking state across papers
 is the most common regression in this codebase.
+
+The pane itself uses a bounded flex column. `ui/paneHeader.ts` owns the compact
+engine/model header and its settings popover, `ui/collapsibleSection.ts` owns
+the accessible Workbench, Related papers, and Past sessions disclosures, and
+`ui/chatComposerSizing.ts` preserves textarea auto-sizing without changing the
+pane height. Disclosure state is serialized in the internal
+`paneSectionState` preference through the pure helpers in
+`ui/paneSectionState.ts`. The chat transcript takes the remaining space and
+scrolls independently from expanded section bodies.
 
 ## Engine abstraction
 
@@ -222,8 +232,9 @@ covered by [`manual-qa.md`](./manual-qa.md) instead.
 
 ## Known rough edges
 
-- `src/modules/readerPane.ts` is ~3.8k lines and owns every pane workflow. Add
-  new logic in a focused module and wire it in, rather than growing this file.
+- `src/modules/readerPane.ts` is still large and wires every pane workflow. Add
+  new rendering logic in a focused `modules/ui/` module and wire it in, rather
+  than growing this file.
 - The three engine modules are near-duplicates by design (isolation over reuse).
   Shared behavior belongs in `ai/workspaceRun.ts`, not in cross-engine imports.
 - `addon/` is excluded from `tsconfig.json`, so `bootstrap.js`,

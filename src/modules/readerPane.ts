@@ -21,24 +21,12 @@ import {
 import { clearCodexPollerForItem } from "./codex/poller";
 import { probeWorkspaceWritable } from "./workspace/status";
 import { redactPath } from "./workspace/redaction";
+import { rememberRecentCodexModel } from "./codex/modelHistory";
 import {
-  getRecentCodexModels,
-  rememberRecentCodexModel,
-} from "./codex/modelHistory";
-import {
-  getCodexBuiltInModelCatalog,
-  getCodexBuiltInModels,
-  getClaudeBuiltInModels,
-  getGeminiBuiltInModels,
-  mergeModelOptions,
   normalizeClaudeModel,
-  normalizeClaudeModelList,
   normalizeCodexModel,
-  normalizeCodexModelList,
   normalizeCodexReasoningEffort,
   normalizeGeminiModel,
-  normalizeGeminiModelList,
-  parseAllowedModels,
 } from "./codex/modelOptions";
 import { getCurrentReaderContext } from "./context/readerContext";
 import { messageStore } from "./message/messageStore";
@@ -73,7 +61,6 @@ import {
   type RecommendationGroup,
   type RecommendedPaper,
 } from "./relatedRecommendations";
-import { getRelatedRecommendationLayout } from "./relatedRecommendationLayout";
 import {
   buildPaperCompareCard,
   getPaperCompareButtonState,
@@ -106,19 +93,22 @@ import {
   clearMasteryState,
   buildInitialMasteryState,
 } from "./comprehensionCheck/status";
+import { createCollapsibleSection } from "./ui/collapsibleSection";
+import {
+  CHAT_INPUT_MIN_HEIGHT,
+  installChatComposerAutosize,
+} from "./ui/chatComposerSizing";
+import {
+  createPaneHeader,
+  renderCodexOptionsRow,
+  renderModeHeader,
+  renderModelHistory,
+  renderModelRow,
+  normalizeModelForMode,
+} from "./ui/paneHeader";
 
-const CHAT_INPUT_MIN_HEIGHT = 72;
-const CHAT_INPUT_MAX_HEIGHT = 180;
-const CHAT_RESIZE_MIN_HEIGHT = 280;
-const CHAT_RESIZE_MAX_HEIGHT = 1400;
-const CHAT_RESIZE_CONTAINER_BUFFER = 340;
-
-function clampChatHeight(value: number) {
-  return Math.max(
-    CHAT_RESIZE_MIN_HEIGHT,
-    Math.min(Math.round(value), CHAT_RESIZE_MAX_HEIGHT),
-  );
-}
+const paneCleanupByBody = new WeakMap<HTMLElement, () => void>();
+const paneTemplateByBody = new WeakMap<HTMLElement, HTMLElement>();
 
 export function setReaderActionDraft(
   draft: typeof addon.data.readerActionDraft,
@@ -152,31 +142,14 @@ export function registerPaperPilotPaneSection() {
     },
     bodyXHTML: `
       <div id="paper-pilot-container">
-        <div id="paper-pilot-mode">
-          <span id="paper-pilot-mode-chip" class="pp-mode-chip"></span>
-          <span id="paper-pilot-mode-status" class="pp-mode-status"></span>
-          <html:button id="chat-mode-gemini" class="pp-btn pp-btn--ghost">Gemini CLI</html:button>
-          <html:button id="chat-mode-claude" class="pp-btn pp-btn--ghost">Claude Code</html:button>
-          <html:button id="chat-mode-codex" class="pp-btn pp-btn--ghost">Codex CLI</html:button>
-          <html:button id="chat-mode-reset" class="pp-btn pp-btn--ghost">Use Default</html:button>
-        </div>
-        <div id="paper-pilot-run-state" class="pp-run-state" style="display: none;"></div>
-        <div id="paper-pilot-session-bar">
-          <span id="chat-current-document" class="pp-session-doc"></span>
-          <span id="chat-auto-highlight-status" class="pp-session-status"></span>
-          <html:button id="chat-auto-highlight" class="pp-btn pp-btn--secondary">Highlight key passages</html:button>
-          <html:button id="chat-new-session" class="pp-btn pp-btn--secondary">New session</html:button>
-          <html:button id="chat-past-sessions" class="pp-btn pp-btn--ghost">Past sessions</html:button>
-          <html:button id="chat-related-recommend" class="pp-btn pp-btn--secondary">Recommend related papers</html:button>
-          <html:button id="chat-paper-mastery" class="pp-btn pp-btn--secondary">Paper Mastery</html:button>
-        </div>
-        <div id="paper-pilot-session-history" class="pp-session-history" style="display: none;"></div>
-        <div class="pp-section" id="paper-pilot-workbench-section">
-          <div class="pp-section__header" id="paper-pilot-workbench-toggle">
-            <span class="pp-section__toggle">▼</span>
-            <span>Paper workbench</span>
-          </div>
-          <div class="pp-section__body">
+        <div id="paper-pilot-header-mount"></div>
+        <span id="chat-current-document" class="pp-visually-hidden"></span>
+        <div id="paper-pilot-section-stack">
+          <div id="paper-pilot-workbench-mount">
+            <div class="pp-workbench-highlight">
+              <html:button id="chat-auto-highlight" class="pp-btn pp-btn--secondary">Highlight key passages</html:button>
+              <span id="chat-auto-highlight-status" class="pp-session-status"></span>
+            </div>
             <div id="chat-paper-workbench">
               <html:button id="chat-research-brief" class="pp-btn pp-btn--secondary">Research brief</html:button>
               <html:button id="chat-tool-compare" class="pp-btn pp-btn--secondary">Compare</html:button>
@@ -186,65 +159,36 @@ export function registerPaperPilotPaneSection() {
               <html:button id="chat-tool-save-note" class="pp-btn pp-btn--ghost">Save latest to note</html:button>
               <html:button id="chat-tool-save-collection" class="pp-btn pp-btn--ghost">Save for collection</html:button>
               <html:button id="chat-tool-clear" class="pp-btn pp-btn--ghost">Clear cards</html:button>
+              <html:button id="chat-paper-mastery" class="pp-btn pp-btn--secondary">Paper Mastery</html:button>
             </div>
+            <div id="chat-compare-helper" class="pp-compare-helper pp-compare-helper--default"></div>
+            <div id="chat-paper-tool-status" class="pp-status-text" style="display: none;"></div>
+            <div id="chat-paper-tool-cards" class="pp-tool-cards" style="display: none;"></div>
+            <div id="paper-pilot-mastery-section" class="pp-mastery-panel" style="display: none;">
+              <div class="pp-mastery-topic-card">
+                <div id="paper-mastery-status" class="pp-mastery-status"></div>
+                <div id="paper-mastery-progress" class="pp-mastery-progress"></div>
+              </div>
+              <div id="paper-mastery-question" class="pp-mastery-question" style="display: none;"></div>
+              <div id="paper-mastery-feedback" class="pp-mastery-feedback" style="display: none;"></div>
+              <div id="paper-mastery-report" class="pp-mastery-report" style="display: none;"></div>
+              <html:textarea id="paper-mastery-answer" class="pp-mastery-answer" placeholder="Type your answer here..." style="display: none;" />
+              <div id="paper-mastery-actions" class="pp-mastery-actions" style="display: none;">
+                <html:button id="paper-mastery-submit" class="pp-btn pp-btn--primary">Submit Answer</html:button>
+                <html:button id="paper-mastery-end" class="pp-btn pp-btn--ghost">End Session</html:button>
+              </div>
+            </div>
+          </div>
+          <div id="paper-pilot-related-mount">
+            <html:button id="chat-related-recommend" class="pp-btn pp-btn--secondary">Recommend related papers</html:button>
+            <div id="chat-related-status" class="pp-status-text" style="display: none;"></div>
+            <div id="chat-related-groups" style="display: none;"></div>
+          </div>
+          <div id="paper-pilot-sessions-mount">
+            <div id="paper-pilot-session-history" class="pp-session-history"></div>
           </div>
         </div>
-        <div id="chat-compare-helper" class="pp-compare-helper pp-compare-helper--default"></div>
-        <div id="chat-paper-tool-status" class="pp-status-text" style="display: none;"></div>
-        <div id="chat-paper-tool-cards" class="pp-tool-cards" style="display: none;"></div>
-        <div id="chat-related-status" class="pp-status-text" style="display: none;"></div>
-        <div id="chat-related-groups" style="display: none;"></div>
-        <div class="pp-section" id="paper-pilot-engine-section" style="display: none;">
-          <div class="pp-section__header" id="paper-pilot-engine-toggle">
-            <span class="pp-section__toggle">▼</span>
-            <span>Engine settings</span>
-          </div>
-          <div class="pp-section__body">
-            <div id="paper-pilot-codex-actions" class="pp-codex-actions" style="display: none;">
-              <html:button id="chat-codex-auth" class="pp-btn pp-btn--secondary">Authenticate Codex</html:button>
-              <html:button id="chat-codex-device-auth" class="pp-btn pp-btn--secondary">Use device auth</html:button>
-              <html:button id="chat-codex-recheck" class="pp-btn pp-btn--secondary">Re-check status</html:button>
-              <html:button id="chat-codex-retry" class="pp-btn pp-btn--secondary">Retry Last</html:button>
-              <html:button id="chat-codex-cancel" class="pp-btn pp-btn--secondary">Cancel Run</html:button>
-            </div>
-            <div id="paper-pilot-policy-warning" class="pp-status-card pp-status-card--warning" style="display: none;"></div>
-            <div id="paper-pilot-gemini-fallback" class="pp-status-card pp-status-card--success" style="display: none;"></div>
-            <div id="paper-pilot-gemini-embed" class="pp-status-card pp-status-card--embed" style="display: none;"></div>
-            <div id="paper-pilot-model-row" class="pp-model-row" style="display: none;">
-              <html:label for="chat-codex-model">Model</html:label>
-              <html:select id="chat-codex-model"></html:select>
-              <html:button id="chat-codex-model-save" class="pp-btn pp-btn--primary">Save Model</html:button>
-            </div>
-            <div id="paper-pilot-codex-options" class="pp-codex-options" style="display: none;">
-              <html:label for="chat-codex-web-search">
-                <html:input type="checkbox" id="chat-codex-web-search" />
-                <span>Allow web search when needed</span>
-              </html:label>
-            </div>
-            <div id="paper-pilot-model-history" class="pp-model-history" style="display: none;"></div>
-          </div>
-        </div>
-        <div id="paper-pilot-draft" class="pp-status-card pp-status-card--draft" style="display: none;"></div>
-        <div class="pp-section" id="paper-pilot-mastery-section" style="display: none;">
-          <div class="pp-section__header" id="paper-pilot-mastery-toggle">
-            <span class="pp-section__toggle">▼</span>
-            <span>Paper Mastery</span>
-          </div>
-          <div class="pp-section__body">
-            <div class="pp-mastery-topic-card">
-              <div id="paper-mastery-status" class="pp-mastery-status"></div>
-              <div id="paper-mastery-progress" class="pp-mastery-progress"></div>
-            </div>
-            <div id="paper-mastery-question" class="pp-mastery-question" style="display: none;"></div>
-            <div id="paper-mastery-feedback" class="pp-mastery-feedback" style="display: none;"></div>
-            <div id="paper-mastery-report" class="pp-mastery-report" style="display: none;"></div>
-            <html:textarea id="paper-mastery-answer" class="pp-mastery-answer" placeholder="Type your answer here..." style="display: none;" />
-            <div id="paper-mastery-actions" class="pp-mastery-actions" style="display: none;">
-              <html:button id="paper-mastery-submit" class="pp-btn pp-btn--primary">Submit Answer</html:button>
-              <html:button id="paper-mastery-end" class="pp-btn pp-btn--ghost">End Session</html:button>
-            </div>
-          </div>
-        </div>
+        <div id="paper-pilot-run-state" class="pp-run-state" style="display: none;"></div>
         <div id="chat-streaming-indicator" class="pp-streaming" style="display: none;">
           <span class="pp-streaming-dot"></span>
           <span class="pp-streaming-dot"></span>
@@ -252,45 +196,118 @@ export function registerPaperPilotPaneSection() {
           <span class="pp-streaming-text">Thinking…</span>
         </div>
         <div id="chat-messages"></div>
-        <div id="chat-resize-handle" title="Drag to resize chat">
-          <div class="pp-resize-grip"></div>
-        </div>
-        <div id="chat-input-shell">
-          <html:textarea id="chat-input" placeholder="Ask a question about this paper or the current selection."/>
+        <div id="paper-pilot-composer">
+          <div id="paper-pilot-draft" class="pp-status-card pp-status-card--draft" style="display: none;"></div>
+          <div id="chat-input-shell">
+            <html:textarea id="chat-input" placeholder="Ask a question about this paper or the current selection."/>
+            <html:button id="chat-send" class="pp-btn pp-btn--primary" aria-label="Send message">Send</html:button>
+          </div>
         </div>
       </div>
     `,
-    onRender: async ({ body, item, setSectionSummary }) => {
+    onRender: ({ body, item, setSectionSummary }) => {
+      paneCleanupByBody.get(body)?.();
+      const template = paneTemplateByBody.get(body);
+      if (template) {
+        body.replaceChildren(
+          ...Array.from(template.childNodes, (node) => node!.cloneNode(true)),
+        );
+      } else {
+        paneTemplateByBody.set(body, body.cloneNode(true) as HTMLElement);
+      }
+
+      const headerMount = body.querySelector(
+        "#paper-pilot-header-mount",
+      ) as HTMLElement;
+      const paneHeader = createPaneHeader({
+        doc: body.ownerDocument,
+        mount: headerMount,
+      });
+
+      const mountSection = (
+        mountID: string,
+        section: ReturnType<typeof createCollapsibleSection>,
+      ) => {
+        const mount = body.querySelector(mountID) as HTMLElement;
+        while (mount.firstChild) {
+          section.body.appendChild(mount.firstChild);
+        }
+        mount.replaceWith(section.root);
+      };
+      const workbenchSection = createCollapsibleSection({
+        doc: body.ownerDocument,
+        id: "workbench",
+        title: "Workbench",
+        defaultExpanded: true,
+      });
+      const relatedSection = createCollapsibleSection({
+        doc: body.ownerDocument,
+        id: "related",
+        title: "Related papers",
+        defaultExpanded: false,
+      });
+      const sessionsSection = createCollapsibleSection({
+        doc: body.ownerDocument,
+        id: "sessions",
+        title: "Past sessions",
+        defaultExpanded: false,
+      });
+      mountSection("#paper-pilot-workbench-mount", workbenchSection);
+      mountSection("#paper-pilot-related-mount", relatedSection);
+      mountSection("#paper-pilot-sessions-mount", sessionsSection);
+
+      const cleanupTasks: Array<() => void> = [
+        () => paneHeader.dispose(),
+        () => workbenchSection.dispose(),
+        () => relatedSection.dispose(),
+        () => sessionsSection.dispose(),
+      ];
+      let disposed = false;
+      const cleanup = () => {
+        if (disposed) return;
+        disposed = true;
+        for (const task of cleanupTasks) task();
+      };
+      paneCleanupByBody.set(body, cleanup);
+
       const chatContainer = body.querySelector(
         "#paper-pilot-container",
       ) as HTMLElement;
+      body.style.display = "flex";
+      body.style.flexDirection = "column";
+      body.style.minHeight = "0";
+      body.style.overflow = "hidden";
       const input = body.querySelector("#chat-input") as HTMLTextAreaElement;
+      const sendButton = body.querySelector("#chat-send") as HTMLButtonElement;
       const chatMessages = body.querySelector("#chat-messages") as HTMLElement;
-      const chatResizeHandle = body.querySelector(
-        "#chat-resize-handle",
-      ) as HTMLElement;
       const draftCard = body.querySelector("#paper-pilot-draft") as HTMLElement;
       const streamingIndicator = body.querySelector(
         "#chat-streaming-indicator",
       ) as HTMLElement;
-      const modeChip = body.querySelector(
-        "#paper-pilot-mode-chip",
-      ) as HTMLElement;
-      const modeStatus = body.querySelector(
-        "#paper-pilot-mode-status",
-      ) as HTMLElement;
-      const modeGeminiButton = body.querySelector(
-        "#chat-mode-gemini",
-      ) as HTMLButtonElement;
-      const modeClaudeButton = body.querySelector(
-        "#chat-mode-claude",
-      ) as HTMLButtonElement;
-      const modeCodexButton = body.querySelector(
-        "#chat-mode-codex",
-      ) as HTMLButtonElement;
-      const modeResetButton = body.querySelector(
-        "#chat-mode-reset",
-      ) as HTMLButtonElement;
+      const {
+        modeChip,
+        modeStatus,
+        modeGeminiButton,
+        modeClaudeButton,
+        modeCodexButton,
+        modeResetButton,
+        newSessionButton,
+        codexActions,
+        codexAuthButton,
+        codexDeviceAuthButton,
+        codexRecheckButton,
+        codexRetryButton,
+        codexCancelButton,
+        policyWarning,
+        geminiFallbackCard,
+        geminiEmbedCard,
+        modelRow,
+        modelInput,
+        modelSaveButton,
+        codexOptionsRow,
+        codexWebSearchToggle,
+        modelHistory,
+      } = paneHeader;
       const runStateCard = body.querySelector(
         "#paper-pilot-run-state",
       ) as HTMLElement;
@@ -303,11 +320,8 @@ export function registerPaperPilotPaneSection() {
       const autoHighlightButton = body.querySelector(
         "#chat-auto-highlight",
       ) as HTMLButtonElement;
-      const newSessionButton = body.querySelector(
-        "#chat-new-session",
-      ) as HTMLButtonElement;
-      const pastSessionsButton = body.querySelector(
-        "#chat-past-sessions",
+      const pastSessionsButton = sessionsSection.root.querySelector(
+        "[data-pp-section-trigger]",
       ) as HTMLButtonElement;
       const sessionHistoryPanel = body.querySelector(
         "#paper-pilot-session-history",
@@ -354,57 +368,8 @@ export function registerPaperPilotPaneSection() {
       const relatedGroups = body.querySelector(
         "#chat-related-groups",
       ) as HTMLElement;
-      const codexActions = body.querySelector(
-        "#paper-pilot-codex-actions",
-      ) as HTMLElement;
-      const codexAuthButton = body.querySelector(
-        "#chat-codex-auth",
-      ) as HTMLButtonElement;
-      const codexDeviceAuthButton = body.querySelector(
-        "#chat-codex-device-auth",
-      ) as HTMLButtonElement;
-      const codexRecheckButton = body.querySelector(
-        "#chat-codex-recheck",
-      ) as HTMLButtonElement;
-      const codexRetryButton = body.querySelector(
-        "#chat-codex-retry",
-      ) as HTMLButtonElement;
-      const codexCancelButton = body.querySelector(
-        "#chat-codex-cancel",
-      ) as HTMLButtonElement;
-      const policyWarning = body.querySelector(
-        "#paper-pilot-policy-warning",
-      ) as HTMLElement;
-      const geminiFallbackCard = body.querySelector(
-        "#paper-pilot-gemini-fallback",
-      ) as HTMLElement;
-      const geminiEmbedCard = body.querySelector(
-        "#paper-pilot-gemini-embed",
-      ) as HTMLElement;
-      const modelRow = body.querySelector(
-        "#paper-pilot-model-row",
-      ) as HTMLElement;
-      const modelInput = body.querySelector(
-        "#chat-codex-model",
-      ) as HTMLSelectElement;
-      const modelSaveButton = body.querySelector(
-        "#chat-codex-model-save",
-      ) as HTMLButtonElement;
-      const codexOptionsRow = body.querySelector(
-        "#paper-pilot-codex-options",
-      ) as HTMLElement;
-      const codexWebSearchToggle = body.querySelector(
-        "#chat-codex-web-search",
-      ) as HTMLInputElement;
-      const modelHistory = body.querySelector(
-        "#paper-pilot-model-history",
-      ) as HTMLElement;
-
       const masterySection = body.querySelector(
         "#paper-pilot-mastery-section",
-      ) as HTMLElement | null;
-      const masteryToggle = body.querySelector(
-        "#paper-pilot-mastery-toggle",
       ) as HTMLElement | null;
       const masteryStatus = body.querySelector(
         "#paper-mastery-status",
@@ -437,6 +402,7 @@ export function registerPaperPilotPaneSection() {
       if (
         chatContainer &&
         input &&
+        sendButton &&
         chatMessages &&
         draftCard &&
         streamingIndicator &&
@@ -483,9 +449,8 @@ export function registerPaperPilotPaneSection() {
         codexWebSearchToggle &&
         modelHistory
       ) {
-        let sessionHistoryOpen = false;
+        let sessionHistoryOpen = sessionsSection.isExpanded();
         let renamingSessionId: string | undefined;
-        let dismissPopoverHandlers: (() => void) | undefined;
 
         const clearSessionRuntimeState = async () => {
           await stopCodexRunSilently({
@@ -515,6 +480,19 @@ export function registerPaperPilotPaneSection() {
         const clearBlankSessionState = async () => {
           await clearSessionRuntimeState();
           resetBlankSessionState();
+        };
+
+        const updateWorkbenchSummary = (markUpdated = false) => {
+          const cardCount = getPaperArtifactState(item.id).cards.length;
+          workbenchSection.setSummary(cardCount ? `cards ${cardCount}` : "");
+          if (markUpdated) workbenchSection.markUpdated();
+        };
+        const updateRelatedSummary = (markUpdated = false) => {
+          const count = (
+            addon.data.relatedRecommendationStates?.get(item.id)?.groups ?? []
+          ).reduce((total, group) => total + group.papers.length, 0);
+          relatedSection.setSummary(count ? String(count) : "");
+          if (markUpdated) relatedSection.markUpdated();
         };
 
         const rerenderPane = async () => {
@@ -552,27 +530,25 @@ export function registerPaperPilotPaneSection() {
             streamingIndicator,
             setSectionSummary,
           });
+          if (disposed) return;
           await renderSessionHistory();
+          if (disposed) return;
+          updateWorkbenchSummary();
+          updateRelatedSummary();
         };
 
         const renderSessionHistory = async () => {
           const entries = await sessionHistoryService.listSavedSessions({
             itemID: item.id,
           });
-          pastSessionsButton.textContent = entries.length
-            ? `Past sessions (${entries.length})`
-            : "Past sessions";
-          pastSessionsButton.setAttribute(
-            "aria-expanded",
-            sessionHistoryOpen ? "true" : "false",
+          sessionsSection.setSummary(
+            entries.length ? String(entries.length) : "",
           );
 
           if (!sessionHistoryOpen) {
             sessionHistoryPanel.style.display = "none";
             sessionHistoryPanel.replaceChildren();
             renamingSessionId = undefined;
-            dismissPopoverHandlers?.();
-            dismissPopoverHandlers = undefined;
             return;
           }
 
@@ -582,18 +558,11 @@ export function registerPaperPilotPaneSection() {
 
           let activeKebabClose: (() => void) | undefined;
 
-          const header = doc.createElement("div");
-          header.className = "pp-session-history__header";
-
-          const title = doc.createElement("div");
-          title.className = "pp-session-history__title";
-          title.textContent = "Past sessions";
-          header.appendChild(title);
-
-          const headerActions = doc.createElement("div");
-          headerActions.className = "pp-session-history__actions";
-
           if (entries.length) {
+            const header = doc.createElement("div");
+            header.className = "pp-session-history__header";
+            const headerActions = doc.createElement("div");
+            headerActions.className = "pp-session-history__actions";
             const deleteAllButton = doc.createElement("button");
             deleteAllButton.type = "button";
             deleteAllButton.className = "pp-btn pp-btn--ghost";
@@ -613,13 +582,13 @@ export function registerPaperPilotPaneSection() {
                 itemID: item.id,
               });
               sessionHistoryOpen = false;
+              sessionsSection.setExpanded(false);
               await rerenderPane();
             });
             headerActions.appendChild(deleteAllButton);
+            header.appendChild(headerActions);
+            sessionHistoryPanel.appendChild(header);
           }
-
-          header.appendChild(headerActions);
-          sessionHistoryPanel.appendChild(header);
 
           if (!entries.length) {
             const emptyState = doc.createElement("div");
@@ -735,6 +704,7 @@ export function registerPaperPilotPaneSection() {
               });
               input.value = "";
               sessionHistoryOpen = false;
+              sessionsSection.setExpanded(false);
               renamingSessionId = undefined;
               await rerenderPane();
             });
@@ -830,12 +800,9 @@ export function registerPaperPilotPaneSection() {
           }
         };
 
-        const cleanup = adjustContainerHeight(
-          chatContainer,
-          input,
-          chatResizeHandle,
-        );
-        await rerenderPane();
+        const cleanupComposerSizing = installChatComposerAutosize(input);
+        cleanupTasks.push(cleanupComposerSizing);
+        void rerenderPane();
         renderRelatedRecommendationState(
           relatedRecommendButton,
           relatedStatus,
@@ -845,30 +812,8 @@ export function registerPaperPilotPaneSection() {
           item.id,
           String(item.getField("title") || ""),
         );
-
-        const workbenchToggle = body.querySelector(
-          "#paper-pilot-workbench-toggle",
-        ) as HTMLElement;
-        const workbenchSection = body.querySelector(
-          "#paper-pilot-workbench-section",
-        ) as HTMLElement;
-        if (workbenchToggle && workbenchSection) {
-          workbenchToggle.addEventListener("click", () => {
-            workbenchSection.classList.toggle("pp-section--collapsed");
-          });
-        }
-
-        const engineToggle = body.querySelector(
-          "#paper-pilot-engine-toggle",
-        ) as HTMLElement;
-        const engineSection = body.querySelector(
-          "#paper-pilot-engine-section",
-        ) as HTMLElement;
-        if (engineToggle && engineSection) {
-          engineToggle.addEventListener("click", () => {
-            engineSection.classList.toggle("pp-section--collapsed");
-          });
-        }
+        updateWorkbenchSummary();
+        updateRelatedSummary();
 
         modeGeminiButton.addEventListener("click", async () => {
           clearCodexPollerForItem(item.id);
@@ -1075,62 +1020,12 @@ export function registerPaperPilotPaneSection() {
             );
             addMessage(chatMessages, `Auto-highlight error: ${message}`, "ai");
           }
+          workbenchSection.markUpdated();
         });
 
-        const closeSessionHistoryPopover = async (options?: {
-          restoreFocus?: boolean;
-        }) => {
-          sessionHistoryOpen = false;
-          renamingSessionId = undefined;
-          await renderSessionHistory();
-          if (options?.restoreFocus) {
-            pastSessionsButton.focus();
-          }
-        };
-
-        const installPopoverDismissHandlers = () => {
-          const ownerDoc = pastSessionsButton.ownerDocument;
-          const onDocumentClick = (event: MouseEvent) => {
-            if (!sessionHistoryPanel.isConnected) {
-              return;
-            }
-            const target = event.target as Node | null;
-            if (!target) {
-              return;
-            }
-            if (
-              sessionHistoryPanel.contains(target) ||
-              pastSessionsButton.contains(target)
-            ) {
-              return;
-            }
-            void closeSessionHistoryPopover();
-          };
-          const onKeyDown = (event: KeyboardEvent) => {
-            if (!sessionHistoryPanel.isConnected) {
-              return;
-            }
-            if (event.key === "Escape") {
-              event.preventDefault();
-              void closeSessionHistoryPopover({ restoreFocus: true });
-            }
-          };
-
-          ownerDoc.addEventListener("mousedown", onDocumentClick, true);
-          ownerDoc.addEventListener("keydown", onKeyDown, true);
-
-          dismissPopoverHandlers = () => {
-            ownerDoc.removeEventListener("mousedown", onDocumentClick, true);
-            ownerDoc.removeEventListener("keydown", onKeyDown, true);
-          };
-        };
-
         pastSessionsButton.addEventListener("click", async () => {
-          sessionHistoryOpen = !sessionHistoryOpen;
+          sessionHistoryOpen = sessionsSection.isExpanded();
           renamingSessionId = undefined;
-          if (sessionHistoryOpen) {
-            installPopoverDismissHandlers();
-          }
           await renderSessionHistory();
         });
 
@@ -1143,6 +1038,7 @@ export function registerPaperPilotPaneSection() {
             streamingIndicator,
             statusElement: paperToolStatus,
             cardsElement: paperToolCards,
+            onStateChange: () => updateWorkbenchSummary(true),
           });
         });
 
@@ -1155,6 +1051,7 @@ export function registerPaperPilotPaneSection() {
             statusElement: paperToolStatus,
             cardsElement: paperToolCards,
             compareButton,
+            onStateChange: () => updateWorkbenchSummary(true),
           });
         });
 
@@ -1167,6 +1064,7 @@ export function registerPaperPilotPaneSection() {
             streamingIndicator,
             statusElement: paperToolStatus,
             cardsElement: paperToolCards,
+            onStateChange: () => updateWorkbenchSummary(true),
           });
         });
 
@@ -1179,6 +1077,7 @@ export function registerPaperPilotPaneSection() {
             streamingIndicator,
             statusElement: paperToolStatus,
             cardsElement: paperToolCards,
+            onStateChange: () => updateWorkbenchSummary(true),
           });
         });
 
@@ -1191,6 +1090,7 @@ export function registerPaperPilotPaneSection() {
             streamingIndicator,
             statusElement: paperToolStatus,
             cardsElement: paperToolCards,
+            onStateChange: () => updateWorkbenchSummary(true),
           });
         });
 
@@ -1231,6 +1131,7 @@ export function registerPaperPilotPaneSection() {
             paperToolCards,
             item.id,
           );
+          updateWorkbenchSummary();
         });
 
         saveWorkbenchCollectionButton.addEventListener("click", async () => {
@@ -1273,6 +1174,7 @@ export function registerPaperPilotPaneSection() {
             paperToolCards,
             item.id,
           );
+          updateWorkbenchSummary();
         });
 
         clearWorkbenchButton.addEventListener("click", () => {
@@ -1293,6 +1195,7 @@ export function registerPaperPilotPaneSection() {
             paperToolCards,
             item.id,
           );
+          updateWorkbenchSummary();
         });
 
         relatedRecommendButton.addEventListener("click", async () => {
@@ -1356,6 +1259,7 @@ export function registerPaperPilotPaneSection() {
             item.id,
             String(item.getField("title") || ""),
           );
+          updateRelatedSummary(true);
         });
 
         // --- Paper Mastery handlers ---
@@ -1732,11 +1636,13 @@ export function registerPaperPilotPaneSection() {
                   } else {
                     onFailure?.();
                   }
+                  workbenchSection.markUpdated();
                 },
               },
             );
           } catch {
             onFailure?.();
+            workbenchSection.markUpdated();
           } finally {
             input.value = savedInput;
             input.disabled = false;
@@ -1964,10 +1870,6 @@ export function registerPaperPilotPaneSection() {
           }
         });
 
-        masteryToggle?.addEventListener("click", () => {
-          masterySection?.classList.toggle("pp-section--collapsed");
-        });
-
         newSessionButton.addEventListener("click", async () => {
           const mode = getModeForItem(item.id);
           await clearSessionRuntimeState();
@@ -1978,6 +1880,7 @@ export function registerPaperPilotPaneSection() {
           });
           resetBlankSessionState();
           sessionHistoryOpen = false;
+          sessionsSection.setExpanded(false);
           renamingSessionId = undefined;
           await rerenderPane();
         });
@@ -2164,60 +2067,61 @@ export function registerPaperPilotPaneSection() {
           });
         });
 
+        const submitCurrentInput = async () => {
+          const descriptor = getCurrentProviderDescriptor(item.id);
+          await handleUserInput(
+            input,
+            chatMessages,
+            descriptor.mode,
+            item.id,
+            item.getField("title"),
+            descriptor.placeholderResponse,
+            streamingIndicator,
+          );
+          renderDraftCard(draftCard);
+          await renderSessionHistory();
+        };
+
         input.addEventListener("keydown", async (e) => {
           if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
             e.preventDefault();
-            const descriptor = getCurrentProviderDescriptor(item.id);
-            await handleUserInput(
-              input,
-              chatMessages,
-              descriptor.mode,
-              item.id,
-              item.getField("title"),
-              descriptor.placeholderResponse,
-              streamingIndicator,
-            );
-            renderDraftCard(draftCard);
-            await renderSessionHistory();
+            await submitCurrentInput();
           }
         });
+        sendButton.addEventListener("click", submitCurrentInput);
 
-        addon.data.applyReaderActionToPane = async () => {
+        const applyReaderActionToPane = async () => {
           const pending = addon.data.pendingReaderAction;
           if (!pending) {
             return;
           }
 
           input.value = pending.question;
+          input.dispatchEvent(
+            new input.ownerDocument.defaultView!.Event("input"),
+          );
           renderDraftCard(draftCard);
           input.focus();
 
           if (pending.autoSubmit) {
-            const descriptor = getCurrentProviderDescriptor(item.id);
-            await handleUserInput(
-              input,
-              chatMessages,
-              descriptor.mode,
-              item.id,
-              item.getField("title"),
-              descriptor.placeholderResponse,
-              streamingIndicator,
-            );
-            renderDraftCard(draftCard);
-            await renderSessionHistory();
+            await submitCurrentInput();
           }
 
           addon.data.pendingReaderAction = undefined;
         };
-        void addon.data.applyReaderActionToPane();
-
-        return () => {
-          if (addon.data.applyReaderActionToPane) {
+        addon.data.applyReaderActionToPane = applyReaderActionToPane;
+        cleanupTasks.push(() => {
+          if (addon.data.applyReaderActionToPane === applyReaderActionToPane) {
             addon.data.applyReaderActionToPane = undefined;
           }
-          cleanup();
-        };
+        });
+        void addon.data.applyReaderActionToPane();
       }
+    },
+    onDestroy: ({ body }) => {
+      paneCleanupByBody.get(body)?.();
+      paneCleanupByBody.delete(body);
+      paneTemplateByBody.delete(body);
     },
   });
 
@@ -2331,12 +2235,6 @@ async function renderPaneState(params: {
   );
 
   params.chatMessages.replaceChildren();
-  renderModeHeader(
-    params.modeChip,
-    params.modeStatus,
-    descriptor.label,
-    descriptor.status,
-  );
   renderRunStateCard(
     params.runStateCard,
     descriptor.mode,
@@ -2345,17 +2243,6 @@ async function renderPaneState(params: {
     "not_checked",
   );
   renderCodexActions(params.codexActions, descriptor.mode);
-  const engineSection = params.codexActions.closest(
-    "#paper-pilot-engine-section",
-  ) as HTMLElement | null;
-  if (engineSection) {
-    engineSection.style.display =
-      descriptor.mode === "codex_cli" ||
-      descriptor.mode === "claude_code" ||
-      descriptor.mode === "gemini_cli"
-        ? ""
-        : "none";
-  }
   renderPolicyWarning(params.policyWarning, descriptor.mode);
   renderGeminiFallbackCard(params.geminiFallbackCard, descriptor.mode);
   renderGeminiEmbedCard(params.geminiEmbedCard, descriptor.mode);
@@ -2365,10 +2252,12 @@ async function renderPaneState(params: {
     params.codexWebSearchToggle,
     descriptor.mode,
   );
-  await renderModelHistory(
-    params.modelHistory,
-    params.modelInput,
-    descriptor.mode,
+  renderModelHistory(params.modelHistory, params.modelInput, descriptor.mode);
+  renderModeHeader(
+    params.modeChip,
+    params.modeStatus,
+    descriptor.label,
+    descriptor.status,
   );
   renderMessageHistory(
     params.chatMessages,
@@ -2392,16 +2281,6 @@ async function renderPaneState(params: {
       params.itemTitle,
     );
   }
-}
-
-function renderModeHeader(
-  chip: HTMLElement,
-  status: HTMLElement,
-  label: string,
-  providerStatus: string,
-) {
-  chip.textContent = label;
-  status.textContent = `Status: ${getStatusLabel(providerStatus)}`;
 }
 
 function renderCurrentDocumentLabel(
@@ -2829,14 +2708,14 @@ async function refreshCodexStatus(
   itemTitle: string,
 ) {
   try {
-    status.textContent = "Status: checking";
+    renderModeHeader(chip, status, "Codex CLI", "checking");
     const loginState = await probeCodexLoginState();
     const workspaceRoot = String(
       getPref("codexWorkspaceRoot") || "/tmp/zotero-paper-ai",
     );
     const workspaceWritable = await probeWorkspaceWritable(workspaceRoot);
-    chip.textContent = "Codex CLI";
-    status.textContent = `Status: ${getStatusLabel(loginState)}${workspaceWritable ? "" : " · workspace not writable"}`;
+    renderModeHeader(chip, status, "Codex CLI", loginState);
+    status.textContent = `${status.textContent}${workspaceWritable ? "" : " · workspace not writable"}`;
     setSectionSummary(`Codex CLI · ${getStatusLabel(loginState)}`);
     renderRunStateCard(
       runStateCard,
@@ -2847,8 +2726,7 @@ async function refreshCodexStatus(
       workspaceWritable,
     );
   } catch {
-    chip.textContent = "Codex CLI";
-    status.textContent = "Status: Error";
+    renderModeHeader(chip, status, "Codex CLI", "error");
     setSectionSummary("Codex CLI · Error");
     renderRunStateCard(
       runStateCard,
@@ -2937,204 +2815,6 @@ function renderGeminiEmbedCard(geminiEmbedCard: HTMLElement, mode: EngineMode) {
   geminiEmbedCard.textContent = "";
 }
 
-function renderModelRow(
-  modelRow: HTMLElement,
-  modelInput: HTMLSelectElement,
-  mode: EngineMode,
-) {
-  if (mode !== "codex_cli" && mode !== "claude_code" && mode !== "gemini_cli") {
-    modelRow.style.display = "none";
-    modelInput.value = "";
-    return;
-  }
-
-  modelRow.style.display = "flex";
-}
-
-function renderCodexOptionsRow(
-  codexOptionsRow: HTMLElement,
-  codexWebSearchToggle: HTMLInputElement,
-  mode: EngineMode,
-) {
-  if (mode !== "codex_cli") {
-    codexOptionsRow.style.display = "none";
-    codexWebSearchToggle.checked = false;
-    return;
-  }
-
-  codexOptionsRow.style.display = "flex";
-  codexWebSearchToggle.checked = Boolean(getPref("codexEnableWebSearch"));
-}
-
-function getDefaultModelPrefForMode(mode: EngineMode) {
-  if (mode === "gemini_cli") {
-    return "geminiDefaultModel";
-  }
-  if (mode === "claude_code") {
-    return "claudeDefaultModel";
-  }
-  return "codexDefaultModel";
-}
-
-function getAllowedModelsPrefForMode(mode: EngineMode) {
-  if (mode === "gemini_cli") {
-    return "geminiAllowedModels";
-  }
-  if (mode === "claude_code") {
-    return "claudeAllowedModels";
-  }
-  return "codexAllowedModels";
-}
-
-function getFallbackModelForMode(mode: EngineMode) {
-  if (mode === "gemini_cli") {
-    return "gemini-3.1-pro-preview";
-  }
-  if (mode === "claude_code") {
-    return "sonnet";
-  }
-  return "gpt-5.6-sol";
-}
-
-function getBuiltInModelsForMode(mode: EngineMode) {
-  if (mode === "gemini_cli") {
-    return getGeminiBuiltInModels();
-  }
-  if (mode === "claude_code") {
-    return getClaudeBuiltInModels();
-  }
-  return getCodexBuiltInModels();
-}
-
-function normalizeModelForMode(mode: EngineMode, model: string) {
-  if (mode === "gemini_cli") {
-    return normalizeGeminiModel(model);
-  }
-  if (mode === "claude_code") {
-    return normalizeClaudeModel(model);
-  }
-  return normalizeCodexModel(model);
-}
-
-function normalizeModelListForMode(mode: EngineMode, models: string[]) {
-  if (mode === "gemini_cli") {
-    return normalizeGeminiModelList(models);
-  }
-  if (mode === "claude_code") {
-    return normalizeClaudeModelList(models);
-  }
-  return normalizeCodexModelList(models);
-}
-
-async function renderModelHistory(
-  modelHistory: HTMLElement,
-  modelInput: HTMLSelectElement,
-  mode: EngineMode,
-) {
-  if (mode !== "codex_cli" && mode !== "claude_code" && mode !== "gemini_cli") {
-    modelHistory.style.display = "none";
-    modelHistory.replaceChildren();
-    return;
-  }
-
-  const recentModels = normalizeModelListForMode(mode, getRecentCodexModels());
-  const allowedModelsRaw = parseAllowedModels(
-    String(getPref(getAllowedModelsPrefForMode(mode)) || ""),
-  );
-  const allowedModels = normalizeModelListForMode(mode, allowedModelsRaw);
-  const cachedModels = getBuiltInModelsForMode(mode);
-  const options = mergeModelOptions(
-    recentModels,
-    mergeModelOptions(allowedModels, cachedModels),
-  );
-  if (!options.length) {
-    modelHistory.style.display = "none";
-    modelHistory.replaceChildren();
-    return;
-  }
-
-  const currentValue = String(
-    getPref(getDefaultModelPrefForMode(mode)) || getFallbackModelForMode(mode),
-  );
-  const selectedValue = normalizeModelForMode(mode, currentValue);
-  const currentReasoningEffort = String(
-    mode === "gemini_cli" || mode === "claude_code"
-      ? ""
-      : normalizeCodexReasoningEffort(
-          String(getPref("codexReasoningEffort") || "medium"),
-          selectedValue,
-        ),
-  );
-  const catalog =
-    mode === "gemini_cli" || mode === "claude_code"
-      ? []
-      : getCodexBuiltInModelCatalog();
-  const optionMap = new Map<string, string>();
-  const doc = modelInput.ownerDocument || globalThis.document;
-
-  if (!doc) {
-    modelHistory.style.display = "none";
-    modelHistory.replaceChildren();
-    return;
-  }
-
-  if (mode === "gemini_cli" || mode === "claude_code") {
-    for (const model of options) {
-      optionMap.set(`${model}|`, model);
-    }
-  }
-
-  for (const model of mode === "gemini_cli" || mode === "claude_code"
-    ? []
-    : catalog) {
-    const efforts = model.reasoningEfforts.length
-      ? model.reasoningEfforts
-      : [model.defaultReasoningEffort || "medium"];
-    for (const effort of efforts) {
-      optionMap.set(
-        `${model.slug}|${effort}`,
-        `${model.displayName} (${effort})`,
-      );
-    }
-  }
-
-  modelInput.replaceChildren(
-    ...[...optionMap.entries()].map(([value, label]) => {
-      const option = doc.createElement("option");
-      option.value = value;
-      option.textContent = label;
-      const currentKey =
-        mode === "gemini_cli" || mode === "claude_code"
-          ? `${selectedValue}|`
-          : `${selectedValue}|${currentReasoningEffort}`;
-      if (value === currentKey) {
-        option.selected = true;
-      }
-      return option;
-    }),
-  );
-
-  const fallbackKey =
-    mode === "gemini_cli" || mode === "claude_code"
-      ? `${selectedValue}|`
-      : `${selectedValue}|${currentReasoningEffort}`;
-  if (!optionMap.has(fallbackKey)) {
-    const fallback = doc.createElement("option");
-    fallback.value = fallbackKey;
-    fallback.textContent =
-      mode === "gemini_cli" || mode === "claude_code"
-        ? selectedValue
-        : currentReasoningEffort
-          ? `${selectedValue} (${currentReasoningEffort})`
-          : selectedValue;
-    fallback.selected = true;
-    modelInput.appendChild(fallback);
-  }
-
-  modelHistory.style.display = "none";
-  modelHistory.replaceChildren();
-}
-
 function confirmDestructive(
   ownerDocument: Document,
   title: string,
@@ -3214,137 +2894,6 @@ function getActiveRunMessage(mode: EngineMode, itemID: number) {
   return undefined;
 }
 
-function adjustContainerHeight(
-  chatContainer: HTMLElement,
-  input: HTMLTextAreaElement,
-  resizeHandle: HTMLElement,
-) {
-  const chatMessages = chatContainer.querySelector(
-    "#chat-messages",
-  ) as HTMLElement;
-  const relatedGroups = chatContainer.querySelector(
-    "#chat-related-groups",
-  ) as HTMLElement | null;
-  const hostBody = chatContainer.parentElement as HTMLElement | null;
-  const view = chatContainer.ownerDocument.defaultView;
-  let manualChatHeight: number | undefined;
-
-  const adjustMessagesHeight = () => {
-    if (!chatMessages || !relatedGroups) {
-      return;
-    }
-
-    const layout = getRelatedRecommendationLayout({
-      hasRecommendations:
-        relatedGroups.style.display !== "none" &&
-        relatedGroups.childElementCount > 0,
-      recommendationContentHeight: relatedGroups.scrollHeight,
-    });
-    const chatHeight = manualChatHeight
-      ? clampChatHeight(manualChatHeight)
-      : layout.chatMinHeight;
-    const containerMinHeight = Math.max(
-      layout.containerMinHeight,
-      chatHeight + CHAT_RESIZE_CONTAINER_BUFFER,
-    );
-    chatContainer.style.height = "";
-    chatContainer.style.minHeight = `${containerMinHeight}px`;
-    chatContainer.style.overflowY = layout.containerOverflow;
-    if (hostBody) {
-      hostBody.style.minHeight = `${containerMinHeight}px`;
-    }
-    chatMessages.style.height = "";
-    chatMessages.style.minHeight = `${chatHeight}px`;
-    chatMessages.style.flex = manualChatHeight
-      ? `0 0 ${chatHeight}px`
-      : layout.chatFlex;
-    relatedGroups.style.maxHeight = layout.groupsMaxHeight;
-    relatedGroups.style.overflowY = layout.groupsOverflowY;
-    relatedGroups.style.overflowX = "hidden";
-  };
-
-  const adjustInputHeight = () => {
-    input.style.height = `${CHAT_INPUT_MIN_HEIGHT}px`;
-    input.style.height = `${Math.max(
-      CHAT_INPUT_MIN_HEIGHT,
-      Math.min(input.scrollHeight, CHAT_INPUT_MAX_HEIGHT),
-    )}px`;
-    input.scrollTop = 0;
-    adjustMessagesHeight();
-  };
-
-  adjustMessagesHeight();
-  adjustInputHeight();
-
-  let dragState:
-    | {
-        startY: number;
-        startHeight: number;
-      }
-    | undefined;
-
-  const handleMouseMove = (event: MouseEvent) => {
-    if (!dragState) {
-      return;
-    }
-
-    manualChatHeight = clampChatHeight(
-      dragState.startHeight + (event.clientY - dragState.startY),
-    );
-    adjustMessagesHeight();
-  };
-
-  const stopDragging = () => {
-    dragState = undefined;
-  };
-
-  const handleMouseDown = (event: MouseEvent) => {
-    event.preventDefault();
-    dragState = {
-      startY: event.clientY,
-      startHeight: clampChatHeight(chatMessages.getBoundingClientRect().height),
-    };
-  };
-
-  const resizeObserver =
-    typeof ResizeObserver !== "undefined"
-      ? new ResizeObserver(() => adjustMessagesHeight())
-      : undefined;
-  resizeObserver?.observe(chatContainer);
-  if (relatedGroups) {
-    resizeObserver?.observe(relatedGroups);
-  }
-
-  const mutationObserver =
-    relatedGroups && typeof MutationObserver !== "undefined"
-      ? new MutationObserver(() => adjustMessagesHeight())
-      : undefined;
-  if (mutationObserver && relatedGroups) {
-    mutationObserver.observe(relatedGroups, {
-      childList: true,
-      subtree: true,
-      attributes: true,
-      attributeFilter: ["style"],
-    });
-  }
-
-  view?.addEventListener("resize", adjustMessagesHeight);
-  view?.addEventListener("mousemove", handleMouseMove);
-  view?.addEventListener("mouseup", stopDragging);
-  input.addEventListener("input", adjustInputHeight);
-  resizeHandle.addEventListener("mousedown", handleMouseDown);
-
-  return () => {
-    resizeObserver?.disconnect();
-    mutationObserver?.disconnect();
-    view?.removeEventListener("resize", adjustMessagesHeight);
-    view?.removeEventListener("mousemove", handleMouseMove);
-    view?.removeEventListener("mouseup", stopDragging);
-    input.removeEventListener("input", adjustInputHeight);
-    resizeHandle.removeEventListener("mousedown", handleMouseDown);
-  };
-}
-
 async function runPaperArtifactRequest(params: {
   item: Zotero.Item;
   kind: PaperArtifactKind;
@@ -3353,6 +2902,7 @@ async function runPaperArtifactRequest(params: {
   streamingIndicator: HTMLElement;
   statusElement: HTMLElement;
   cardsElement: HTMLElement;
+  onStateChange?: () => void;
 }) {
   const request = buildPaperArtifactRequest(params.item, params.kind);
   const existing = getPaperArtifactState(params.item.id);
@@ -3463,6 +3013,7 @@ async function runPaperArtifactRequest(params: {
           params.cardsElement,
           params.item.id,
         );
+        params.onStateChange?.();
       },
     },
   );
@@ -3476,6 +3027,7 @@ async function runPaperCompareRequest(params: {
   statusElement: HTMLElement;
   cardsElement: HTMLElement;
   compareButton: HTMLButtonElement;
+  onStateChange?: () => void;
 }) {
   const groups = getRelatedRecommendationState(params.item.id).groups;
   const currentTitle = String(params.item.getField("title") || "").trim();
@@ -3543,6 +3095,7 @@ async function runPaperCompareRequest(params: {
       params.cardsElement,
       params.item.id,
     );
+    params.onStateChange?.();
     return;
   }
 
@@ -3662,6 +3215,7 @@ async function runPaperCompareRequest(params: {
           params.cardsElement,
           params.item.id,
         );
+        params.onStateChange?.();
       },
     },
   );

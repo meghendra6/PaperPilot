@@ -27,6 +27,19 @@ Use this checklist inside real Zotero 7, 8, and 9 runtimes before claiming readi
 - [ ] On Windows, confirm focus uses Zotero's visible inner and outer ring; on macOS/Linux, confirm the native single ring remains visible
 - [ ] Confirm primary, secondary, and ghost buttons have restrained hover/active feedback and disabled controls do not move
 
+### Reader pane redesign — Phase B layout and density
+
+- [ ] Confirm the always-visible chrome is one integrated engine/model header, three disclosure headers, optional compact run status, chat history, and the composer
+- [ ] Confirm Workbench starts expanded while Related papers and Past sessions start collapsed on a fresh profile
+- [ ] Toggle all three disclosures with mouse, Enter, and Space; restart Zotero and confirm their state persists
+- [ ] Complete a workbench or related-papers action while its section is collapsed and confirm only its summary/update dot changes—the section must not open itself
+- [ ] Open the engine/model popover, switch each engine, save a model/effort selection, and confirm the existing preferences update
+- [ ] Confirm the engine/model popover closes on outside click and Escape; Escape returns focus to its trigger
+- [ ] Fill the pane with chat, recommendation, session, and mastery content; confirm chat keeps at least 120px and each expanded section scrolls internally without pushing the composer away
+- [ ] Type one and many lines in the composer; confirm it grows from 72px to at most 180px, then scrolls internally
+- [ ] Confirm the removed drag handle has no visible target or pointer behavior and the Send button submits the same way as Enter
+- [ ] Switch away from and back to the paper (or refresh the custom section) and confirm exactly one header and three disclosure triggers remain, with no duplicate listeners or console errors
+
 ## 2. Mode behavior
 
 - [ ] Switch to `Gemini CLI`
