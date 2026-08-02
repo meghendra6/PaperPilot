@@ -4,6 +4,8 @@ export function getStatusLabel(status: ProviderStatus | string) {
   switch (status) {
     case "ready":
       return "Ready";
+    case "idle":
+      return "Idle";
     case "login_required":
       return "Login required";
     case "checking":

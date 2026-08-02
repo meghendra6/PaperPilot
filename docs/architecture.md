@@ -17,7 +17,8 @@ already installed and authenticated on the user's machine.
 
 ```text
 Zotero Reader (XUL/HTML pane)
-  └── src/modules/readerPane.ts        UI wiring, all reader-pane workflows
+  └── src/modules/readerPane.ts        pane assembly and workflow wiring
+        ├── modules/ui/                header, sections, composer sizing
         └── <engine>/controller.ts     run lifecycle + polling
               └── <engine>/runner.ts   workspace build + process launch
                     └── /bin/zsh -lc "<background script>"
@@ -35,6 +36,15 @@ Because state lives on `addon.data` keyed by `itemID`, **almost everything is
 paper-scoped**. Preserve that when adding features: leaking state across papers
 is the most common regression in this codebase.
 
+The pane itself uses a bounded flex column. `ui/paneHeader.ts` owns the compact
+engine/model header and its settings popover, `ui/collapsibleSection.ts` owns
+the accessible Workbench, Related papers, and Past sessions disclosures, and
+`ui/chatComposerSizing.ts` preserves textarea auto-sizing without changing the
+pane height. Disclosure state is serialized in the internal
+`paneSectionState` preference through the pure helpers in
+`ui/paneSectionState.ts`. The chat transcript takes the remaining space and
+scrolls independently from expanded section bodies.
+
 ## Engine abstraction
 
 `src/modules/ai/` is the thin layer over the three engines.
@@ -44,6 +54,8 @@ is the most common regression in this codebase.
 | `types.ts`            | `EngineMode = "codex_cli" \| "claude_code" \| "gemini_cli"`              |
 | `modeStore.ts`        | default mode from prefs, per-item override in `addon.data.modeOverrides` |
 | `providerRegistry.ts` | mode → provider descriptor (label, status)                               |
+| `runCompletion.ts`    | cleanup-before-callback ordering for terminal controller transitions     |
+| `runPresentation.ts`  | item-scoped active-run events that reconnect rebuilt pane DOM            |
 | `workspaceRun.ts`     | mode-dispatching helpers: start a run, read progress, extract text       |
 
 `workspaceRun.ts` is the shared entry point used by non-chat workflows (research
@@ -79,7 +91,10 @@ polled**:
 
 1. `controller.handleXQuestion` refuses to start if a run is already active for
    this `itemID`.
-2. `runner.startXRunForQuestion`:
+2. Before workspace preparation, the controller registers an item-scoped
+   activity in `ai/runPresentation.ts`. This keeps provider and session guards
+   active if Zotero rebuilds the pane during extraction or process spawn.
+3. `runner.startXRunForQuestion`:
    - resolves the executable path and reads prefs (model, sandbox, permissions)
    - computes the workspace path: `{workspaceRoot}/{itemID}-{slugified-title}`
      (`workspace/pathBuilder.ts`)
@@ -91,16 +106,26 @@ polled**:
    - builds the CLI argv and wraps it in a **detached background shell script**
      (`codex/shell.ts` for Codex; inline in the runner for Claude and Gemini)
    - runs `Zotero.Utilities.Internal.exec("/bin/zsh", ["-lc", script])`
-3. The script redirects stdout+stderr to an output file, writes the exit code to
+4. The script redirects stdout+stderr to an output file, writes the exit code to
    a separate file when done, and echoes the pid to a third file. `exec` returns
    as soon as the background job is spawned.
-4. `controller` starts a `setInterval` at **800 ms** that reads the output file,
+5. `controller` starts a `setInterval` at **800 ms** that reads the output file,
    renders partial text into the chat bubble, and stops once the exit-code file
    is non-empty.
-5. On completion the controller sanitizes the text
+6. On completion the controller sanitizes the text
    (`message/assistantOutput.ts`), persists the turn via
    `session/sessionHistoryService.ts`, updates run state, and calls
-   `workspace/cleanup.ts`.
+   `workspace/cleanup.ts`. `ai/runCompletion.ts` guarantees that cleanup
+   finishes before a workflow callback can launch a nested run in the same
+   stable per-paper workspace. The controller also closes the item-scoped
+   activity in `ai/runPresentation.ts`; the currently mounted pane then
+   re-renders from persisted session/workflow state. This keeps a run connected
+   to the visible pane even when Zotero rebuilds its DOM during a paper or tab
+   switch. Session replacement is blocked until this terminal transition has
+   finished, and stale tokens cannot invoke workflow callbacks. A workflow that
+   intentionally chains another run (Paper Mastery follow-up or final report)
+   passes the active parent token as an explicit continuation guard; unrelated
+   requests remain blocked.
 
 Per-engine file names inside the workspace:
 
@@ -174,6 +199,14 @@ workflows pass `suppressChatMessages`, but sessions saved before that existed
 still contain the JSON, so the filter detects it heuristically at replay time.
 It ignores fenced code blocks so legitimate JSON in chat stays visible.
 
+Paper Mastery state includes its completed Markdown report, so a custom-section
+refresh can hydrate both an awaiting question and a completed session without
+starting another model run. Restarting a completed mastery session is an
+explicit, confirmed replacement of that saved state. Terminal workflow
+callbacks persist the updated derived state after the silent assistant turn,
+so the saved snapshot includes the report/card rather than the earlier
+`running` state.
+
 Zotero-facing persistence is separate: `note/paperArtifactNote.ts` writes child
 notes, and `workspace/artifactBundle.ts` packages collection-linked artifact sets.
 
@@ -222,8 +255,9 @@ covered by [`manual-qa.md`](./manual-qa.md) instead.
 
 ## Known rough edges
 
-- `src/modules/readerPane.ts` is ~3.8k lines and owns every pane workflow. Add
-  new logic in a focused module and wire it in, rather than growing this file.
+- `src/modules/readerPane.ts` is still large and wires every pane workflow. Add
+  new rendering logic in a focused `modules/ui/` module and wire it in, rather
+  than growing this file.
 - The three engine modules are near-duplicates by design (isolation over reuse).
   Shared behavior belongs in `ai/workspaceRun.ts`, not in cross-engine imports.
 - `addon/` is excluded from `tsconfig.json`, so `bootstrap.js`,

@@ -19,6 +19,15 @@ class Addon {
       import("./modules/codex/runState").CodexRunState
     >;
     codexRunPollers?: Map<number, ReturnType<typeof setInterval>>;
+    codexPendingCompletions?: Map<
+      number,
+      {
+        token: import("./modules/ai/runPresentation").ReaderRunToken;
+        onComplete?: (
+          result: import("./modules/ai/runPresentation").ReaderRunCompletionResult,
+        ) => void | Promise<void>;
+      }
+    >;
     geminiRunStates?: Map<
       number,
       import("./modules/gemini/runState").GeminiRunState
@@ -116,6 +125,7 @@ class Addon {
       ztoolkit: createZToolkit(),
       codexRunStates: new Map(),
       codexRunPollers: new Map(),
+      codexPendingCompletions: new Map(),
       geminiRunStates: new Map(),
       geminiRunPollers: new Map(),
       claudeRunStates: new Map(),

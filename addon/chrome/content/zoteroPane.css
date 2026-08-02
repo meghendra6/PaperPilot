@@ -166,13 +166,134 @@
 #paper-pilot-container {
   display: flex;
   flex-direction: column;
-  min-height: 860px;
+  height: 720px;
+  height: clamp(480px, calc(100vh - 180px), 960px);
+  min-height: 0;
   width: 100%;
   max-width: 100%;
-  overflow-x: hidden;
+  overflow: hidden;
   box-sizing: border-box;
   font-family: inherit;
   color: var(--pp-text-primary);
+}
+
+.pp-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.pp-pane-header {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  min-width: 0;
+  padding: 2px 0 8px;
+  border-bottom: 1px solid var(--pp-border-light);
+}
+
+.pp-pane-header__trigger {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: 1;
+  min-width: 0;
+  min-height: 30px;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: var(--pp-radius-sm);
+  background: transparent;
+  color: var(--pp-text-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.pp-pane-header__trigger:hover,
+.pp-pane-header--open .pp-pane-header__trigger {
+  background: var(--pp-bg-tertiary);
+}
+
+.pp-pane-header__dot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  border-radius: var(--pp-radius-pill);
+  background: var(--pp-text-muted);
+}
+
+.pp-pane-header[data-status="ready"] .pp-pane-header__dot,
+.pp-pane-header[data-status="completed"] .pp-pane-header__dot {
+  background: var(--pp-accent);
+}
+
+.pp-pane-header[data-status="running"] .pp-pane-header__dot,
+.pp-pane-header[data-status="checking"] .pp-pane-header__dot {
+  background: var(--pp-text-status-warning);
+}
+
+.pp-pane-header[data-status="error"] .pp-pane-header__dot,
+.pp-pane-header[data-status="login_required"] .pp-pane-header__dot,
+.pp-pane-header[data-status="unsupported"] .pp-pane-header__dot {
+  background: var(--pp-error, #c62828);
+}
+
+.pp-pane-header__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--pp-font-size-base);
+  font-weight: 600;
+}
+
+.pp-pane-header__new-session {
+  width: 30px;
+  min-width: 30px;
+  height: 30px;
+  min-height: 30px;
+  padding: 0;
+  font-size: 18px;
+}
+
+.pp-pane-header__popover {
+  position: absolute;
+  z-index: 70;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  max-height: min(480px, calc(100vh - 240px));
+  overflow: auto;
+  padding: 10px;
+  border: 1px solid var(--pp-border-medium);
+  border-radius: var(--pp-radius-md);
+  background: var(--pp-bg-primary);
+  box-shadow: var(--pp-shadow-md);
+}
+
+.pp-pane-header__popover[hidden] {
+  display: none;
+}
+
+.pp-pane-header__status {
+  margin-bottom: 8px;
+  font-size: var(--pp-font-size-sm);
+  color: var(--pp-text-muted);
+}
+
+.pp-pane-header__mode-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
 }
 
 /* ============================================================
@@ -204,8 +325,13 @@
    3. Run state card
    ============================================================ */
 .pp-run-state {
-  margin-bottom: 10px;
-  padding: 8px;
+  flex: 0 1 auto;
+  min-height: 0;
+  max-height: 72px;
+  margin: 6px 0;
+  padding: 6px 8px;
+  overflow-y: auto;
+  box-sizing: border-box;
   border-radius: var(--pp-radius-md);
   background: var(--pp-bg-status-info);
   border: 1px solid var(--pp-border-status-info);
@@ -239,19 +365,12 @@
 }
 
 .pp-session-history {
-  position: absolute;
-  top: calc(100% + 4px);
-  right: 10px;
-  z-index: 50;
-  min-width: 280px;
-  max-width: calc(100% - 20px);
+  position: static;
+  min-width: 0;
+  max-width: 100%;
   max-height: 320px;
   overflow-y: auto;
-  padding: 10px;
-  border: 1px solid var(--pp-border-light);
-  border-radius: var(--pp-radius-md);
-  background: var(--pp-bg-secondary);
-  box-shadow: var(--pp-shadow-sm);
+  padding: 0;
 }
 
 .pp-session-history__header,
@@ -367,6 +486,14 @@
   gap: 8px;
   align-items: center;
   flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.pp-workbench-highlight {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
   margin-bottom: 8px;
 }
 
@@ -493,11 +620,11 @@
    9. Chat messages area
    ============================================================ */
 #chat-messages {
-  flex: 3 1 640px;
-  min-height: 520px;
+  flex: 1 1 auto;
+  min-height: 120px;
   min-width: 0;
   overflow-y: auto;
-  margin-bottom: 6px;
+  margin: 6px 0;
   display: flex;
   flex-direction: column;
 }
@@ -554,19 +681,29 @@
    11. Chat input
    ============================================================ */
 #chat-input-shell {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  width: 100%;
   background-color: var(--pp-bg-input);
   border-radius: var(--pp-radius-md);
-  padding: 8px;
-  flex: 0 0 auto;
-  position: sticky;
-  bottom: 0;
-  z-index: 2;
+  padding: 6px;
   box-sizing: border-box;
   max-width: 100%;
 }
 
-#chat-input {
+#paper-pilot-composer {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
   width: 100%;
+  min-width: 0;
+}
+
+#chat-input {
+  flex: 1;
+  width: auto;
+  min-width: 0;
   min-height: 72px;
   max-height: 180px;
   padding: 10px 12px;
@@ -584,30 +721,13 @@
   color: var(--pp-text-primary);
 }
 
+#chat-send {
+  flex: 0 0 auto;
+  min-width: 52px;
+}
+
 #chat-input::-webkit-scrollbar {
   display: none;
-}
-
-/* ============================================================
-   12. Resize handle
-   ============================================================ */
-#chat-resize-handle {
-  flex: 0 0 auto;
-  height: 14px;
-  margin-bottom: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: ns-resize;
-  user-select: none;
-  -webkit-user-select: none;
-}
-
-.pp-resize-grip {
-  width: 56px;
-  height: 4px;
-  border-radius: var(--pp-radius-pill);
-  background: var(--pp-border-blockquote);
 }
 
 /* ============================================================
@@ -1117,49 +1237,90 @@
 /* ============================================================
    20. Collapsible sections
    ============================================================ */
-.pp-section {
-  margin-bottom: 8px;
-  border: 1px solid var(--pp-border-light);
-  border-radius: var(--pp-radius-md);
+#paper-pilot-section-stack {
+  display: flex;
+  flex-direction: column;
+  flex: 0 1 auto;
+  min-height: 102px;
+  max-height: 42%;
   overflow: hidden;
+  padding: 4px 0;
 }
 
-.pp-section__header {
+.pp-collapsible-section {
+  display: flex;
+  flex: 0 1 auto;
+  flex-direction: column;
+  min-height: 30px;
+  overflow: hidden;
+  border-bottom: 1px solid var(--pp-border-light);
+}
+
+.pp-collapsible-section__trigger {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 10px;
-  background: var(--pp-bg-secondary);
-  cursor: pointer;
-  user-select: none;
-  -webkit-user-select: none;
+  width: 100%;
+  min-height: 30px;
+  padding: 5px 6px;
+  border: 0;
+  border-radius: var(--pp-radius-sm);
+  background: transparent;
+  color: var(--pp-text-primary);
+  font: inherit;
   font-size: var(--pp-font-size-sm);
   font-weight: 600;
-  color: var(--pp-text-primary);
+  text-align: left;
+  cursor: pointer;
 }
 
-.pp-section__header:hover {
+.pp-collapsible-section__trigger:hover {
   background: var(--pp-bg-tertiary);
 }
 
-.pp-section__toggle {
-  font-size: 10px;
+.pp-collapsible-section__chevron {
   color: var(--pp-text-muted);
-  transition: transform 0.2s;
+  transform: rotate(0deg);
+  transition: transform 0.15s ease;
 }
 
-.pp-section--collapsed .pp-section__toggle {
-  transform: rotate(-90deg);
+.pp-collapsible-section--expanded .pp-collapsible-section__chevron {
+  transform: rotate(90deg);
 }
 
-.pp-section__body {
-  padding: 8px 10px;
-  box-sizing: border-box;
+.pp-collapsible-section__title {
+  flex: 1;
   min-width: 0;
 }
 
-.pp-section--collapsed .pp-section__body {
+.pp-collapsible-section__summary {
+  color: var(--pp-text-muted);
+  font-size: var(--pp-font-size-xs);
+  font-weight: 500;
+}
+
+.pp-collapsible-section__updated {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: var(--pp-radius-pill);
+  background: var(--pp-accent);
+}
+
+.pp-collapsible-section__updated[hidden],
+.pp-collapsible-section__body[hidden] {
   display: none;
+}
+
+.pp-collapsible-section__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: clamp(96px, 22vh, 240px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 6px;
+  box-sizing: border-box;
+  min-width: 0;
 }
 
 /* ============================================================
@@ -1191,15 +1352,12 @@
    ============================================================ */
 
 /* --- Body: gap-driven layout --- */
-#paper-pilot-mastery-section > .pp-section__body {
+.pp-mastery-panel {
   padding: 14px;
   display: flex;
   flex-direction: column;
   gap: 12px;
-}
-
-#paper-pilot-mastery-section.pp-section--collapsed > .pp-section__body {
-  display: none;
+  border-top: 1px solid var(--pp-border-light);
 }
 
 /* --- Topic card: status + progress grouped --- */

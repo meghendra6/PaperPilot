@@ -2,6 +2,7 @@ export type EngineMode = "gemini_cli" | "claude_code" | "codex_cli";
 
 export type ProviderStatus =
   | "ready"
+  | "idle"
   | "placeholder"
   | "checking"
   | "login_required"

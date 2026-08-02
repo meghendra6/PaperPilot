@@ -1,10 +1,23 @@
 import { addMessage, setMessageContent } from "../components/ChatMessage";
+import {
+  getActiveReaderRunMode,
+  isReaderRunTokenActive,
+  markReaderRunFinished,
+  markReaderRunStarted,
+  type ReaderRunCompletionResult,
+  type ReaderRunToken,
+} from "../ai/runPresentation";
+import {
+  finishRunAfterCleanup,
+  stopDetachedRunProcess,
+} from "../ai/runCompletion";
 import { sanitizeAssistantText } from "../message/assistantOutput";
 import { sessionHistoryService } from "../session/sessionHistoryService";
 import { cleanupWorkspaceIfEnabled } from "../workspace/cleanup";
 import { clearCodexPollerForItem } from "./poller";
 import {
   buildCodexRunState,
+  getCodexRunStateForItem,
   isCodexRunActiveForItem,
   setCodexRunStateForItem,
 } from "./runState";
@@ -14,6 +27,23 @@ import { classifyCodexLoginFailure } from "./statusClassification";
 
 declare const addon: any;
 export { stopCodexRunSilently } from "./stopRun";
+
+function getPendingCompletions() {
+  return (addon.data.codexPendingCompletions ??= new Map()) as Map<
+    number,
+    {
+      token: ReaderRunToken;
+      onComplete?: (result: ReaderRunCompletionResult) => void | Promise<void>;
+    }
+  >;
+}
+
+function clearPendingCompletion(itemID: number, token: ReaderRunToken) {
+  const pendingCompletions = getPendingCompletions();
+  if (pendingCompletions.get(itemID)?.token === token) {
+    pendingCompletions.delete(itemID);
+  }
+}
 
 export async function handleCodexQuestion(params: {
   itemID: number;
@@ -28,16 +58,24 @@ export async function handleCodexQuestion(params: {
   chatMessages: HTMLElement;
   streamingIndicator: HTMLElement;
   suppressChatMessages?: boolean;
-  onComplete?: (result: { success: boolean; assistantText: string }) => void;
+  continuationToken?: ReaderRunToken;
+  onComplete?: (result: ReaderRunCompletionResult) => void | Promise<void>;
 }) {
-  if (isCodexRunActiveForItem(params.itemID)) {
+  const continuingParent = Boolean(
+    params.continuationToken &&
+      isReaderRunTokenActive(params.itemID, params.continuationToken),
+  );
+  if (
+    isCodexRunActiveForItem(params.itemID) ||
+    (getActiveReaderRunMode(params.itemID) && !continuingParent)
+  ) {
     const assistantText =
       "A Codex CLI run is already active for this paper. Cancel it or wait for it to finish before starting another request.";
     if (!params.suppressChatMessages) {
       addMessage(params.chatMessages, assistantText, "ai");
     }
     params.streamingIndicator.style.display = "none";
-    params.onComplete?.({
+    await params.onComplete?.({
       success: false,
       assistantText,
     });
@@ -56,6 +94,8 @@ export async function handleCodexQuestion(params: {
     suppressChatMessages: params.suppressChatMessages,
   });
 
+  const runToken = markReaderRunStarted(params.itemID, "codex_cli");
+
   const result = await startCodexRunForQuestion({
     itemID: params.itemID,
     title: params.sessionTitle,
@@ -65,36 +105,85 @@ export async function handleCodexQuestion(params: {
     annotationIDs: params.annotationIDs,
     useResume: params.useResume,
     resumeSessionId: params.resumeSessionId,
+  }).catch(async (error) => {
+    const detail = error instanceof Error ? error.message : String(error);
+    const assistantText = `Codex CLI could not start: ${detail}`;
+    try {
+      if (!params.suppressChatMessages) {
+        addMessage(params.chatMessages, assistantText, "ai");
+      }
+      await params.onComplete?.({ success: false, assistantText });
+    } finally {
+      params.streamingIndicator.style.display = "none";
+      markReaderRunFinished(params.itemID, runToken);
+    }
+    return undefined;
   });
 
-  if (!result.ok) {
-    const loginState = classifyCodexLoginFailure(result.error);
-    if (!params.suppressChatMessages) {
-      addMessage(params.chatMessages, `Codex CLI error: ${result.error}`, "ai");
-    }
-    await sessionHistoryService.persistAssistantTurn({
-      itemID: params.itemID,
-      sessionId: params.sessionId,
-      mode: "codex_cli",
-      paperTitle: params.paperTitle || params.sessionTitle,
-      assistantText: result.error,
-      success: false,
-      suppressMessage: params.suppressChatMessages,
-    });
-    setCodexRunStateForItem(params.itemID, {
-      ...buildCodexRunState({
-        itemID: params.itemID,
-        title: params.sessionTitle,
-        loginState,
-      }),
-      latestEventType: "error",
-    });
-    params.streamingIndicator.style.display = "none";
-    params.onComplete?.({
-      success: false,
-      assistantText: result.error,
-    });
+  if (!result) return;
+
+  if (!isReaderRunTokenActive(params.itemID, runToken)) {
+    if (result.ok) await stopDetachedRunProcess(result.processId);
     await cleanupWorkspaceIfEnabled(result.workspacePath);
+    params.streamingIndicator.style.display = "none";
+    return;
+  }
+
+  if (!result.ok) {
+    try {
+      await finishRunAfterCleanup({
+        prepare: async () => {
+          const loginState = classifyCodexLoginFailure(result.error);
+          if (!params.suppressChatMessages) {
+            addMessage(
+              params.chatMessages,
+              `Codex CLI error: ${result.error}`,
+              "ai",
+            );
+          }
+          await sessionHistoryService.persistAssistantTurn({
+            itemID: params.itemID,
+            sessionId: params.sessionId,
+            mode: "codex_cli",
+            paperTitle: params.paperTitle || params.sessionTitle,
+            assistantText: result.error,
+            success: false,
+            suppressMessage: params.suppressChatMessages,
+          });
+          setCodexRunStateForItem(params.itemID, {
+            ...buildCodexRunState({
+              itemID: params.itemID,
+              title: params.sessionTitle,
+              loginState,
+            }),
+            latestEventType: "error",
+          });
+          params.streamingIndicator.style.display = "none";
+        },
+        cleanup: () => cleanupWorkspaceIfEnabled(result.workspacePath),
+        shouldComplete: () => isReaderRunTokenActive(params.itemID, runToken),
+        complete: () =>
+          params.onComplete?.({
+            success: false,
+            assistantText: result.error,
+            continuationToken: runToken,
+          }),
+        incomplete: () =>
+          params.onComplete?.({
+            success: false,
+            assistantText: "Codex CLI could not finalize this run.",
+          }),
+        finalize: () => markReaderRunFinished(params.itemID, runToken),
+      });
+    } catch {
+      if (!params.suppressChatMessages) {
+        addMessage(
+          params.chatMessages,
+          "Codex CLI could not finalize this run.",
+          "ai",
+        );
+      }
+    }
     return;
   }
 
@@ -113,12 +202,18 @@ export async function handleCodexQuestion(params: {
     runStatus: "running",
     latestEventType: "spawned",
   });
+  getPendingCompletions().set(params.itemID, {
+    token: runToken,
+    onComplete: params.onComplete,
+  });
 
   const poller = setInterval(async () => {
     const progress = await readCodexRunProgress({
       outputPath: result.outputPath,
       exitCodePath: result.exitCodePath,
     });
+
+    if (!isReaderRunTokenActive(params.itemID, runToken)) return;
 
     if (assistantMessage) {
       const displayText = sanitizeAssistantText(
@@ -174,35 +269,61 @@ export async function handleCodexQuestion(params: {
           typeof event.thread_id === "string",
       )?.thread_id as string | undefined;
 
-    await sessionHistoryService.persistAssistantTurn({
-      itemID: params.itemID,
-      sessionId: params.sessionId,
-      mode: "codex_cli",
-      paperTitle: params.paperTitle || params.sessionTitle,
-      assistantText,
-      success,
-      rawEvent: progress.rawOutput,
-      resumeSessionId: resumedThreadId,
-      suppressMessage: params.suppressChatMessages,
-    });
-    setCodexRunStateForItem(params.itemID, {
-      ...buildCodexRunState({
-        itemID: params.itemID,
-        title: params.sessionTitle,
-        loginState: success
-          ? "ready"
-          : classifyCodexLoginFailure(assistantText),
-      }),
-      processId: result.processId,
-      runStatus: success ? "completed" : "error",
-      latestEventType: progress.latestEventType,
-    });
-    params.streamingIndicator.style.display = "none";
-    params.onComplete?.({
-      success,
-      assistantText,
-    });
-    await cleanupWorkspaceIfEnabled(result.workspacePath);
+    try {
+      await finishRunAfterCleanup({
+        prepare: async () => {
+          await sessionHistoryService.persistAssistantTurn({
+            itemID: params.itemID,
+            sessionId: params.sessionId,
+            mode: "codex_cli",
+            paperTitle: params.paperTitle || params.sessionTitle,
+            assistantText,
+            success,
+            rawEvent: progress.rawOutput,
+            resumeSessionId: resumedThreadId,
+            suppressMessage: params.suppressChatMessages,
+          });
+          setCodexRunStateForItem(params.itemID, {
+            ...buildCodexRunState({
+              itemID: params.itemID,
+              title: params.sessionTitle,
+              loginState: success
+                ? "ready"
+                : classifyCodexLoginFailure(assistantText),
+            }),
+            processId: result.processId,
+            runStatus: success ? "completed" : "error",
+            latestEventType: progress.latestEventType,
+          });
+          params.streamingIndicator.style.display = "none";
+        },
+        cleanup: () => cleanupWorkspaceIfEnabled(result.workspacePath),
+        shouldComplete: () => isReaderRunTokenActive(params.itemID, runToken),
+        complete: () =>
+          params.onComplete?.({
+            success,
+            assistantText,
+            continuationToken: runToken,
+          }),
+        incomplete: () =>
+          params.onComplete?.({
+            success: false,
+            assistantText: "Codex CLI could not finalize this run.",
+          }),
+        finalize: () => {
+          clearPendingCompletion(params.itemID, runToken);
+          markReaderRunFinished(params.itemID, runToken);
+        },
+      });
+    } catch {
+      if (!params.suppressChatMessages) {
+        addMessage(
+          params.chatMessages,
+          "Codex CLI could not finalize this run.",
+          "ai",
+        );
+      }
+    }
   }, 800);
 
   addon.data.codexRunPollers?.set(params.itemID, poller);
@@ -243,6 +364,16 @@ export async function cancelCodexRun(params: {
   itemID: number;
   chatMessages: HTMLElement;
 }) {
+  const currentState = getCodexRunStateForItem(params.itemID);
+  const hasActivePoller = addon.data.codexRunPollers?.has(params.itemID);
+  if (currentState?.runStatus !== "running" || !hasActivePoller) {
+    addMessage(
+      params.chatMessages,
+      "This Codex run is preparing or finishing and can no longer be cancelled safely.",
+      "ai",
+    );
+    return;
+  }
   const runState = await stopCodexRunSilently({
     itemID: params.itemID,
     clearRunState: false,
@@ -253,6 +384,28 @@ export async function cancelCodexRun(params: {
       runStatus: "error",
       latestEventType: "cancelled",
     });
+  }
+  const pending = getPendingCompletions().get(params.itemID);
+  try {
+    const completeCancellation = () =>
+      pending?.onComplete?.({
+        success: false,
+        assistantText: "Codex run cancelled.",
+      });
+    await finishRunAfterCleanup({
+      prepare: () => undefined,
+      cleanup: () =>
+        runState?.workspacePath
+          ? cleanupWorkspaceIfEnabled(runState.workspacePath)
+          : undefined,
+      complete: completeCancellation,
+      incomplete: completeCancellation,
+      finalize: () => {
+        if (pending) clearPendingCompletion(params.itemID, pending.token);
+      },
+    });
+  } catch {
+    // The cancellation callback has already unlocked any silent workflow.
   }
   addMessage(params.chatMessages, "Codex run cancelled.", "ai");
 }

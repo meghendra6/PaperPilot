@@ -14,25 +14,26 @@ import {
   setModeOverrideForItem,
 } from "../src/modules/ai/modeStore";
 
-test("provider registry exposes ready Codex, Claude Code, and Gemini CLI descriptors", () => {
+test("provider registry reports only observed readiness", () => {
   const codex = getProvider("codex_cli").getDescriptor();
   const claude = getProvider("claude_code").getDescriptor();
   const gemini = getProvider("gemini_cli").getDescriptor();
 
   assert.deepEqual(
     { mode: codex.mode, status: codex.status, label: codex.label },
-    { mode: "codex_cli", status: "ready", label: "Codex CLI" },
+    { mode: "codex_cli", status: "checking", label: "Codex CLI" },
   );
   assert.deepEqual(
     { mode: gemini.mode, status: gemini.status, label: gemini.label },
-    { mode: "gemini_cli", status: "ready", label: "Gemini CLI" },
+    { mode: "gemini_cli", status: "idle", label: "Gemini CLI" },
   );
   assert.deepEqual(
     { mode: claude.mode, status: claude.status, label: claude.label },
-    { mode: "claude_code", status: "ready", label: "Claude Code" },
+    { mode: "claude_code", status: "idle", label: "Claude Code" },
   );
-  assert.match(gemini.placeholderResponse, /Gemini CLI mode is ready/i);
-  assert.match(claude.placeholderResponse, /Claude Code mode is ready/i);
+  assert.match(gemini.placeholderResponse, /Gemini CLI mode is selected/i);
+  assert.match(claude.placeholderResponse, /Claude Code mode is selected/i);
+  assert.match(codex.placeholderResponse, /Codex CLI mode is selected/i);
 });
 
 test("mode store accepts Claude Code as the default mode and falls back to Codex", () => {

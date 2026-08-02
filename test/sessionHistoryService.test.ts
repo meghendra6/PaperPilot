@@ -59,6 +59,7 @@ function buildMasteryState(): ComprehensionCheckState {
     phase: "complete",
     running: false,
     status: "Complete",
+    finalReport: "## Final report\n\nThe grounding boundary is preserved.",
     currentQuestion: "What tradeoff matters most?",
     rounds: [
       {

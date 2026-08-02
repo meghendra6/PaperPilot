@@ -5,9 +5,9 @@ export class GeminiCliProvider implements ReaderAiProvider {
     return {
       mode: "gemini_cli" as const,
       label: "Gemini CLI",
-      status: "ready" as const,
+      status: "idle" as const,
       placeholderResponse:
-        "Gemini CLI mode is ready. Ask questions about the current paper and continue the conversation in this pane.",
+        "Gemini CLI mode is selected. Ask a question to check the local CLI and start a paper-grounded conversation.",
     };
   }
 }

@@ -5,6 +5,7 @@ pref("__prefsPrefix__.defaultMode", "codex_cli");
 pref("__prefsPrefix__.autoOpenPaneOnPdfOpen", false);
 pref("__prefsPrefix__.saveDocumentSessions", true);
 pref("__prefsPrefix__.responseLanguage", "English");
+pref("__prefsPrefix__.paneSectionState", "{}");
 
 // Claude Code
 pref("__prefsPrefix__.claudeExecutablePath", "");

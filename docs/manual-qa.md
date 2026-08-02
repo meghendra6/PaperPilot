@@ -27,6 +27,26 @@ Use this checklist inside real Zotero 7, 8, and 9 runtimes before claiming readi
 - [ ] On Windows, confirm focus uses Zotero's visible inner and outer ring; on macOS/Linux, confirm the native single ring remains visible
 - [ ] Confirm primary, secondary, and ghost buttons have restrained hover/active feedback and disabled controls do not move
 
+### Reader pane redesign — Phase B layout and density
+
+- [ ] Confirm the always-visible chrome is one integrated engine/model header, three disclosure headers, optional compact run status, chat history, and the composer
+- [ ] Confirm Workbench starts expanded while Related papers and Past sessions start collapsed on a fresh profile
+- [ ] Toggle all three disclosures with mouse, Enter, and Space; restart Zotero and confirm their state persists
+- [ ] Complete a workbench or related-papers action while its section is collapsed and confirm only its summary/update dot changes—the section must not open itself
+- [ ] Open the engine/model popover, switch each engine, save a model/effort selection, and confirm the existing preferences update
+- [ ] While a provider run is active, attempt to switch providers and confirm the switch is blocked without clearing the active poller; after completion, switching works normally
+- [ ] During workspace preparation and terminal cleanup, attempt New session, saved-session Open/Delete, and Codex Cancel; confirm session replacement is blocked and no old workflow result appears in a new session
+- [ ] Complete one Paper Mastery evaluation that generates a follow-up question and one that generates the final report; confirm both nested runs start after the parent cleanup instead of reporting an active-run conflict
+- [ ] Cancel a running Codex-backed Workbench or Paper Mastery request; confirm its workflow leaves the running/evaluating state, remains cancelled after the next poll interval, and can be started again
+- [ ] Confirm the engine/model popover closes on outside click and Escape; Escape returns focus to its trigger
+- [ ] Fill the pane with chat, recommendation, session, and mastery content; confirm chat keeps at least 120px and each expanded section scrolls internally without pushing the composer away
+- [ ] Type one and many lines in the composer; confirm it grows from 72px to at most 180px, then scrolls internally
+- [ ] Confirm the removed drag handle has no visible target or pointer behavior and the Send button submits the same way as Enter
+- [ ] Switch away from and back to the paper (or refresh the custom section) and confirm exactly one header and three disclosure triggers remain, with no duplicate listeners or console errors
+- [ ] Start a run on paper A, switch to paper B and back to A before completion, and confirm A still shows `Running` until the final persisted answer replaces it in the rebuilt pane
+- [ ] Refresh the custom section with Paper Mastery awaiting an answer and after completion; confirm the current question, score, and final report rehydrate without starting a second run
+- [ ] Click `Restart Paper Mastery` after completion and confirm cancellation preserves the old session while confirmation explicitly replaces it
+
 ## 2. Mode behavior
 
 - [ ] Switch to `Gemini CLI`
@@ -140,12 +160,12 @@ Use this checklist inside real Zotero 7, 8, and 9 runtimes before claiming readi
 - [ ] Built `.xpi` contains `chrome/content/vendor/opendataloader/opendataloader-pdf-cli.jar`
 - [ ] No console/runtime errors during pane render and action triggers
 
-## Session history popover and silent-turn QA (2026-04-16)
+## Session history and silent-turn QA (2026-04-16)
 
 After running mastery and one or more workbench tools (research brief, contributions, limitations, follow-ups, paper compare) on a paper, then opening "Past sessions":
 
-- The popover anchors below the "Past sessions" button and does NOT push the chat down.
-- Clicking outside the popover or pressing Escape closes it. Escape returns focus to the trigger button.
+- The session list stays inside the bounded `Past sessions` disclosure body and scrolls internally instead of pushing the composer away.
+- The disclosure opens and closes with mouse, Enter, and Space while preserving its expanded state.
 - Each row is a single line: title (with optional Current / cards-saved badges), meta line, an Open button, and a kebab (⋯) button. Rename and Delete live inside the kebab menu.
 - Delete and Delete all show a confirmation dialog. Cancel keeps the data.
 - Reopening a session that previously ran mastery / workbench tools shows the natural chat transcript in the message list (prose markdown), with NO raw JSON lines.

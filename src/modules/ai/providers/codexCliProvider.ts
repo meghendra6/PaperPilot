@@ -5,9 +5,9 @@ export class CodexCliProvider implements ReaderAiProvider {
     return {
       mode: "codex_cli" as const,
       label: "Codex CLI",
-      status: "ready" as const,
+      status: "checking" as const,
       placeholderResponse:
-        "Codex CLI mode is ready. Use the reader controls to authenticate, choose a model, and continue the paper conversation.",
+        "Codex CLI mode is selected. Use the reader controls to check authentication, choose a model, and continue the paper conversation.",
     };
   }
 }

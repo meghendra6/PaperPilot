@@ -11,6 +11,7 @@ declare namespace _ZoteroTypes {
       "autoOpenPaneOnPdfOpen": boolean;
       "saveDocumentSessions": boolean;
       "responseLanguage": string;
+      "paneSectionState": string;
       "claudeExecutablePath": string;
       "claudeDefaultModel": string;
       "claudeAllowedModels": string;

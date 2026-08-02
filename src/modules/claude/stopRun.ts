@@ -1,3 +1,4 @@
+import { finishReaderRunsForMode } from "../ai/runPresentation";
 import { clearClaudePollerForItem } from "./poller";
 import { clearClaudeRunStateForItem } from "./runState";
 
@@ -10,6 +11,7 @@ export async function stopClaudeRunSilently(params: {
 }) {
   const runState = addon.data.claudeRunStates?.get(params.itemID);
   clearClaudePollerForItem(params.itemID);
+  finishReaderRunsForMode(params.itemID, "claude_code");
   const pid = runState?.processId;
   if (pid) {
     await Zotero.Utilities.Internal.exec("/bin/zsh", [
