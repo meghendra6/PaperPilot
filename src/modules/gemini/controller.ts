@@ -11,6 +11,18 @@ import {
   finishRunAfterCleanup,
   stopDetachedRunProcess,
 } from "../ai/runCompletion";
+import {
+  advanceRunProgress,
+  clearPendingEngineCompletion,
+  failRunProgress,
+  persistRunFailure,
+  registerPendingEngineCompletion,
+  rememberLastEngineRequest,
+  startRunProgress,
+} from "../ai/runLifecycle";
+import { classifyRunFailure } from "../ai/runFailure";
+import { getRunProgressState } from "../ai/runProgress";
+import { armRunTimeout, completeTimedOutRun } from "../ai/runTimeout";
 import { sanitizeAssistantText } from "../message/assistantOutput";
 import { sessionHistoryService } from "../session/sessionHistoryService";
 import { cleanupWorkspaceIfEnabled } from "../workspace/cleanup";
@@ -63,7 +75,57 @@ export async function handleGeminiQuestion(params: {
     return;
   }
 
+  if (!params.suppressChatMessages) {
+    rememberLastEngineRequest(params.itemID, {
+      mode: "gemini_cli",
+      sessionId: params.sessionId,
+      sessionTitle: params.sessionTitle,
+      paperTitle: params.paperTitle,
+      question: params.question,
+      selectedText: params.selectedText,
+      annotationIDs: params.annotationIDs,
+      resumeSessionId: params.resumeSessionId,
+    });
+  }
+
   const runToken = markReaderRunStarted(params.itemID, "gemini_cli");
+  startRunProgress(params.itemID, "gemini_cli");
+  let assistantMessage: HTMLElement | null | undefined = null;
+  const pendingCompletion = {
+    mode: "gemini_cli" as const,
+    token: runToken,
+    retryable: !params.suppressChatMessages,
+    onComplete: params.onComplete,
+    workspacePath: undefined as string | undefined,
+    cancelTimeout: undefined as (() => void) | undefined,
+  };
+  registerPendingEngineCompletion(params.itemID, pendingCompletion);
+  const cancelTimeout = armRunTimeout({
+    itemID: params.itemID,
+    shouldTimeout: () => isReaderRunTokenActive(params.itemID, runToken),
+    onTimeout: async () => {
+      await completeTimedOutRun({
+        itemID: params.itemID,
+        sessionId: params.sessionId,
+        sessionTitle: params.sessionTitle,
+        paperTitle: params.paperTitle,
+        engine: "gemini_cli",
+        engineLabel: "Gemini CLI",
+        token: runToken,
+        workspacePath: pendingCompletion.workspacePath,
+        suppressMessage: params.suppressChatMessages,
+        stop: () => stopGeminiRunSilently({ itemID: params.itemID }),
+        onMessage: (message) => {
+          if (assistantMessage) {
+            setMessageContent(assistantMessage, message, "ai");
+          }
+          params.streamingIndicator.style.display = "none";
+        },
+        onComplete: params.onComplete,
+      });
+    },
+  });
+  pendingCompletion.cancelTimeout = cancelTimeout;
 
   const result = await startGeminiRunForQuestion({
     itemID: params.itemID,
@@ -74,9 +136,30 @@ export async function handleGeminiQuestion(params: {
     annotationIDs: params.annotationIDs,
     resumeSessionId: params.resumeSessionId,
   }).catch(async (error) => {
+    cancelTimeout();
+    clearPendingEngineCompletion(params.itemID, runToken);
+    if (!isReaderRunTokenActive(params.itemID, runToken)) return undefined;
     const detail = error instanceof Error ? error.message : String(error);
-    const assistantText = `Gemini CLI could not start: ${detail}`;
+    const assistantText = failRunProgress({
+      itemID: params.itemID,
+      engine: "gemini_cli",
+      rawError: detail,
+      source: "workspace",
+      canRetry: !params.suppressChatMessages,
+    }).failure!.userMessage;
     try {
+      await sessionHistoryService
+        .persistAssistantTurn({
+          itemID: params.itemID,
+          sessionId: params.sessionId,
+          mode: "gemini_cli",
+          paperTitle: params.paperTitle || params.sessionTitle,
+          assistantText,
+          success: false,
+          rawEvent: detail,
+          suppressMessage: params.suppressChatMessages,
+        })
+        .catch(() => undefined);
       if (!params.suppressChatMessages) {
         addMessage(params.chatMessages, assistantText, "ai");
       }
@@ -90,7 +173,11 @@ export async function handleGeminiQuestion(params: {
 
   if (!result) return;
 
+  pendingCompletion.workspacePath = result.workspacePath;
+
   if (!isReaderRunTokenActive(params.itemID, runToken)) {
+    cancelTimeout();
+    clearPendingEngineCompletion(params.itemID, runToken);
     if (result.ok) await stopDetachedRunProcess(result.processId);
     await cleanupWorkspaceIfEnabled(result.workspacePath);
     params.streamingIndicator.style.display = "none";
@@ -98,25 +185,25 @@ export async function handleGeminiQuestion(params: {
   }
 
   if (!result.ok) {
+    cancelTimeout();
+    let failureMessage = "Gemini CLI could not start this run.";
     try {
       await finishRunAfterCleanup({
         prepare: async () => {
-          if (!params.suppressChatMessages) {
-            addMessage(
-              params.chatMessages,
-              `Gemini CLI error: ${result.error}`,
-              "ai",
-            );
-          }
-          await sessionHistoryService.persistAssistantTurn({
+          const failure = await persistRunFailure({
             itemID: params.itemID,
             sessionId: params.sessionId,
-            mode: "gemini_cli",
-            paperTitle: params.paperTitle || params.sessionTitle,
-            assistantText: result.error,
-            success: false,
+            sessionTitle: params.sessionTitle,
+            paperTitle: params.paperTitle,
+            engine: "gemini_cli",
+            rawError: result.error,
+            source: "spawn",
             suppressMessage: params.suppressChatMessages,
           });
+          failureMessage = failure.userMessage;
+          if (!params.suppressChatMessages) {
+            addMessage(params.chatMessages, failureMessage, "ai");
+          }
           params.streamingIndicator.style.display = "none";
         },
         cleanup: () => cleanupWorkspaceIfEnabled(result.workspacePath),
@@ -124,7 +211,7 @@ export async function handleGeminiQuestion(params: {
         complete: () =>
           params.onComplete?.({
             success: false,
-            assistantText: result.error,
+            assistantText: failureMessage,
             continuationToken: runToken,
           }),
         incomplete: () =>
@@ -132,7 +219,10 @@ export async function handleGeminiQuestion(params: {
             success: false,
             assistantText: "Gemini CLI could not finalize this run.",
           }),
-        finalize: () => markReaderRunFinished(params.itemID, runToken),
+        finalize: () => {
+          clearPendingEngineCompletion(params.itemID, runToken);
+          markReaderRunFinished(params.itemID, runToken);
+        },
       });
     } catch {
       if (!params.suppressChatMessages) {
@@ -146,14 +236,17 @@ export async function handleGeminiQuestion(params: {
     return;
   }
 
-  const assistantMessage = params.suppressChatMessages
+  assistantMessage = params.suppressChatMessages
     ? undefined
     : addMessage(params.chatMessages, "Starting Gemini CLI run…", "ai");
   clearGeminiPollerForItem(params.itemID);
   setGeminiRunStateForItem(params.itemID, {
     processId: result.processId,
   });
-
+  advanceRunProgress(params.itemID, {
+    type: "spawned",
+    processId: result.processId,
+  });
   const poller = setInterval(async () => {
     const progress = await readGeminiRunProgress({
       outputPath: result.outputPath,
@@ -163,11 +256,7 @@ export async function handleGeminiQuestion(params: {
     if (!isReaderRunTokenActive(params.itemID, runToken)) return;
 
     if (assistantMessage) {
-      setMessageContent(
-        assistantMessage,
-        sanitizeAssistantText(progress.parsedOutput || "Running Gemini CLI…"),
-        "ai",
-      );
+      setMessageContent(assistantMessage, "Running Gemini CLI…", "ai");
     }
 
     if (!progress.completed) {
@@ -175,17 +264,27 @@ export async function handleGeminiQuestion(params: {
     }
 
     clearGeminiPollerForItem(params.itemID);
+    advanceRunProgress(params.itemID, { type: "finishing" });
 
-    const assistantText = sanitizeAssistantText(
+    const rawAssistantText =
       progress.parsedOutput ||
-        "Gemini CLI ran successfully, but returned no assistant message.",
-    );
+      "Gemini CLI ran successfully, but returned no assistant message.";
+    const success = progress.exitCode === "0";
+    const terminalFailure = success
+      ? undefined
+      : classifyRunFailure({
+          engine: "gemini_cli",
+          rawError: progress.rawOutput || rawAssistantText,
+          source: "process_exit",
+        });
+    let assistantText = success
+      ? sanitizeAssistantText(rawAssistantText)
+      : terminalFailure!.userMessage;
 
     if (assistantMessage) {
       setMessageContent(assistantMessage, assistantText, "ai");
     }
 
-    const success = progress.exitCode === "0";
     try {
       await finishRunAfterCleanup({
         prepare: async () => {
@@ -211,12 +310,36 @@ export async function handleGeminiQuestion(params: {
             assistantText,
             continuationToken: runToken,
           }),
-        incomplete: () =>
-          params.onComplete?.({
+        incomplete: (error) => {
+          assistantText = failRunProgress({
+            itemID: params.itemID,
+            engine: "gemini_cli",
+            rawError:
+              error instanceof Error ? error.message : String(error || ""),
+            source: "process_exit",
+            canRetry: !params.suppressChatMessages,
+          }).failure!.userMessage;
+          return params.onComplete?.({
             success: false,
-            assistantText: "Gemini CLI could not finalize this run.",
-          }),
+            assistantText,
+          });
+        },
         finalize: () => {
+          cancelTimeout();
+          if (success) {
+            if (getRunProgressState(params.itemID)?.phase !== "failed") {
+              advanceRunProgress(params.itemID, { type: "completed" });
+            }
+          } else {
+            failRunProgress({
+              itemID: params.itemID,
+              engine: "gemini_cli",
+              rawError: terminalFailure!.rawError,
+              source: "process_exit",
+              canRetry: !params.suppressChatMessages,
+            });
+          }
+          clearPendingEngineCompletion(params.itemID, runToken);
           clearGeminiRunStateForItem(params.itemID);
           markReaderRunFinished(params.itemID, runToken);
         },

@@ -20,14 +20,8 @@ import {
   type ReaderRunCompletionResult,
   type ReaderRunToken,
 } from "./ai/runPresentation";
-import {
-  buildCodexRunState,
-  getCodexRunStateForItem,
-  isCodexRunActiveForItem,
-  setCodexRunStateForItem,
-} from "./codex/runState";
+import { isCodexRunActiveForItem } from "./codex/runState";
 import { probeWorkspaceWritable } from "./workspace/status";
-import { redactPath } from "./workspace/redaction";
 import { rememberRecentCodexModel } from "./codex/modelHistory";
 import {
   normalizeClaudeModel,
@@ -42,12 +36,7 @@ import { sessionHistoryService } from "./session/sessionHistoryService";
 import { isLikelySilentToolMessage } from "./session/silentTurnFilter";
 import { probeCodexLoginState } from "./codex/status";
 import { buildCodexAuthenticateMessage } from "./codex/authAction";
-import {
-  cancelCodexRun,
-  handleCodexQuestion,
-  retryLastCodexQuestion,
-  stopCodexRunSilently,
-} from "./codex/controller";
+import { handleCodexQuestion, stopCodexRunSilently } from "./codex/controller";
 import {
   handleClaudeQuestion,
   stopClaudeRunSilently,
@@ -113,9 +102,27 @@ import {
   renderModelRow,
   normalizeModelForMode,
 } from "./ui/paneHeader";
+import {
+  createRunProgressCard,
+  PAPER_PILOT_PREF_PANE_ID,
+  type RunProgressCardHandle,
+} from "./ui/runProgressCard";
+import { getRunProgressState } from "./ai/runProgress";
+import { cancelActiveEngineRun } from "./ai/runControl";
+import { retryLastEngineQuestion } from "./ai/retryEngineRequest";
 
 const paneCleanupByBody = new WeakMap<HTMLElement, () => void>();
 const paneTemplateByBody = new WeakMap<HTMLElement, HTMLElement>();
+const runProgressCardByContainer = new WeakMap<
+  HTMLElement,
+  RunProgressCardHandle
+>();
+const activeRunProgressCards = new Set<RunProgressCardHandle>();
+
+export function disposeReaderPaneRunProgressCards(): void {
+  for (const card of activeRunProgressCards) card.dispose();
+  activeRunProgressCards.clear();
+}
 
 export function setReaderActionDraft(
   draft: typeof addon.data.readerActionDraft,
@@ -460,6 +467,58 @@ export function registerPaperPilotPaneSection() {
         codexWebSearchToggle &&
         modelHistory
       ) {
+        const runProgressCard = createRunProgressCard({
+          container: runStateCard,
+          actions: {
+            onCancel: async () => {
+              const state = getRunProgressState(item.id);
+              const cancelled = await cancelActiveEngineRun(item.id);
+              addMessage(
+                chatMessages,
+                cancelled
+                  ? `${getModeLabel(state?.engine ?? getModeForItem(item.id))} run cancelled.`
+                  : "No cancellable run is active for this paper.",
+                "ai",
+              );
+              renderStreamingIndicator(streamingIndicator, false);
+              runProgressCard.render(getRunProgressState(item.id));
+            },
+            onRetry: () =>
+              retryLastEngineQuestion({
+                itemID: item.id,
+                itemTitle: String(item.getField("title") || ""),
+                chatMessages,
+                streamingIndicator,
+              }),
+            onOpenSettings: () => {
+              Zotero.Utilities.Internal.openPreferences(
+                PAPER_PILOT_PREF_PANE_ID,
+              );
+            },
+            onShowLoginHelp: (engine) => {
+              const command =
+                engine === "codex_cli"
+                  ? "codex login"
+                  : engine === "claude_code"
+                    ? "claude /login"
+                    : "configure GEMINI_API_KEY or run gemini auth";
+              addMessage(
+                chatMessages,
+                `Authenticate in a terminal with ${command}, then retry the request.`,
+                "ai",
+              );
+            },
+          },
+        });
+        runProgressCardByContainer.set(runStateCard, runProgressCard);
+        activeRunProgressCards.add(runProgressCard);
+        cleanupTasks.push(() => {
+          runProgressCard.dispose();
+          activeRunProgressCards.delete(runProgressCard);
+          runProgressCardByContainer.delete(runStateCard);
+        });
+        runProgressCard.render(getRunProgressState(item.id));
+
         let sessionHistoryOpen = sessionsSection.isExpanded();
         let renamingSessionId: string | undefined;
 
@@ -2149,22 +2208,6 @@ export function registerPaperPilotPaneSection() {
           });
         });
 
-        codexRetryButton.addEventListener("click", async () => {
-          await retryLastCodexQuestion({
-            itemID: item.id,
-            chatMessages,
-            streamingIndicator,
-          });
-        });
-
-        codexCancelButton.addEventListener("click", async () => {
-          await cancelCodexRun({
-            itemID: item.id,
-            chatMessages,
-          });
-          renderStreamingIndicator(streamingIndicator, false);
-        });
-
         modelSaveButton.addEventListener("click", async () => {
           if (!modelInput.value.trim()) {
             return;
@@ -2971,40 +3014,13 @@ function renderRunStateCard(
   loginState: "ready" | "login_required" | "unavailable" | "not_checked",
   workspaceWritable?: boolean,
 ) {
-  if (mode !== "codex_cli") {
-    runStateCard.style.display = "none";
-    runStateCard.textContent = "";
-    return;
-  }
-
-  const state = buildCodexRunState({
-    itemID,
-    title: itemTitle,
-    loginState,
-    workspaceWritable,
-  });
-  const persistedState = getCodexRunStateForItem(itemID);
-  if (persistedState?.latestEventType) {
-    state.latestEventType = persistedState.latestEventType;
-  }
-
-  runStateCard.style.display = "block";
-  const workspaceDisplay = getPref("privacyRedactLocalFilePaths")
-    ? redactPath(state.workspacePath)
-    : state.workspacePath;
-  runStateCard.textContent = [
-    "Codex Run State",
-    `Model: ${state.model}`,
-    `Reasoning: ${state.reasoningEffort || "default"}`,
-    `Workspace: ${workspaceDisplay}`,
-    `Writable: ${state.workspaceWritable ?? "unknown"}`,
-    `Web search: ${getPref("codexEnableWebSearch") ? "enabled" : "disabled"}`,
-    `Sandbox: ${String(getPref("codexSandboxMode") || "read-only")}`,
-    `Approval: ${String(getPref("codexApprovalMode") || "never")}`,
-    `Login: ${state.loginState}`,
-    `Run status: ${state.runStatus}`,
-    `Latest event: ${state.latestEventType}`,
-  ].join("\n");
+  void mode;
+  void itemTitle;
+  void loginState;
+  void workspaceWritable;
+  runProgressCardByContainer
+    .get(runStateCard)
+    ?.render(getRunProgressState(itemID));
 }
 
 function renderCodexActions(codexActions: HTMLElement, mode: EngineMode) {

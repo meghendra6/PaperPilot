@@ -49,14 +49,20 @@ scrolls independently from expanded section bodies.
 
 `src/modules/ai/` is the thin layer over the three engines.
 
-| File                  | Role                                                                     |
-| --------------------- | ------------------------------------------------------------------------ |
-| `types.ts`            | `EngineMode = "codex_cli" \| "claude_code" \| "gemini_cli"`              |
-| `modeStore.ts`        | default mode from prefs, per-item override in `addon.data.modeOverrides` |
-| `providerRegistry.ts` | mode → provider descriptor (label, status)                               |
-| `runCompletion.ts`    | cleanup-before-callback ordering for terminal controller transitions     |
-| `runPresentation.ts`  | item-scoped active-run events that reconnect rebuilt pane DOM            |
-| `workspaceRun.ts`     | mode-dispatching helpers: start a run, read progress, extract text       |
+| File                    | Role                                                                     |
+| ----------------------- | ------------------------------------------------------------------------ |
+| `types.ts`              | `EngineMode = "codex_cli" \| "claude_code" \| "gemini_cli"`              |
+| `modeStore.ts`          | default mode from prefs, per-item override in `addon.data.modeOverrides` |
+| `providerRegistry.ts`   | mode → provider descriptor (label, status)                               |
+| `runCompletion.ts`      | cleanup-before-callback ordering for terminal controller transitions     |
+| `runControl.ts`         | engine-neutral cancellation and silent-workflow release                  |
+| `runFailure.ts`         | source-first failure classification and safe user messages               |
+| `runLifecycle.ts`       | shared progress, retry, and token-aware completion state                 |
+| `runPresentation.ts`    | item-scoped active-run events that reconnect rebuilt pane DOM            |
+| `runProgress.ts`        | pure phase transitions and absolute-deadline calculation                 |
+| `runTimeout.ts`         | one watchdog and timeout completion path shared by all engines           |
+| `retryEngineRequest.ts` | engine-neutral retry dispatch for the last normal chat request           |
+| `workspaceRun.ts`       | mode-dispatching helpers: start a run, read progress, extract text       |
 
 `workspaceRun.ts` is the shared entry point used by non-chat workflows (research
 brief, paper tools, compare, auto-highlight, mastery). It dynamically imports
@@ -93,7 +99,8 @@ polled**:
    this `itemID`.
 2. Before workspace preparation, the controller registers an item-scoped
    activity in `ai/runPresentation.ts`. This keeps provider and session guards
-   active if Zotero rebuilds the pane during extraction or process spawn.
+   active if Zotero rebuilds the pane during extraction or process spawn. It
+   also creates `addon.data.runProgressStates[itemID]` in `Preparing workspace`.
 3. `runner.startXRunForQuestion`:
    - resolves the executable path and reads prefs (model, sandbox, permissions)
    - computes the workspace path: `{workspaceRoot}/{itemID}-{slugified-title}`
@@ -110,8 +117,12 @@ polled**:
    a separate file when done, and echoes the pid to a third file. `exec` returns
    as soon as the background job is spawned.
 5. `controller` starts a `setInterval` at **800 ms** that reads the output file,
-   renders partial text into the chat bubble, and stops once the exit-code file
-   is non-empty.
+   advances the shared card to `Running`, and stops once the exit-code file is
+   non-empty. Codex displays structured assistant output when one is available;
+   no controller renders raw in-flight output. A separate card timer updates
+   only the elapsed-time node every second. The shared watchdog enforces a
+   30-minute absolute limit from workspace preparation onward without treating
+   an empty Claude/Gemini output file as a stall.
 6. On completion the controller sanitizes the text
    (`message/assistantOutput.ts`), persists the turn via
    `session/sessionHistoryService.ts`, updates run state, and calls
@@ -126,6 +137,15 @@ polled**:
    intentionally chains another run (Paper Mastery follow-up or final report)
    passes the active parent token as an explicit continuation guard; unrelated
    requests remain blocked.
+
+Failures are classified in `ai/runFailure.ts`. Workspace and timeout sources
+take precedence over string matching; executable and login patterns cover all
+three CLIs. Session history stores the safe `userMessage` as replayable text and
+keeps raw stderr only in `rawEvent`, which the run card exposes under a collapsed
+Raw logs disclosure. `ui/runProgressCard.ts` renders the same progress, cancel,
+retry, settings, and login-help surface for every engine. Only normal chat turns
+enter `addon.data.lastEngineRequests`; silent Workbench and Paper Mastery runs
+continue to use their own workflow buttons.
 
 Per-engine file names inside the workspace:
 

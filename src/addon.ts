@@ -19,14 +19,13 @@ class Addon {
       import("./modules/codex/runState").CodexRunState
     >;
     codexRunPollers?: Map<number, ReturnType<typeof setInterval>>;
-    codexPendingCompletions?: Map<
+    pendingEngineCompletions?: Map<
       number,
-      {
-        token: import("./modules/ai/runPresentation").ReaderRunToken;
-        onComplete?: (
-          result: import("./modules/ai/runPresentation").ReaderRunCompletionResult,
-        ) => void | Promise<void>;
-      }
+      import("./modules/ai/runLifecycle").PendingEngineCompletion
+    >;
+    runProgressStates?: Map<
+      number,
+      import("./modules/ai/runProgress").RunProgressState
     >;
     geminiRunStates?: Map<
       number,
@@ -42,19 +41,9 @@ class Addon {
     codexLastProbeError?: string;
     codexDiagnosticsText?: string;
     codexExecutableCandidates?: import("./modules/codex/executableSelection").CodexExecutableProbe[];
-    lastCodexRequests?: Map<
+    lastEngineRequests?: Map<
       number,
-      {
-        sessionId: string;
-        sessionTitle: string;
-        paperTitle?: string;
-        question: string;
-        selectedText?: string;
-        annotationIDs?: string[];
-        useResume: boolean;
-        resumeSessionId?: string;
-        suppressChatMessages?: boolean;
-      }
+      import("./modules/ai/runLifecycle").LastEngineRequest
     >;
     paperIndexStore?: Map<string, { hash: string; chunks: string[] }>;
     modeOverrides?: Map<number, EngineMode>;
@@ -125,12 +114,13 @@ class Addon {
       ztoolkit: createZToolkit(),
       codexRunStates: new Map(),
       codexRunPollers: new Map(),
-      codexPendingCompletions: new Map(),
+      pendingEngineCompletions: new Map(),
+      runProgressStates: new Map(),
       geminiRunStates: new Map(),
       geminiRunPollers: new Map(),
       claudeRunStates: new Map(),
       claudeRunPollers: new Map(),
-      lastCodexRequests: new Map(),
+      lastEngineRequests: new Map(),
       paperIndexStore: new Map(),
       modeOverrides: new Map(),
       recentCodexModels: [],
