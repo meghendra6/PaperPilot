@@ -89,7 +89,7 @@ function buildSnapshot() {
     lastGeminiSessionID: "gemini-thread-id",
     lastModel: {
       mode: "codex_cli" as const,
-      model: "gpt-5.5",
+      model: "gpt-5.6-terra",
       reasoningEffort: "medium",
     },
     messages: [

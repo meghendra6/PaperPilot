@@ -85,7 +85,7 @@ Use this checklist inside real Zotero 7, 8, and 9 runtimes before claiming readi
 - [ ] Switch to `Claude Code`
 - [ ] Confirm Claude Code model controls and mode messaging update correctly
 - [ ] Switch to `Codex CLI`
-- [ ] Confirm the unified run-progress card and Codex model controls render
+- [ ] Confirm the unified run-progress card and Codex model controls render only GPT-5.6 Sol, Terra, and Luna; a saved older model falls back to Sol
 - [ ] Confirm per-paper mode override does not affect another document unexpectedly
 
 ## 3. Reader actions

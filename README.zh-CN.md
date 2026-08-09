@@ -154,7 +154,7 @@ Codex 模式更偏向工作区驱动。当前代码库已经包含：
 - 可执行文件发现与校验
 - 登录/状态检查
 - 工作区可写性检查
-- 基于最新 Codex CLI 目录的模型选择（默认 `gpt-5.6-sol`，另含 `gpt-5.6-terra`、`gpt-5.6-luna`、`gpt-5.5` 及更早模型），reasoning effort 按模型提供（支持时可达 `max`/`ultra`）
+- 当前推荐 Codex 模型选择（默认 `gpt-5.6-sol`，另含 `gpt-5.6-terra`、`gpt-5.6-luna`），reasoning effort 按模型提供（支持时可达 `max`/`ultra`）
 - sandbox 与 approval 设置
 - 可选网页搜索开关
 - 与当前论文关联的可恢复追问运行
