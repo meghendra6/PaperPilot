@@ -155,8 +155,13 @@ function extractJsonCandidates(raw: string) {
   return [...candidates];
 }
 
-function parseVenue(value: unknown): LeadingVenueAssessment {
-  const record = isRecord(value) ? value : {};
+function parseVenue(value: unknown): LeadingVenueAssessment | undefined {
+  if (!isRecord(value)) return undefined;
+  const record = value;
+  const venueName = text(record.venueName || record.name);
+  const fields = stringList(record.fields, 6);
+  const basis = text(record.basis);
+  if (!venueName || !fields.length || !basis) return undefined;
   const judgment = LEADING_JUDGMENTS.has(
     record.judgment as LeadingVenueJudgment,
   )
@@ -168,12 +173,12 @@ function parseVenue(value: unknown): LeadingVenueAssessment {
     ? (record.confidence as LeadingVenueAssessment["confidence"])
     : "low";
   return {
-    venueName: text(record.venueName || record.name) || "Unknown venue",
+    venueName,
     venueAcronym: optionalText(record.venueAcronym || record.acronym),
-    fields: stringList(record.fields, 6),
+    fields,
     judgment,
     confidence,
-    basis: text(record.basis) || "No venue assessment basis was provided.",
+    basis,
   };
 }
 
@@ -196,22 +201,43 @@ function parseQuery(value: unknown): DiscoveryQuery | undefined {
 }
 
 function parsePlan(value: unknown): AgentSearchPlan {
-  const record = isRecord(value) ? value : {};
+  if (!isRecord(value)) throw new Error("Discovery plan is required.");
+  const record = value;
+  const concernSummary = text(record.concernSummary);
+  const primaryField = text(record.primaryField);
+  const scopeSummary = text(record.scopeSummary);
+  const venues = Array.isArray(record.venues)
+    ? record.venues
+        .map(parseVenue)
+        .filter((venue): venue is LeadingVenueAssessment => Boolean(venue))
+        .slice(0, 16)
+    : [];
+  const queries = Array.isArray(record.queries)
+    ? record.queries
+        .map(parseQuery)
+        .filter((query): query is DiscoveryQuery => Boolean(query))
+        .slice(0, MAX_QUERIES)
+    : [];
+  const families = new Set(queries.map((query) => query.family.toLowerCase()));
+  if (
+    !concernSummary ||
+    !primaryField ||
+    !scopeSummary ||
+    !venues.length ||
+    queries.length < 3 ||
+    families.size < 3
+  ) {
+    throw new Error(
+      "Discovery plan must include the concern, primary field, bounded venue assessments, scope, and at least three distinct query families.",
+    );
+  }
   return {
-    concernSummary:
-      text(record.concernSummary) || "Related prior-work discovery",
-    primaryField: text(record.primaryField) || "Unclassified field",
+    concernSummary,
+    primaryField,
     adjacentFields: stringList(record.adjacentFields, 6),
-    venues: Array.isArray(record.venues)
-      ? record.venues.map(parseVenue).slice(0, 16)
-      : [],
-    queries: Array.isArray(record.queries)
-      ? record.queries
-          .map(parseQuery)
-          .filter((query): query is DiscoveryQuery => Boolean(query))
-          .slice(0, MAX_QUERIES)
-      : [],
-    scopeSummary: text(record.scopeSummary) || "Scope details unavailable.",
+    venues,
+    queries,
+    scopeSummary,
   };
 }
 
@@ -265,7 +291,10 @@ function parseReviewInsight(value: unknown): PublicReviewInsight | undefined {
   };
 }
 
-function parsePaper(value: unknown): DiscoveredPaper | undefined {
+function parsePaper(
+  value: unknown,
+  allowReviewLinks: boolean,
+): DiscoveredPaper | undefined {
   if (!isRecord(value)) return undefined;
   const title = text(value.title);
   const relevanceReason = text(value.relevanceReason || value.reason);
@@ -301,9 +330,20 @@ function parsePaper(value: unknown): DiscoveredPaper | undefined {
         )
         .filter((entry): entry is string => Boolean(entry))
     : [];
-  const reviewURL =
+  const claimedReviewURL =
     typeof value.reviewURL === "string"
       ? normalizeHttpURL(value.reviewURL)
+      : undefined;
+  const reviewURL =
+    allowReviewLinks &&
+    claimedReviewURL &&
+    evidence.some(
+      (entry) =>
+        DIRECT_OFFICIAL_TYPES.has(entry.type) &&
+        entry.url === claimedReviewURL &&
+        entry.supports.includes("reviews_available"),
+    )
+      ? claimedReviewURL
       : undefined;
   const providerIDs = isRecord(value.providerIDs)
     ? Object.fromEntries(
@@ -323,6 +363,14 @@ function parsePaper(value: unknown): DiscoveredPaper | undefined {
   )
     ? (value.evidenceConfidence as EvidenceConfidence)
     : "none";
+  const leadingVenueAssessment = parseVenue(value.leadingVenueAssessment);
+  const doi =
+    typeof value.doi === "string"
+      ? normalizeDiscoveryDOI(value.doi)
+      : undefined;
+  if (!leadingVenueAssessment || (!urls.length && !reviewURL && !doi)) {
+    return undefined;
+  }
 
   return {
     candidateID:
@@ -334,10 +382,7 @@ function parsePaper(value: unknown): DiscoveredPaper | undefined {
     authors: stringList(value.authors, 32),
     year,
     abstract: optionalText(value.abstract),
-    doi:
-      typeof value.doi === "string"
-        ? normalizeDiscoveryDOI(value.doi)
-        : undefined,
+    doi,
     urls: [...new Set([...urls, ...(reviewURL ? [reviewURL] : [])])],
     providerIDs,
     venueName: optionalText(value.venueName || value.venue),
@@ -346,18 +391,15 @@ function parsePaper(value: unknown): DiscoveredPaper | undefined {
     publicationClass,
     publicationEvidence: evidence,
     evidenceConfidence: claimedConfidence,
-    leadingVenueAssessment: parseVenue(
-      value.leadingVenueAssessment || {
-        venueName: value.venueName || value.venue,
-        judgment: "unknown",
-      },
-    ),
+    leadingVenueAssessment,
     relationship,
     relevanceReason,
     keyDifference: optionalText(value.keyDifference),
     noveltyRelationship,
     reviewURL,
-    reviewInsight: parseReviewInsight(value.reviewInsight),
+    reviewInsight: reviewURL
+      ? parseReviewInsight(value.reviewInsight)
+      : undefined,
     existingItemID:
       typeof value.existingItemID === "number"
         ? value.existingItemID
@@ -505,7 +547,10 @@ function parseExcluded(value: unknown): ExcludedDiscoveryCandidate | undefined {
   };
 }
 
-function normalizeResult(record: Record<string, unknown>): DiscoveryResult {
+function normalizeResult(
+  record: Record<string, unknown>,
+  options: { allowReviewLinks?: boolean } = {},
+): DiscoveryResult {
   const allRaw = [
     ...(Array.isArray(record.verifiedMain) ? record.verifiedMain : []),
     ...(Array.isArray(record.otherPeerReviewed)
@@ -514,9 +559,15 @@ function normalizeResult(record: Record<string, unknown>): DiscoveryResult {
     ...(Array.isArray(record.noveltyRadar) ? record.noveltyRadar : []),
   ];
   const parsed = allRaw
-    .map(parsePaper)
+    .map((paper) => parsePaper(paper, options.allowReviewLinks === true))
     .filter((paper): paper is DiscoveredPaper => Boolean(paper));
   const deduplicated = deduplicateDiscoveredPapers(parsed);
+  const parseWarnings: string[] = stringList(record.parseWarnings, 20);
+  if (parsed.length < allRaw.length) {
+    parseWarnings.push(
+      `${allRaw.length - parsed.length} paper result(s) were omitted because required fields, a safe open target, or a complete venue assessment were missing.`,
+    );
+  }
   const verifiedMain: DiscoveredPaper[] = [];
   const otherPeerReviewed: DiscoveredPaper[] = [];
   const noveltyRadar: DiscoveredPaper[] = [];
@@ -586,24 +637,47 @@ function normalizeResult(record: Record<string, unknown>): DiscoveryResult {
     throw new Error("Discovery result did not include any usable papers.");
   }
 
+  const plan = parsePlan(record.plan);
+  const assessedVenues = new Set(
+    plan.venues.map((venue) => normalizeDiscoveryTitle(venue.venueName)),
+  );
+  // The bounded venue plan governs archival peer-reviewed recommendations.
+  // Novelty-radar entries can legitimately name a repository or submission
+  // state (for example, arXiv) that is not a leading venue candidate.
+  for (const paper of [...boundedPrimary, ...boundedOther]) {
+    if (
+      !assessedVenues.has(
+        normalizeDiscoveryTitle(paper.leadingVenueAssessment.venueName),
+      )
+    ) {
+      throw new Error(
+        `Discovery paper venue was not included in the bounded plan assessment: ${paper.leadingVenueAssessment.venueName}`,
+      );
+    }
+  }
+
   return {
     schemaVersion: 1,
-    plan: parsePlan(record.plan),
+    plan,
     verifiedMain: boundedPrimary,
     otherPeerReviewed: boundedOther,
     noveltyRadar: boundedNovelty,
     excluded,
     limitations: stringList(record.limitations, 12),
+    parseWarnings,
     completedAt: text(record.completedAt) || new Date().toISOString(),
   };
 }
 
-export function parseDiscoveryResult(raw: string): DiscoveryResult {
+export function parseDiscoveryResult(
+  raw: string,
+  options: { allowReviewLinks?: boolean } = {},
+): DiscoveryResult {
   let lastError: unknown;
   for (const candidate of extractJsonCandidates(raw)) {
     try {
       const parsed = JSON.parse(candidate);
-      if (isRecord(parsed)) return normalizeResult(parsed);
+      if (isRecord(parsed)) return normalizeResult(parsed, options);
     } catch (error) {
       lastError = error;
     }
@@ -611,6 +685,36 @@ export function parseDiscoveryResult(raw: string): DiscoveryResult {
   throw new Error(
     `Invalid discovery JSON: ${lastError instanceof Error ? lastError.message : "no JSON object found"}`,
   );
+}
+
+export function migrateDiscoveryResult(value: unknown) {
+  if (!isRecord(value)) return undefined;
+  try {
+    const migrated = normalizeResult(value);
+    const stripUnverifiedReview = (paper: DiscoveredPaper) => ({
+      ...paper,
+      reviewURL: undefined,
+      reviewInsight: undefined,
+      publicationEvidence: paper.publicationEvidence.map((entry) => ({
+        ...entry,
+        supports: entry.supports.filter(
+          (support) => support !== "reviews_available",
+        ),
+      })),
+    });
+    return {
+      ...migrated,
+      verifiedMain: migrated.verifiedMain.map(stripUnverifiedReview),
+      otherPeerReviewed: migrated.otherPeerReviewed.map(stripUnverifiedReview),
+      noveltyRadar: migrated.noveltyRadar.map(stripUnverifiedReview),
+      parseWarnings: [
+        ...migrated.parseWarnings,
+        "Saved public-review links require a fresh live verification before use.",
+      ],
+    };
+  } catch {
+    return undefined;
+  }
 }
 
 export function parsePublicReviewInsight(raw: string): PublicReviewInsight {

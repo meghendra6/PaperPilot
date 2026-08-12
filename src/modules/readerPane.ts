@@ -62,6 +62,7 @@ import { parseCriticalReadOutput } from "./criticalRead/parser";
 import { buildCriticalReadReportMarkdown } from "./criticalRead/report";
 import {
   buildInitialCriticalReadState,
+  canViewPublicReviewInsights,
   completeCriticalReadStep,
   failCriticalReadStep,
   getCriticalReadStep,
@@ -82,6 +83,21 @@ import {
   getPaperCompareWorkflowState,
   parsePaperCompareResponse,
 } from "./paperCompare";
+
+const publicReviewAbortControllers = new Map<number, AbortController>();
+
+function createPaneAbortController(doc: Document) {
+  const AbortControllerConstructor =
+    (
+      globalThis as typeof globalThis & {
+        AbortController?: typeof AbortController;
+      }
+    ).AbortController || doc.defaultView?.AbortController;
+  if (!AbortControllerConstructor) {
+    throw new Error("Cancellation support is unavailable in this Zotero pane.");
+  }
+  return new AbortControllerConstructor();
+}
 import {
   buildPaperArtifactRequest,
   parsePaperArtifactCard,
@@ -743,6 +759,30 @@ export function registerPaperPilotPaneSection() {
                 await persistCriticalReadState();
               },
               onRevise: async (stepID) => {
+                const promptService = (
+                  globalThis as {
+                    Services?: {
+                      prompt?: {
+                        confirm?: (
+                          parent: unknown,
+                          title: string,
+                          message: string,
+                        ) => boolean;
+                      };
+                    };
+                  }
+                ).Services?.prompt;
+                const confirmed =
+                  promptService?.confirm?.(
+                    null,
+                    "Revise Critical Read step",
+                    stepID === 2
+                      ? "Replace Step 2 and invalidate its prior-work map? Your unrelated methodology and conclusion work will be preserved."
+                      : stepID === 5
+                        ? "Replace Step 5 and invalidate the author comparison? Your other completed work will be preserved."
+                        : `Replace Step ${stepID}? Unrelated completed steps will be preserved.`,
+                  ) ?? false;
+                if (!confirmed) return;
                 setCriticalReadStateForItem(
                   reviseCriticalReadStep(getCriticalReadStateForItem(), stepID),
                 );
@@ -795,7 +835,9 @@ export function registerPaperPilotPaneSection() {
 
                 if (step.id === 3) {
                   let reserved = false;
-                  const abortController = new AbortController();
+                  const abortController = createPaneAbortController(
+                    criticalReadRoot.ownerDocument,
+                  );
                   criticalReadDiscoveryAbortController = abortController;
                   try {
                     await generateRelatedPaperGroups({
@@ -916,7 +958,10 @@ export function registerPaperPilotPaneSection() {
                       try {
                         nextState = completeCriticalReadStep({
                           state: getCriticalReadStateForItem(),
-                          output: parseCriticalReadOutput(assistantText),
+                          output: parseCriticalReadOutput(
+                            assistantText,
+                            step.id as Exclude<typeof step.id, 3>,
+                          ),
                         });
                         if (nextState.phase === "complete") {
                           nextState = {
@@ -1712,7 +1757,16 @@ export function registerPaperPilotPaneSection() {
           relatedConcernOrigin = "user_text";
         });
         relatedRecommendButton.addEventListener("click", async () => {
-          if (getRelatedRecommendationState(item.id).running) {
+          const currentRelatedState = getRelatedRecommendationState(item.id);
+          if (currentRelatedState.reviewInsightRunningCandidateID) {
+            publicReviewAbortControllers.get(item.id)?.abort();
+            addon.data.relatedRecommendationStates?.set(item.id, {
+              ...currentRelatedState,
+              status: "Cancelling public-review analysis…",
+            });
+            return;
+          }
+          if (currentRelatedState.running) {
             relatedDiscoveryAbortController?.abort();
             const current = getRelatedRecommendationState(item.id);
             addon.data.relatedRecommendationStates?.set(item.id, {
@@ -1730,7 +1784,9 @@ export function registerPaperPilotPaneSection() {
             );
             return;
           }
-          const abortController = new AbortController();
+          const abortController = createPaneAbortController(
+            relatedRecommendButton.ownerDocument,
+          );
           relatedDiscoveryAbortController = abortController;
           let reservationOwned = false;
           try {
@@ -3348,11 +3404,13 @@ function renderRelatedRecommendationState(
   ) as HTMLButtonElement | null;
   if (saveButton) saveButton.disabled = state.running || !state.discovery;
   button.disabled = false;
-  button.textContent = state.running
-    ? "Cancel discovery"
-    : state.groups.length
-      ? "Refresh verified prior work"
-      : "Find verified prior work";
+  button.textContent = state.reviewInsightRunningCandidateID
+    ? "Cancel review insights"
+    : state.running
+      ? "Cancel discovery"
+      : state.groups.length
+        ? "Refresh verified prior work"
+        : "Find verified prior work";
   status.style.display = state.status ? "block" : "none";
   status.textContent = state.status;
   renderCompareButtonState(compareButton, itemID, currentPaperTitle);
@@ -3411,6 +3469,8 @@ function renderRelatedRecommendationState(
       noveltyRadar: updateLane(discovery.noveltyRadar),
     };
   };
+  const criticalRead = addon.data.criticalReadStates?.get(itemID);
+  const reviewInsightsVisible = canViewPublicReviewInsights(criticalRead);
 
   renderDiscoverySection({
     container: groupsContainer,
@@ -3420,6 +3480,9 @@ function renderRelatedRecommendationState(
       buildDiscoveryRow({
         doc,
         paper,
+        reviewInsightsVisible,
+        reviewInsightRunning:
+          state.reviewInsightRunningCandidateID === paper.candidateID,
         actions: {
           onOpen: (target) => openRecommendedPaper(target),
           onOpenURL: (url) => Zotero.launchURL(url),
@@ -3450,34 +3513,83 @@ function renderRelatedRecommendationState(
             });
           },
           onReviewInsight: async (target) => {
-            const insight = await generatePublicReviewInsight({
-              itemID,
-              itemTitle: currentPaperTitle,
-              paper: target,
-              onStatus: (message) => {
-                const current = getRelatedRecommendationState(itemID);
-                addon.data.relatedRecommendationStates?.set(itemID, {
-                  ...current,
-                  status: message,
-                });
-                status.textContent = message;
-                status.style.display = "block";
-              },
-            });
-            const current = getRelatedRecommendationState(itemID);
-            const patch = { reviewInsight: insight };
+            const runningController = publicReviewAbortControllers.get(itemID);
+            if (runningController) {
+              runningController.abort(
+                new Error("Public-review analysis cancelled."),
+              );
+              const current = getRelatedRecommendationState(itemID);
+              addon.data.relatedRecommendationStates?.set(itemID, {
+                ...current,
+                status: "Cancelling public-review analysis…",
+              });
+              rerender();
+              return;
+            }
+            if (!reviewInsightsVisible) {
+              throw new Error(
+                "Complete Critical Read Steps 4–6 before viewing public review insights.",
+              );
+            }
+            const abortController = createPaneAbortController(doc);
+            publicReviewAbortControllers.set(itemID, abortController);
+            const before = getRelatedRecommendationState(itemID);
             addon.data.relatedRecommendationStates?.set(itemID, {
-              ...current,
-              status: "Public review insights ready",
-              groups: current.groups.map((group: RecommendationGroup) => ({
-                ...group,
-                papers: group.papers.map((entry) =>
-                  samePaper(entry, target) ? { ...entry, ...patch } : entry,
-                ),
-              })),
-              discovery: updateDiscoveryPaper(current.discovery, target, patch),
+              ...before,
+              reviewInsightRunningCandidateID:
+                target.candidateID || target.title,
+              status: "Reading public reviews…",
             });
             rerender();
+            try {
+              const insight = await generatePublicReviewInsight({
+                itemID,
+                itemTitle: currentPaperTitle,
+                paper: target,
+                signal: abortController.signal,
+                onStatus: (message) => {
+                  const current = getRelatedRecommendationState(itemID);
+                  addon.data.relatedRecommendationStates?.set(itemID, {
+                    ...current,
+                    status: message,
+                  });
+                  status.textContent = message;
+                  status.style.display = "block";
+                },
+              });
+              const current = getRelatedRecommendationState(itemID);
+              const patch = { reviewInsight: insight };
+              addon.data.relatedRecommendationStates?.set(itemID, {
+                ...current,
+                reviewInsightRunningCandidateID: undefined,
+                status: "Public review insights ready",
+                groups: current.groups.map((group: RecommendationGroup) => ({
+                  ...group,
+                  papers: group.papers.map((entry) =>
+                    samePaper(entry, target) ? { ...entry, ...patch } : entry,
+                  ),
+                })),
+                discovery: updateDiscoveryPaper(
+                  current.discovery,
+                  target,
+                  patch,
+                ),
+              });
+            } finally {
+              if (
+                publicReviewAbortControllers.get(itemID) === abortController
+              ) {
+                publicReviewAbortControllers.delete(itemID);
+              }
+              const current = getRelatedRecommendationState(itemID);
+              if (current.reviewInsightRunningCandidateID) {
+                addon.data.relatedRecommendationStates?.set(itemID, {
+                  ...current,
+                  reviewInsightRunningCandidateID: undefined,
+                });
+              }
+              rerender();
+            }
             await sessionHistoryService.persistActiveSession({
               itemID,
               paperTitle: currentPaperTitle,

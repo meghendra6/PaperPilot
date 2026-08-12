@@ -143,6 +143,31 @@ test("selectCompareCandidates prefers verified main and excludes novelty radar",
   );
 });
 
+test("selectCompareCandidates falls back to published track-unknown peers", () => {
+  const selected = selectCompareCandidates([
+    {
+      papers: [
+        {
+          title: "Published unknown-track peer",
+          authors: ["A. Author"],
+          relevanceScore: 0.8,
+          publicationClass: "published_track_unknown",
+        },
+        {
+          title: "Recent preprint",
+          authors: ["B. Author"],
+          relevanceScore: 0.9,
+          publicationClass: "preprint_only",
+        },
+      ],
+    },
+  ]);
+  assert.deepEqual(
+    selected.map((paper) => paper.title),
+    ["Published unknown-track peer"],
+  );
+});
+
 test("buildCompareSelectionFromRecommendations converts related-paper groups into bounded compare inputs", () => {
   const selection = buildCompareSelectionFromRecommendations({
     currentPaper: {

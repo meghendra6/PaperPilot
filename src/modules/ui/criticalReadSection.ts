@@ -129,6 +129,14 @@ export function renderCriticalReadSection(params: {
             `${entry.source === "paper_claim" ? "Paper claim" : "Agent inference"}: ${entry.text}${entry.sourceLocator ? ` (${entry.sourceLocator})` : ""}`,
         ),
       );
+      appendList(
+        doc,
+        details,
+        (step.output.alternatives || []).map(
+          (entry) =>
+            `Alternative: ${entry.explanation} · could explain ${entry.explainedResult} · test: ${entry.discriminatingExperiment} · addressed: ${entry.addressedByPaper}`,
+        ),
+      );
     }
     if (step.discovery) {
       const discovery = doc.createElement("p");

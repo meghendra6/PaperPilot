@@ -1,6 +1,6 @@
 # Agent-led Verified Research Discovery and Critical Read
 
-Status: Implemented
+Status: Implemented; exact delivery evidence is recorded in the delivery PR
 Last updated: 2026-08-13
 Target: Paper Pilot for Zotero 7-9
 
@@ -866,11 +866,13 @@ interface DiscoveryCapabilities {
 }
 ```
 
-The workflow may proceed when either:
-
-- the active agent can perform web search and official-source inspection; or
-- Paper Pilot can supply structured candidates and sufficient official evidence
-  for the agent to analyze.
+The workflow may proceed only when the active agent can perform web search and
+Paper Pilot can independently live-check public official-source pages. The
+built-in bibliographic providers are candidate discovery aids; they do not
+currently supply sufficient track or decision evidence for web-disabled agents.
+A future implementation MAY admit a web-disabled agent only after Paper Pilot
+pre-collects the complete official evidence needed for the same fail-closed
+classification contract.
 
 If neither path exists, the workflow stops before candidate generation. Model
 memory alone may be used to propose query terms or likely venues, but not to emit

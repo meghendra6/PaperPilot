@@ -88,6 +88,14 @@ export function buildCriticalReadReportMarkdown(params: {
               ),
           )}`
         : undefined,
+      step.output?.alternatives?.length
+        ? `### Alternative explanations and tests\n\n${step.output.alternatives
+            .map(
+              (alternative) =>
+                `- **Alternative:** ${alternative.explanation}\n  - Could explain: ${alternative.explainedResult}\n  - Challenges: ${alternative.challengedAssumption}\n  - Discriminating test: ${alternative.discriminatingExperiment}\n  - Addressed by paper: ${alternative.addressedByPaper}${alternative.sourceLocator ? ` (${alternative.sourceLocator})` : ""}`,
+            )
+            .join("\n")}`
+        : undefined,
       discovered ? `### Discovery map\n\n${discovered}` : undefined,
     ]
       .filter(Boolean)

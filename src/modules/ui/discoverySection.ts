@@ -56,6 +56,17 @@ export function renderDiscoverySection(params: {
       }
       scope.appendChild(list);
     }
+    if (params.discovery.parseWarnings.length) {
+      const warningHeading = doc.createElement("p");
+      warningHeading.textContent = "Structured-output warnings:";
+      const warnings = doc.createElement("ul");
+      for (const warning of params.discovery.parseWarnings) {
+        const item = doc.createElement("li");
+        item.textContent = warning;
+        warnings.appendChild(item);
+      }
+      scope.append(warningHeading, warnings);
+    }
     container.appendChild(scope);
   }
 

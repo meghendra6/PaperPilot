@@ -49,19 +49,27 @@ async function searchWithRetry(params: {
   fetch?: DiscoveryFetch;
   limit: number;
   signal?: AbortSignal;
+  deadline: number;
 }) {
   let lastError: unknown;
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
       if (params.signal?.aborted)
         throw new Error("Research discovery cancelled.");
+      const remaining = params.deadline - Date.now();
+      if (remaining <= 0) throw new Error("Research discovery timed out.");
       return await params.provider.search(params.query, {
-        fetch: withDiscoveryFetchTimeout(params.fetch, 15_000, params.signal),
+        fetch: withDiscoveryFetchTimeout(
+          params.fetch,
+          Math.min(15_000, remaining),
+          params.signal,
+        ),
         limit: params.limit,
       });
     } catch (error) {
       lastError = error;
       if (params.signal?.aborted) throw error;
+      if (Date.now() >= params.deadline) throw error;
       if (attempt < 2) {
         await new Promise((resolve) => setTimeout(resolve, 150 * 2 ** attempt));
       }
@@ -77,12 +85,14 @@ export async function searchCandidateProviders(params: {
   limitPerProvider?: number;
   now?: () => number;
   signal?: AbortSignal;
+  deadline?: number;
 }) {
   const query = params.query.replace(/\s+/g, " ").trim();
   if (!query)
     return { candidates: [], limitations: ["Search query was empty."] };
   const providers = params.providers || BUILT_IN_CANDIDATE_PROVIDERS;
   const now = params.now?.() ?? Date.now();
+  const deadline = params.deadline ?? Date.now() + 60_000;
   const results = await Promise.all(
     providers.map(async (provider) => {
       if (params.signal?.aborted)
@@ -99,6 +109,7 @@ export async function searchCandidateProviders(params: {
           fetch: params.fetch,
           limit: params.limitPerProvider || 10,
           signal: params.signal,
+          deadline,
         });
         cache.set(key, {
           expiresAt: now + 5 * 60_000,

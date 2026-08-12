@@ -36,7 +36,10 @@ This note documents the purpose, target answer shape, and guardrails for the mai
   - the user supplies only an optional research concern; the agent infers the primary field, adjacent fields, bounded leading-venue set, and query families
   - venue judgment is open-world and evidence-based rather than a static ACL/CVPR/NeurIPS-style allowlist
   - search uses at least three query families and at most twelve queries, with deterministic scholarly-provider candidates available as source data
+  - user concerns, prior reader answers, and structured candidates are serialized as JSON source data instead of interpolated into closable tags
+  - required plan fields, three distinct query families, bounded venue assessments, and a safe paper open target are parser-enforced; incomplete rows become visible parse warnings or a workflow failure
   - only a title-matched official proceeding/program/decision, authoritative publisher proceeding, or official anthology can support the primary main-conference lane
+  - live verification reconstructs identity, venue, track, decision, and review support from the inspected page; agent-supplied evidence claims are never retained on their own
   - workshop, Findings, demo, industry, shared-task, tutorial/abstract, rejected/withdrawn, track-unknown, and preprint-only records cannot enter `verifiedMain`
   - results are recalculated locally into three fixed lanes capped at 12/6/6; DOI/provider/title-author deduplication and ranking are deterministic
   - relevance is ordinal (`direct`, `strong`, `adjacent`) and accompanied by the key difference and novelty relationship; no fabricated relevance percentage is shown

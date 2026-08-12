@@ -232,10 +232,18 @@ applicable runner _and_ to the prompt that tells the model to read it.
 OpenAlex, DBLP, and Crossref receive only bounded query strings and bibliographic
 identifiers; they never receive full PDF text, annotations, recent turns, local
 paths, or unrelated Zotero metadata. Official-evidence inspection accepts public
-HTTPS URLs only, rejects private/local hosts and unsafe redirects, reads at most
-200 KB of HTML/JSON, and cancels PDF bodies. Requests use bounded retries,
-timeouts, short-lived metadata caching, and inter-query throttling. Raw pages and
-review text are not persisted.
+HTTPS URLs only, resolves the host through Zotero, rejects
+private/link-local/metadata addresses (including mapped IPv6), disables automatic
+redirects, and repeats URL, DNS, and connected-remote address checks at every
+redirect hop. It reads at most 200 KB of HTML/JSON and cancels PDF bodies.
+Timeouts and cancellation remain active through body consumption, and one
+absolute discovery deadline covers provider search, the agent run, and live
+evidence recheck. Raw pages and review text are not persisted.
+
+The fetched page is authoritative only as inspected source data: Paper Pilot
+reconstructs title, venue, track, decision, and review availability from that
+page instead of retaining the agent's claimed `supports` fields. Public-review
+links stay hidden until this live reconstruction succeeds.
 
 `extractionMethod` is `opendataloader-pdf` when Java 11+ ran the bundled JAR, and
 `zotero-attachment-text` on fallback. Several prompts key their confidence

@@ -9,9 +9,8 @@ export function getDiscoveryCapabilities(
 }
 
 export function canRunDiscovery(capabilities: DiscoveryCapabilities) {
-  return (
-    capabilities.agentWebSearch ||
-    (capabilities.structuredCandidateSearch &&
-      capabilities.officialEvidenceFetch)
-  );
+  // Bibliographic providers do not discover authoritative track/decision pages.
+  // Until Paper Pilot pre-collects that evidence itself, the agent must have a
+  // live public-web path so an unseen venue can be verified without guessing.
+  return capabilities.agentWebSearch && capabilities.officialEvidenceFetch;
 }

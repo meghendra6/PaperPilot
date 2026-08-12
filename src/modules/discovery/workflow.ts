@@ -12,19 +12,208 @@ const DIRECT_TYPES = new Set<PublicationEvidence["type"]>([
   "official_anthology",
 ]);
 
+const NON_MAIN_TRACKS = [
+  [/findings/i, "Findings"],
+  [/workshop/i, "Workshop"],
+  [/\b(demo|demonstration)\b/i, "Demo"],
+  [/industry/i, "Industry track"],
+  [/shared[ -]?task/i, "Shared task"],
+  [/tutorial|extended abstract|doctoral consortium/i, "Tutorial or abstract"],
+] as const;
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function containsNormalized(haystack: string, needle: string) {
+  const normalizedNeedle = normalizeDiscoveryTitle(needle);
+  return (
+    normalizedNeedle.length > 0 &&
+    normalizeDiscoveryTitle(haystack).includes(normalizedNeedle)
+  );
+}
+
+function titleVariants(title: string) {
+  return [title, title.replace(/\([^)]*\)/g, " ")]
+    .map((value) =>
+      value
+        .toLocaleLowerCase()
+        .replace(/[^\p{L}\p{N}]+/gu, " ")
+        .trim(),
+    )
+    .filter(
+      (value, index, values) =>
+        value.length >= 8 && values.indexOf(value) === index,
+    );
+}
+
+function pageMatchesPaperTitle(page: string, title: string) {
+  const normalizedPage = page
+    .toLocaleLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
+  return titleVariants(title).some((variant) =>
+    normalizedPage.includes(variant),
+  );
+}
+
+function observedVenue(
+  paper: DiscoveryResult["verifiedMain"][number],
+  page: string,
+) {
+  for (const candidate of [paper.venueName, paper.venueAcronym]) {
+    if (candidate && containsNormalized(page, candidate)) return candidate;
+  }
+  return undefined;
+}
+
+function inferEvidenceType(
+  inspection: Awaited<ReturnType<typeof inspectOfficialEvidenceURL>>,
+): PublicationEvidence["type"] | undefined {
+  const known = inspection.sourceFamily;
+  if (known === "openreview") return "official_decision";
+  if (known === "acl-anthology") return "official_anthology";
+  if (["acm", "ieee", "springer"].includes(known)) {
+    return "publisher_proceedings";
+  }
+  if (["pmlr", "cvf", "neurips", "usenix"].includes(known)) {
+    return "official_proceedings";
+  }
+  const page = `${inspection.pageTitle || ""} ${inspection.searchableText}`;
+  if (/\b(program|programme|schedule)\b/i.test(page)) return "official_program";
+  if (
+    /\b(decision|accept(?:ed|ance)?|reject(?:ed|ion)?|withdrawn?)\b/i.test(page)
+  ) {
+    return "official_decision";
+  }
+  if (/\b(proceedings|anthology)\b/i.test(page)) return "official_proceedings";
+  return undefined;
+}
+
+function inferTrack(page: string, url: string) {
+  const combined = `${page} ${url}`;
+  for (const [pattern, label] of NON_MAIN_TRACKS) {
+    if (pattern.test(combined)) return { label, main: false };
+  }
+  if (
+    /\bmain(?: conference| track| program| programme)?\b|\bresearch track\b|\b(?:long|short) papers?\b/i.test(
+      combined,
+    ) ||
+    /aclanthology\.org\/(?:\d{4}\.)?(?:acl|emnlp|naacl)-(?:long|short)\./i.test(
+      url,
+    )
+  ) {
+    return { label: "Main conference", main: true };
+  }
+  return undefined;
+}
+
+function inferDecision(page: string) {
+  if (/\b(reject(?:ed|ion)?|withdrawn?|retracted?)\b/i.test(page)) {
+    return { label: "Rejected or withdrawn", accepted: false };
+  }
+  if (/\b(accept(?:ed|ance)?|published|archival proceedings)\b/i.test(page)) {
+    return { label: "Accepted or published", accepted: true };
+  }
+  return undefined;
+}
+
+function paperEvidenceContext(page: string, title: string) {
+  const lowerPage = page.toLocaleLowerCase();
+  const words = title
+    .toLocaleLowerCase()
+    .match(/[\p{L}\p{N}]+/gu)
+    ?.slice(0, 6);
+  const pattern = words?.length
+    ? new RegExp(words.map(escapeRegExp).join("[^\\p{L}\\p{N}]+"), "iu")
+    : undefined;
+  const index = pattern ? lowerPage.search(pattern) : -1;
+  if (index < 0) return page;
+  return page.slice(Math.max(0, index - 1_200), index + title.length + 1_200);
+}
+
+function reconstructOfficialEvidence(
+  paper: DiscoveryResult["verifiedMain"][number],
+  inspection: Awaited<ReturnType<typeof inspectOfficialEvidenceURL>>,
+): PublicationEvidence | undefined {
+  if (!inspection.bodyInspected) return undefined;
+  const page = [inspection.pageTitle, inspection.searchableText]
+    .filter(Boolean)
+    .join(" ");
+  if (!pageMatchesPaperTitle(page, paper.title)) return undefined;
+  const venue = observedVenue(paper, page);
+  // A venue-bearing claim must be corroborated on the inspected paper page.
+  if ((paper.venueName || paper.venueAcronym) && !venue) return undefined;
+  const type = inferEvidenceType(inspection);
+  if (!type) return undefined;
+  const context = paperEvidenceContext(page, paper.title);
+  const track =
+    inferTrack(context, inspection.url) ||
+    (type === "official_program"
+      ? { label: "Official program", main: true }
+      : undefined);
+  const decision = inferDecision(context);
+  const supports: PublicationEvidence["supports"] = ["identity"];
+  if (
+    decision?.accepted ||
+    [
+      "official_proceedings",
+      "publisher_proceedings",
+      "official_anthology",
+    ].includes(type)
+  ) {
+    supports.push("published");
+  }
+  if (
+    decision?.accepted ||
+    (type === "official_program" && track?.main === true)
+  ) {
+    supports.push("accepted");
+  }
+  if (track?.main) supports.push("main_track");
+  if (
+    inspection.sourceFamily === "openreview" &&
+    /\b(review|forum|meta-review|decision)\b/i.test(page)
+  ) {
+    supports.push("reviews_available");
+  }
+  return {
+    type,
+    sourceName:
+      inspection.sourceFamily === "generic-official-web"
+        ? `Official source (${inspection.hostname})`
+        : inspection.sourceFamily,
+    url: inspection.url,
+    observedTitle: paper.title,
+    observedVenue: venue,
+    observedTrack: track?.label,
+    observedDecision:
+      decision?.label ||
+      (type === "official_program" && track?.main === true
+        ? "Listed in official program"
+        : undefined),
+    checkedAt: inspection.checkedAt,
+    supports,
+  };
+}
+
 async function inspectWithRetry(
   url: string,
   fetcher?: DiscoveryFetch,
   signal?: AbortSignal,
+  deadline = Date.now() + 30_000,
 ) {
   let lastError: unknown;
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
       if (signal?.aborted) throw new Error("Research discovery cancelled.");
+      if (Date.now() >= deadline)
+        throw new Error("Research discovery timed out.");
       return await inspectOfficialEvidenceURL({
         url,
         fetch: fetcher,
         signal,
+        deadline,
       });
     } catch (error) {
       lastError = error;
@@ -41,7 +230,9 @@ export async function verifyDiscoveryEvidenceLive(params: {
   discovery: DiscoveryResult;
   fetch?: DiscoveryFetch;
   signal?: AbortSignal;
+  deadline?: number;
 }) {
+  const deadline = params.deadline ?? Date.now() + 60_000;
   const evidenceInspections = new Map<
     string,
     Awaited<ReturnType<typeof inspectOfficialEvidenceURL>>
@@ -66,7 +257,7 @@ export async function verifyDiscoveryEvidenceLive(params: {
     try {
       evidenceInspections.set(
         url,
-        await inspectWithRetry(url, params.fetch, params.signal),
+        await inspectWithRetry(url, params.fetch, params.signal, deadline),
       );
     } catch (error) {
       if (params.signal?.aborted) throw error;
@@ -76,28 +267,35 @@ export async function verifyDiscoveryEvidenceLive(params: {
     }
   }
 
-  const papersWithLiveEvidence = allPapers.map((paper) => ({
-    ...paper,
-    publicationEvidence: paper.publicationEvidence.filter((entry) => {
-      if (!DIRECT_TYPES.has(entry.type)) return true;
-      const inspection = evidenceInspections.get(entry.url);
-      if (!inspection?.bodyInspected) return false;
-      const observedPage = normalizeDiscoveryTitle(
-        [inspection.pageTitle, inspection.searchableText]
-          .filter(Boolean)
-          .join(" "),
-      );
-      const expectedTitle = normalizeDiscoveryTitle(paper.title);
-      const titleMatched =
-        expectedTitle.length > 0 && observedPage.includes(expectedTitle);
-      if (!titleMatched) {
-        failures.push(
-          `${entry.url}: official page did not match “${paper.title}”.`,
-        );
-      }
-      return titleMatched;
-    }),
-  }));
+  const papersWithLiveEvidence = allPapers.map((paper) => {
+    const nonDirect = paper.publicationEvidence.filter(
+      (entry) => !DIRECT_TYPES.has(entry.type),
+    );
+    const reconstructed = paper.publicationEvidence
+      .filter((entry) => DIRECT_TYPES.has(entry.type))
+      .flatMap((entry) => {
+        const inspection = evidenceInspections.get(entry.url);
+        const evidence = inspection
+          ? reconstructOfficialEvidence(paper, inspection)
+          : undefined;
+        if (!evidence) {
+          failures.push(
+            `${entry.url}: official page did not independently verify the title, venue, track, and decision for “${paper.title}”.`,
+          );
+        }
+        return evidence ? [evidence] : [];
+      });
+    const verifiedReviewURL = reconstructed.find((entry) =>
+      entry.supports.includes("reviews_available"),
+    )?.url;
+    return {
+      ...paper,
+      track: reconstructed.find((entry) => entry.observedTrack)?.observedTrack,
+      reviewURL: verifiedReviewURL,
+      reviewInsight: verifiedReviewURL ? paper.reviewInsight : undefined,
+      publicationEvidence: [...nonDirect, ...reconstructed],
+    };
+  });
 
   const verifiedPayload = {
     ...params.discovery,
@@ -114,5 +312,7 @@ export async function verifyDiscoveryEvidenceLive(params: {
         : []),
     ],
   };
-  return parseDiscoveryResult(JSON.stringify(verifiedPayload));
+  return parseDiscoveryResult(JSON.stringify(verifiedPayload), {
+    allowReviewLinks: true,
+  });
 }

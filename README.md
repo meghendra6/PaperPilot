@@ -18,7 +18,7 @@ Paper Pilot is an AI reading workbench for the Zotero 7-9 PDF reader. It adds a 
 - **Critical Read** — a reader-first, seven-step paper evaluation workflow with a final report
 - Auto-highlight plus persisted paper-scoped session history
 - **Paper Mastery** — multi-round Socratic comprehension check with a final Markdown learning report
-- Automated local verification is in place; full Zotero runtime QA is still pending
+- Automated verification and a focused Zotero 9 discovery/Critical Read runtime smoke are recorded; the broader Zotero 7-9 and cross-engine matrix remains manual QA
 
 ## Screenshots and demo
 
@@ -372,7 +372,7 @@ Manual runtime verification is still required in Zotero itself. Use [`docs/manua
 ## Known limitations
 
 - The project is not yet claiming full production readiness.
-- Real Zotero runtime QA is still an explicit remaining step.
+- Focused Zotero 9 runtime QA is recorded in `docs/manual-qa.md`; the broader compatibility and cross-engine matrix remains manual QA.
 
 ## Roadmap
 

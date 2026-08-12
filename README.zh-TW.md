@@ -23,7 +23,7 @@ Paper Pilot 是一個面向 Zotero 7-9 PDF 閱讀器的 AI 閱讀工作台。它
 - **Critical Read** — 讀者先判斷的七步批判性閱讀流程與最終報告
 - 支援 auto-highlight 與可持久化的論文級會話歷史
 - **Paper Mastery** — 多輪蘇格拉底式理解度檢查，並產出 Markdown 學習報告
-- 已具備自動化本地驗證，但真實 Zotero 執行時 QA 仍待完成
+- 已記錄自動化驗證及 Zotero 9 探索／Critical Read 執行時冒煙測試；更廣泛的 Zotero 7-9 與跨引擎矩陣仍屬手動 QA
 
 ## 截圖與示範
 
@@ -374,7 +374,7 @@ npm run build
 ## 已知限制
 
 - 專案目前尚未宣稱完全達到正式可用狀態。
-- 真實 Zotero 執行時 QA 仍是明確待完成項。
+- 已在 `docs/manual-qa.md` 記錄聚焦的 Zotero 9 執行時 QA；更廣泛的相容性與跨引擎矩陣仍屬手動 QA。
 
 ## 路線圖
 

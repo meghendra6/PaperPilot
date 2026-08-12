@@ -17,7 +17,7 @@ Paper Pilot는 Zotero 7-9 PDF 리더를 위한 AI 읽기 워크벤치입니다. 
 - **Critical Read** — 독자 판단을 우선하는 7단계 비판적 논문 읽기와 최종 리포트
 - auto-highlight 및 저장되는 논문 단위 세션 기록 지원
 - **Paper Mastery** — 다회차 소크라테스식 이해도 점검 후 Markdown 학습 리포트 생성
-- 자동화된 로컬 검증은 갖춰져 있지만, 실제 Zotero 런타임 QA는 아직 남아 있음
+- 자동 검증과 Zotero 9 탐색/Critical Read 런타임 스모크를 기록했으며, 더 넓은 Zotero 7-9·크로스엔진 매트릭스는 수동 QA로 유지
 
 ## 스크린샷과 데모
 
@@ -372,7 +372,7 @@ npm run build
 ## 알려진 제한 사항
 
 - 아직 완전한 프로덕션 준비 상태를 주장하지 않습니다.
-- 실제 Zotero 런타임 QA는 명시적으로 남아 있는 작업입니다.
+- Zotero 9 집중 런타임 QA는 `docs/manual-qa.md`에 기록했으며, 더 넓은 호환성·크로스엔진 매트릭스는 수동 QA로 남아 있습니다.
 
 ## 로드맵
 

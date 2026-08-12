@@ -9,6 +9,13 @@ import {
 } from "./historyTypes";
 import { buildSessionTitle } from "./sessionTitle";
 import type { PaperSession } from "./types";
+import { migrateDiscoveryResult } from "../discovery/parser";
+import { buildInitialCriticalReadState } from "../criticalRead/workflow";
+import type {
+  CriticalReadState,
+  CriticalReadStepID,
+} from "../criticalRead/types";
+import { normalizeHttpURL } from "../discovery/normalize";
 
 type PersistedPaperArtifactState = {
   running: boolean;
@@ -81,6 +88,94 @@ function hasGroups(value: unknown): value is PersistedRecommendationState {
   );
 }
 
+function migrateRecommendationState(value: unknown) {
+  if (!isPlainObject(value) || !Array.isArray(value.groups)) return undefined;
+  const discovery = migrateDiscoveryResult(value.discovery);
+  const allowed = discovery
+    ? new Map(
+        [
+          ...discovery.verifiedMain,
+          ...discovery.otherPeerReviewed,
+          ...discovery.noveltyRadar,
+        ].map((paper) => [paper.candidateID, paper]),
+      )
+    : new Map();
+  const groups = value.groups.flatMap((group) => {
+    if (!isPlainObject(group) || !Array.isArray(group.papers)) return [];
+    return [
+      {
+        category:
+          typeof group.category === "string" ? group.category : "Related work",
+        papers: group.papers.flatMap((paper) => {
+          if (!isPlainObject(paper)) return [];
+          const candidateID =
+            typeof paper.candidateID === "string" ? paper.candidateID : "";
+          const valid = allowed.get(candidateID);
+          if (valid) {
+            return [
+              {
+                ...cloneValue(paper),
+                publicationClass: valid.publicationClass,
+                publicationEvidence: cloneValue(valid.publicationEvidence),
+                evidenceConfidence: valid.evidenceConfidence,
+                reviewURL: valid.reviewURL,
+                reviewInsight: valid.reviewInsight,
+                url:
+                  typeof paper.url === "string"
+                    ? normalizeHttpURL(paper.url)
+                    : undefined,
+                urls: Array.isArray(paper.urls)
+                  ? paper.urls
+                      .map((url) =>
+                        typeof url === "string"
+                          ? normalizeHttpURL(url)
+                          : undefined,
+                      )
+                      .filter(Boolean)
+                  : undefined,
+              },
+            ];
+          }
+          const safeURL =
+            typeof paper.url === "string"
+              ? normalizeHttpURL(paper.url)
+              : undefined;
+          const safeURLs = Array.isArray(paper.urls)
+            ? paper.urls
+                .map((url) =>
+                  typeof url === "string" ? normalizeHttpURL(url) : undefined,
+                )
+                .filter((url): url is string => Boolean(url))
+            : [];
+          if (!safeURL && !safeURLs.length && typeof paper.doi !== "string") {
+            return [];
+          }
+          return [
+            {
+              ...cloneValue(paper),
+              url: safeURL,
+              urls: safeURLs,
+              publicationClass: "unverified",
+              publicationEvidence: [],
+              evidenceConfidence: "none",
+              reviewURL: undefined,
+              reviewInsight: undefined,
+            },
+          ];
+        }),
+      },
+    ];
+  });
+  return {
+    ...cloneValue(value),
+    running: false,
+    status: typeof value.status === "string" ? value.status : "",
+    groups,
+    ...(discovery ? { discovery } : {}),
+    reviewInsightRunningCandidateID: undefined,
+  };
+}
+
 function isCompletedMasteryState(
   value: unknown,
 ): value is ComprehensionCheckState {
@@ -100,6 +195,65 @@ function hasCriticalReadState(value: unknown) {
     Array.isArray(value.steps) &&
     (value.phase === "active" || value.phase === "complete")
   );
+}
+
+function migrateCriticalReadState(
+  value: unknown,
+): CriticalReadState | undefined {
+  if (!hasCriticalReadState(value)) return undefined;
+  const initial = buildInitialCriticalReadState();
+  const source = cloneValue(value) as Record<string, unknown>;
+  const sourceSteps = Array.isArray(source.steps) ? source.steps : [];
+  const steps = initial.steps.map((definition) => {
+    const raw = sourceSteps.find(
+      (entry) => isPlainObject(entry) && entry.id === definition.id,
+    );
+    if (!isPlainObject(raw)) return definition;
+    const status = ["locked", "ready", "complete"].includes(String(raw.status))
+      ? (raw.status as CriticalReadState["steps"][number]["status"])
+      : "locked";
+    const discovery =
+      definition.id === 3 ? migrateDiscoveryResult(raw.discovery) : undefined;
+    return {
+      ...definition,
+      status,
+      readerInput:
+        typeof raw.readerInput === "string" ? raw.readerInput : undefined,
+      output: isPlainObject(raw.output)
+        ? (cloneValue(
+            raw.output,
+          ) as unknown as CriticalReadState["steps"][number]["output"])
+        : undefined,
+      discovery,
+      completedAt:
+        status === "complete" && typeof raw.completedAt === "string"
+          ? raw.completedAt
+          : undefined,
+    };
+  });
+  const firstIncomplete = steps.find((step) => step.status !== "complete");
+  return {
+    ...initial,
+    phase: firstIncomplete ? "active" : "complete",
+    running: false,
+    currentStep: (firstIncomplete?.id || 7) as CriticalReadStepID,
+    status: "Restored Critical Read state was validated before use.",
+    steps,
+    reportMarkdown:
+      typeof source.reportMarkdown === "string"
+        ? source.reportMarkdown
+        : undefined,
+    reportNoteItemID:
+      typeof source.reportNoteItemID === "number"
+        ? source.reportNoteItemID
+        : undefined,
+    startedAt:
+      typeof source.startedAt === "string" ? source.startedAt : undefined,
+    updatedAt:
+      typeof source.updatedAt === "string"
+        ? source.updatedAt
+        : new Date().toISOString(),
+  };
 }
 
 function persistedCriticalReadState(value: unknown) {
@@ -248,10 +402,17 @@ export function applySessionSnapshot(
   }
 
   if (snapshot.relatedRecommendations) {
-    data.relatedRecommendationStates?.set(
-      snapshot.paperItemID,
-      cloneValue(snapshot.relatedRecommendations),
+    const recommendations = migrateRecommendationState(
+      snapshot.relatedRecommendations,
     );
+    if (recommendations) {
+      data.relatedRecommendationStates?.set(
+        snapshot.paperItemID,
+        recommendations,
+      );
+    } else {
+      data.relatedRecommendationStates?.delete(snapshot.paperItemID);
+    }
   } else {
     data.relatedRecommendationStates?.delete(snapshot.paperItemID);
   }
@@ -266,10 +427,12 @@ export function applySessionSnapshot(
   }
 
   if (snapshot.criticalRead && hasCriticalReadState(snapshot.criticalRead)) {
-    data.criticalReadStates?.set(
-      snapshot.paperItemID,
-      cloneValue(snapshot.criticalRead),
-    );
+    const criticalRead = migrateCriticalReadState(snapshot.criticalRead);
+    if (criticalRead) {
+      data.criticalReadStates?.set(snapshot.paperItemID, criticalRead);
+    } else {
+      data.criticalReadStates?.delete(snapshot.paperItemID);
+    }
   } else {
     data.criticalReadStates?.delete(snapshot.paperItemID);
   }

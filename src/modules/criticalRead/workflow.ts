@@ -111,6 +111,18 @@ export function canRunCriticalReadStep(
   return !step.requiresReaderInput || Boolean(readerInput.trim());
 }
 
+export function canViewPublicReviewInsights(
+  state: CriticalReadState | undefined,
+) {
+  if (!state || state.phase === "idle") return true;
+  return Boolean(
+    ([4, 5, 6] as const).every(
+      (stepID) =>
+        state.steps.find((step) => step.id === stepID)?.status === "complete",
+    ),
+  );
+}
+
 export function markCriticalReadStepRunning(
   state: CriticalReadState,
   readerInput?: string,
@@ -147,34 +159,40 @@ export function completeCriticalReadStep(params: {
 }) {
   const { state } = params;
   const completedStep = state.currentStep;
-  const isLast = completedStep === 7;
   const timestamp = nowISO(params.now);
-  const nextStep = (isLast ? 7 : completedStep + 1) as CriticalReadStepID;
+  const completedSteps = state.steps.map((entry) => {
+    if (entry.id === completedStep) {
+      const output = params.output || entry.output;
+      const discovery = params.discovery || entry.discovery;
+      const { staleReason: _staleReason, ...rest } = entry;
+      return {
+        ...rest,
+        status: "complete" as const,
+        ...(output ? { output } : {}),
+        ...(discovery ? { discovery } : {}),
+        completedAt: timestamp,
+      };
+    }
+    return entry;
+  });
+  const firstIncomplete = completedSteps.find(
+    (entry) => entry.status !== "complete",
+  );
+  const isComplete = !firstIncomplete;
+  const nextStep = (firstIncomplete?.id || 7) as CriticalReadStepID;
   return {
     ...state,
-    phase: isLast ? ("complete" as const) : ("active" as const),
+    phase: isComplete ? ("complete" as const) : ("active" as const),
     running: false,
     currentStep: nextStep,
-    status: isLast
+    status: isComplete
       ? "Critical Read complete. Review or save the report."
       : `Step ${completedStep} complete. Step ${nextStep} is ready.`,
-    steps: state.steps.map((entry) => {
-      if (entry.id === completedStep) {
-        const output = params.output || entry.output;
-        const discovery = params.discovery || entry.discovery;
-        return {
-          ...entry,
-          status: "complete" as const,
-          ...(output ? { output } : {}),
-          ...(discovery ? { discovery } : {}),
-          completedAt: timestamp,
-        };
-      }
-      if (entry.id === nextStep && !isLast) {
-        return { ...entry, status: "ready" as const };
-      }
-      return entry;
-    }),
+    steps: completedSteps.map((entry) =>
+      entry.id === nextStep && !isComplete
+        ? { ...entry, status: "ready" as const }
+        : entry,
+    ),
     updatedAt: timestamp,
   } satisfies CriticalReadState;
 }
@@ -202,6 +220,14 @@ export function reviseCriticalReadStep(
   stepID: CriticalReadStepID,
   now?: Date,
 ) {
+  const invalidated = new Map<CriticalReadStepID, string>([
+    [stepID, `Step ${stepID} is being revised.`],
+  ]);
+  if (stepID === 2) {
+    invalidated.set(3, "Step 2 changed the prior-work research question.");
+  } else if (stepID === 5) {
+    invalidated.set(6, "Step 5 changed the independent conclusion.");
+  }
   return {
     ...state,
     phase: "active" as const,
@@ -209,26 +235,20 @@ export function reviseCriticalReadStep(
     currentStep: stepID,
     reportMarkdown: undefined,
     reportNoteItemID: undefined,
-    status: `Step ${stepID} reopened. Later steps must be run again.`,
+    status: `Step ${stepID} reopened. Only dependent outputs were invalidated.`,
     steps: state.steps.map((step) => {
-      if (step.id < stepID) return step;
-      if (step.id === stepID) {
+      const staleReason = invalidated.get(step.id);
+      if (staleReason) {
         return {
           ...step,
-          status: "ready" as const,
+          status: step.id === stepID ? ("ready" as const) : ("locked" as const),
+          staleReason,
           output: undefined,
           discovery: undefined,
           completedAt: undefined,
         };
       }
-      return {
-        ...step,
-        status: "locked" as const,
-        readerInput: undefined,
-        output: undefined,
-        discovery: undefined,
-        completedAt: undefined,
-      };
+      return step;
     }),
     updatedAt: nowISO(now),
   } satisfies CriticalReadState;

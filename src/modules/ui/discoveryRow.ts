@@ -11,6 +11,28 @@ export interface DiscoveryRowActions {
   onError(error: unknown): void;
 }
 
+function publicationBadge(paper: RecommendedPaper) {
+  if (paper.publicationClass === "verified_main") {
+    return "Main paper · officially verified";
+  }
+  if (paper.publicationClass === "published_track_unknown") {
+    return "Published · track unresolved";
+  }
+  if (paper.publicationClass?.startsWith("verified_")) {
+    return paper.publicationClass
+      .replace(/^verified_/, "Verified ")
+      .replace(/_/g, " ");
+  }
+  if (
+    ["preprint_only", "under_review_or_submission"].includes(
+      paper.publicationClass || "",
+    )
+  ) {
+    return "Frontier signal · not archival verification";
+  }
+  return "Publication status could not be verified";
+}
+
 function appendReviewInsight(
   doc: Document,
   parent: HTMLElement,
@@ -71,6 +93,8 @@ export function buildDiscoveryRow(params: {
   doc: Document;
   paper: RecommendedPaper;
   actions: DiscoveryRowActions;
+  reviewInsightsVisible?: boolean;
+  reviewInsightRunning?: boolean;
 }) {
   const { doc, paper, actions } = params;
   const row = doc.createElement("div");
@@ -92,6 +116,21 @@ export function buildDiscoveryRow(params: {
   meta.textContent = buildRecommendationMetadataLine(paper);
   meta.className = "pp-recommendation-row__meta";
   info.appendChild(meta);
+  const badges = doc.createElement("div");
+  badges.className = "pp-recommendation-row__badges";
+  const publication = doc.createElement("span");
+  publication.className = "pp-chip";
+  publication.textContent = publicationBadge(paper);
+  const venue = doc.createElement("span");
+  venue.className = "pp-chip";
+  venue.textContent = paper.leadingVenueAssessment
+    ? `Leading venue · agent-assessed (${paper.leadingVenueAssessment.confidence})`
+    : "Venue standing · not assessed";
+  const confidence = doc.createElement("span");
+  confidence.className = "pp-chip";
+  confidence.textContent = `${paper.evidenceConfidence || "none"} evidence confidence`;
+  badges.append(publication, venue, confidence);
+  info.appendChild(badges);
   if (paper.reason) {
     const reason = doc.createElement("div");
     reason.textContent = paper.reason;
@@ -104,7 +143,9 @@ export function buildDiscoveryRow(params: {
     difference.className = "pp-recommendation-row__reason";
     info.appendChild(difference);
   }
-  appendReviewInsight(doc, info, paper);
+  if (params.reviewInsightsVisible !== false) {
+    appendReviewInsight(doc, info, paper);
+  }
 
   const buttons = doc.createElement("div");
   buttons.className = "pp-recommendation-row__actions";
@@ -143,23 +184,41 @@ export function buildDiscoveryRow(params: {
     });
     evidenceButton.title = `${evidence.sourceName}: ${evidence.supports.join(", ")}`;
     buttons.appendChild(evidenceButton);
+  } else {
+    const evidenceStatus = actionButton({
+      doc,
+      label: "Evidence status",
+      className: "pp-btn pp-btn--ghost",
+      onClick: () => {
+        throw new Error(
+          "No direct official publication evidence is available for this result.",
+        );
+      },
+      onError: actions.onError,
+    });
+    evidenceStatus.title = "No direct official publication evidence available";
+    buttons.appendChild(evidenceStatus);
   }
-  if (paper.reviewURL) {
+  if (paper.reviewURL && params.reviewInsightsVisible !== false) {
+    if (!params.reviewInsightRunning) {
+      buttons.appendChild(
+        actionButton({
+          doc,
+          label: "Open reviews",
+          className: "pp-btn pp-btn--ghost",
+          onClick: () => actions.onOpenURL(paper.reviewURL!),
+          onError: actions.onError,
+        }),
+      );
+    }
     buttons.appendChild(
       actionButton({
         doc,
-        label: "Open reviews",
-        className: "pp-btn pp-btn--ghost",
-        onClick: () => actions.onOpenURL(paper.reviewURL!),
-        onError: actions.onError,
-      }),
-    );
-    buttons.appendChild(
-      actionButton({
-        doc,
-        label: paper.reviewInsight
-          ? "Refresh review insights"
-          : "Review insights",
+        label: params.reviewInsightRunning
+          ? "Cancel review insights"
+          : paper.reviewInsight
+            ? "Refresh review insights"
+            : "Review insights",
         className: "pp-btn pp-btn--secondary",
         onClick: () => actions.onReviewInsight(paper),
         onError: actions.onError,

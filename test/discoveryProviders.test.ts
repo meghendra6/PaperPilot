@@ -7,7 +7,9 @@ import {
   classifyOfficialEvidenceURL,
   inspectOfficialEvidenceURL,
   isPlausibleOfficialEvidenceURL,
+  isNonPublicIPAddress,
 } from "../src/modules/discovery/providers/officialEvidence";
+import { withDiscoveryFetchTimeout } from "../src/modules/discovery/providers/types";
 import {
   crossrefProvider,
   dblpProvider,
@@ -85,10 +87,10 @@ test("official evidence inspection refuses private redirects and does not consum
       url: "https://venue.example.org/paper",
       fetch: (async () =>
         ({
-          ok: true,
-          status: 200,
-          url: "https://127.0.0.1/internal",
-          headers: new Headers({ "content-type": "text/html" }),
+          ok: false,
+          status: 302,
+          url: "https://venue.example.org/paper",
+          headers: new Headers({ location: "https://127.0.0.1/internal" }),
           body: new Response("private").body,
         }) as Response) as typeof fetch,
     }),
@@ -114,6 +116,69 @@ test("official evidence inspection refuses private redirects and does not consum
   assert.equal(inspected.bodyInspected, false);
   assert.equal(inspected.searchableText, "");
   assert.equal(cancelled, true);
+});
+
+test("official evidence rejects private DNS answers and mapped private IPv6", async () => {
+  assert.equal(isNonPublicIPAddress("::ffff:127.0.0.1"), true);
+  assert.equal(isNonPublicIPAddress("::ffff:0a00:0001"), true);
+  assert.equal(isNonPublicIPAddress("8.8.8.8"), false);
+  await assert.rejects(
+    inspectOfficialEvidenceURL({
+      url: "https://public-name.example/paper",
+      resolveHost: async () => ["169.254.169.254"],
+      fetch: (async () => {
+        assert.fail("private DNS targets must be rejected before fetch");
+      }) as typeof fetch,
+    }),
+    /non-public address/,
+  );
+});
+
+test("injected official-evidence transport requires a public connected address when exposed", async () => {
+  await assert.rejects(
+    inspectOfficialEvidenceURL({
+      url: "https://venue.example.org/paper",
+      resolveHost: async () => ["8.8.8.8"],
+      fetch: (async () => {
+        const response = new Response(fixture("official-page.html"), {
+          status: 200,
+        }) as Response & { remoteAddress?: string };
+        response.remoteAddress = "127.0.0.1";
+        return response;
+      }) as typeof fetch,
+    }),
+    /connection used a non-public address/,
+  );
+});
+
+test("discovery timeout and outer cancellation remain active through body consumption", async () => {
+  let streamController: ReadableStreamDefaultController<any> | undefined;
+  const slowFetch = (async () =>
+    new Response(
+      new ReadableStream({
+        start(controller) {
+          streamController = controller;
+        },
+      }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    )) as typeof fetch;
+
+  const timeoutResponse = await withDiscoveryFetchTimeout(
+    slowFetch,
+    20,
+  )("https://provider.example/data");
+  await assert.rejects(timeoutResponse.text(), /timed out|abort/i);
+  streamController = undefined;
+
+  const abortController = new AbortController();
+  const cancelledResponse = await withDiscoveryFetchTimeout(
+    slowFetch,
+    5_000,
+    abortController.signal,
+  )("https://provider.example/data");
+  abortController.abort(new Error("outer cancellation"));
+  await assert.rejects(cancelledResponse.text(), /outer cancellation|abort/i);
+  assert.ok(streamController, "body stream was created before cancellation");
 });
 
 test("Semantic Scholar is candidate discovery only and normalizes records", async () => {

@@ -25,16 +25,26 @@ export function buildWorkspaceArtifacts(params: {
         intent:
           params.requestText.match(/Discovery intent:\s*([^\n]+)/)?.[1] ||
           "mixed",
-        concern:
-          params.requestText.match(
-            /<research_concern[^>]*>\s*([\s\S]*?)\s*<\/research_concern>/,
-          )?.[1] || "Infer from current paper",
+        concern: (() => {
+          const line = params.requestText?.match(
+            /Research concern as JSON source data[^\n]*:\s*\n([^\n]+)/,
+          )?.[1];
+          if (!line) return "Infer from current paper";
+          try {
+            const parsed = JSON.parse(line) as { text?: unknown };
+            return typeof parsed.text === "string"
+              ? parsed.text
+              : "Infer from current paper";
+          } catch {
+            return "Infer from current paper";
+          }
+        })(),
         generatedAt: new Date().toISOString(),
       }
     : undefined;
   let discoveryCandidates: unknown[] = [];
   const candidatePayload = params.requestText?.match(
-    /<structured_candidates>\s*([\s\S]*?)\s*<\/structured_candidates>/,
+    /Structured candidates as a JSON array[^\n]*:\s*\n([^\n]+)/,
   )?.[1];
   if (candidatePayload) {
     try {

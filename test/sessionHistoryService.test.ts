@@ -201,9 +201,11 @@ function buildSavedSnapshot(itemID: number): SessionHistorySnapshot {
           category: "Closest match",
           papers: [
             {
+              candidateID: "persistent-conversations",
               title: "Persistent conversations",
               authors: ["A. Researcher"],
               relevanceScore: 0.91,
+              url: "https://proceedings.example.org/persistent",
               publicationClass: "verified_main",
               evidenceConfidence: "high",
               publicationEvidence: [
@@ -590,28 +592,39 @@ test("SessionHistoryService opens a saved snapshot into the in-memory stores", a
       ).addon?.data?.paperArtifactStates?.get(504),
       snapshot.paperArtifacts,
     );
-    assert.deepEqual(
-      (
-        globalThis as {
-          addon?: {
-            data?: {
-              relatedRecommendationStates?: Map<number, unknown>;
-            };
+    const restoredRecommendations = (
+      globalThis as {
+        addon?: {
+          data?: {
+            relatedRecommendationStates?: Map<number, any>;
           };
-        }
-      ).addon?.data?.relatedRecommendationStates?.get(504),
-      snapshot.relatedRecommendations,
+        };
+      }
+    ).addon?.data?.relatedRecommendationStates?.get(504);
+    assert.equal(
+      restoredRecommendations?.groups[0].papers[0].publicationClass,
+      "unverified",
     );
     assert.deepEqual(
-      (
-        globalThis as {
-          addon?: {
-            data?: { criticalReadStates?: Map<number, unknown> };
-          };
-        }
-      ).addon?.data?.criticalReadStates?.get(504),
-      snapshot.criticalRead,
+      restoredRecommendations?.groups[0].papers[0].publicationEvidence,
+      [],
     );
+    assert.equal(
+      restoredRecommendations?.groups[0].papers[0].url,
+      "https://proceedings.example.org/persistent",
+    );
+    const restoredCriticalRead = (
+      globalThis as {
+        addon?: {
+          data?: { criticalReadStates?: Map<number, any> };
+        };
+      }
+    ).addon?.data?.criticalReadStates?.get(504);
+    assert.equal(restoredCriticalRead?.phase, "active");
+    assert.equal(restoredCriticalRead?.running, false);
+    assert.equal(restoredCriticalRead?.currentStep, 1);
+    assert.equal(restoredCriticalRead?.steps[0].status, "ready");
+    assert.match(restoredCriticalRead?.status, /validated/i);
     assert.deepEqual(
       (
         globalThis as {

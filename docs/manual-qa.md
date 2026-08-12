@@ -165,6 +165,40 @@ Use this checklist inside real Zotero 7, 8, and 9 runtimes before claiming readi
 
 ## 9. Verified discovery / Critical Read / auto-highlight checks
 
+### Delivery runtime record — 2026-08-13
+
+The final delivery candidate was loaded as a temporary add-on in Zotero 9.0.6
+using the repository's isolated `.scaffold` profile and the existing QA PDF.
+Structured Firefox RDP inspection confirmed:
+
+- one Paper Pilot pane loaded without a visible runtime error;
+- `Find verified prior work`, its optional concern field, three-lane save action,
+  and `Critical Read` were present;
+- starting Critical Read opened Step 1, kept `Run step 1` disabled before reader
+  input, and displayed the truthful `not visually inspected` degraded-extraction
+  notice;
+- Codex discovery with web search disabled stopped before recommendations with
+  the documented official-evidence requirement;
+- authenticated Codex discovery with web search enabled progressed through
+  structured provider retrieval into a real `codex --search exec` run and wrote
+  `CONTEXT_INDEX.md` plus all four `discovery-*.json` artifacts;
+- clicking Cancel changed the item-scoped state to cancelled and left no Codex
+  discovery process running;
+- a second authenticated Codex run completed end to end for the exact paper
+  `Adaptive Insertion Policies for High Performance Caching`: the model output
+  was parsed, Paper Pilot fetched the ISCA 2007 official program over a fresh
+  public-address-checked connection, reconstructed `identity`, `accepted`, and
+  `main_track` support from the inspected page instead of trusting model claims,
+  and rendered the paper alone in the verified-main lane; and
+- an exclusive production XPI build from the same source tree passed archive
+  integrity checks and included the bundled OpenDataLoader JAR.
+
+The broad compatibility matrix below remains a release/manual-regression
+checklist. Zotero 7/8, Windows, a logged-out Claude account, and successful live
+discovery through Claude Code and Gemini CLI were not available in this delivery
+environment; their pure contracts and failure paths are covered by the automated
+suite, but they are not represented here as real-runtime passes.
+
 - [ ] Run `Find verified prior work` with no concern and confirm the agent infers fields, adjacent fields, venues, and query families without asking the user to choose a conference
 - [ ] Enter an optional research concern, then run discovery from the main section, selected-PDF `Find prior work` action, a limitation card, and a follow-up card; confirm each source is carried into the saved scope
 - [ ] In AI, computer architecture, and a third field, confirm an appropriate leading venue absent from any built-in source shortcut can still be selected and justified
@@ -182,7 +216,7 @@ Use this checklist inside real Zotero 7, 8, and 9 runtimes before claiming readi
 - [ ] Confirm Step 1 shows abstract/caption/table orientation and says `not visually inspected` when only extracted text is available
 - [ ] Confirm Step 3 runs the same three-lane verified discovery and Step 4 checks assumptions, data, controls, baselines, metrics, statistics, reproducibility, and validity threats
 - [ ] Confirm Step 5 captures an independent results-based conclusion before Step 6 reveals and compares the authors' conclusion; public review insight must not leak into either step
-- [ ] Revise Step 4 after completing later steps and confirm Steps 5-7 plus the report are invalidated and must be regenerated
+- [ ] Revise Step 4 after completing later steps; confirm replacement requires confirmation, its final synthesis is invalidated, and unrelated Steps 5-7 inputs/outputs remain intact
 - [ ] Complete Step 7 with alternatives and discriminating evidence/experiments, save the final child note, and confirm reader input, paper claims, agent inference, and external discovery evidence are visibly separated
 - [ ] Reopen the session and restart Zotero during an incomplete Critical Read; confirm state resumes without silently starting another model run
 - [ ] Handoff from the completed Critical Read to Paper Mastery and confirm the active paper/session remains scoped correctly
@@ -201,7 +235,7 @@ Use this checklist inside real Zotero 7, 8, and 9 runtimes before claiming readi
 
 - [ ] Repeat discovery and Critical Read smoke checks with Codex CLI, Claude Code, and Gemini CLI
 - [ ] Inspect each generated workspace and confirm `CONTEXT_INDEX.md` plus all four `discovery-*.json` files exist for discovery runs
-- [ ] Disable agent web search where the engine supports it; confirm deterministic provider candidates are still supplied and limitations are honest rather than fabricated
+- [ ] Disable agent web search where the engine supports it; confirm discovery stops before recommendations because candidate providers alone cannot locate official evidence for an unseen venue
 - [ ] Confirm no engine downloads an official PDF body merely to verify publication status
 - [ ] Confirm every discovery/Critical Read surface remains paper-scoped across two open papers
 

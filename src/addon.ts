@@ -89,6 +89,7 @@ class Addon {
         discovery?: import("./modules/discovery/types").DiscoveryResult;
         concern?: string;
         concernOrigin?: import("./modules/discovery/types").ResearchConcernOrigin;
+        reviewInsightRunningCandidateID?: string;
       }
     >;
     applyReaderActionToPane?: () => Promise<void> | void;

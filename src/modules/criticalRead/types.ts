@@ -23,6 +23,14 @@ export interface CriticalReadAgentOutput {
     text: string;
     sourceLocator?: string;
   }>;
+  alternatives?: Array<{
+    explanation: string;
+    explainedResult: string;
+    challengedAssumption: string;
+    discriminatingExperiment: string;
+    addressedByPaper: "yes" | "partly" | "no" | "unclear";
+    sourceLocator?: string;
+  }>;
 }
 
 export interface CriticalReadStepState {
@@ -35,6 +43,7 @@ export interface CriticalReadStepState {
   output?: CriticalReadAgentOutput;
   discovery?: DiscoveryResult;
   completedAt?: string;
+  staleReason?: string;
   orientation?: {
     extractionMode: "structured-captions" | "caption-text" | "text-only";
     notice: string;

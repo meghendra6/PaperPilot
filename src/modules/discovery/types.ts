@@ -168,6 +168,7 @@ export interface DiscoveryResult {
   noveltyRadar: DiscoveredPaper[];
   excluded: ExcludedDiscoveryCandidate[];
   limitations: string[];
+  parseWarnings: string[];
   completedAt: string;
 }
 

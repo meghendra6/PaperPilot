@@ -8,7 +8,7 @@ export function normalizeDiscoveryTitle(value: string) {
   return normalizeWhitespace(value)
     .normalize("NFKD")
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
     .trim();
 }
 

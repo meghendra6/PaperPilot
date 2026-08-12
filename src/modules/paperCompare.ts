@@ -329,8 +329,9 @@ export function selectCompareCandidates(
   );
   const peerReviewed = flattened.filter(
     (paper) =>
-      paper.publicationClass?.startsWith("verified_") &&
-      paper.publicationClass !== "verified_main",
+      (paper.publicationClass?.startsWith("verified_") &&
+        paper.publicationClass !== "verified_main") ||
+      paper.publicationClass === "published_track_unknown",
   );
   const candidates = flattened.some((paper) => paper.publicationClass)
     ? primary.length
