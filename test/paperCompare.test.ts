@@ -112,6 +112,37 @@ test("selectCompareCandidates bounds and deduplicates recommended papers", () =>
   );
 });
 
+test("selectCompareCandidates prefers verified main and excludes novelty radar", () => {
+  const selected = selectCompareCandidates([
+    {
+      papers: [
+        {
+          title: "Recent preprint",
+          authors: [],
+          relevanceScore: 1,
+          publicationClass: "preprint_only",
+        },
+        {
+          title: "Verified main",
+          authors: [],
+          relevanceScore: 0.7,
+          publicationClass: "verified_main",
+        },
+        {
+          title: "Workshop",
+          authors: [],
+          relevanceScore: 0.9,
+          publicationClass: "verified_workshop",
+        },
+      ],
+    },
+  ]);
+  assert.deepEqual(
+    selected.map((paper) => paper.title),
+    ["Verified main"],
+  );
+});
+
 test("buildCompareSelectionFromRecommendations converts related-paper groups into bounded compare inputs", () => {
   const selection = buildCompareSelectionFromRecommendations({
     currentPaper: {

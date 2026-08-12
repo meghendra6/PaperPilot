@@ -75,12 +75,20 @@ class Addon {
       autoSubmit: boolean;
       updatedAt: string;
     };
+    pendingDiscoveryConcern?: {
+      text: string;
+      origin: import("./modules/discovery/types").ResearchConcernOrigin;
+      updatedAt: string;
+    };
     relatedRecommendationStates?: Map<
       number,
       {
         running: boolean;
         status: string;
         groups: import("./modules/relatedRecommendations").RecommendationGroup[];
+        discovery?: import("./modules/discovery/types").DiscoveryResult;
+        concern?: string;
+        concernOrigin?: import("./modules/discovery/types").ResearchConcernOrigin;
       }
     >;
     applyReaderActionToPane?: () => Promise<void> | void;
@@ -98,6 +106,10 @@ class Addon {
     comprehensionCheckStates?: Map<
       number,
       import("./modules/comprehensionCheck/types").ComprehensionCheckState
+    >;
+    criticalReadStates?: Map<
+      number,
+      import("./modules/criticalRead/types").CriticalReadState
     >;
     dialog?: DialogHelper;
   };
@@ -128,6 +140,7 @@ class Addon {
       autoHighlightStates: new Map(),
       paperArtifactStates: new Map(),
       comprehensionCheckStates: new Map(),
+      criticalReadStates: new Map(),
     };
     this.hooks = hooks;
     this.api = {};

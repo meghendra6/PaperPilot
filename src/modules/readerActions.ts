@@ -54,6 +54,16 @@ function triggerAction(params: {
     return;
   }
 
+  if (params.action === "find-prior-work" && params.text) {
+    addon.data.pendingDiscoveryConcern = {
+      text: params.text,
+      origin: "selection",
+      updatedAt: new Date().toISOString(),
+    };
+    void addon.data.applyReaderActionToPane?.();
+    return;
+  }
+
   saveDraft(params);
   const prepared = buildReaderActionQuestion(params.action, params.text);
   queueReaderAction(prepared.question, prepared.autoSubmit);
@@ -86,6 +96,10 @@ function buildSelectionActionButton(params: {
 }
 
 const SELECTION_ACTIONS = [
+  {
+    label: () => getString("reader-action-find-prior-work"),
+    action: "find-prior-work",
+  },
   { label: () => getString("reader-action-explain"), action: "explain" },
   { label: () => getString("reader-action-summarize"), action: "summarize" },
   { label: () => getString("reader-action-translate"), action: "translate" },

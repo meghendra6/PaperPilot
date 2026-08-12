@@ -15,7 +15,35 @@ export function buildWorkspaceArtifacts(params: {
   payload: ContextPayload;
   annotations?: string[];
   recentTurns: Array<{ role: string; text: string; createdAt: string }>;
+  requestText?: string;
 }) {
+  const discoveryRequest = params.requestText?.includes(
+    "Run Agent-led Verified Research Discovery",
+  )
+    ? {
+        schemaVersion: 1,
+        intent:
+          params.requestText.match(/Discovery intent:\s*([^\n]+)/)?.[1] ||
+          "mixed",
+        concern:
+          params.requestText.match(
+            /<research_concern[^>]*>\s*([\s\S]*?)\s*<\/research_concern>/,
+          )?.[1] || "Infer from current paper",
+        generatedAt: new Date().toISOString(),
+      }
+    : undefined;
+  let discoveryCandidates: unknown[] = [];
+  const candidatePayload = params.requestText?.match(
+    /<structured_candidates>\s*([\s\S]*?)\s*<\/structured_candidates>/,
+  )?.[1];
+  if (candidatePayload) {
+    try {
+      const parsed = JSON.parse(candidatePayload);
+      discoveryCandidates = Array.isArray(parsed) ? parsed : [];
+    } catch {
+      discoveryCandidates = [];
+    }
+  }
   const paperText = [
     `Title: ${params.title}`,
     params.authors.length ? `Authors: ${params.authors.join(", ")}` : undefined,
@@ -77,6 +105,18 @@ export function buildWorkspaceArtifacts(params: {
       "- annotations.json — annotation ids related to this request",
       "- metadata.json — structured bibliographic metadata",
       "- figures/ — place image assets here when needed",
+      discoveryRequest
+        ? "- discovery-request.json — normalized discovery concern and intent"
+        : undefined,
+      discoveryRequest
+        ? "- discovery-plan.json — staged field, venue, and query plan placeholder"
+        : undefined,
+      discoveryRequest
+        ? "- discovery-candidates.json — read-only structured-provider candidates"
+        : undefined,
+      discoveryRequest
+        ? "- discovery-evidence.json — normalized official-evidence helper output"
+        : undefined,
       "",
       "Reading order recommendation:",
       "1. CONTEXT_INDEX.md",
@@ -86,7 +126,9 @@ export function buildWorkspaceArtifacts(params: {
       "5. selection.json",
       "6. recent-turns.json",
       "7. metadata.json / annotations.json as needed",
-    ].join("\n"),
+    ]
+      .filter(Boolean)
+      .join("\n"),
     metadata: {
       title: params.title,
       authors: params.authors,
@@ -100,5 +142,18 @@ export function buildWorkspaceArtifacts(params: {
     selection: params.payload,
     annotations: params.annotations ?? [],
     recentTurns: params.recentTurns,
+    discoveryArtifacts: discoveryRequest
+      ? {
+          request: discoveryRequest,
+          plan: {
+            status: "Agent generates the plan during this run.",
+            fields: [],
+            venues: [],
+            queries: [],
+          },
+          candidates: discoveryCandidates,
+          evidence: [],
+        }
+      : undefined,
   };
 }

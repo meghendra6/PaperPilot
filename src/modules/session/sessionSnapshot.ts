@@ -41,6 +41,7 @@ function getAddonData() {
           paperArtifactStates?: Map<number, unknown>;
           relatedRecommendationStates?: Map<number, unknown>;
           comprehensionCheckStates?: Map<number, unknown>;
+          criticalReadStates?: Map<number, unknown>;
         };
       };
     }
@@ -53,6 +54,7 @@ function getAddonData() {
       paperArtifactStates: undefined,
       relatedRecommendationStates: undefined,
       comprehensionCheckStates: undefined,
+      criticalReadStates: undefined,
     }
   );
 }
@@ -89,6 +91,31 @@ function isCompletedMasteryState(
     Array.isArray(value.rounds) &&
     Array.isArray(value.topics)
   );
+}
+
+function hasCriticalReadState(value: unknown) {
+  return (
+    isPlainObject(value) &&
+    value.schemaVersion === 1 &&
+    Array.isArray(value.steps) &&
+    (value.phase === "active" || value.phase === "complete")
+  );
+}
+
+function persistedCriticalReadState(value: unknown) {
+  if (!hasCriticalReadState(value)) return undefined;
+  const cloned = cloneValue(value) as Record<string, unknown>;
+  if (cloned.running === true) {
+    cloned.running = false;
+    cloned.status =
+      "The previous Critical Read run was interrupted. Resume the current step.";
+    cloned.steps = (cloned.steps as unknown[]).map((step) =>
+      isPlainObject(step) && step.status === "running"
+        ? { ...step, status: "ready" }
+        : step,
+    );
+  }
+  return cloned;
 }
 
 function getPersistedMessages(sessionId: string) {
@@ -160,12 +187,18 @@ export function captureSessionSnapshot(params: {
           : undefined,
       )
     : undefined;
+  const criticalRead = prefs.persistAssistantDerivedState
+    ? persistedCriticalReadState(
+        data.criticalReadStates?.get(params.session.itemID),
+      )
+    : undefined;
 
   if (
     !messages.length &&
     !paperArtifacts &&
     !relatedRecommendations &&
-    !mastery
+    !mastery &&
+    !criticalRead
   ) {
     return undefined;
   }
@@ -194,6 +227,7 @@ export function captureSessionSnapshot(params: {
     ...(paperArtifacts ? { paperArtifacts } : {}),
     ...(relatedRecommendations ? { relatedRecommendations } : {}),
     ...(mastery ? { mastery } : {}),
+    ...(criticalRead ? { criticalRead } : {}),
   };
 }
 
@@ -229,6 +263,15 @@ export function applySessionSnapshot(
     );
   } else {
     data.comprehensionCheckStates?.delete(snapshot.paperItemID);
+  }
+
+  if (snapshot.criticalRead && hasCriticalReadState(snapshot.criticalRead)) {
+    data.criticalReadStates?.set(
+      snapshot.paperItemID,
+      cloneValue(snapshot.criticalRead),
+    );
+  } else {
+    data.criticalReadStates?.delete(snapshot.paperItemID);
   }
 
   if (snapshot.lastMode) {

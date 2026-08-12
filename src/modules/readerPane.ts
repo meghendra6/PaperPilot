@@ -51,12 +51,30 @@ import { shouldEnableAutoHighlight } from "./autoHighlight/status";
 import { runAutoHighlightWorkflow } from "./autoHighlight/workflow";
 import {
   addRecommendationToCollection,
-  buildRecommendationMetadataLine,
   generateRelatedPaperGroups,
+  generatePublicReviewInsight,
   openRecommendedPaper,
   type RecommendationGroup,
   type RecommendedPaper,
 } from "./relatedRecommendations";
+import { buildCriticalReadStepPrompt } from "./criticalRead/prompt";
+import { parseCriticalReadOutput } from "./criticalRead/parser";
+import { buildCriticalReadReportMarkdown } from "./criticalRead/report";
+import {
+  buildInitialCriticalReadState,
+  completeCriticalReadStep,
+  failCriticalReadStep,
+  getCriticalReadStep,
+  markCriticalReadStepRunning,
+  reviseCriticalReadStep,
+  startCriticalRead,
+} from "./criticalRead/workflow";
+import type { CriticalReadState } from "./criticalRead/types";
+import { saveCriticalReadToNote } from "./note/criticalReadNote";
+import { saveDiscoveryToNote } from "./note/discoveryNote";
+import { renderCriticalReadSection } from "./ui/criticalReadSection";
+import { buildDiscoveryRow } from "./ui/discoveryRow";
+import { renderDiscoverySection } from "./ui/discoverySection";
 import {
   buildPaperCompareCard,
   getPaperCompareButtonState,
@@ -182,6 +200,7 @@ export function registerPaperPilotPaneSection() {
               <html:button id="chat-tool-save-collection" class="pp-btn pp-btn--ghost">Save for collection</html:button>
               <html:button id="chat-tool-clear" class="pp-btn pp-btn--ghost">Clear cards</html:button>
               <html:button id="chat-paper-mastery" class="pp-btn pp-btn--secondary">Paper Mastery</html:button>
+              <html:button id="chat-critical-read" class="pp-btn pp-btn--secondary">Critical Read</html:button>
             </div>
             <div id="chat-compare-helper" class="pp-compare-helper pp-compare-helper--default"></div>
             <div id="chat-paper-tool-status" class="pp-status-text" style="display: none;"></div>
@@ -200,9 +219,14 @@ export function registerPaperPilotPaneSection() {
                 <html:button id="paper-mastery-end" class="pp-btn pp-btn--ghost">End Session</html:button>
               </div>
             </div>
+            <div id="paper-pilot-critical-read" class="pp-critical-read" style="display: none;"></div>
           </div>
           <div id="paper-pilot-related-mount">
-            <html:button id="chat-related-recommend" class="pp-btn pp-btn--secondary">Recommend related papers</html:button>
+            <label for="chat-related-concern" class="pp-related-concern-label">Research concern or idea</label>
+            <html:textarea id="chat-related-concern" class="pp-related-concern" placeholder="Optional: describe the research concern or novelty question." />
+            <html:button id="chat-related-recommend" class="pp-btn pp-btn--secondary">Find verified prior work</html:button>
+            <html:button id="chat-related-save" class="pp-btn pp-btn--ghost" disabled="true">Save discovery note</html:button>
+            <div class="pp-related-disclosure">Paper Pilot infers the field and leading venues, then verifies main-track acceptance from official paper-level sources. Workshops and preprints stay in separate lanes.</div>
             <div id="chat-related-status" class="pp-status-text" style="display: none;"></div>
             <div id="chat-related-groups" style="display: none;"></div>
           </div>
@@ -424,6 +448,18 @@ export function registerPaperPilotPaneSection() {
       const paperMasteryBtn = body.querySelector(
         "#chat-paper-mastery",
       ) as HTMLButtonElement | null;
+      const criticalReadButton = body.querySelector(
+        "#chat-critical-read",
+      ) as HTMLButtonElement | null;
+      const criticalReadRoot = body.querySelector(
+        "#paper-pilot-critical-read",
+      ) as HTMLElement | null;
+      const relatedConcern = body.querySelector(
+        "#chat-related-concern",
+      ) as HTMLTextAreaElement | null;
+      const relatedSaveButton = body.querySelector(
+        "#chat-related-save",
+      ) as HTMLButtonElement | null;
 
       if (
         chatContainer &&
@@ -446,6 +482,10 @@ export function registerPaperPilotPaneSection() {
         pastSessionsButton &&
         sessionHistoryPanel &&
         relatedRecommendButton &&
+        relatedConcern &&
+        relatedSaveButton &&
+        criticalReadButton &&
+        criticalReadRoot &&
         researchBriefButton &&
         compareButton &&
         contributionsButton &&
@@ -600,6 +640,7 @@ export function registerPaperPilotPaneSection() {
           });
           addon.data.relatedRecommendationStates?.delete(item.id);
           clearMasteryState(item.id);
+          addon.data.criticalReadStates?.delete(item.id);
           input.value = "";
         };
 
@@ -615,6 +656,307 @@ export function registerPaperPilotPaneSection() {
           relatedSection.setSummary(count ? String(count) : "");
           if (markUpdated) relatedSection.markUpdated();
         };
+
+        const getCriticalReadStateForItem = () =>
+          addon.data.criticalReadStates?.get(item.id) ||
+          buildInitialCriticalReadState();
+        const setCriticalReadStateForItem = (state: CriticalReadState) => {
+          if (!addon.data.criticalReadStates) {
+            addon.data.criticalReadStates = new Map();
+          }
+          addon.data.criticalReadStates.set(item.id, state);
+        };
+        let criticalReadDiscoveryAbortController: AbortController | undefined;
+        const persistCriticalReadState = async () => {
+          await sessionHistoryService.persistActiveSession({
+            itemID: item.id,
+            paperTitle: String(item.getField("title") || ""),
+          });
+          notifyReaderPaneStateChanged(item.id);
+        };
+
+        const renderCriticalRead = () => {
+          const state = getCriticalReadStateForItem();
+          criticalReadButton.textContent =
+            state.phase === "idle"
+              ? "Critical Read"
+              : state.phase === "complete"
+                ? "Critical Read · Complete"
+                : `Critical Read · ${state.steps.filter((step) => step.status === "complete").length}/7`;
+          renderCriticalReadSection({
+            root: criticalReadRoot,
+            state,
+            actions: {
+              onCancel: async () => {
+                if (criticalReadDiscoveryAbortController) {
+                  criticalReadDiscoveryAbortController.abort();
+                  const current = getCriticalReadStateForItem();
+                  setCriticalReadStateForItem({
+                    ...current,
+                    status: "Cancelling Critical Read prior-work search…",
+                    updatedAt: new Date().toISOString(),
+                  });
+                  renderCriticalRead();
+                  return;
+                }
+                await cancelActiveEngineRun(item.id);
+              },
+              onStartMastery: () => {
+                paperMasteryBtn?.click();
+              },
+              onStart: async () => {
+                let orientations: ReturnType<
+                  typeof import("./criticalRead/orientation").buildCriticalReadOrientations
+                > = {};
+                try {
+                  const [
+                    { paperWorkspaceContentCache },
+                    { buildCriticalReadOrientations },
+                  ] = await Promise.all([
+                    import("./tools/paperWorkspaceContent"),
+                    import("./criticalRead/orientation"),
+                  ]);
+                  const content =
+                    await paperWorkspaceContentCache.getPaperContent(item);
+                  orientations = buildCriticalReadOrientations({
+                    ...content,
+                    abstract: String(item.getField("abstractNote") || ""),
+                  });
+                } catch {
+                  const { buildCriticalReadOrientations } = await import(
+                    "./criticalRead/orientation"
+                  );
+                  orientations = buildCriticalReadOrientations({});
+                }
+                const started = startCriticalRead(state);
+                setCriticalReadStateForItem({
+                  ...started,
+                  steps: started.steps.map((step) => ({
+                    ...step,
+                    orientation:
+                      step.id === 1 || step.id === 4 || step.id === 5
+                        ? orientations[step.id]
+                        : undefined,
+                  })),
+                });
+                renderCriticalRead();
+                await persistCriticalReadState();
+              },
+              onRevise: async (stepID) => {
+                setCriticalReadStateForItem(
+                  reviseCriticalReadStep(getCriticalReadStateForItem(), stepID),
+                );
+                renderCriticalRead();
+                await persistCriticalReadState();
+              },
+              onSave: async () => {
+                const current = getCriticalReadStateForItem();
+                try {
+                  const note = await saveCriticalReadToNote({
+                    item,
+                    paperTitle: String(
+                      item.getField("title") || "Current paper",
+                    ),
+                    state: current,
+                  });
+                  setCriticalReadStateForItem({
+                    ...current,
+                    reportNoteItemID: note.id,
+                    status: "Critical Read report saved to a Zotero note.",
+                    updatedAt: new Date().toISOString(),
+                  });
+                } catch (error) {
+                  setCriticalReadStateForItem({
+                    ...current,
+                    status:
+                      error instanceof Error
+                        ? `Save failed: ${error.message}`
+                        : "Critical Read report could not be saved.",
+                    updatedAt: new Date().toISOString(),
+                  });
+                }
+                renderCriticalRead();
+                await persistCriticalReadState();
+              },
+              onRun: async (readerInput) => {
+                const current = getCriticalReadStateForItem();
+                const step = getCriticalReadStep(current);
+                if (!step) return;
+                if (step.requiresReaderInput && !readerInput.trim()) {
+                  setCriticalReadStateForItem(
+                    failCriticalReadStep(
+                      current,
+                      "Write your own assessment before running this step.",
+                    ),
+                  );
+                  renderCriticalRead();
+                  return;
+                }
+
+                if (step.id === 3) {
+                  let reserved = false;
+                  const abortController = new AbortController();
+                  criticalReadDiscoveryAbortController = abortController;
+                  try {
+                    await generateRelatedPaperGroups({
+                      itemID: item.id,
+                      itemTitle: String(item.getField("title") || ""),
+                      concern: {
+                        origin: "user_text",
+                        text:
+                          getCriticalReadStateForItem().steps.find(
+                            (entry) => entry.id === 2,
+                          )?.readerInput ||
+                          "Find prior work for the paper's core research question.",
+                      },
+                      signal: abortController.signal,
+                      onReserved: () => {
+                        reserved = true;
+                        setCriticalReadStateForItem(
+                          markCriticalReadStepRunning(current),
+                        );
+                        renderCriticalRead();
+                      },
+                      onStatus: (status) => {
+                        const running = getCriticalReadStateForItem();
+                        setCriticalReadStateForItem({
+                          ...running,
+                          status,
+                          updatedAt: new Date().toISOString(),
+                        });
+                        renderCriticalRead();
+                      },
+                      onSuccess: async (result) => {
+                        if (!result.discovery) {
+                          throw new Error(
+                            "The discovery run did not return verified publication evidence.",
+                          );
+                        }
+                        const completed = completeCriticalReadStep({
+                          state: getCriticalReadStateForItem(),
+                          discovery: result.discovery,
+                        });
+                        setCriticalReadStateForItem(completed);
+                        addon.data.relatedRecommendationStates?.set(item.id, {
+                          running: false,
+                          status: "Critical Read prior-work map ready",
+                          groups: result.groups,
+                          discovery: result.discovery,
+                          concern:
+                            current.steps.find((entry) => entry.id === 2)
+                              ?.readerInput || "",
+                        });
+                        renderRelatedRecommendationState(
+                          relatedRecommendButton,
+                          relatedStatus,
+                          relatedGroups,
+                          compareButton,
+                          compareHelper,
+                          item.id,
+                        );
+                        renderCriticalRead();
+                        await persistCriticalReadState();
+                      },
+                      onFailure: async (error) => {
+                        setCriticalReadStateForItem(
+                          failCriticalReadStep(
+                            getCriticalReadStateForItem(),
+                            error instanceof Error
+                              ? error.message
+                              : "Prior-work discovery failed.",
+                          ),
+                        );
+                        renderCriticalRead();
+                        await persistCriticalReadState();
+                      },
+                    });
+                  } catch (error) {
+                    if (!reserved) {
+                      setCriticalReadStateForItem(
+                        failCriticalReadStep(
+                          current,
+                          error instanceof Error
+                            ? error.message
+                            : "Prior-work discovery could not start.",
+                        ),
+                      );
+                      renderCriticalRead();
+                    }
+                  } finally {
+                    if (
+                      criticalReadDiscoveryAbortController === abortController
+                    ) {
+                      criticalReadDiscoveryAbortController = undefined;
+                    }
+                  }
+                  return;
+                }
+
+                await runCriticalReadAgentRequest({
+                  item,
+                  state: current,
+                  readerInput,
+                  input,
+                  chatMessages,
+                  streamingIndicator,
+                  onAdmitted: () => {
+                    setCriticalReadStateForItem(
+                      markCriticalReadStepRunning(current, readerInput),
+                    );
+                    renderCriticalRead();
+                  },
+                  onComplete: async ({ success, assistantText }) => {
+                    let nextState: CriticalReadState;
+                    if (!success) {
+                      nextState = failCriticalReadStep(
+                        getCriticalReadStateForItem(),
+                        assistantText || "Critical Read step failed.",
+                      );
+                    } else {
+                      try {
+                        nextState = completeCriticalReadStep({
+                          state: getCriticalReadStateForItem(),
+                          output: parseCriticalReadOutput(assistantText),
+                        });
+                        if (nextState.phase === "complete") {
+                          nextState = {
+                            ...nextState,
+                            reportMarkdown: buildCriticalReadReportMarkdown({
+                              paperTitle: String(
+                                item.getField("title") || "Current paper",
+                              ),
+                              state: nextState,
+                            }),
+                          };
+                        }
+                      } catch (error) {
+                        nextState = failCriticalReadStep(
+                          getCriticalReadStateForItem(),
+                          error instanceof Error
+                            ? error.message
+                            : "Critical Read output could not be parsed.",
+                        );
+                      }
+                    }
+                    setCriticalReadStateForItem(nextState);
+                    renderCriticalRead();
+                    await persistCriticalReadState();
+                  },
+                });
+              },
+            },
+          });
+        };
+
+        criticalReadButton.addEventListener("click", () => {
+          const visible = criticalReadRoot.style.display !== "none";
+          criticalReadRoot.style.display = visible ? "none" : "block";
+          if (!visible) renderCriticalRead();
+        });
+        if (addon.data.criticalReadStates?.has(item.id)) {
+          criticalReadRoot.style.display = "block";
+        }
+        renderCriticalRead();
 
         const rerenderPane = async () => {
           await renderPaneState({
@@ -782,14 +1124,15 @@ export function registerPaperPilotPaneSection() {
               if (
                 entry.hasArtifacts ||
                 entry.hasRecommendations ||
-                entry.hasMasteryState
+                entry.hasMasteryState ||
+                entry.hasCriticalReadState
               ) {
                 const cardsBadge = doc.createElement("span");
                 cardsBadge.className = "pp-session-history__badge";
                 cardsBadge.textContent = "●";
                 cardsBadge.setAttribute(
                   "aria-label",
-                  "Has saved cards, recommendations, or mastery state",
+                  "Has saved cards, discovery, Critical Read, or mastery state",
                 );
                 titleRow.appendChild(cardsBadge);
               }
@@ -958,6 +1301,8 @@ export function registerPaperPilotPaneSection() {
           item.id,
           String(item.getField("title") || ""),
         );
+        relatedConcern.value =
+          getRelatedRecommendationState(item.id).concern || "";
         updateWorkbenchSummary();
         updateRelatedSummary();
 
@@ -1360,14 +1705,64 @@ export function registerPaperPilotPaneSection() {
           updateWorkbenchSummary();
         });
 
+        let relatedDiscoveryAbortController: AbortController | undefined;
+        let relatedConcernOrigin =
+          getRelatedRecommendationState(item.id).concernOrigin || "user_text";
+        relatedConcern.addEventListener("input", () => {
+          relatedConcernOrigin = "user_text";
+        });
         relatedRecommendButton.addEventListener("click", async () => {
+          if (getRelatedRecommendationState(item.id).running) {
+            relatedDiscoveryAbortController?.abort();
+            const current = getRelatedRecommendationState(item.id);
+            addon.data.relatedRecommendationStates?.set(item.id, {
+              ...current,
+              status: "Cancelling research discovery…",
+            });
+            renderRelatedRecommendationState(
+              relatedRecommendButton,
+              relatedStatus,
+              relatedGroups,
+              compareButton,
+              compareHelper,
+              item.id,
+              String(item.getField("title") || ""),
+            );
+            return;
+          }
+          const abortController = new AbortController();
+          relatedDiscoveryAbortController = abortController;
           let reservationOwned = false;
           try {
             await generateRelatedPaperGroups({
               itemID: item.id,
               itemTitle: item.getField("title"),
+              concern: relatedConcern.value.trim()
+                ? {
+                    text: relatedConcern.value.trim(),
+                    origin: relatedConcernOrigin,
+                  }
+                : undefined,
+              signal: abortController.signal,
               onReserved: () => {
                 reservationOwned = true;
+                const state = getRelatedRecommendationState(item.id);
+                addon.data.relatedRecommendationStates?.set(item.id, {
+                  ...state,
+                  running: true,
+                  status: "Understanding the research question",
+                  concern: relatedConcern.value.trim(),
+                  concernOrigin: relatedConcernOrigin,
+                });
+                renderRelatedRecommendationState(
+                  relatedRecommendButton,
+                  relatedStatus,
+                  relatedGroups,
+                  compareButton,
+                  compareHelper,
+                  item.id,
+                  String(item.getField("title") || ""),
+                );
               },
               onStatus: (status) => {
                 const state = getRelatedRecommendationState(item.id);
@@ -1375,6 +1770,8 @@ export function registerPaperPilotPaneSection() {
                   ...state,
                   running: true,
                   status,
+                  concern: relatedConcern.value.trim(),
+                  concernOrigin: relatedConcernOrigin,
                 });
                 renderRelatedRecommendationState(
                   relatedRecommendButton,
@@ -1389,8 +1786,11 @@ export function registerPaperPilotPaneSection() {
               onSuccess: async (result) => {
                 addon.data.relatedRecommendationStates?.set(item.id, {
                   running: false,
-                  status: `Found ${result.groups.reduce((count, group) => count + group.papers.length, 0)} recommendations`,
+                  status: `Found ${result.groups.reduce((count, group) => count + group.papers.length, 0)} papers across verified evidence lanes`,
                   groups: result.groups,
+                  discovery: result.discovery,
+                  concern: relatedConcern.value.trim(),
+                  concernOrigin: relatedConcernOrigin,
                 });
                 await sessionHistoryService.persistActiveSession({
                   itemID: item.id,
@@ -1398,13 +1798,17 @@ export function registerPaperPilotPaneSection() {
                 });
               },
               onFailure: async (error) => {
+                const previous = getRelatedRecommendationState(item.id);
                 addon.data.relatedRecommendationStates?.set(item.id, {
                   running: false,
                   status:
                     error instanceof Error
                       ? error.message
                       : "Related paper recommendation failed.",
-                  groups: [],
+                  groups: previous.groups,
+                  discovery: previous.discovery,
+                  concern: relatedConcern.value.trim(),
+                  concernOrigin: relatedConcernOrigin,
                 });
                 await sessionHistoryService.persistActiveSession({
                   itemID: item.id,
@@ -1423,6 +1827,10 @@ export function registerPaperPilotPaneSection() {
               );
               return;
             }
+          } finally {
+            if (relatedDiscoveryAbortController === abortController) {
+              relatedDiscoveryAbortController = undefined;
+            }
           }
           renderRelatedRecommendationState(
             relatedRecommendButton,
@@ -1435,6 +1843,44 @@ export function registerPaperPilotPaneSection() {
           );
           updateRelatedSummary(true);
           notifyReaderPaneStateChanged(item.id);
+        });
+
+        relatedSaveButton.addEventListener("click", async () => {
+          const state = getRelatedRecommendationState(item.id);
+          if (!state.discovery) return;
+          relatedSaveButton.disabled = true;
+          try {
+            await saveDiscoveryToNote({
+              item,
+              paperTitle: String(item.getField("title") || "Current paper"),
+              concern: state.concern,
+              discovery: state.discovery,
+            });
+            addon.data.relatedRecommendationStates?.set(item.id, {
+              ...state,
+              status: "Discovery report saved to a Zotero note.",
+            });
+          } catch (error) {
+            addon.data.relatedRecommendationStates?.set(item.id, {
+              ...state,
+              status:
+                error instanceof Error
+                  ? `Save failed: ${error.message}`
+                  : "Discovery report could not be saved.",
+            });
+          }
+          renderRelatedRecommendationState(
+            relatedRecommendButton,
+            relatedStatus,
+            relatedGroups,
+            compareButton,
+            compareHelper,
+            item.id,
+          );
+          await sessionHistoryService.persistActiveSession({
+            itemID: item.id,
+            paperTitle: String(item.getField("title") || ""),
+          });
         });
 
         // --- Paper Mastery handlers ---
@@ -2401,6 +2847,15 @@ export function registerPaperPilotPaneSection() {
         sendButton.addEventListener("click", submitCurrentInput);
 
         const applyReaderActionToPane = async () => {
+          const pendingDiscovery = addon.data.pendingDiscoveryConcern;
+          if (pendingDiscovery) {
+            relatedConcern.value = pendingDiscovery.text;
+            relatedConcernOrigin = pendingDiscovery.origin;
+            relatedSection.setExpanded(true);
+            addon.data.pendingDiscoveryConcern = undefined;
+            relatedRecommendButton.click();
+            return;
+          }
           const pending = addon.data.pendingReaderAction;
           if (!pending) {
             return;
@@ -2818,7 +3273,27 @@ function buildPaperArtifactCardElement(doc: Document, card: PaperArtifactCard) {
     list.className = "pp-artifact-card__list";
     for (const item of section.items) {
       const bullet = doc.createElement("li");
-      bullet.textContent = item;
+      const itemText = doc.createElement("span");
+      itemText.textContent = item;
+      bullet.appendChild(itemText);
+      if (
+        card.kind === "extract-limitations" ||
+        card.kind === "suggest-follow-ups"
+      ) {
+        const findPriorWork = doc.createElement("button");
+        findPriorWork.className = "pp-btn pp-btn--ghost";
+        findPriorWork.textContent = "Find prior work";
+        findPriorWork.addEventListener("click", () => {
+          addon.data.pendingDiscoveryConcern = {
+            text: item,
+            origin:
+              card.kind === "extract-limitations" ? "limitation" : "follow_up",
+            updatedAt: new Date().toISOString(),
+          };
+          void addon.data.applyReaderActionToPane?.();
+        });
+        bullet.appendChild(findPriorWork);
+      }
       list.appendChild(bullet);
     }
 
@@ -2867,170 +3342,151 @@ function renderRelatedRecommendationState(
   currentPaperTitle = getCurrentPaperTitle(itemID),
 ) {
   const state = getRelatedRecommendationState(itemID);
-  button.disabled = state.running;
+  const doc = groupsContainer.ownerDocument;
+  const saveButton = doc.querySelector(
+    "#chat-related-save",
+  ) as HTMLButtonElement | null;
+  if (saveButton) saveButton.disabled = state.running || !state.discovery;
+  button.disabled = false;
   button.textContent = state.running
-    ? "Recommending…"
+    ? "Cancel discovery"
     : state.groups.length
-      ? "Refresh related papers"
-      : "Recommend related papers";
-
+      ? "Refresh verified prior work"
+      : "Find verified prior work";
   status.style.display = state.status ? "block" : "none";
   status.textContent = state.status;
-
-  groupsContainer.replaceChildren();
-  if (!state.groups.length) {
-    groupsContainer.style.display = "none";
-    renderCompareButtonState(compareButton, itemID, currentPaperTitle);
-    renderCompareHelperState(compareHelper, itemID, currentPaperTitle);
-    return;
-  }
-
-  const doc = groupsContainer.ownerDocument;
-  groupsContainer.style.display = "block";
   renderCompareButtonState(compareButton, itemID, currentPaperTitle);
   renderCompareHelperState(compareHelper, itemID, currentPaperTitle);
 
-  for (const group of state.groups) {
-    const section = doc.createElement("div");
-    section.style.borderTop = "1px solid var(--pp-border-recommendation)";
-
-    const header = doc.createElement("div");
-    header.textContent = group.category;
-    header.className = "pp-recommendation-group__header";
-    section.appendChild(header);
-
-    for (const paper of group.papers) {
-      section.appendChild(buildRecommendationRow(doc, itemID, paper));
-    }
-
-    groupsContainer.appendChild(section);
-  }
-}
-
-function buildRecommendationRow(
-  doc: Document,
-  sourceItemID: number,
-  paper: RecommendedPaper,
-) {
-  const row = doc.createElement("div");
-  row.setAttribute("role", "group");
-  row.className = "pp-recommendation-row";
-
-  const info = doc.createElement("div");
-  info.className = "pp-recommendation-row__info";
-
-  const title = doc.createElement("button");
-  title.type = "button";
-  title.textContent = paper.title;
-  title.className = "pp-recommendation-row__title";
-  title.addEventListener("click", () => {
-    void openRecommendedPaper(paper).catch((error) => {
-      const message =
+  const rerender = () =>
+    renderRelatedRecommendationState(
+      button,
+      status,
+      groupsContainer,
+      compareButton,
+      compareHelper,
+      itemID,
+      currentPaperTitle,
+    );
+  const setFailure = (error: unknown) => {
+    const current = getRelatedRecommendationState(itemID);
+    addon.data.relatedRecommendationStates?.set(itemID, {
+      ...current,
+      status:
         error instanceof Error
           ? error.message
-          : "Could not open recommendation.";
-      const state = getRelatedRecommendationState(sourceItemID);
-      addon.data.relatedRecommendationStates?.set(sourceItemID, {
-        ...state,
-        status: message,
-      });
-      renderRelatedRecommendationState(
-        row.ownerDocument.querySelector(
-          "#chat-related-recommend",
-        ) as HTMLButtonElement,
-        row.ownerDocument.querySelector("#chat-related-status") as HTMLElement,
-        row.ownerDocument.querySelector("#chat-related-groups") as HTMLElement,
-        row.ownerDocument.querySelector(
-          "#chat-tool-compare",
-        ) as HTMLButtonElement,
-        row.ownerDocument.querySelector("#chat-compare-helper") as HTMLElement,
-        sourceItemID,
-      );
+          : "The discovery action could not be completed.",
     });
-  });
-  info.appendChild(title);
-
-  const meta = doc.createElement("div");
-  meta.textContent = buildRecommendationMetadataLine(paper);
-  meta.className = "pp-recommendation-row__meta";
-  info.appendChild(meta);
-
-  if (paper.reason) {
-    const reason = doc.createElement("div");
-    reason.textContent = paper.reason;
-    reason.className = "pp-recommendation-row__reason";
-    info.appendChild(reason);
-  }
-
-  const actions = doc.createElement("div");
-  actions.className = "pp-recommendation-row__actions";
-
-  if (paper.existingItemID) {
-    const chip = doc.createElement("span");
-    chip.textContent = "In library";
-    chip.className = "pp-chip pp-chip--library";
-    actions.appendChild(chip);
-  }
-
-  const openButton = doc.createElement("button");
-  openButton.className = "pp-btn pp-btn--ghost";
-  openButton.textContent = "Open";
-  openButton.addEventListener("click", () => void openRecommendedPaper(paper));
-  actions.appendChild(openButton);
-
-  const addButton = doc.createElement("button");
-  addButton.className = "pp-btn pp-btn--secondary";
-  addButton.textContent = "Add to collection";
-  addButton.addEventListener("click", async () => {
-    addButton.disabled = true;
-    try {
-      const result = await addRecommendationToCollection({
-        sourceItemID,
-        paper,
-      });
-      const state = getRelatedRecommendationState(sourceItemID);
-      const groups = state.groups.map((group: RecommendationGroup) => ({
-        ...group,
-        papers: group.papers.map((entry) =>
-          entry.title === paper.title && entry.doi === paper.doi
-            ? { ...entry, existingItemID: result.itemID }
-            : entry,
-        ),
-      }));
-      addon.data.relatedRecommendationStates?.set(sourceItemID, {
-        running: false,
-        status: "Added to collection",
-        groups,
-      });
-    } catch (error) {
-      const state = getRelatedRecommendationState(sourceItemID);
-      addon.data.relatedRecommendationStates?.set(sourceItemID, {
-        ...state,
-        status:
-          error instanceof Error ? error.message : "Add to collection failed.",
-      });
-    } finally {
-      renderRelatedRecommendationState(
-        row.ownerDocument.querySelector(
-          "#chat-related-recommend",
-        ) as HTMLButtonElement,
-        row.ownerDocument.querySelector("#chat-related-status") as HTMLElement,
-        row.ownerDocument.querySelector("#chat-related-groups") as HTMLElement,
-        row.ownerDocument.querySelector(
-          "#chat-tool-compare",
-        ) as HTMLButtonElement,
-        row.ownerDocument.querySelector("#chat-compare-helper") as HTMLElement,
-        sourceItemID,
+    rerender();
+  };
+  const samePaper = (left: RecommendedPaper, right: RecommendedPaper) =>
+    left.candidateID && right.candidateID
+      ? left.candidateID === right.candidateID
+      : left.title === right.title && left.doi === right.doi;
+  const updateDiscoveryPaper = (
+    discovery: typeof state.discovery,
+    paper: RecommendedPaper,
+    patch: Partial<RecommendedPaper>,
+  ) => {
+    if (!discovery) return discovery;
+    const updateLane = (lane: typeof discovery.verifiedMain) =>
+      lane.map((entry) =>
+        (paper.candidateID && entry.candidateID === paper.candidateID) ||
+        (entry.title === paper.title && entry.doi === paper.doi)
+          ? {
+              ...entry,
+              ...(patch.existingItemID
+                ? { existingItemID: patch.existingItemID }
+                : {}),
+              ...(patch.reviewInsight
+                ? { reviewInsight: patch.reviewInsight }
+                : {}),
+            }
+          : entry,
       );
-      addButton.disabled = false;
-    }
+    return {
+      ...discovery,
+      verifiedMain: updateLane(discovery.verifiedMain),
+      otherPeerReviewed: updateLane(discovery.otherPeerReviewed),
+      noveltyRadar: updateLane(discovery.noveltyRadar),
+    };
+  };
+
+  renderDiscoverySection({
+    container: groupsContainer,
+    groups: state.groups,
+    discovery: state.discovery,
+    buildRow: (paper) =>
+      buildDiscoveryRow({
+        doc,
+        paper,
+        actions: {
+          onOpen: (target) => openRecommendedPaper(target),
+          onOpenURL: (url) => Zotero.launchURL(url),
+          onError: setFailure,
+          onAdd: async (target) => {
+            const result = await addRecommendationToCollection({
+              sourceItemID: itemID,
+              paper: target,
+            });
+            const current = getRelatedRecommendationState(itemID);
+            const patch = { existingItemID: result.itemID };
+            addon.data.relatedRecommendationStates?.set(itemID, {
+              ...current,
+              running: false,
+              status: "Added to collection",
+              groups: current.groups.map((group: RecommendationGroup) => ({
+                ...group,
+                papers: group.papers.map((entry) =>
+                  samePaper(entry, target) ? { ...entry, ...patch } : entry,
+                ),
+              })),
+              discovery: updateDiscoveryPaper(current.discovery, target, patch),
+            });
+            rerender();
+            await sessionHistoryService.persistActiveSession({
+              itemID,
+              paperTitle: currentPaperTitle,
+            });
+          },
+          onReviewInsight: async (target) => {
+            const insight = await generatePublicReviewInsight({
+              itemID,
+              itemTitle: currentPaperTitle,
+              paper: target,
+              onStatus: (message) => {
+                const current = getRelatedRecommendationState(itemID);
+                addon.data.relatedRecommendationStates?.set(itemID, {
+                  ...current,
+                  status: message,
+                });
+                status.textContent = message;
+                status.style.display = "block";
+              },
+            });
+            const current = getRelatedRecommendationState(itemID);
+            const patch = { reviewInsight: insight };
+            addon.data.relatedRecommendationStates?.set(itemID, {
+              ...current,
+              status: "Public review insights ready",
+              groups: current.groups.map((group: RecommendationGroup) => ({
+                ...group,
+                papers: group.papers.map((entry) =>
+                  samePaper(entry, target) ? { ...entry, ...patch } : entry,
+                ),
+              })),
+              discovery: updateDiscoveryPaper(current.discovery, target, patch),
+            });
+            rerender();
+            await sessionHistoryService.persistActiveSession({
+              itemID,
+              paperTitle: currentPaperTitle,
+            });
+          },
+        },
+      }),
   });
-  actions.appendChild(addButton);
-
-  row.append(info, actions);
-  return row;
 }
-
 async function refreshCodexStatus(
   chip: HTMLElement,
   status: HTMLElement,
@@ -3209,6 +3665,48 @@ function getActiveRunMessage(mode: EngineMode, itemID: number) {
   }
 
   return undefined;
+}
+
+async function runCriticalReadAgentRequest(params: {
+  item: Zotero.Item;
+  state: CriticalReadState;
+  readerInput: string;
+  input: HTMLTextAreaElement;
+  chatMessages: HTMLElement;
+  streamingIndicator: HTMLElement;
+  onAdmitted(): void;
+  onComplete(result: {
+    success: boolean;
+    assistantText: string;
+  }): void | Promise<void>;
+}) {
+  const step = getCriticalReadStep(params.state);
+  if (!step || step.id === 3) {
+    throw new Error("This Critical Read step does not use the paper agent.");
+  }
+  const prompt = buildCriticalReadStepPrompt({
+    state: params.state,
+    stepID: step.id,
+    readerInput: params.readerInput || undefined,
+    responseLanguage: normalizeResponseLanguage(getPref("responseLanguage")),
+  });
+  params.input.value = prompt;
+  await handleUserInput(
+    params.input,
+    params.chatMessages,
+    getCurrentProviderDescriptor(params.item.id).mode,
+    params.item.id,
+    params.item.getField("title"),
+    getCurrentProviderDescriptor(params.item.id).placeholderResponse,
+    params.streamingIndicator,
+    {
+      displayQuestion: `Critical Read · Step ${step.id}`,
+      silentUserMessage: true,
+      suppressChatMessages: true,
+      onAdmitted: params.onAdmitted,
+      onComplete: params.onComplete,
+    },
+  );
 }
 
 async function runPaperArtifactRequest(params: {

@@ -13,4 +13,5 @@ export interface ProviderDescriptor {
   label: string;
   status: ProviderStatus;
   placeholderResponse: string;
+  discoveryCapabilities: import("../discovery/types").DiscoveryCapabilities;
 }

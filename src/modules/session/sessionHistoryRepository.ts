@@ -99,7 +99,9 @@ function emptyIndex(itemID: number, paperTitle = ""): SessionHistoryIndex {
   };
 }
 
-function toSessionEntry(snapshot: SessionHistorySnapshot): SessionHistoryListEntry {
+function toSessionEntry(
+  snapshot: SessionHistorySnapshot,
+): SessionHistoryListEntry {
   return {
     storageVersion: SESSION_HISTORY_STORAGE_VERSION,
     sessionId: snapshot.sessionId,
@@ -111,6 +113,9 @@ function toSessionEntry(snapshot: SessionHistorySnapshot): SessionHistoryListEnt
     hasArtifacts: hasMeaningfulState(snapshot.paperArtifacts),
     hasRecommendations: hasMeaningfulState(snapshot.relatedRecommendations),
     hasMasteryState: hasMeaningfulState(snapshot.mastery),
+    ...(hasMeaningfulState(snapshot.criticalRead)
+      ? { hasCriticalReadState: true }
+      : {}),
   };
 }
 
@@ -342,6 +347,7 @@ export class SessionHistoryRepository {
       sessions: sortSessionEntries(index.sessions).map((entry) => ({
         ...entry,
         storageVersion: SESSION_HISTORY_STORAGE_VERSION,
+        ...(entry.hasCriticalReadState ? { hasCriticalReadState: true } : {}),
       })),
     };
   }

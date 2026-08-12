@@ -58,6 +58,7 @@ export type FluentMessageId =
   | 'reader-action-annotation-summarize'
   | 'reader-action-ask-ai'
   | 'reader-action-explain'
+  | 'reader-action-find-prior-work'
   | 'reader-action-summarize'
   | 'reader-action-translate'
   | 'startup-begin'

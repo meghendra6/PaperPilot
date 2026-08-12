@@ -463,6 +463,25 @@ test("buildWorkspaceArtifacts assembles paper and context files", () => {
   assert.equal(artifacts.recentTurns.length, 1);
 });
 
+test("buildWorkspaceArtifacts stages discovery source-data files", () => {
+  const artifacts = buildWorkspaceArtifacts({
+    title: "Paper",
+    authors: [],
+    payload: { retrievedChunks: [], promptPreview: "Question" },
+    recentTurns: [],
+    requestText: [
+      "Run Agent-led Verified Research Discovery for the currently open paper.",
+      "Discovery intent: novelty_check",
+      '<research_concern origin="user_text">Has this been done?</research_concern>',
+      '<structured_candidates>[{"title":"Candidate"}]</structured_candidates>',
+    ].join("\n"),
+  });
+  assert.equal(artifacts.discoveryArtifacts?.request.intent, "novelty_check");
+  assert.equal(artifacts.discoveryArtifacts?.candidates.length, 1);
+  assert.match(artifacts.contextIndexText, /discovery-request\.json/);
+  assert.match(artifacts.contextIndexText, /discovery-evidence\.json/);
+});
+
 test("buildCodexWorkspacePrompt tells Codex to inspect paper workspace files first", () => {
   const prompt = buildCodexWorkspacePrompt("Question: Summarize the paper");
 

@@ -12,7 +12,7 @@ Use this checklist inside real Zotero 7, 8, and 9 runtimes before claiming readi
 - [ ] Open a PDF attachment in Zotero Reader
 - [ ] Confirm AI pane is visible in the reader/item pane area
 - [ ] Confirm mode/status/session cards render without errors
-- [ ] Trigger `Recommend related papers` and confirm the pane expands enough to show multiple recommendation rows immediately
+- [ ] Trigger `Find verified prior work` and confirm the primary lane expands enough to show multiple recommendation rows immediately
 - [ ] Confirm tall recommendation lists scroll inside the recommendation section without breaking chat history or the input area
 - [ ] If paper-tool controls are present, confirm they do not crowd or overlap the existing mode/session controls
 - [ ] If structured brief cards are present, confirm they remain readable without pushing chat input off-screen
@@ -30,13 +30,13 @@ Use this checklist inside real Zotero 7, 8, and 9 runtimes before claiming readi
 ### Reader pane redesign — Phase B layout and density
 
 - [ ] Confirm the always-visible chrome is one integrated engine/model header, three disclosure headers, optional compact run status, chat history, and the composer
-- [ ] Confirm Workbench starts expanded while Related papers and Past sessions start collapsed on a fresh profile
+- [ ] Confirm Workbench starts expanded while Find verified prior work and Past sessions start collapsed on a fresh profile
 - [ ] Toggle all three disclosures with mouse, Enter, and Space; restart Zotero and confirm their state persists
 - [ ] Complete a workbench or related-papers action while its section is collapsed and confirm only its summary/update dot changes—the section must not open itself
 - [ ] Open the engine/model popover, switch each engine, save a model/effort selection, and confirm the existing preferences update
 - [ ] While a provider run is active, attempt to switch providers and confirm the switch is blocked without clearing the active poller; after completion, switching works normally
-- [ ] During workspace preparation, Retry persistence, a direct Auto Highlight/Related run, and terminal cleanup, attempt New session and saved-session Open/Delete; confirm session replacement is blocked and no old workflow result appears in a new session
-- [ ] Delay the session-transition cleanup await, then try chat, Retry, Auto Highlight, and Related Papers; confirm the transition token blocks every new admission until Open/New/Delete and rerender finish
+- [ ] During workspace preparation, Retry persistence, a direct Auto Highlight/discovery run, and terminal cleanup, attempt New session and saved-session Open/Delete; confirm session replacement is blocked and no old workflow result appears in a new session
+- [ ] Delay the session-transition cleanup await, then try chat, Retry, Auto Highlight, and Find verified prior work; confirm the transition token blocks every new admission until Open/New/Delete and rerender finish
 - [ ] Delay normal chat reader-context/user-turn persistence, then try New/Open/Delete and a direct workflow; confirm the chat admission token blocks them until the controller owns the run
 - [ ] While New/Open/Delete owns the session-transition token, click Workbench, Compare, initial/submit Mastery, and End Mastery/final-report actions; confirm none enters a running state or persists an old-session completion callback
 - [ ] Complete one Paper Mastery evaluation that generates a follow-up question and one that generates the final report; confirm both nested runs start after the parent cleanup instead of reporting an active-run conflict
@@ -56,7 +56,7 @@ Use this checklist inside real Zotero 7, 8, and 9 runtimes before claiming readi
 - [ ] Start a run on paper A, open paper B, and confirm B never shows A's progress, cancel, failure, or Retry state; return to A and confirm its state remains connected
 - [ ] Cancel a running Codex, Claude, and Gemini request from the same card; confirm the process stops, silent workflows unlock, and no later poll overwrites `Cancelled`
 - [ ] Cancel each engine while it still says `Preparing workspace`, immediately try to start or Retry another request, and confirm the replacement is blocked until the old preparation/cleanup settles; confirm the replacement workspace is not deleted
-- [ ] While a chat run is preparing or a cancelled preparation is settling, try Auto Highlight and Related Papers; then reverse the order and try chat while either direct workflow is running. Confirm every overlapping request is blocked per paper
+- [ ] While a chat run is preparing or a cancelled preparation is settling, try Auto Highlight and verified discovery; then reverse the order and try chat while either direct workflow is running. Confirm every overlapping request is blocked per paper
 - [ ] For a CLI wrapper that starts child processes and ignores `TERM`, cancel the run and confirm the recorded process and its descendants are no longer alive after the bounded `KILL` escalation
 - [ ] Force the process-stop executor to fail; confirm chat keeps the active pid/Cancel ownership, direct workflows keep their item reservation, no workspace cleanup/replacement starts, and the UI reports that termination was not confirmed
 - [ ] Cancel during workspace preparation, then make the late process's first stop fail; confirm the same run returns to Running with Cancel, and a second Cancel can terminate and settle it without restarting Zotero
@@ -66,13 +66,13 @@ Use this checklist inside real Zotero 7, 8, and 9 runtimes before claiming readi
 - [ ] Force Codex assistant-turn persistence to fail after process completion; confirm pending ownership settles but the terminal Codex state contains no pid and session cleanup signals nothing
 - [ ] Fail one normal chat request for each engine, click Retry, and confirm the same question runs through the original engine; confirm Workbench/Mastery failures do not replace this retry target
 - [ ] Double-click Retry and confirm only one user turn/run is created; switch to another saved session and confirm the old failure card does not replay its request into the new session
-- [ ] While Retry persistence is delayed, start Auto Highlight/Related Papers and reverse the order; confirm the second claim is rejected before another user turn or direct workflow side effect is stored
-- [ ] Click Related Papers while Retry or a session transition owns the item; confirm rejection does not clear existing groups or persist a failure into either session
+- [ ] While Retry persistence is delayed, start Auto Highlight/verified discovery and reverse the order; confirm the second claim is rejected before another user turn or direct workflow side effect is stored
+- [ ] Click Find verified prior work while Retry or a session transition owns the item; confirm rejection does not clear existing lanes or persist a failure into either session
 - [ ] Set the Claude/Gemini executable path to a missing binary and confirm the card says the executable was not found, offers `Open settings`, and opens the fixed Paper Pilot preference pane
 - [ ] Set the Codex path to a missing binary: when another healthy Codex candidate exists, confirm the existing resolver recovers to it; in an environment/test seam with no healthy candidate, confirm the same executable-missing card and settings action
 - [ ] Test logged-out Codex and Claude states; confirm the card classifies authentication, offers `Login help`, and keeps raw CLI output under the collapsed `Raw logs` disclosure
 - [ ] Use a successful CLI wrapper that prints `answer` to stdout and a unique local-path marker to stderr; confirm only `answer` reaches live/restored chat and the marker remains diagnostic-only
-- [ ] Make Auto Highlight and Related Papers exit non-zero with only a unique local-path marker on stderr; confirm both surfaces show a generic failure and never render the marker
+- [ ] Make Auto Highlight and verified discovery exit non-zero with only a unique local-path marker on stderr; confirm both surfaces show a generic failure and never render the marker
 - [ ] Force workspace artifact writing to throw after the per-paper directory is created; with automatic cleanup enabled, confirm the partial stable workspace is removed before a replacement can start
 - [ ] Exercise a non-writable workspace and the timeout lifecycle test seam; confirm they become `workspace_error` and `timeout`, not guessed login/executable failures
 - [ ] Complete a Paper Mastery turn that immediately starts a follow-up; confirm the child stays `Preparing`/`Running`, retains its PID/Cancel action, and the parent does not replace it with `Completed`
@@ -163,13 +163,30 @@ Use this checklist inside real Zotero 7, 8, and 9 runtimes before claiming readi
 - [ ] Switch between Gemini CLI, Claude Code, and Codex CLI and confirm previous threads do not mix
 - [ ] Open a second paper and confirm context/session state does not leak from the first
 
-## 9. Related papers / auto-highlight regression checks
+## 9. Verified discovery / Critical Read / auto-highlight checks
 
-- [ ] Trigger `Recommend related papers` after using workbench paper tools and confirm recommendation rendering still works
-- [ ] Open a recommended paper and confirm the current-paper pane state remains stable
-- [ ] Use `Add to collection` on a recommendation and confirm no workbench UI state is corrupted afterward
-- [ ] Run `Highlight key passages` after generating a research brief and confirm highlight workflow still completes
-- [ ] Confirm auto-highlight and research-brief/paper-tool outputs can coexist without making the pane unusable
+- [ ] Run `Find verified prior work` with no concern and confirm the agent infers fields, adjacent fields, venues, and query families without asking the user to choose a conference
+- [ ] Enter an optional research concern, then run discovery from the main section, selected-PDF `Find prior work` action, a limitation card, and a follow-up card; confirm each source is carried into the saved scope
+- [ ] In AI, computer architecture, and a third field, confirm an appropriate leading venue absent from any built-in source shortcut can still be selected and justified
+- [ ] Confirm progress advances through understanding the question, selecting fields/venues, searching, publication verification, relevance/novelty analysis, and result preparation
+- [ ] Confirm results render in three distinct lanes: Verified main-conference papers, Other peer-reviewed work, and Frontier / novelty radar
+- [ ] Confirm the primary lane starts expanded, other lanes start collapsed, an empty primary lane says no main-track paper was verified, and `Show more` never exceeds the 12/6/6 caps
+- [ ] Check an ACL/CVPR/NeurIPS-style official proceeding, an ACM/IEEE architecture proceeding, and an unseen venue; confirm primary rows show an official paper-level evidence link, observed main track, and high evidence confidence
+- [ ] Feed a workshop, Findings, demo, industry, shared task, tutorial/abstract, track-unknown record, arXiv-only paper, and rejected/withdrawn submission; confirm none enters the primary lane
+- [ ] Confirm a preprint and accepted version of the same paper merge, duplicates are removed, and the row never shows a fabricated relevance percentage
+- [ ] Disconnect one scholarly provider or official source; confirm partial limitations are visible and a failed refresh leaves the previous successful result in place
+- [ ] Open official evidence and public reviews; request `Review insight` and confirm strengths, concerns, priorities, disagreement, response/decision context, and limitations are separated without claiming private review access
+- [ ] Save discovery to a child note and add a paper to a collection; confirm the optional concern, three lanes, publication class, official evidence URL, and search context survive while raw public-review text does not
+- [ ] Confirm Compare chooses at most three verified-main peers; when that lane is empty it falls back to other peer-reviewed work and never silently chooses novelty-radar items
+- [ ] Start Critical Read and complete all seven ordered steps; confirm only one step is active and Steps 1, 2, 4, 5, and 7 require reader input before analysis
+- [ ] Confirm Step 1 shows abstract/caption/table orientation and says `not visually inspected` when only extracted text is available
+- [ ] Confirm Step 3 runs the same three-lane verified discovery and Step 4 checks assumptions, data, controls, baselines, metrics, statistics, reproducibility, and validity threats
+- [ ] Confirm Step 5 captures an independent results-based conclusion before Step 6 reveals and compares the authors' conclusion; public review insight must not leak into either step
+- [ ] Revise Step 4 after completing later steps and confirm Steps 5-7 plus the report are invalidated and must be regenerated
+- [ ] Complete Step 7 with alternatives and discriminating evidence/experiments, save the final child note, and confirm reader input, paper claims, agent inference, and external discovery evidence are visibly separated
+- [ ] Reopen the session and restart Zotero during an incomplete Critical Read; confirm state resumes without silently starting another model run
+- [ ] Handoff from the completed Critical Read to Paper Mastery and confirm the active paper/session remains scoped correctly
+- [ ] Run `Highlight key passages` after discovery and Critical Read; confirm all surfaces coexist without making the pane unusable
 
 ## 10. Compare / reusable artifact checks
 
@@ -180,9 +197,13 @@ Use this checklist inside real Zotero 7, 8, and 9 runtimes before claiming readi
 - [ ] Compare surface avoids wide tables or layouts that crowd the existing workbench/recommendation/chat areas
 - [ ] `Save for collection` preserves reusable artifact content with traceable source paper context
 
-## 11. Future-phase checks (run only when implemented)
+## 11. Cross-engine discovery checks
 
-- [ ] Any workspace/discovery surface does not regress reader-pane usability or per-paper session isolation
+- [ ] Repeat discovery and Critical Read smoke checks with Codex CLI, Claude Code, and Gemini CLI
+- [ ] Inspect each generated workspace and confirm `CONTEXT_INDEX.md` plus all four `discovery-*.json` files exist for discovery runs
+- [ ] Disable agent web search where the engine supports it; confirm deterministic provider candidates are still supplied and limitations are honest rather than fabricated
+- [ ] Confirm no engine downloads an official PDF body merely to verify publication status
+- [ ] Confirm every discovery/Critical Read surface remains paper-scoped across two open papers
 
 ## 12. Regression checks
 

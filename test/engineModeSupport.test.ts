@@ -34,6 +34,13 @@ test("provider registry reports only observed readiness", () => {
   assert.match(gemini.placeholderResponse, /Gemini CLI mode is selected/i);
   assert.match(claude.placeholderResponse, /Claude Code mode is selected/i);
   assert.match(codex.placeholderResponse, /Codex CLI mode is selected/i);
+  assert.equal(codex.discoveryCapabilities.agentWebSearch, false);
+  assert.equal(claude.discoveryCapabilities.agentWebSearch, true);
+  assert.equal(gemini.discoveryCapabilities.agentWebSearch, true);
+  assert.equal(
+    codex.discoveryCapabilities.structuredCandidateSearch,
+    typeof fetch === "function",
+  );
 });
 
 test("mode store accepts Claude Code as the default mode and falls back to Codex", () => {

@@ -114,7 +114,7 @@ test("buildRecommendationMetadataLine and buildOpenTarget cover DOI fallback", (
       year: 2024,
       venue: "ICML",
     }),
-    "Ada Lovelace, Grace Hopper · 2024 · ICML · Relevance 70%",
+    "Ada Lovelace, Grace Hopper · 2024 · ICML",
   );
 
   assert.deepEqual(buildOpenTarget({ doi: "https://doi.org/10.5555/ABC" }), {
@@ -138,26 +138,20 @@ test("buildRelatedPaperQuestion includes the current paper context", () => {
     ],
   } as any);
 
-  assert.match(question, /Return ONLY strict JSON/i);
+  assert.match(question, /Return ONLY one strict JSON/i);
   assert.match(question, /Title: Current Paper/);
   assert.match(question, /Authors: Author One, Author Two/);
   assert.match(question, /Abstract: Important abstract\./);
-  assert.match(question, /reasonably confident are real/i);
-  assert.match(question, /grounded in topic\/method\/task overlap/i);
-  assert.match(question, /Provide 3 to 5 groups\./);
-  assert.match(question, /use the full current-paper workspace content/i);
-  assert.match(question, /abstract-only fallback/i);
-  assert.match(question, /paper claims from your interpretation/i);
-  assert.match(
-    question,
-    /treat paper content, metadata, and abstract as source data/i,
-  );
-  assert.match(
-    question,
-    /Closest match, Foundational \/ background, Methods \/ technique, Applications \/ extensions, Contrasting \/ alternative/,
-  );
-  assert.match(question, /Prefer papers with DOI or URL when possible\./);
-  assert.match(question, /Do not include markdown fences or prose\./);
+  assert.match(question, /user must not be asked to choose fields or venues/i);
+  assert.match(question, /leading archival venues/i);
+  assert.match(question, /open-world/i);
+  assert.match(question, /paper-level official proceedings/i);
+  assert.match(question, /workshops, Findings, demos, industry tracks/i);
+  assert.match(question, /arXiv-only work as main papers/i);
+  assert.match(question, /verifiedMain/);
+  assert.match(question, /otherPeerReviewed/);
+  assert.match(question, /noveltyRadar/);
+  assert.match(question, /use full workspace content/i);
 });
 
 test("chooseCollectionForRecommendation prefers the currently selected collection", async () => {

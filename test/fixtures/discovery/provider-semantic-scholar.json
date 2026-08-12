@@ -1,0 +1,13 @@
+{
+  "data": [
+    {
+      "paperId": "S2-1",
+      "title": "  Example   Paper ",
+      "authors": [{ "name": "A. Author" }],
+      "year": 2025,
+      "venue": "ExampleConf",
+      "externalIds": { "DOI": "10.1000/example" },
+      "url": "https://www.semanticscholar.org/paper/S2-1"
+    }
+  ]
+}

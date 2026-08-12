@@ -11,6 +11,12 @@ import {
 import { SessionHistoryRepository } from "../src/modules/session/sessionHistoryRepository";
 import { SessionHistoryService } from "../src/modules/session/sessionHistoryService";
 import type { ComprehensionCheckState } from "../src/modules/comprehensionCheck/types";
+import {
+  buildInitialCriticalReadState,
+  completeCriticalReadStep,
+  markCriticalReadStepRunning,
+  startCriticalRead,
+} from "../src/modules/criticalRead/workflow";
 
 class MemoryFileOps implements SessionHistoryFileOps {
   files = new Map<string, string>();
@@ -92,6 +98,7 @@ function installGlobals(prefs: Record<string, unknown>) {
       paperArtifactStates: new Map(),
       relatedRecommendationStates: new Map(),
       comprehensionCheckStates: new Map(),
+      criticalReadStates: new Map(),
       recentCodexModels: [],
     },
   };
@@ -197,12 +204,26 @@ function buildSavedSnapshot(itemID: number): SessionHistorySnapshot {
               title: "Persistent conversations",
               authors: ["A. Researcher"],
               relevanceScore: 0.91,
+              publicationClass: "verified_main",
+              evidenceConfidence: "high",
+              publicationEvidence: [
+                {
+                  type: "official_proceedings",
+                  sourceName: "Official proceedings",
+                  url: "https://proceedings.example.org/persistent",
+                  observedTitle: "Persistent conversations",
+                  observedTrack: "Main Conference",
+                  checkedAt: "2026-04-14T09:35:00.000Z",
+                  supports: ["identity", "published", "main_track"],
+                },
+              ],
             },
           ],
         },
       ],
     },
     mastery: buildMasteryState(),
+    criticalRead: startCriticalRead(buildInitialCriticalReadState()),
   };
 }
 
@@ -338,6 +359,27 @@ test("SessionHistoryService persists the active session snapshot with mixed-mode
         };
       }
     ).addon?.data?.comprehensionCheckStates?.set(502, buildMasteryState());
+    let criticalRead = startCriticalRead(buildInitialCriticalReadState());
+    criticalRead = markCriticalReadStepRunning(
+      criticalRead,
+      "Independent skim notes",
+    );
+    criticalRead = completeCriticalReadStep({
+      state: criticalRead,
+      output: {
+        summary: "Caption-grounded synthesis",
+        items: [],
+        sourceLocators: ["Figure 1"],
+        limitations: [],
+      },
+    });
+    (
+      globalThis as {
+        addon?: {
+          data?: { criticalReadStates?: Map<number, unknown> };
+        };
+      }
+    ).addon?.data?.criticalReadStates?.set(502, criticalRead);
 
     const persisted = await service.persistActiveSession({
       itemID: 502,
@@ -385,6 +427,7 @@ test("SessionHistoryService persists the active session snapshot with mixed-mode
       ],
     });
     assert.deepEqual(persisted?.mastery, buildMasteryState());
+    assert.deepEqual(persisted?.criticalRead, criticalRead);
 
     const savedSnapshot = await repository.readSessionSnapshot(
       502,
@@ -558,6 +601,16 @@ test("SessionHistoryService opens a saved snapshot into the in-memory stores", a
         }
       ).addon?.data?.relatedRecommendationStates?.get(504),
       snapshot.relatedRecommendations,
+    );
+    assert.deepEqual(
+      (
+        globalThis as {
+          addon?: {
+            data?: { criticalReadStates?: Map<number, unknown> };
+          };
+        }
+      ).addon?.data?.criticalReadStates?.get(504),
+      snapshot.criticalRead,
     );
     assert.deepEqual(
       (

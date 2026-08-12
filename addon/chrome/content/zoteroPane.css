@@ -871,12 +871,62 @@
   margin-bottom: 12px;
 }
 
+.pp-related-concern,
+.pp-critical-read__input {
+  width: 100%;
+  min-height: 64px;
+  margin-bottom: 8px;
+  padding: 8px 10px;
+  box-sizing: border-box;
+  resize: vertical;
+  border: 1px solid var(--pp-border-medium);
+  border-radius: var(--pp-radius-md);
+  background: var(--pp-bg-primary);
+  color: var(--pp-text-primary);
+  font: inherit;
+}
+
+.pp-related-concern-label {
+  display: block;
+  margin-bottom: 4px;
+  font-size: var(--pp-font-size-sm);
+  font-weight: 600;
+  color: var(--pp-text-primary);
+}
+
+.pp-related-disclosure {
+  margin: 8px 0;
+  color: var(--pp-text-recommendation-meta);
+  font-size: var(--pp-font-size-xs);
+  line-height: 1.45;
+}
+
+.pp-discovery-scope,
+.pp-review-insight {
+  padding: 8px 12px;
+  color: var(--pp-text-recommendation-reason);
+  font-size: var(--pp-font-size-sm);
+}
+
+.pp-discovery-scope summary,
+.pp-review-insight summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
 .pp-recommendation-group__header {
   padding: 8px 12px;
   font-size: var(--pp-font-size-sm);
   font-weight: 700;
   background: var(--pp-bg-blockquote);
   color: var(--pp-text-blockquote);
+  cursor: pointer;
+}
+
+.pp-related-empty {
+  padding: 10px 12px;
+  color: var(--pp-text-recommendation-meta);
+  font-size: var(--pp-font-size-sm);
 }
 
 .pp-recommendation-row {
@@ -926,6 +976,57 @@
   gap: 6px;
   align-items: center;
   flex: 0 0 auto;
+  flex-wrap: wrap;
+}
+
+/* ============================================================
+   14b. Critical Read
+   ============================================================ */
+.pp-critical-read {
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px solid var(--pp-border-light);
+  border-radius: var(--pp-radius-lg);
+  background: var(--pp-bg-secondary);
+}
+
+.pp-critical-read__header {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.pp-critical-read__step,
+.pp-critical-read__completed {
+  margin-top: 8px;
+  padding: 8px;
+  border: 1px solid var(--pp-border-light);
+  border-radius: var(--pp-radius-md);
+  background: var(--pp-bg-primary);
+}
+
+.pp-critical-read__completed summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.pp-critical-read__report {
+  max-height: 320px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: var(--pp-font-mono);
+  font-size: var(--pp-font-size-xs);
+}
+
+.pp-critical-read__orientation {
+  margin: 8px 0;
+  padding: 8px;
+  border-radius: var(--pp-radius-md);
+  background: var(--pp-bg-artifact-source);
+  color: var(--pp-text-artifact-source);
+  font-size: var(--pp-font-size-sm);
 }
 
 .pp-chip {

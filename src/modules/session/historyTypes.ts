@@ -40,6 +40,7 @@ export interface SessionHistorySnapshot {
   paperArtifacts?: unknown;
   relatedRecommendations?: unknown;
   mastery?: unknown;
+  criticalRead?: unknown;
 }
 
 export interface SessionHistoryListEntry {
@@ -53,6 +54,7 @@ export interface SessionHistoryListEntry {
   hasArtifacts: boolean;
   hasRecommendations: boolean;
   hasMasteryState: boolean;
+  hasCriticalReadState?: boolean;
 }
 
 export interface SessionHistoryIndex {

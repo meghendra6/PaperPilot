@@ -11,6 +11,9 @@ export interface PaperCompareCandidate {
   year?: number | string;
   abstract?: string;
   reason?: string;
+  publicationClass?: string;
+  evidenceConfidence?: string;
+  publicationEvidenceSummary?: string;
 }
 
 export interface PaperCompareSelection {
@@ -241,6 +244,15 @@ function formatCandidate(candidate: PaperCompareCandidate, index?: number) {
       : undefined,
     candidate.year ? `Year: ${candidate.year}` : undefined,
     candidate.reason ? `Why it was selected: ${candidate.reason}` : undefined,
+    candidate.publicationClass
+      ? `Publication class: ${candidate.publicationClass}`
+      : undefined,
+    candidate.evidenceConfidence
+      ? `Evidence confidence: ${candidate.evidenceConfidence}`
+      : undefined,
+    candidate.publicationEvidenceSummary
+      ? `Official publication evidence: ${candidate.publicationEvidenceSummary}`
+      : undefined,
     candidate.abstract ? `Abstract: ${candidate.abstract}` : undefined,
   ]
     .filter(Boolean)
@@ -311,18 +323,30 @@ export function selectCompareCandidates(
 ) {
   const selected: RecommendedPaper[] = [];
   const seen = new Set<string>();
+  const flattened = groups.flatMap((group) => group.papers);
+  const primary = flattened.filter(
+    (paper) => paper.publicationClass === "verified_main",
+  );
+  const peerReviewed = flattened.filter(
+    (paper) =>
+      paper.publicationClass?.startsWith("verified_") &&
+      paper.publicationClass !== "verified_main",
+  );
+  const candidates = flattened.some((paper) => paper.publicationClass)
+    ? primary.length
+      ? primary
+      : peerReviewed
+    : flattened;
 
-  for (const group of groups) {
-    for (const paper of group.papers) {
-      const key = `${paper.title.toLowerCase()}|${paper.doi || ""}`;
-      if (seen.has(key)) {
-        continue;
-      }
-      seen.add(key);
-      selected.push(paper);
-      if (selected.length >= MAX_COMPARE_PAPERS) {
-        return selected;
-      }
+  for (const paper of candidates) {
+    const key = `${paper.title.toLowerCase()}|${paper.doi || ""}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    selected.push(paper);
+    if (selected.length >= MAX_COMPARE_PAPERS) {
+      return selected;
     }
   }
 
@@ -334,13 +358,28 @@ export function buildCompareSelectionFromRecommendations(params: {
   groups: RecommendationGroup[];
   maxComparePapers?: number;
 }): PaperCompareSelection {
-  const candidates = selectCompareCandidates(params.groups).map((paper) => ({
-    title: paper.title,
-    authors: paper.authors,
-    year: paper.year,
-    abstract: paper.abstract,
-    reason: paper.reason,
-  }));
+  const candidates = selectCompareCandidates(params.groups).map((paper) => {
+    const publicationEvidenceSummary = paper.publicationEvidence
+      ?.map(
+        (entry) =>
+          `${entry.sourceName} (${entry.supports.join(", ")}): ${entry.url}`,
+      )
+      .join("; ");
+    return {
+      title: paper.title,
+      authors: paper.authors,
+      year: paper.year,
+      abstract: paper.abstract,
+      reason: paper.reason,
+      ...(paper.publicationClass
+        ? { publicationClass: paper.publicationClass }
+        : {}),
+      ...(paper.evidenceConfidence
+        ? { evidenceConfidence: paper.evidenceConfidence }
+        : {}),
+      ...(publicationEvidenceSummary ? { publicationEvidenceSummary } : {}),
+    };
+  });
 
   return buildCompareSelection({
     currentPaper: params.currentPaper,

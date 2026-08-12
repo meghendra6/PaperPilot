@@ -242,6 +242,7 @@ export async function startClaudeRunForQuestion(params: {
       text: message.text,
       createdAt: message.createdAt,
     })),
+    requestText: params.question,
   });
 
   const promptPath = `${workspacePath}/claude-prompt.txt`;
@@ -256,9 +257,19 @@ export async function startClaudeRunForQuestion(params: {
   const annotationsPath = `${workspacePath}/annotations.json`;
   const selectionPath = `${workspacePath}/selection.json`;
   const recentTurnsPath = `${workspacePath}/recent-turns.json`;
+  const contextIndexPath = `${workspacePath}/CONTEXT_INDEX.md`;
+  const discoveryRequestPath = `${workspacePath}/discovery-request.json`;
+  const discoveryPlanPath = `${workspacePath}/discovery-plan.json`;
+  const discoveryCandidatesPath = `${workspacePath}/discovery-candidates.json`;
+  const discoveryEvidencePath = `${workspacePath}/discovery-evidence.json`;
 
   const claudePrompt = buildClaudeWorkspacePrompt(payload.promptPreview);
   await Zotero.File.putContentsAsync(promptPath, claudePrompt, "utf-8");
+  await Zotero.File.putContentsAsync(
+    contextIndexPath,
+    artifacts.contextIndexText,
+    "utf-8",
+  );
   await Zotero.File.putContentsAsync(paperPath, artifacts.paperText, "utf-8");
   await Zotero.File.putContentsAsync(
     paperMarkdownPath,
@@ -290,6 +301,28 @@ export async function startClaudeRunForQuestion(params: {
     JSON.stringify(artifacts.recentTurns, null, 2),
     "utf-8",
   );
+  if (artifacts.discoveryArtifacts) {
+    await Zotero.File.putContentsAsync(
+      discoveryRequestPath,
+      JSON.stringify(artifacts.discoveryArtifacts.request, null, 2),
+      "utf-8",
+    );
+    await Zotero.File.putContentsAsync(
+      discoveryPlanPath,
+      JSON.stringify(artifacts.discoveryArtifacts.plan, null, 2),
+      "utf-8",
+    );
+    await Zotero.File.putContentsAsync(
+      discoveryCandidatesPath,
+      JSON.stringify(artifacts.discoveryArtifacts.candidates, null, 2),
+      "utf-8",
+    );
+    await Zotero.File.putContentsAsync(
+      discoveryEvidencePath,
+      JSON.stringify(artifacts.discoveryArtifacts.evidence, null, 2),
+      "utf-8",
+    );
+  }
 
   const script = buildClaudeCommand({
     promptPath,

@@ -41,6 +41,15 @@ test("ask-ai action keeps selection context for a follow-up custom question", ()
   );
 });
 
+test("find-prior-work action passes the selected text as the research concern", () => {
+  const action = buildReaderActionQuestion(
+    "find-prior-work",
+    "A selected research limitation",
+  );
+  assert.equal(action.question, "A selected research limitation");
+  assert.equal(action.autoSubmit, false);
+});
+
 test("normalizeResponseLanguage only allows Korean, Chinese, or English", () => {
   assert.equal(normalizeResponseLanguage("Korean"), "Korean");
   assert.equal(normalizeResponseLanguage("Chinese"), "Chinese");

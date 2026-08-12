@@ -6,6 +6,7 @@ prefs-table-detail = Detail
 tabpanel-lib-tab-label = Lib Tab
 tabpanel-reader-tab-label = Reader Tab
 reader-action-explain = Explain
+reader-action-find-prior-work = Find prior work
 reader-action-summarize = Summarize
 reader-action-translate = Translate
 reader-action-ask-ai = Ask AI

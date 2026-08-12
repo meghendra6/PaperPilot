@@ -1,0 +1,19 @@
+{
+  "result": {
+    "hits": {
+      "hit": [
+        {
+          "info": {
+            "key": "conf/example/Paper24",
+            "title": "DBLP <b>Example</b>",
+            "authors": { "author": [{ "text": "Grace Author" }] },
+            "year": "2024",
+            "venue": "ExampleConf",
+            "url": "https://dblp.org/rec/conf/example/Paper24",
+            "ee": "https://publisher.example.org/dblp"
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "message": {
+    "items": [
+      {
+        "DOI": "10.1000/crossref",
+        "title": ["Crossref Example"],
+        "author": [{ "given": "Lin", "family": "Author" }],
+        "published": { "date-parts": [[2023, 7, 1]] },
+        "container-title": ["Example Journal"],
+        "URL": "https://doi.org/10.1000/crossref"
+      }
+    ]
+  }
+}

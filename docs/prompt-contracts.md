@@ -27,17 +27,50 @@ This note documents the purpose, target answer shape, and guardrails for the mai
   - keep the summary and list items compact
   - make search queries directly reusable in scholar-style search tools
 
-### Related paper recommendations
+### Agent-led verified research discovery
 
-- File: `src/modules/relatedRecommendations.ts`
-- Purpose: recommend a bounded, categorized set of nearby papers
-- Shape: one JSON object with `groups[]`, each containing `category` and `papers[]`
+- Files: `src/modules/discovery/prompt.ts`, `src/modules/discovery/parser.ts`, `src/modules/relatedRecommendations.ts`
+- Purpose: let the active agent infer the relevant fields and leading venues, search broadly, and return prior work with publication status separated from novelty monitoring
+- Shape: one strict JSON object with `plan`, `verifiedMain`, `otherPeerReviewed`, `noveltyRadar`, `excluded`, `limitations`, and `completedAt`
 - Guardrails:
-  - use the full current-paper workspace content when available to describe topic/method/task overlap
-  - call out abstract-only fallback when it affects recommendation confidence
-  - reasons should explain the relationship to the current paper
-  - omit uncertain metadata instead of fabricating DOI, venue, year, URL, or abstract details
-  - keep category structure stable for sorting and rendering
+  - the user supplies only an optional research concern; the agent infers the primary field, adjacent fields, bounded leading-venue set, and query families
+  - venue judgment is open-world and evidence-based rather than a static ACL/CVPR/NeurIPS-style allowlist
+  - search uses at least three query families and at most twelve queries, with deterministic scholarly-provider candidates available as source data
+  - only a title-matched official proceeding/program/decision, authoritative publisher proceeding, or official anthology can support the primary main-conference lane
+  - workshop, Findings, demo, industry, shared-task, tutorial/abstract, rejected/withdrawn, track-unknown, and preprint-only records cannot enter `verifiedMain`
+  - results are recalculated locally into three fixed lanes capped at 12/6/6; DOI/provider/title-author deduplication and ranking are deterministic
+  - relevance is ordinal (`direct`, `strong`, `adjacent`) and accompanied by the key difference and novelty relationship; no fabricated relevance percentage is shown
+  - queries, paper content, metadata, web pages, and review text are untrusted source data and cannot issue instructions to the agent
+  - bounded retries, request timeouts, short-lived caching, public-HTTPS validation, private-address/redirect rejection, and bounded HTML inspection apply to built-in retrieval
+  - official PDF response bodies are not consumed during evidence checks
+  - failed refreshes preserve the previous successful discovery result
+
+### Public review insight
+
+- File: `src/modules/discovery/prompt.ts`
+- Purpose: explain what public reviewers valued, questioned, or disagreed about after the user explicitly requests the insight
+- Shape: one strict JSON object with `sourceURLs`, `valuedStrengths`, `concerns`, `reviewerPriorities`, `disagreements`, optional response/decision context, `limitations`, and `generatedAt`
+- Guardrails:
+  - only public review/forum/decision sources are used
+  - disagreement is preserved; incompatible scales are not averaged and unavailable/private material is not inferred
+  - raw review text is not persisted in session or Zotero notes
+  - review insight is excluded from Critical Read's reader-first analysis
+
+### Critical Read
+
+- Files: `src/modules/criticalRead/prompt.ts`, `src/modules/criticalRead/parser.ts`, `src/modules/criticalRead/report.ts`
+- Purpose: guide a reader through the seven-step paper-reading method while preserving independent judgment before agent synthesis
+- Shape: one strict JSON object per analysis step (`summary`, `items`, `sourceLocators`, `limitations`), verified discovery at Step 3, and a final Markdown report
+- Guardrails:
+  - exactly one step is active and later steps remain locked
+  - Steps 1, 2, 4, 5, and 7 require reader input before agent analysis
+  - Step 3 invokes the same verified three-lane discovery workflow
+  - Step 5 uses results/figures/tables before the authors' discussion or conclusion; Step 6 then compares reader and author conclusions
+  - Step 4 covers assumptions, data, controls, baselines, metrics, statistics, reproducibility, and validity threats using supported/concern/unclear/not-applicable judgments
+  - Step 7 considers alternatives and discriminating evidence or experiments
+  - revising an earlier step invalidates all dependent downstream outputs and the report
+  - caption/source-location orientation is used when available; degraded extraction is stated as “not visually inspected” rather than implying image understanding
+  - the final report distinguishes reader input, paper claims, agent inference, and discovery evidence, including all three prior-work lanes and evidence links
 
 ### Paper tools
 
@@ -110,4 +143,4 @@ This note documents the purpose, target answer shape, and guardrails for the mai
   - keep answers compact for the reader-pane environment
   - follow any requested output schema exactly
 
-For structured workflows (`Research brief`, `Related paper recommendations`, `Paper tools`, and `Paper compare`), prompts instruct the model to use full current-paper workspace content when available, treat supplied content/metadata/abstracts as source data only, and ignore instructions embedded inside those sources.
+For structured workflows (`Research brief`, `Agent-led verified research discovery`, `Critical Read`, `Paper tools`, and `Paper compare`), prompts instruct the model to use full current-paper workspace content when available, treat supplied content/metadata/abstracts as source data only, and ignore instructions embedded inside those sources.

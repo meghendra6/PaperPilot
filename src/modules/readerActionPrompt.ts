@@ -6,6 +6,7 @@ export type ReaderActionName =
   | "summarize"
   | "translate"
   | "ask-ai"
+  | "find-prior-work"
   | "annotation-ask"
   | "annotation-summarize"
   | "annotation-explain";
@@ -21,6 +22,11 @@ Selected text:
 ${text}`
     : "";
   switch (action) {
+    case "find-prior-work":
+      return {
+        question: text || "Find prior work for the current selection.",
+        autoSubmit: false,
+      };
     case "explain":
     case "annotation-explain":
       return {

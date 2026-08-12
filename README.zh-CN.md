@@ -4,7 +4,7 @@
 
 **Paper Pilot 可将 Zotero 7-9 PDF 阅读器变成 AI 驱动的论文工作台。**
 
-Paper Pilot 是一个面向 Zotero 7-9 PDF 阅读器的 AI 阅读工作台。它直接在 Zotero 中提供按论文作用域组织的聊天面板、结构化论文工具、相关文章发现，以及基于本地 CLI 的 AI 执行能力。
+Paper Pilot 是一个面向 Zotero 7-9 PDF 阅读器的 AI 阅读工作台。它直接在 Zotero 中提供按论文作用域组织的聊天面板、结构化论文工具、由代理主导并验证出版状态的先行研究发现，以及基于本地 CLI 的 AI 执行能力。
 
 ![Zotero 7-9](https://img.shields.io/badge/Zotero-7--9-cc2936) ![Node 20+](https://img.shields.io/badge/Node-20%2B-339933) ![Java 11+](https://img.shields.io/badge/Java-11%2B-007396) ![License](https://img.shields.io/badge/License-AGPL--3.0--or--later-blue) ![Engines](https://img.shields.io/badge/Engines-Codex%20CLI%20%7C%20Claude%20Code%20%7C%20Gemini%20CLI-6f42c1)
 
@@ -13,7 +13,8 @@ Paper Pilot 是一个面向 Zotero 7-9 PDF 阅读器的 AI 阅读工作台。它
 - 直接在 Zotero Reader 中使用 AI 聊天
 - 三种本地引擎模式：**Codex CLI**、**Claude Code** 与 **Gemini CLI**
 - 面向 brief、compare、contributions、limitations、follow-ups 的结构化论文工作台
-- 支持相关文章推荐、打开论文、加入 collection 的流程
+- 无需用户配置会议列表，以官方出版证据和三个结果分区发现先行研究
+- **Critical Read** — 读者先判断的七步批判性阅读流程与最终报告
 - 支持 auto-highlight 与可持久化的论文级会话历史
 - **Paper Mastery** — 多轮苏格拉底式理解度检查，并生成 Markdown 学习报告
 - 已具备自动化本地验证，但真实 Zotero 运行时 QA 仍待完成
@@ -26,7 +27,8 @@ Paper Pilot 是一个面向 Zotero 7-9 PDF 阅读器的 AI 阅读工作台。它
 
 - 显示 AI 侧边栏的 Zotero 阅读器界面
 - 结构化的 **Research brief** 卡片
-- 分组展示的 **Related papers** 推荐界面
+- 三分区的**验证型先行研究**结果
+- 七步 **Critical Read** 工作流
 - **Compare** 工作流与保存 artifact 的流程
 
 如果后续要补充 UI 视觉资料，推荐采用 `docs/images/` 目录，并在本节使用简短说明链接。
@@ -83,14 +85,19 @@ Paper Pilot 仍在积极开发中。
 
 这些工作流的目标是生成适合阅读器面板展示的紧凑结构化结果，而不是冗长的通用聊天回复。
 
-### 4. 相关文章发现
+### 4. 代理主导的验证型先行研究发现
 
-Paper Pilot 可以生成分组的相关文章推荐，并帮助你：
+点击 **Find verified prior work**，只在需要时填写研究问题。当前代理会自行推断主要领域、相邻领域、顶级会议和查询组合，用户无需选择会议。结果分为三个分区：
 
-- 按类别查看相近论文
-- 打开推荐论文
-- 将推荐论文加入 Zotero collection
-- 将推荐论文作为有边界的比较输入集合
+- **Verified main-conference papers** — 以论文级官方来源高置信确认属于领先会议 main track 的论文
+- **Other peer-reviewed work** — 期刊、workshop、Findings、其他 track，或 main-track 状态未确定的已发表工作
+- **Frontier / novelty radar** — 用于快速检查最新趋势或想法重合的近期 preprint 与 submission
+
+搜索采用标准化学术来源和可复现的工作区工件，但会议判断是开放式的，并非固定 allowlist。ACL、EMNLP、CVPR、NeurIPS、ICLR、ISCA、MICRO、HPCA、ASPLOS、USENIX 系列以及其他领域的适当会议，都可以由代理根据证据选择。你可以打开官方证据和公开评审、请求 review insight、连同证据元数据加入 collection，或将完整三分区结果保存为 Zotero note。
+
+### Critical Read
+
+**Critical Read** 依次引导七步阅读：浏览摘要/图/表，找出核心研究问题，调查先行研究，评估方法，仅根据结果形成独立结论，与作者结论对照，并考虑替代解释。独立判断步骤要求读者先输入；修改早期步骤会使依赖的后续步骤和报告失效。最终报告区分读者观察、论文主张、代理推断和外部发现证据。
 
 ### 5. 自动高亮工作流
 
@@ -120,7 +127,7 @@ Mastery prompt 会强制问答与评估响应为严格 JSON（禁止前置推理
 - `metadata.json`
 - `annotations.json`
 
-Codex CLI 模式会额外写入 `CONTEXT_INDEX.md`（文件阅读顺序索引）和 `figures/` 目录，因为只有 Codex 的 prompt 会指示引擎读取该索引。
+所有引擎都会额外写入 `CONTEXT_INDEX.md`（文件阅读顺序索引）。发现任务还会准备 `discovery-request.json`、`discovery-plan.json`、`discovery-candidates.json` 与 `discovery-evidence.json`；Codex CLI 另建 `figures/` 目录。
 
 `paper.md` 是结构化 Markdown 视图，`paper.json` 携带结构化 PDF 元素与抽取元数据，`paper.txt` 作为兼容/纯文本回退保留。当 Java 可用时，`paper.md` 和 `paper.json` 由内置的 OpenDataLoader 运行时生成；若结构化抽取不可用，Paper Pilot 会回退到 Zotero `attachmentText` 并在 `metadata.json` 中记录此情况。
 
@@ -133,7 +140,8 @@ Codex CLI 模式会额外写入 `CONTEXT_INDEX.md`（文件阅读顺序索引）
 | 阅读器聊天 | Zotero Reader 内按论文组织的 AI 聊天                                                           |
 | 引擎       | Codex CLI、Claude Code、Gemini CLI                                                             |
 | 论文工作台 | Research brief、compare、contributions、limitations、follow-ups                                |
-| 发现       | 分组相关文章推荐                                                                               |
+| 发现       | 代理推断领域/会议，以官方证据验证并分成三个结果分区                                            |
+| 批判性阅读 | 读者优先的七个步骤、依赖失效处理与区分来源的最终报告                                           |
 | 保存       | 将最新结果保存到 note，将 workbench artifact 保存到 collection                                 |
 | 上下文约束 | workspace artifact、基于 OpenDataLoader 的结构化 PDF 上下文、retrieval context、最近对话连续性 |
 | 高亮       | 面向关键段落的 auto-highlight 工作流                                                           |
@@ -185,7 +193,9 @@ Gemini 模式是更轻量的本地 CLI 路径。当前代码库已经包含：
 当前的 prompt surface 包括：
 
 - **Research brief**
-- **Related paper recommendations**
+- **Agent-led verified research discovery**
+- **Public review insight**
+- **Critical Read**
 - **Paper tools**
 - **Paper compare**
 - **Auto-highlight**
@@ -328,7 +338,9 @@ build/      生成的插件构建产物
 - `src/modules/autoHighlight/` — 高亮提取工作流
 - `src/modules/paperTools.ts` — 结构化 contribution/limitation/follow-up prompt
 - `src/modules/researchBrief.ts` — 面向单篇论文的紧凑 brief 生成
-- `src/modules/relatedRecommendations.ts` — 分组相关文章推荐
+- `src/modules/discovery/` — 代理主导的搜索计划、provider 检索、证据验证、解析与排序
+- `src/modules/relatedRecommendations.ts` — 验证型发现工作流与 Zotero collection 集成
+- `src/modules/criticalRead/` — 读者优先的七步分析与报告工作流
 - `src/modules/paperCompare.ts` — 有边界的多论文比较流程
 
 ## 验证

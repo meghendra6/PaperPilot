@@ -8,6 +8,11 @@ export class ClaudeCodeProvider implements ReaderAiProvider {
       status: "idle" as const,
       placeholderResponse:
         "Claude Code mode is selected. Ask a question to check the local CLI and start a paper-grounded conversation.",
+      discoveryCapabilities: {
+        agentWebSearch: true,
+        structuredCandidateSearch: typeof fetch === "function",
+        officialEvidenceFetch: typeof fetch === "function",
+      },
     };
   }
 }
