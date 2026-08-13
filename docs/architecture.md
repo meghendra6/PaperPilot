@@ -232,8 +232,9 @@ applicable runner _and_ to the prompt that tells the model to read it.
 OpenAlex, DBLP, and Crossref receive only bounded query strings and bibliographic
 identifiers; they never receive full PDF text, annotations, recent turns, local
 paths, or unrelated Zotero metadata. Official-evidence inspection accepts public
-HTTPS URLs only, resolves the host through Zotero, rejects
-private/link-local/metadata addresses (including mapped IPv6), disables automatic
+HTTPS URLs only, resolves the host through Zotero, rejects private,
+link-local, metadata, and special-purpose addresses (including IPv4 embedded
+through mapped, NAT64, 6to4, and Teredo IPv6), disables automatic
 redirects, and repeats URL, DNS, and connected-remote address checks at every
 redirect hop. It reads at most 200 KB of HTML/JSON and cancels PDF bodies.
 Timeouts and cancellation remain active through body consumption, and one
@@ -242,8 +243,17 @@ evidence recheck. Raw pages and review text are not persisted.
 
 The fetched page is authoritative only as inspected source data: Paper Pilot
 reconstructs title, venue, track, decision, and review availability from that
-page instead of retaining the agent's claimed `supports` fields. Public-review
+page instead of retaining the agent's claimed `supports` fields. Candidate
+identity requires DOI or compatible title/year/author evidence, and venue
+identity must agree across the plan, paper metadata, assessment, and inspected
+page. Open-world hosts qualify only when venue-owned structural program or
+proceedings authority is established. Public-review
 links stay hidden until this live reconstruction succeeds.
+
+Discovery admission uses one observed capability snapshot for the whole run.
+Codex binds its configured web-search state at admission; Claude Code and Gemini
+fail closed for verified discovery until Paper Pilot can observe a usable web
+capability instead of assuming one from the executable alone.
 
 `extractionMethod` is `opendataloader-pdf` when Java 11+ ran the bundled JAR, and
 `zotero-attachment-text` on fallback. Several prompts key their confidence
@@ -291,7 +301,11 @@ three result lanes, evidence links, and Critical Read step/report state. A live
 Critical Read run is serialized as resumable, non-running state so reopening
 Zotero never starts a second model process implicitly. Public review text is not
 stored; only generated insight summaries and their public source links may be
-saved.
+saved. Current live-verifier provenance permits reconstructed publication
+evidence to survive a restart; legacy or model-authored claims without that
+marker reopen for verification. Critical Read step outputs are parsed again on
+migration, and reports are rebuilt from that validated state rather than shown
+from serialized Markdown.
 
 Paper Mastery state includes its completed Markdown report, so a custom-section
 refresh can hydrate both an awaiting question and a completed session without

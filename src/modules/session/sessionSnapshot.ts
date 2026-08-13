@@ -11,11 +11,23 @@ import { buildSessionTitle } from "./sessionTitle";
 import type { PaperSession } from "./types";
 import { migrateDiscoveryResult } from "../discovery/parser";
 import { buildInitialCriticalReadState } from "../criticalRead/workflow";
+import { parseCriticalReadOutput } from "../criticalRead/parser";
 import type {
   CriticalReadState,
   CriticalReadStepID,
 } from "../criticalRead/types";
 import { normalizeHttpURL } from "../discovery/normalize";
+
+declare const addon: { data: AddonSessionData } | undefined;
+
+type AddonSessionData = {
+  currentSessionId?: string;
+  modeOverrides?: Map<number, EngineMode>;
+  paperArtifactStates?: Map<number, unknown>;
+  relatedRecommendationStates?: Map<number, unknown>;
+  comprehensionCheckStates?: Map<number, unknown>;
+  criticalReadStates?: Map<number, unknown>;
+};
 
 type PersistedPaperArtifactState = {
   running: boolean;
@@ -39,20 +51,13 @@ function cloneValue<T>(value: T): T {
 }
 
 function getAddonData() {
-  const data = (
+  const globalData = (
     globalThis as typeof globalThis & {
-      addon?: {
-        data: {
-          currentSessionId?: string;
-          modeOverrides?: Map<number, EngineMode>;
-          paperArtifactStates?: Map<number, unknown>;
-          relatedRecommendationStates?: Map<number, unknown>;
-          comprehensionCheckStates?: Map<number, unknown>;
-          criticalReadStates?: Map<number, unknown>;
-        };
-      };
+      addon?: { data: AddonSessionData };
     }
   ).addon?.data;
+  const data =
+    (typeof addon !== "undefined" ? addon?.data : undefined) || globalData;
 
   return (
     data || {
@@ -115,6 +120,7 @@ function migrateRecommendationState(value: unknown) {
             return [
               {
                 ...cloneValue(paper),
+                existingItemID: undefined,
                 publicationClass: valid.publicationClass,
                 publicationEvidence: cloneValue(valid.publicationEvidence),
                 evidenceConfidence: valid.evidenceConfidence,
@@ -153,6 +159,7 @@ function migrateRecommendationState(value: unknown) {
           return [
             {
               ...cloneValue(paper),
+              existingItemID: undefined,
               url: safeURL,
               urls: safeURLs,
               publicationClass: "unverified",
@@ -204,26 +211,44 @@ function migrateCriticalReadState(
   const initial = buildInitialCriticalReadState();
   const source = cloneValue(value) as Record<string, unknown>;
   const sourceSteps = Array.isArray(source.steps) ? source.steps : [];
+  const invalidSteps = new Set<CriticalReadStepID>();
   const steps = initial.steps.map((definition) => {
     const raw = sourceSteps.find(
       (entry) => isPlainObject(entry) && entry.id === definition.id,
     );
     if (!isPlainObject(raw)) return definition;
-    const status = ["locked", "ready", "complete"].includes(String(raw.status))
+    let status = ["locked", "ready", "complete"].includes(String(raw.status))
       ? (raw.status as CriticalReadState["steps"][number]["status"])
       : "locked";
     const discovery =
       definition.id === 3 ? migrateDiscoveryResult(raw.discovery) : undefined;
+    let output: CriticalReadState["steps"][number]["output"];
+    if (definition.id !== 3 && status === "complete") {
+      try {
+        output = parseCriticalReadOutput(
+          JSON.stringify(raw.output),
+          definition.id,
+        );
+      } catch {
+        status = "ready";
+        invalidSteps.add(definition.id);
+      }
+    }
+    if (definition.id === 3 && status === "complete") {
+      // Only evidence reconstructed by this verifier generation can cross a
+      // restart. Legacy/model-authored snapshots have no trusted marker and
+      // must be checked live again.
+      if (discovery?.liveVerification?.verifierVersion !== 1) {
+        status = "ready";
+        invalidSteps.add(3);
+      }
+    }
     return {
       ...definition,
       status,
       readerInput:
         typeof raw.readerInput === "string" ? raw.readerInput : undefined,
-      output: isPlainObject(raw.output)
-        ? (cloneValue(
-            raw.output,
-          ) as unknown as CriticalReadState["steps"][number]["output"])
-        : undefined,
+      output,
       discovery,
       completedAt:
         status === "complete" && typeof raw.completedAt === "string"
@@ -231,22 +256,35 @@ function migrateCriticalReadState(
           : undefined,
     };
   });
-  const firstIncomplete = steps.find((step) => step.status !== "complete");
+  if (invalidSteps.has(2)) invalidSteps.add(3);
+  if (invalidSteps.has(5)) invalidSteps.add(6);
+  const migratedSteps = steps.map((step) =>
+    invalidSteps.has(step.id)
+      ? {
+          ...step,
+          status:
+            step.status === "ready" ? ("ready" as const) : ("locked" as const),
+          output: undefined,
+          discovery: undefined,
+          completedAt: undefined,
+          staleReason: "Restored output requires fresh validation.",
+        }
+      : step,
+  );
+  const firstIncomplete =
+    migratedSteps.find(
+      (step) => step.status !== "complete" && step.status !== "locked",
+    ) || migratedSteps.find((step) => step.status !== "complete");
   return {
     ...initial,
     phase: firstIncomplete ? "active" : "complete",
     running: false,
     currentStep: (firstIncomplete?.id || 7) as CriticalReadStepID,
     status: "Restored Critical Read state was validated before use.",
-    steps,
-    reportMarkdown:
-      typeof source.reportMarkdown === "string"
-        ? source.reportMarkdown
-        : undefined,
-    reportNoteItemID:
-      typeof source.reportNoteItemID === "number"
-        ? source.reportNoteItemID
-        : undefined,
+    steps: migratedSteps,
+    // Reports are always regenerated from the validated migrated step state.
+    reportMarkdown: undefined,
+    reportNoteItemID: undefined,
     startedAt:
       typeof source.startedAt === "string" ? source.startedAt : undefined,
     updatedAt:
@@ -406,10 +444,10 @@ export function applySessionSnapshot(
       snapshot.relatedRecommendations,
     );
     if (recommendations) {
-      data.relatedRecommendationStates?.set(
-        snapshot.paperItemID,
-        recommendations,
-      );
+      data.relatedRecommendationStates?.set(snapshot.paperItemID, {
+        ...recommendations,
+        sessionID: snapshot.sessionId,
+      });
     } else {
       data.relatedRecommendationStates?.delete(snapshot.paperItemID);
     }
@@ -429,7 +467,11 @@ export function applySessionSnapshot(
   if (snapshot.criticalRead && hasCriticalReadState(snapshot.criticalRead)) {
     const criticalRead = migrateCriticalReadState(snapshot.criticalRead);
     if (criticalRead) {
-      data.criticalReadStates?.set(snapshot.paperItemID, criticalRead);
+      data.criticalReadStates?.set(snapshot.paperItemID, {
+        ...criticalRead,
+        itemID: snapshot.paperItemID,
+        sessionID: snapshot.sessionId,
+      });
     } else {
       data.criticalReadStates?.delete(snapshot.paperItemID);
     }

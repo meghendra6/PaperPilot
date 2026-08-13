@@ -1,4 +1,20 @@
-import type { CriticalReadAgentOutput, CriticalReadStepID } from "./types";
+import type {
+  CriticalReadAgentOutput,
+  CriticalReadMethodAreaCode,
+  CriticalReadStepID,
+} from "./types";
+
+const METHOD_AREA_CODES = new Set<CriticalReadMethodAreaCode>([
+  "data_provenance",
+  "data_splits",
+  "baselines",
+  "metrics",
+  "controls",
+  "assumptions_validity",
+  "statistics",
+  "reproducibility",
+  "scope_alignment",
+]);
 
 function record(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -25,12 +41,21 @@ function methodChecks(value: unknown) {
   return value
     .flatMap((entry) => {
       if (!record(entry)) return [];
+      const areaCode = text(entry.areaCode) as CriticalReadMethodAreaCode;
       const area = text(entry.area);
       const finding = text(entry.finding);
       const status = text(entry.status);
-      if (!area || !finding || !statuses.has(status)) return [];
+      if (
+        !METHOD_AREA_CODES.has(areaCode) ||
+        !area ||
+        !finding ||
+        !statuses.has(status)
+      ) {
+        return [];
+      }
       return [
         {
+          areaCode,
           area,
           status: status as
             | "supported"
@@ -43,6 +68,72 @@ function methodChecks(value: unknown) {
       ];
     })
     .slice(0, 12);
+}
+
+function requiredTextObject<T extends string>(
+  value: unknown,
+  keys: readonly T[],
+): Record<T, string> | undefined {
+  if (!record(value)) return undefined;
+  const output = Object.fromEntries(
+    keys.map((key) => [key, text(value[key])]),
+  ) as Record<T, string> | undefined;
+  return keys.every((key) => output?.[key]) ? output : undefined;
+}
+
+function scanObservations(value: unknown) {
+  if (!record(value)) return undefined;
+  const abstractSignal = text(value.abstractSignal);
+  const figureTableSignals = list(value.figureTableSignals, 12);
+  const openQuestions = list(value.openQuestions, 12);
+  if (!abstractSignal || !figureTableSignals.length || !openQuestions.length) {
+    return undefined;
+  }
+  return { abstractSignal, figureTableSignals, openQuestions };
+}
+
+function evidenceConclusion(value: unknown) {
+  if (!record(value)) return undefined;
+  const supports = list(value.supports, 12);
+  const doesNotSupport = list(value.doesNotSupport, 12);
+  const strongestResult = text(value.strongestResult);
+  const weakestResult = text(value.weakestResult);
+  const confidence = text(value.confidence);
+  if (
+    !supports.length ||
+    !doesNotSupport.length ||
+    !strongestResult ||
+    !weakestResult ||
+    !["high", "medium", "low", "unclear"].includes(confidence)
+  ) {
+    return undefined;
+  }
+  return {
+    supports,
+    doesNotSupport,
+    strongestResult,
+    weakestResult,
+    confidence: confidence as "high" | "medium" | "low" | "unclear",
+  };
+}
+
+function authorComparison(value: unknown) {
+  if (!record(value)) return undefined;
+  const keys = [
+    "agreements",
+    "readerOmissions",
+    "strongerAuthorClaims",
+    "authorCaveats",
+    "interpretiveDifferences",
+  ] as const;
+  if (keys.some((key) => !Array.isArray(value[key]))) return undefined;
+  return {
+    agreements: list(value.agreements, 12),
+    readerOmissions: list(value.readerOmissions, 12),
+    strongerAuthorClaims: list(value.strongerAuthorClaims, 12),
+    authorCaveats: list(value.authorCaveats, 12),
+    interpretiveDifferences: list(value.interpretiveDifferences, 12),
+  };
 }
 
 function provenance(value: unknown) {
@@ -135,49 +226,77 @@ export function parseCriticalReadOutput(
   const checks = methodChecks(parsed.methodChecks);
   const sourcedClaims = provenance(parsed.provenance);
   const parsedAlternatives = alternatives(parsed.alternatives);
-  if (stepID === 4) {
-    const normalizedAreas = new Set(
-      checks.map((entry) => entry.area.toLowerCase().replace(/[^a-z]+/g, " ")),
+  const parsedScan = scanObservations(parsed.scanObservations);
+  const parsedResearchQuestion = requiredTextObject(parsed.researchQuestion, [
+    "question",
+    "problem",
+    "setting",
+    "claimedGap",
+    "readerComparison",
+  ] as const);
+  const parsedConclusion = evidenceConclusion(parsed.evidenceConclusion);
+  const parsedAuthorComparison = authorComparison(parsed.authorComparison);
+  const parsedFinalSynthesis = requiredTextObject(parsed.finalSynthesis, [
+    "strongestSupportedClaim",
+    "keyResidualUncertainty",
+    "nextReadingOrExperiment",
+  ] as const);
+  const items = list(parsed.items, 12);
+  const sourceLocators = list(parsed.sourceLocators, 12);
+  const limitations = list(parsed.limitations, 8);
+  if (stepID === 1 && (!parsedScan || !items.length)) {
+    throw new Error(
+      "Critical Read Step 1 must record abstract, figure/table, and open-question observations.",
     );
-    const essentialAreas = [
-      /data|sampling|split/,
-      /baseline|comparison/,
-      /metric/,
-      /validity|assumption|threat/,
-      /reproduc|resource/,
-    ];
-    if (
-      checks.length < 7 ||
-      essentialAreas.some(
-        (pattern) => ![...normalizedAreas].some((area) => pattern.test(area)),
-      )
-    ) {
+  }
+  if (stepID === 2 && (!parsedResearchQuestion || !items.length)) {
+    throw new Error(
+      "Critical Read Step 2 must identify the question, problem, setting, claimed gap, and reader comparison.",
+    );
+  }
+  if (stepID === 4) {
+    const observedCodes = new Set(checks.map((entry) => entry.areaCode));
+    if ([...METHOD_AREA_CODES].some((code) => !observedCodes.has(code))) {
       throw new Error(
-        "Critical Read Step 4 must classify the full methodology checklist, including data, baselines, metrics, validity, and reproducibility.",
+        "Critical Read Step 4 must classify every locale-independent methodology area code.",
       );
     }
   }
+  if (stepID === 5 && (!parsedConclusion || !items.length)) {
+    throw new Error(
+      "Critical Read Step 5 must separate supported and unsupported conclusions, strongest and weakest results, and confidence.",
+    );
+  }
   if (
     stepID === 6 &&
-    (!sourcedClaims.some((entry) => entry.source === "paper_claim") ||
+    (!parsedAuthorComparison ||
       !sourcedClaims.some((entry) => entry.source === "agent_inference"))
   ) {
     throw new Error(
-      "Critical Read Step 6 must separate paper claims from agent inference.",
+      "Critical Read Step 6 must complete every comparison category and mark agent inference explicitly.",
     );
   }
-  if (stepID === 7 && !parsedAlternatives.length) {
+  if (stepID === 7 && (!parsedAlternatives.length || !parsedFinalSynthesis)) {
     throw new Error(
       "Critical Read Step 7 must include an alternative and a discriminating experiment.",
     );
   }
   return {
     summary: text(parsed.summary),
-    items: list(parsed.items, 12),
-    sourceLocators: list(parsed.sourceLocators, 12),
-    limitations: list(parsed.limitations, 8),
+    items,
+    sourceLocators,
+    limitations,
+    ...(parsedScan ? { scanObservations: parsedScan } : {}),
+    ...(parsedResearchQuestion
+      ? { researchQuestion: parsedResearchQuestion }
+      : {}),
     ...(checks.length ? { methodChecks: checks } : {}),
     ...(sourcedClaims.length ? { provenance: sourcedClaims } : {}),
+    ...(parsedConclusion ? { evidenceConclusion: parsedConclusion } : {}),
+    ...(parsedAuthorComparison
+      ? { authorComparison: parsedAuthorComparison }
+      : {}),
     ...(parsedAlternatives.length ? { alternatives: parsedAlternatives } : {}),
+    ...(parsedFinalSynthesis ? { finalSynthesis: parsedFinalSynthesis } : {}),
   };
 }

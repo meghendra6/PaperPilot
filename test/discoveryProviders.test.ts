@@ -5,6 +5,7 @@ import { join } from "node:path";
 
 import {
   classifyOfficialEvidenceURL,
+  headersFromXHR,
   inspectOfficialEvidenceURL,
   isPlausibleOfficialEvidenceURL,
   isNonPublicIPAddress,
@@ -79,6 +80,15 @@ test("generic official-web inspection supports unseen venues without a static al
     false,
   );
   assert.equal(isPlausibleOfficialEvidenceURL("https://[::1]/paper"), false);
+  for (const url of [
+    "https://arxiv.org./abs/1",
+    "https://dblp.org./rec/x",
+    "https://localhost./paper",
+    "https://foo.local./paper",
+  ]) {
+    assert.equal(isPlausibleOfficialEvidenceURL(url), false, url);
+    assert.equal(classifyOfficialEvidenceURL(url), undefined, url);
+  }
 });
 
 test("official evidence inspection refuses private redirects and does not consume PDFs", async () => {
@@ -119,8 +129,18 @@ test("official evidence inspection refuses private redirects and does not consum
 });
 
 test("official evidence rejects private DNS answers and mapped private IPv6", async () => {
-  assert.equal(isNonPublicIPAddress("::ffff:127.0.0.1"), true);
-  assert.equal(isNonPublicIPAddress("::ffff:0a00:0001"), true);
+  for (const address of [
+    "::ffff:127.0.0.1",
+    "::ffff:0a00:0001",
+    "fec0::1",
+    "64:ff9b::7f00:1",
+    "100::1",
+    "2001:2::1",
+    "2002:7f00:1::",
+  ]) {
+    assert.equal(isNonPublicIPAddress(address), true, address);
+  }
+  assert.equal(isNonPublicIPAddress("2001:4860:4860::8888"), false);
   assert.equal(isNonPublicIPAddress("8.8.8.8"), false);
   await assert.rejects(
     inspectOfficialEvidenceURL({
@@ -132,6 +152,51 @@ test("official evidence rejects private DNS answers and mapped private IPv6", as
     }),
     /non-public address/,
   );
+});
+
+test("official evidence rejects malformed DNS answers fail closed", async () => {
+  await assert.rejects(
+    inspectOfficialEvidenceURL({
+      url: "https://venue.example.org/program",
+      resolveHost: async () => ["not-an-ip-address"],
+      fetch: (async () => assert.fail("fetch must not start")) as typeof fetch,
+    }),
+    /non-public address/,
+  );
+});
+
+test("official DNS lookup obeys cancellation and the absolute deadline", async () => {
+  const never = async () => new Promise<string[]>(() => undefined);
+  await assert.rejects(
+    inspectOfficialEvidenceURL({
+      url: "https://venue.example.org/program",
+      resolveHost: never,
+      fetch: (async () => assert.fail("fetch must not start")) as typeof fetch,
+      deadline: Date.now() + 15,
+    }),
+    /DNS resolution timed out/i,
+  );
+
+  const controller = new AbortController();
+  const cancelled = inspectOfficialEvidenceURL({
+    url: "https://venue.example.org/program",
+    resolveHost: never,
+    signal: controller.signal,
+    fetch: (async () => assert.fail("fetch must not start")) as typeof fetch,
+  });
+  controller.abort();
+  await assert.rejects(cancelled, /cancelled/i);
+});
+
+test("Zotero-shaped fake redirect headers remain readable", () => {
+  const headers = headersFromXHR({
+    getResponseHeader(name: string) {
+      return name.toLowerCase() === "location"
+        ? "https://venue.example.org/final"
+        : null;
+    },
+  });
+  assert.equal(headers.get("location"), "https://venue.example.org/final");
 });
 
 test("injected official-evidence transport requires a public connected address when exposed", async () => {

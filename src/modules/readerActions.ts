@@ -5,6 +5,7 @@ import {
   type ReaderActionName,
 } from "./readerActionPrompt";
 import { clearReaderActionDraft, setReaderActionDraft } from "./readerPane";
+import { sessionStore } from "./session/sessionStore";
 
 declare const Zotero: any;
 
@@ -12,35 +13,53 @@ type DraftSource = "selection-popup" | "annotation-menu";
 
 type TextSelectionPopupEvent = {
   doc: Document;
+  reader?: { itemID?: number; _item?: { id?: number; parentItemID?: number } };
   params: { annotation?: { text?: string } };
   append: (...nodes: Array<Node | string>) => void;
 };
 
 type AnnotationContextMenuEvent = {
+  reader?: { itemID?: number; _item?: { id?: number; parentItemID?: number } };
   params: { ids?: string[] };
   append: (params: { label: string; onCommand: () => void }) => void;
 };
 
 function saveDraft(params: {
+  itemID: number;
   source: DraftSource;
   action: string;
   text?: string;
   annotationIDs?: string[];
 }) {
-  addon.data.readerActionDraft = {
+  setReaderActionDraft({
     ...params,
+    sessionId: sessionStore.get(params.itemID)?.sessionId,
     updatedAt: new Date().toISOString(),
-  };
-  setReaderActionDraft(addon.data.readerActionDraft);
+  });
 }
 
-function queueReaderAction(question: string, autoSubmit: boolean) {
-  addon.data.pendingReaderAction = {
+function eventItemID(event: {
+  reader?: { itemID?: number; _item?: { id?: number; parentItemID?: number } };
+}) {
+  return (
+    event.reader?._item?.parentItemID ||
+    event.reader?._item?.id ||
+    event.reader?.itemID
+  );
+}
+
+function queueReaderAction(
+  itemID: number,
+  question: string,
+  autoSubmit: boolean,
+) {
+  addon.data.pendingReaderActions?.set(itemID, {
+    sessionId: sessionStore.get(itemID)?.sessionId,
     question,
     autoSubmit,
     updatedAt: new Date().toISOString(),
-  };
-  void addon.data.applyReaderActionToPane?.();
+  });
+  void addon.data.applyReaderActionToPane?.get(itemID)?.();
 }
 
 function triggerAction(params: {
@@ -48,25 +67,27 @@ function triggerAction(params: {
   action: ReaderActionName;
   text?: string;
   annotationIDs?: string[];
+  itemID?: number;
 }) {
-  if (!params.text && !params.annotationIDs?.length) {
-    clearReaderActionDraft();
+  if (!params.itemID || (!params.text && !params.annotationIDs?.length)) {
+    if (params.itemID) clearReaderActionDraft(params.itemID);
     return;
   }
 
   if (params.action === "find-prior-work" && params.text) {
-    addon.data.pendingDiscoveryConcern = {
+    addon.data.pendingDiscoveryConcerns?.set(params.itemID, {
+      sessionId: sessionStore.get(params.itemID)?.sessionId,
       text: params.text,
       origin: "selection",
       updatedAt: new Date().toISOString(),
-    };
-    void addon.data.applyReaderActionToPane?.();
+    });
+    void addon.data.applyReaderActionToPane?.get(params.itemID)?.();
     return;
   }
 
-  saveDraft(params);
+  saveDraft({ ...params, itemID: params.itemID });
   const prepared = buildReaderActionQuestion(params.action, params.text);
-  queueReaderAction(prepared.question, prepared.autoSubmit);
+  queueReaderAction(params.itemID, prepared.question, prepared.autoSubmit);
 }
 
 function buildSelectionActionButton(params: {
@@ -74,6 +95,7 @@ function buildSelectionActionButton(params: {
   label: string;
   action: ReaderActionName;
   text?: string;
+  itemID?: number;
 }) {
   const button = params.doc.createElement("button");
   button.textContent = params.label;
@@ -90,6 +112,7 @@ function buildSelectionActionButton(params: {
       source: "selection-popup",
       action: params.action,
       text: params.text,
+      itemID: params.itemID,
     });
   });
   return button;
@@ -132,6 +155,7 @@ const renderTextSelectionPopup = (event: TextSelectionPopupEvent) => {
         label: item.label(),
         action: item.action,
         text: event.params.annotation?.text,
+        itemID: eventItemID(event),
       }),
     );
   }
@@ -147,6 +171,7 @@ const createAnnotationContextMenu = (event: AnnotationContextMenuEvent) => {
           source: "annotation-menu",
           action: item.action,
           annotationIDs: event.params.ids,
+          itemID: eventItemID(event),
         });
       },
     });

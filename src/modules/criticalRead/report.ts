@@ -49,6 +49,21 @@ export function buildCriticalReadReportMarkdown(params: {
       step.output
         ? `### Paper Pilot synthesis\n\n${step.output.summary}`
         : undefined,
+      step.output?.scanObservations
+        ? `### Scan observations\n\n- Abstract signal: ${step.output.scanObservations.abstractSignal}\n- Figure/table signals: ${bullets(step.output.scanObservations.figureTableSignals)}\n- Open questions: ${bullets(step.output.scanObservations.openQuestions)}`
+        : undefined,
+      step.output?.researchQuestion
+        ? `### Research question\n\n- Question: ${step.output.researchQuestion.question}\n- Problem: ${step.output.researchQuestion.problem}\n- Setting: ${step.output.researchQuestion.setting}\n- Claimed gap: ${step.output.researchQuestion.claimedGap}\n- Reader comparison: ${step.output.researchQuestion.readerComparison}`
+        : undefined,
+      step.output?.evidenceConclusion
+        ? `### Independent evidence conclusion\n\n- Supports: ${bullets(step.output.evidenceConclusion.supports)}\n- Does not support: ${bullets(step.output.evidenceConclusion.doesNotSupport)}\n- Strongest result: ${step.output.evidenceConclusion.strongestResult}\n- Weakest result: ${step.output.evidenceConclusion.weakestResult}\n- Confidence: ${step.output.evidenceConclusion.confidence}`
+        : undefined,
+      step.output?.authorComparison
+        ? `### Author comparison\n\n- Agreements: ${bullets(step.output.authorComparison.agreements)}\n- Reader omissions: ${bullets(step.output.authorComparison.readerOmissions)}\n- Stronger author claims: ${bullets(step.output.authorComparison.strongerAuthorClaims)}\n- Author caveats: ${bullets(step.output.authorComparison.authorCaveats)}\n- Interpretive differences: ${bullets(step.output.authorComparison.interpretiveDifferences)}`
+        : undefined,
+      step.output?.finalSynthesis
+        ? `### Final synthesis\n\n- Strongest supported claim: ${step.output.finalSynthesis.strongestSupportedClaim}\n- Key residual uncertainty: ${step.output.finalSynthesis.keyResidualUncertainty}\n- Next reading or experiment: ${step.output.finalSynthesis.nextReadingOrExperiment}`
+        : undefined,
       step.output?.items.length
         ? `### Findings\n\n${bullets(step.output.items)}`
         : undefined,
@@ -101,10 +116,41 @@ export function buildCriticalReadReportMarkdown(params: {
       .filter(Boolean)
       .join("\n\n");
   });
+  const reviewerPapers = params.state.steps.flatMap((step) =>
+    step.discovery
+      ? [
+          ...step.discovery.verifiedMain,
+          ...step.discovery.otherPeerReviewed,
+          ...step.discovery.noveltyRadar,
+        ].filter((paper) => paper.reviewInsight)
+      : [],
+  );
+  const reviewerPerspective = reviewerPapers.length
+    ? [
+        "## Reviewer perspective (public sources)",
+        "This optional perspective was added only after the reader-first gate. It is separate from reader judgment, paper claims, and Paper Pilot inference.",
+        ...reviewerPapers.map((paper) => {
+          const insight = paper.reviewInsight!;
+          return [
+            `### ${paper.title}`,
+            `- Valued strengths: ${insight.valuedStrengths.join("; ") || "Not recorded"}`,
+            `- Concerns: ${insight.concerns.join("; ") || "Not recorded"}`,
+            `- Reviewer priorities: ${insight.reviewerPriorities.join("; ") || "Not recorded"}`,
+            `- Disagreements: ${insight.disagreements.join("; ") || "Not recorded"}`,
+            ...insight.sourceURLs.map(
+              (url) => `- Public review source: ${url}`,
+            ),
+          ].join("\n");
+        }),
+      ].join("\n\n")
+    : undefined;
 
   return [
     `# Critical Read: ${params.paperTitle}`,
-    "This report preserves the reader's independent judgments separately from Paper Pilot synthesis. Public-review insights are not used in the seven-step analysis.",
+    "This report preserves the reader's independent judgments separately from Paper Pilot synthesis. Public-review insights are not used inside the seven-step analysis; a permitted reviewer perspective may appear afterward as a distinct section.",
     ...sections,
-  ].join("\n\n");
+    reviewerPerspective,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 }

@@ -68,6 +68,7 @@ export async function startCodexRunForQuestion(params: {
   useResume: boolean;
   resumeSessionId?: string;
   imagePath?: string;
+  webSearchEnabledOverride?: boolean;
 }): Promise<StartedCodexRun | FailedCodexRun> {
   const executablePath = await resolveCodexExecutablePath(
     String(getPref("codexExecutablePath") || ""),
@@ -82,7 +83,8 @@ export async function startCodexRunForQuestion(params: {
   const workspaceRoot = String(
     getPref("codexWorkspaceRoot") || "/tmp/zotero-paper-ai",
   );
-  const webSearchEnabled = Boolean(getPref("codexEnableWebSearch"));
+  const webSearchEnabled =
+    params.webSearchEnabledOverride ?? Boolean(getPref("codexEnableWebSearch"));
   const sandbox = String(getPref("codexSandboxMode") || "read-only") as
     | "read-only"
     | "workspace-write"

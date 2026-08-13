@@ -7,7 +7,7 @@ function escapeHtml(value: string) {
     .replace(/>/g, "&gt;");
 }
 
-function paperMarkdown(paper: DiscoveredPaper) {
+function paperMarkdown(paper: DiscoveredPaper, includeReviewInsights: boolean) {
   const evidence = paper.publicationEvidence
     .map(
       (entry) =>
@@ -24,7 +24,7 @@ function paperMarkdown(paper: DiscoveredPaper) {
       ? `  - Key difference: ${paper.keyDifference}`
       : undefined,
     evidence ? `  - Official/publication evidence:\n${evidence}` : undefined,
-    paper.reviewInsight
+    includeReviewInsights && paper.reviewInsight
       ? [
           "  - Public review insight (summary only):",
           ...paper.reviewInsight.valuedStrengths.map(
@@ -50,12 +50,17 @@ export function buildDiscoveryNoteMarkdown(params: {
   paperTitle: string;
   concern?: string;
   discovery: DiscoveryResult;
+  includeReviewInsights?: boolean;
 }) {
   const lane = (title: string, papers: DiscoveredPaper[]) =>
     [
       `## ${title}`,
       papers.length
-        ? papers.map(paperMarkdown).join("\n")
+        ? papers
+            .map((paper) =>
+              paperMarkdown(paper, params.includeReviewInsights !== false),
+            )
+            .join("\n")
         : "No papers met this lane's evidence criteria.",
     ].join("\n\n");
   return [
@@ -81,6 +86,7 @@ export function buildDiscoveryNoteHtml(params: {
   paperTitle: string;
   concern?: string;
   discovery: DiscoveryResult;
+  includeReviewInsights?: boolean;
 }) {
   return `<pre>${escapeHtml(buildDiscoveryNoteMarkdown(params))}</pre>`;
 }
@@ -95,16 +101,19 @@ export async function saveDiscoveryToNote(params: {
   paperTitle: string;
   concern?: string;
   discovery: DiscoveryResult;
+  includeReviewInsights?: boolean;
 }) {
   const zotero = (globalThis as { Zotero?: any }).Zotero;
   if (!zotero?.Item) throw new Error("Zotero note APIs are unavailable.");
   const parent =
     params.item.isAttachment?.() && params.item.parentItemID
       ? zotero.Items.get(params.item.parentItemID) || params.item
-      : params.item;
+      : params.item.isAttachment?.()
+        ? undefined
+        : params.item;
   const note = new zotero.Item("note");
-  note.libraryID = parent.libraryID;
-  note.parentID = parent.id;
+  note.libraryID = parent?.libraryID ?? params.item.libraryID;
+  if (parent) note.parentID = parent.id;
   note.setNote(buildDiscoveryNoteHtml(params));
   await note.saveTx();
   return note;

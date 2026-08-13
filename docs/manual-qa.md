@@ -199,6 +199,43 @@ discovery through Claude Code and Gemini CLI were not available in this delivery
 environment; their pure contracts and failure paths are covered by the automated
 suite, but they are not represented here as real-runtime passes.
 
+### Final hardening runtime record — 2026-08-14
+
+The hardened candidate was exercised again in Zotero 9.0.6 with the same
+standalone QA PDF. An authenticated Codex web-search response was captured from
+the real discovery prompt, then replayed only to make the subsequent seven-step
+workflow deterministic while testing Zotero state transitions. The live
+official-source verifier still ran on the captured candidates: the raw response
+parsed into 7 primary, 5 other-peer-reviewed, and 4 novelty candidates, while
+the network-bound verification pass correctly failed closed to 0 primary, 0
+other, and 4 novelty candidates when fresh official evidence could not be
+retrieved.
+
+The same run additionally confirmed:
+
+- all seven Critical Read steps completed in order, Step 4 revision preserved
+  unrelated completed work while invalidating and regenerating the final report,
+  and public-review content stayed hidden before the Step 4-6 reader-first gate;
+- after the gate, a marked review fixture appeared only in a separate Reviewer
+  perspective with its public source URL, including in a saved standalone note;
+- Discovery, Critical Read, and Compare notes saved for a standalone attachment
+  without an invalid attachment parent;
+- the saved session file contained all seven completed steps, survived a Zotero
+  restart, reopened through Past sessions, passed live-evidence migration, rebuilt
+  the final report, and immediately re-rendered Related papers and Critical Read;
+- Compare selected one eligible peer, completed through the local CLI runner,
+  parsed its strict JSON response, and rendered the compact snapshots, synthesis,
+  and next-reading sections; and
+- both a collection-linked reusable Compare artifact and a recommended-paper
+  Zotero item were added to an actual collection. This exposed and fixed Zotero
+  9's requirement that `Collection.addItems()` run inside a DB transaction.
+
+The two-paper visual switch was not performed because the user asked to keep only
+the supplied QA PDF open. Item/session isolation, stale-action rejection, and
+pane-reconstruction cancellation remain covered by the automated state-machine
+tests. The Zotero 7/8, cross-engine success, and operating-system matrix remains
+manual release QA.
+
 - [ ] Run `Find verified prior work` with no concern and confirm the agent infers fields, adjacent fields, venues, and query families without asking the user to choose a conference
 - [ ] Enter an optional research concern, then run discovery from the main section, selected-PDF `Find prior work` action, a limitation card, and a follow-up card; confirm each source is carried into the saved scope
 - [ ] In AI, computer architecture, and a third field, confirm an appropriate leading venue absent from any built-in source shortcut can still be selected and justified

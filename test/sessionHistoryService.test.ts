@@ -17,6 +17,7 @@ import {
   markCriticalReadStepRunning,
   startCriticalRead,
 } from "../src/modules/criticalRead/workflow";
+import { buildCriticalReadReportMarkdown } from "../src/modules/criticalRead/report";
 
 class MemoryFileOps implements SessionHistoryFileOps {
   files = new Map<string, string>();
@@ -668,6 +669,278 @@ test("SessionHistoryService opens a saved snapshot into the in-memory stores", a
     sessionStore.reset(504, "codex_cli");
   } finally {
     globals.restore();
+  }
+});
+
+test("snapshot migration reopens malformed Critical Read output and clears stale reports", async () => {
+  const { globals, repository, service } = createService({
+    saveDocumentSessions: true,
+    privacyStoreLocalHistory: true,
+    privacySavePromptsOnly: false,
+    privacySaveResponses: true,
+  });
+  try {
+    const snapshot = buildSavedSnapshot(505) as any;
+    snapshot.criticalRead = {
+      ...startCriticalRead(buildInitialCriticalReadState()),
+      phase: "complete",
+      currentStep: 7,
+      reportMarkdown: "# stale verified main claim",
+      reportNoteItemID: 999,
+      steps: buildInitialCriticalReadState().steps.map((step) => ({
+        ...step,
+        status: "complete",
+        output: step.id === 3 ? undefined : { summary: "x" },
+        discovery:
+          step.id === 3
+            ? {
+                schemaVersion: 1,
+                plan: {
+                  concernSummary: "Concern",
+                  primaryField: "Field",
+                  adjacentFields: [],
+                  venues: [],
+                  queries: [],
+                  scopeSummary: "Scope",
+                },
+                verifiedMain: [],
+                otherPeerReviewed: [],
+                noveltyRadar: [],
+                excluded: [],
+                limitations: [],
+                parseWarnings: [],
+                completedAt: "2026-08-13T00:00:00.000Z",
+              }
+            : undefined,
+      })),
+    };
+    await repository.saveSessionSnapshot({
+      paperItemID: 505,
+      paperTitle: "Saved paper",
+      snapshot,
+    });
+    await service.openSavedSession({
+      itemID: 505,
+      sessionId: snapshot.sessionId,
+    });
+    const restored = (globalThis as any).addon.data.criticalReadStates.get(505);
+    assert.equal(restored.phase, "active");
+    assert.equal(restored.steps[0].status, "ready");
+    assert.equal(restored.steps[0].output, undefined);
+    assert.equal(restored.reportMarkdown, undefined);
+    assert.equal(restored.reportNoteItemID, undefined);
+  } finally {
+    globals.restore();
+    sessionStore.reset(505);
+  }
+});
+
+test("snapshot migration retains current live evidence and rebuilds a reviewer-aware report", async () => {
+  const { globals, repository, service } = createService({
+    saveDocumentSessions: true,
+    privacyStoreLocalHistory: true,
+    privacySavePromptsOnly: false,
+    privacySaveResponses: true,
+  });
+  try {
+    const snapshot = buildSavedSnapshot(506) as any;
+    const commonOutput = {
+      summary: "Validated synthesis",
+      items: ["Observed result"],
+      sourceLocators: ["Section 1"],
+      limitations: ["Fixture"],
+      scanObservations: {
+        abstractSignal: "A scoped claim",
+        figureTableSignals: ["A visible trend"],
+        openQuestions: ["External validity"],
+      },
+      researchQuestion: {
+        question: "What works?",
+        problem: "A problem",
+        setting: "A setting",
+        claimedGap: "A gap",
+        readerComparison: "Aligned",
+      },
+      methodChecks: [
+        "data_provenance",
+        "data_splits",
+        "baselines",
+        "metrics",
+        "controls",
+        "assumptions_validity",
+        "statistics",
+        "reproducibility",
+        "scope_alignment",
+      ].map((areaCode) => ({
+        areaCode,
+        area: areaCode,
+        status: "supported",
+        finding: "Checked",
+      })),
+      evidenceConclusion: {
+        supports: ["Claim"],
+        doesNotSupport: ["Universal claim"],
+        strongestResult: "Result A",
+        weakestResult: "Result B",
+        confidence: "medium",
+      },
+      authorComparison: {
+        agreements: ["Core claim"],
+        readerOmissions: ["Caveat"],
+        strongerAuthorClaims: ["Generality"],
+        authorCaveats: ["Scale"],
+        interpretiveDifferences: ["Magnitude"],
+      },
+      provenance: [
+        { source: "paper_claim", text: "The paper claims a result." },
+        { source: "agent_inference", text: "The result may be narrow." },
+      ],
+      alternatives: [
+        {
+          explanation: "A confound",
+          explainedResult: "The gain",
+          challengedAssumption: "Stable workload",
+          discriminatingExperiment: "Cross-workload ablation",
+          addressedByPaper: "partly",
+        },
+      ],
+      finalSynthesis: {
+        strongestSupportedClaim: "Scoped improvement",
+        keyResidualUncertainty: "Generality",
+        nextReadingOrExperiment: "Replication",
+      },
+    };
+    const discovery = JSON.parse(
+      JSON.stringify({
+        schemaVersion: 1,
+        liveVerification: {
+          verifierVersion: 1,
+          verifiedAt: "2026-08-13T00:00:00.000Z",
+        },
+        plan: {
+          concernSummary: "Concern",
+          primaryField: "Machine learning",
+          adjacentFields: ["Optimization"],
+          venues: [
+            {
+              venueName: "ICLR",
+              venueAcronym: "ICLR",
+              fields: ["Machine learning"],
+              judgment: "leading",
+              confidence: "high",
+              basis: "Selective archival venue with public proceedings.",
+            },
+          ],
+          queries: [
+            { query: "problem", family: "problem", rationale: "direct" },
+            { query: "method", family: "method", rationale: "mechanism" },
+            { query: "result", family: "evaluation", rationale: "evidence" },
+          ],
+          scopeSummary: "Bounded search.",
+        },
+        verifiedMain: [
+          {
+            candidateID: "paper",
+            title: "Verified Prior Work",
+            authors: ["Ada Author"],
+            year: 2026,
+            urls: ["https://openreview.net/forum?id=paper"],
+            providerIDs: { openreview: "paper" },
+            venueName: "ICLR",
+            venueAcronym: "ICLR",
+            track: "Main conference poster",
+            publicationClass: "verified_main",
+            publicationEvidence: [
+              {
+                type: "official_decision",
+                sourceName: "openreview",
+                url: "https://openreview.net/forum?id=paper",
+                observedTitle: "Verified Prior Work",
+                observedVenue: "ICLR",
+                observedTrack: "Main conference poster",
+                observedDecision: "Accepted",
+                checkedAt: "2026-08-13T00:00:00.000Z",
+                supports: [
+                  "identity",
+                  "published",
+                  "accepted",
+                  "main_track",
+                  "reviews_available",
+                ],
+              },
+            ],
+            evidenceConfidence: "high",
+            leadingVenueAssessment: {
+              venueName: "ICLR",
+              venueAcronym: "ICLR",
+              fields: ["Machine learning"],
+              judgment: "leading",
+              confidence: "high",
+              basis: "Selective archival venue with public proceedings.",
+            },
+            relationship: "direct",
+            relevanceReason: "Same concern.",
+            noveltyRelationship: "same_problem_different_method",
+            reviewURL: "https://openreview.net/forum?id=paper",
+            reviewInsight: {
+              sourceURLs: ["https://openreview.net/forum?id=paper"],
+              valuedStrengths: ["Clear analysis"],
+              concerns: ["Narrow scope"],
+              reviewerPriorities: ["Ablations"],
+              disagreements: ["Magnitude"],
+              limitations: [],
+              generatedAt: "2026-08-13T00:00:00.000Z",
+            },
+          },
+        ],
+        otherPeerReviewed: [],
+        noveltyRadar: [],
+        excluded: [],
+        limitations: [],
+        parseWarnings: [],
+        completedAt: "2026-08-13T00:00:00.000Z",
+      }),
+    );
+    snapshot.criticalRead = {
+      ...startCriticalRead(buildInitialCriticalReadState()),
+      phase: "complete",
+      currentStep: 7,
+      reportMarkdown: "# serialized report must not be trusted",
+      steps: buildInitialCriticalReadState().steps.map((step) => ({
+        ...step,
+        status: "complete",
+        output: step.id === 3 ? undefined : commonOutput,
+        discovery: step.id === 3 ? discovery : undefined,
+      })),
+    };
+    await repository.saveSessionSnapshot({
+      paperItemID: 506,
+      paperTitle: "Saved paper",
+      snapshot,
+    });
+    await service.openSavedSession({
+      itemID: 506,
+      sessionId: snapshot.sessionId,
+    });
+    const restored = (globalThis as any).addon.data.criticalReadStates.get(506);
+    assert.equal(restored.phase, "complete");
+    assert.equal(restored.steps[2].status, "complete");
+    assert.equal(
+      restored.steps[2].discovery.liveVerification.verifierVersion,
+      1,
+    );
+    assert.equal(restored.reportMarkdown, undefined);
+    const rebuilt = buildCriticalReadReportMarkdown({
+      paperTitle: "Saved paper",
+      state: restored,
+    });
+    assert.match(rebuilt, /Reviewer perspective/);
+    assert.match(rebuilt, /Clear analysis/);
+    assert.match(rebuilt, /https:\/\/openreview.net\/forum\?id=paper/);
+    assert.doesNotMatch(rebuilt, /serialized report must not be trusted/);
+  } finally {
+    globals.restore();
+    sessionStore.reset(506);
   }
 });
 

@@ -120,6 +120,45 @@ function stringList(value: unknown, max = 12) {
   return value.map(text).filter(Boolean).slice(0, max);
 }
 
+function venueAliasKeys(venue: { venueName?: string; venueAcronym?: string }) {
+  const values = [venue.venueName, venue.venueAcronym].filter(
+    (value): value is string => Boolean(value),
+  );
+  const keys = new Set<string>();
+  for (const value of values) {
+    for (const parenthetical of value.matchAll(/\(([A-Za-z0-9]{2,12})\)/g)) {
+      keys.add(parenthetical[1].toLowerCase());
+    }
+    const normalized = normalizeDiscoveryTitle(value);
+    if (!normalized) continue;
+    keys.add(normalized);
+    const withoutEdition = normalized
+      .replace(/\b(?:19|20)\d{2}\b/g, " ")
+      .replace(/\b\d+(?:st|nd|rd|th)\b/g, " ")
+      .replace(/\b(?:annual|proceedings|conference|symposium)\b/g, " ")
+      .replace(/\b(?:acm|ieee|of|the)\b/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (withoutEdition) keys.add(withoutEdition);
+    const compact = withoutEdition.replace(/[^a-z0-9]+/g, "");
+    if (compact.length >= 3) keys.add(compact);
+    const initials = withoutEdition
+      .split(" ")
+      .filter(
+        (word) =>
+          word && !["a", "an", "and", "for", "of", "on", "the"].includes(word),
+      )
+      .map((word) => word[0])
+      .join("");
+    if (initials.length >= 3) keys.add(initials);
+  }
+  return keys;
+}
+
+function venueAliasesOverlap(left: Set<string>, right: Set<string>) {
+  return [...left].some((value) => right.has(value));
+}
+
 function extractJsonCandidates(raw: string) {
   const trimmed = raw.trim();
   const candidates = new Set<string>();
@@ -161,7 +200,16 @@ function parseVenue(value: unknown): LeadingVenueAssessment | undefined {
   const venueName = text(record.venueName || record.name);
   const fields = stringList(record.fields, 6);
   const basis = text(record.basis);
-  if (!venueName || !fields.length || !basis) return undefined;
+  if (
+    !venueName ||
+    !fields.length ||
+    !basis ||
+    /^\s*(?:a |an )?(?:prestigious|well[- ]known|top[- ]tier|leading)(?: archival)? (?:conference|venue)\.?\s*$/i.test(
+      basis,
+    )
+  ) {
+    return undefined;
+  }
   const judgment = LEADING_JUDGMENTS.has(
     record.judgment as LeadingVenueJudgment,
   )
@@ -417,6 +465,13 @@ export function hasQualifyingOfficialEvidence(paper: DiscoveredPaper) {
     "openalex.org",
     "crossref.org",
   ];
+  const venueAliases = new Set([
+    ...venueAliasKeys({
+      venueName: paper.venueName,
+      venueAcronym: paper.venueAcronym,
+    }),
+    ...venueAliasKeys(paper.leadingVenueAssessment),
+  ]);
   const directEvidence = paper.publicationEvidence.filter((entry) => {
     if (!DIRECT_OFFICIAL_TYPES.has(entry.type)) return false;
     let hostname = "";
@@ -431,7 +486,12 @@ export function hasQualifyingOfficialEvidence(paper: DiscoveredPaper) {
       ) &&
       Boolean(entry.observedTitle) &&
       normalizeDiscoveryTitle(entry.observedTitle || "") ===
-        normalizeDiscoveryTitle(paper.title)
+        normalizeDiscoveryTitle(paper.title) &&
+      (!entry.observedVenue ||
+        venueAliasesOverlap(
+          venueAliases,
+          venueAliasKeys({ venueName: entry.observedVenue }),
+        ))
     );
   });
   const identity = directEvidence.some((entry) =>
@@ -549,8 +609,12 @@ function parseExcluded(value: unknown): ExcludedDiscoveryCandidate | undefined {
 
 function normalizeResult(
   record: Record<string, unknown>,
-  options: { allowReviewLinks?: boolean } = {},
+  options: {
+    allowReviewLinks?: boolean;
+    allowLiveVerificationMarker?: boolean;
+  } = {},
 ): DiscoveryResult {
+  const plan = parsePlan(record.plan);
   const allRaw = [
     ...(Array.isArray(record.verifiedMain) ? record.verifiedMain : []),
     ...(Array.isArray(record.otherPeerReviewed)
@@ -561,7 +625,55 @@ function normalizeResult(
   const parsed = allRaw
     .map((paper) => parsePaper(paper, options.allowReviewLinks === true))
     .filter((paper): paper is DiscoveredPaper => Boolean(paper));
-  const deduplicated = deduplicateDiscoveredPapers(parsed);
+  const canonicalized = parsed.map((paper) => {
+    if (NOVELTY_CLASSES.has(paper.publicationClass)) return paper;
+    const paperVenue = venueAliasKeys({
+      venueName: paper.venueName,
+      venueAcronym: paper.venueAcronym,
+    });
+    const assessmentVenue = venueAliasKeys(paper.leadingVenueAssessment);
+    if (
+      paperVenue.size === 0 ||
+      !venueAliasesOverlap(paperVenue, assessmentVenue)
+    ) {
+      throw new Error(
+        `Discovery paper venue did not match its venue assessment: ${paper.title}`,
+      );
+    }
+    const canonical = plan.venues.find((venue) => {
+      const plannedVenue = venueAliasKeys(venue);
+      return (
+        venueAliasesOverlap(plannedVenue, assessmentVenue) &&
+        venueAliasesOverlap(plannedVenue, paperVenue)
+      );
+    });
+    if (
+      !canonical &&
+      ["leading", "plausibly_leading"].includes(
+        paper.leadingVenueAssessment.judgment,
+      )
+    ) {
+      throw new Error(
+        `Discovery paper venue did not match its bounded plan assessment: ${paper.title}`,
+      );
+    }
+    const effectiveAssessment = canonical || paper.leadingVenueAssessment;
+    const evidenceConflict = paper.publicationEvidence.some(
+      (entry) =>
+        entry.observedVenue &&
+        !venueAliasesOverlap(
+          venueAliasKeys({ venueName: entry.observedVenue }),
+          venueAliasKeys(effectiveAssessment),
+        ),
+    );
+    if (evidenceConflict) {
+      throw new Error(
+        `Discovery publication evidence venue conflicted with the bounded plan: ${paper.title}`,
+      );
+    }
+    return { ...paper, leadingVenueAssessment: effectiveAssessment };
+  });
+  const deduplicated = deduplicateDiscoveredPapers(canonicalized);
   const parseWarnings: string[] = stringList(record.parseWarnings, 20);
   if (parsed.length < allRaw.length) {
     parseWarnings.push(
@@ -637,27 +749,18 @@ function normalizeResult(
     throw new Error("Discovery result did not include any usable papers.");
   }
 
-  const plan = parsePlan(record.plan);
-  const assessedVenues = new Set(
-    plan.venues.map((venue) => normalizeDiscoveryTitle(venue.venueName)),
-  );
-  // The bounded venue plan governs archival peer-reviewed recommendations.
-  // Novelty-radar entries can legitimately name a repository or submission
-  // state (for example, arXiv) that is not a leading venue candidate.
-  for (const paper of [...boundedPrimary, ...boundedOther]) {
-    if (
-      !assessedVenues.has(
-        normalizeDiscoveryTitle(paper.leadingVenueAssessment.venueName),
-      )
-    ) {
-      throw new Error(
-        `Discovery paper venue was not included in the bounded plan assessment: ${paper.leadingVenueAssessment.venueName}`,
-      );
-    }
-  }
-
   return {
     schemaVersion: 1,
+    liveVerification:
+      options.allowLiveVerificationMarker &&
+      isRecord(record.liveVerification) &&
+      record.liveVerification.verifierVersion === 1 &&
+      Boolean(text(record.liveVerification.verifiedAt))
+        ? {
+            verifierVersion: 1,
+            verifiedAt: text(record.liveVerification.verifiedAt),
+          }
+        : undefined,
     plan,
     verifiedMain: boundedPrimary,
     otherPeerReviewed: boundedOther,
@@ -671,7 +774,10 @@ function normalizeResult(
 
 export function parseDiscoveryResult(
   raw: string,
-  options: { allowReviewLinks?: boolean } = {},
+  options: {
+    allowReviewLinks?: boolean;
+    allowLiveVerificationMarker?: boolean;
+  } = {},
 ): DiscoveryResult {
   let lastError: unknown;
   for (const candidate of extractJsonCandidates(raw)) {
@@ -690,26 +796,41 @@ export function parseDiscoveryResult(
 export function migrateDiscoveryResult(value: unknown) {
   if (!isRecord(value)) return undefined;
   try {
-    const migrated = normalizeResult(value);
+    const hasCurrentLiveVerification =
+      isRecord(value.liveVerification) &&
+      value.liveVerification.verifierVersion === 1 &&
+      Boolean(text(value.liveVerification.verifiedAt));
+    const migrated = normalizeResult(value, {
+      allowReviewLinks: hasCurrentLiveVerification,
+      allowLiveVerificationMarker: hasCurrentLiveVerification,
+    });
+    if (hasCurrentLiveVerification) return migrated;
     const stripUnverifiedReview = (paper: DiscoveredPaper) => ({
       ...paper,
       reviewURL: undefined,
       reviewInsight: undefined,
-      publicationEvidence: paper.publicationEvidence.map((entry) => ({
-        ...entry,
-        supports: entry.supports.filter(
-          (support) => support !== "reviews_available",
-        ),
-      })),
+      publicationEvidence: [],
+      evidenceConfidence: "none" as const,
     });
+    const priorArchival = [
+      ...migrated.verifiedMain,
+      ...migrated.otherPeerReviewed,
+    ];
     return {
       ...migrated,
-      verifiedMain: migrated.verifiedMain.map(stripUnverifiedReview),
-      otherPeerReviewed: migrated.otherPeerReviewed.map(stripUnverifiedReview),
+      verifiedMain: [],
+      otherPeerReviewed: [],
       noveltyRadar: migrated.noveltyRadar.map(stripUnverifiedReview),
+      excluded: [
+        ...migrated.excluded,
+        ...priorArchival.map((paper) => ({
+          title: paper.title,
+          reason: "unsupported_claim" as const,
+        })),
+      ],
       parseWarnings: [
         ...migrated.parseWarnings,
-        "Saved public-review links require a fresh live verification before use.",
+        "Saved publication and public-review evidence requires a fresh live verification before use.",
       ],
     };
   } catch {

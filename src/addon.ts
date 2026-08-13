@@ -53,13 +53,18 @@ class Addon {
       columns: Array<ColumnOptions>;
       rows: Array<{ [dataKey: string]: string }>;
     };
-    readerActionDraft?: {
-      source: "selection-popup" | "annotation-menu" | "page-context";
-      action: string;
-      text?: string;
-      annotationIDs?: string[];
-      updatedAt: string;
-    };
+    readerActionDrafts?: Map<
+      number,
+      {
+        itemID: number;
+        sessionId?: string;
+        source: "selection-popup" | "annotation-menu" | "page-context";
+        action: string;
+        text?: string;
+        annotationIDs?: string[];
+        updatedAt: string;
+      }
+    >;
     contextCard?: {
       summary: string;
       updatedAt: string;
@@ -70,19 +75,28 @@ class Addon {
       updatedAt: string;
     };
     currentSessionId?: string;
-    pendingReaderAction?: {
-      question: string;
-      autoSubmit: boolean;
-      updatedAt: string;
-    };
-    pendingDiscoveryConcern?: {
-      text: string;
-      origin: import("./modules/discovery/types").ResearchConcernOrigin;
-      updatedAt: string;
-    };
+    pendingReaderActions?: Map<
+      number,
+      {
+        sessionId?: string;
+        question: string;
+        autoSubmit: boolean;
+        updatedAt: string;
+      }
+    >;
+    pendingDiscoveryConcerns?: Map<
+      number,
+      {
+        sessionId?: string;
+        text: string;
+        origin: import("./modules/discovery/types").ResearchConcernOrigin;
+        updatedAt: string;
+      }
+    >;
     relatedRecommendationStates?: Map<
       number,
       {
+        sessionID?: string;
         running: boolean;
         status: string;
         groups: import("./modules/relatedRecommendations").RecommendationGroup[];
@@ -92,7 +106,7 @@ class Addon {
         reviewInsightRunningCandidateID?: string;
       }
     >;
-    applyReaderActionToPane?: () => Promise<void> | void;
+    applyReaderActionToPane?: Map<number, () => Promise<void> | void>;
     aiReaderPaneRegistered?: boolean;
     autoHighlightStates?: Map<number, { running: boolean; status: string }>;
     paperArtifactStates?: Map<
@@ -142,6 +156,10 @@ class Addon {
       paperArtifactStates: new Map(),
       comprehensionCheckStates: new Map(),
       criticalReadStates: new Map(),
+      pendingReaderActions: new Map(),
+      pendingDiscoveryConcerns: new Map(),
+      readerActionDrafts: new Map(),
+      applyReaderActionToPane: new Map(),
     };
     this.hooks = hooks;
     this.api = {};

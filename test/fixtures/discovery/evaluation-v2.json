@@ -1,0 +1,60 @@
+{
+  "version": 2,
+  "capture": {
+    "provider": "codex-cli",
+    "model": "gpt-5.6-luna",
+    "reasoningEffort": "low",
+    "capturedAt": "2026-08-13T14:06:15Z",
+    "sessionID": "019ffb71-3157-7943-889c-ce49efcbfad1",
+    "execution": "ephemeral read-only CLI run outside the repository",
+    "inputDisclosure": "The capture prompt supplied benchmark paper identity and status facts, but venue and field predictions were agent-generated.",
+    "rawOutput": "{\"cases\":[{\"id\":\"ai-multimodal\",\"primaryField\":\"multimodal machine learning\",\"adjacentFields\":[\"representation learning\",\"self-supervised learning\",\"computer vision\",\"natural language processing\"],\"venues\":[{\"venueName\":\"NeurIPS\",\"fields\":[\"machine learning\",\"representation learning\"],\"judgment\":\"leading\",\"confidence\":\"high\",\"basis\":\"Core venue for foundational representation-learning methods and multimodal learning.\"},{\"venueName\":\"ICML\",\"fields\":[\"machine learning\",\"deep learning\"],\"judgment\":\"leading\",\"confidence\":\"high\",\"basis\":\"Publishes influential general-purpose learning methods, including multimodal representation techniques.\"},{\"venueName\":\"AAAI\",\"fields\":[\"artificial intelligence\",\"multimodal AI\"],\"judgment\":\"plausibly_leading\",\"confidence\":\"medium\",\"basis\":\"Broad AI venue with recurring multimodal learning and representation research.\"}],\"mainPaper\":{\"title\":\"Learning Shared Representations from Unpaired Data\",\"venue\":\"NeurIPS 2025\",\"url\":\"https://proceedings.neurips.cc/paper_files/paper/2025/hash/429b76977aa377ed6dff3b91e9163b40-Abstract-Conference.html\",\"noveltyRelationship\":\"same_problem_different_method\"},\"negative\":{\"title\":\"Multimodal Representation Workshop Draft\",\"publicationClass\":\"verified_workshop\"}},{\"id\":\"architecture-memory\",\"primaryField\":\"computer architecture\",\"adjacentFields\":[\"memory systems\",\"data-intensive computing\",\"computer systems\",\"hardware modeling\"],\"venues\":[{\"venueName\":\"ISCA\",\"fields\":[\"computer architecture\",\"memory systems\"],\"judgment\":\"leading\",\"confidence\":\"high\",\"basis\":\"Premier architecture venue for memory-hierarchy modeling, design, and evaluation.\"},{\"venueName\":\"HPCA\",\"fields\":[\"high-performance architecture\",\"memory systems\"],\"judgment\":\"leading\",\"confidence\":\"high\",\"basis\":\"Strong venue for processor-memory co-design and hierarchy performance analysis.\"},{\"venueName\":\"MICRO\",\"fields\":[\"microarchitecture\",\"memory hierarchy\"],\"judgment\":\"plausibly_leading\",\"confidence\":\"high\",\"basis\":\"Publishes detailed microarchitectural and memory-system design studies.\"},{\"venueName\":\"ASPLOS\",\"fields\":[\"computer systems\",\"architecture\",\"data-intensive systems\"],\"judgment\":\"plausibly_leading\",\"confidence\":\"medium\",\"basis\":\"Bridges architecture and systems research, including specialized memory designs.\"}],\"mainPaper\":{\"title\":\"A Comprehensive Memory Modeling Tool and Its Application to the Design and Analysis of Future Memory Hierarchies\",\"venue\":\"ISCA 2008\",\"url\":\"https://dl.acm.org/doi/10.1145/1394608.1382127\",\"noveltyRelationship\":\"same_problem_different_method\"},\"negative\":{\"title\":\"Memory Hierarchy Extended Preprint\",\"publicationClass\":\"preprint_only\"}},{\"id\":\"hci-privacy\",\"primaryField\":\"human-computer interaction\",\"adjacentFields\":[\"usable privacy\",\"privacy-enhancing technologies\",\"social computing\",\"security and privacy\"],\"venues\":[{\"venueName\":\"CHI\",\"fields\":[\"human-computer interaction\",\"usable privacy\"],\"judgment\":\"leading\",\"confidence\":\"high\",\"basis\":\"Premier HCI venue for interaction design, privacy choices, and user control.\"},{\"venueName\":\"SOUPS\",\"fields\":[\"usable privacy\",\"usable security\"],\"judgment\":\"leading\",\"confidence\":\"high\",\"basis\":\"Specialist venue centered on usable privacy and security controls.\"},{\"venueName\":\"CSCW\",\"fields\":[\"computer-supported cooperative work\",\"collaborative privacy\"],\"judgment\":\"plausibly_leading\",\"confidence\":\"high\",\"basis\":\"Directly relevant to privacy controls in collaborative and social software.\"},{\"venueName\":\"USENIX Security\",\"fields\":[\"security\",\"privacy\",\"usable security\"],\"judgment\":\"plausibly_leading\",\"confidence\":\"medium\",\"basis\":\"Strong security venue that accepts human-centered privacy and control research.\"}],\"mainPaper\":{\"title\":\"A Design Space for Privacy Choices: Towards Meaningful Privacy Control in the Internet of Things\",\"venue\":\"CHI 2021\",\"url\":\"https://dl.acm.org/doi/10.1145/3411764.3445148\",\"noveltyRelationship\":\"extends_or_generalizes\"},\"negative\":{\"title\":\"Usable Privacy Controls Demo\",\"publicationClass\":\"verified_demo\"}}]}"
+  },
+  "goldCases": [
+    {
+      "id": "ai-multimodal",
+      "concern": "robust multimodal representation learning",
+      "primaryFieldTerms": ["machine learning"],
+      "adjacentFieldTerms": [
+        "computer vision",
+        "natural language processing",
+        "representation learning"
+      ],
+      "acceptedLeadingVenues": ["NeurIPS", "ICML", "ICLR"],
+      "mainTitle": "Learning Shared Representations from Unpaired Data",
+      "mainVenue": "NeurIPS",
+      "negativeTitle": "Multimodal Representation Workshop Draft",
+      "negativeClass": "verified_workshop"
+    },
+    {
+      "id": "architecture-memory",
+      "concern": "memory hierarchy design for data-intensive processors",
+      "primaryFieldTerms": ["computer architecture"],
+      "adjacentFieldTerms": [
+        "memory systems",
+        "computer systems",
+        "data-intensive computing"
+      ],
+      "acceptedLeadingVenues": ["ISCA", "MICRO", "HPCA", "ASPLOS"],
+      "mainTitle": "A Comprehensive Memory Modeling Tool and Its Application to the Design and Analysis of Future Memory Hierarchies",
+      "mainVenue": "ISCA",
+      "negativeTitle": "Memory Hierarchy Extended Preprint",
+      "negativeClass": "preprint_only"
+    },
+    {
+      "id": "hci-privacy",
+      "concern": "usable privacy controls in collaborative software",
+      "primaryFieldTerms": ["human-computer interaction"],
+      "adjacentFieldTerms": [
+        "usable privacy",
+        "social computing",
+        "security and privacy"
+      ],
+      "acceptedLeadingVenues": ["CHI", "CSCW", "SOUPS"],
+      "mainTitle": "A Design Space for Privacy Choices: Towards Meaningful Privacy Control in the Internet of Things",
+      "mainVenue": "CHI",
+      "negativeTitle": "Usable Privacy Controls Demo",
+      "negativeClass": "verified_demo"
+    }
+  ]
+}

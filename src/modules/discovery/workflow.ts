@@ -61,10 +61,91 @@ function observedVenue(
   paper: DiscoveryResult["verifiedMain"][number],
   page: string,
 ) {
-  for (const candidate of [paper.venueName, paper.venueAcronym]) {
-    if (candidate && containsNormalized(page, candidate)) return candidate;
+  for (const candidate of [
+    paper.venueName,
+    paper.venueAcronym,
+    paper.leadingVenueAssessment.venueName,
+    paper.leadingVenueAssessment.venueAcronym,
+  ]) {
+    if (candidate && containsNormalized(page, candidate)) {
+      // parseDiscoveryResult has already bound the paper metadata and the
+      // per-paper assessment to one canonical plan entry. Preserve that
+      // identity in reconstructed evidence instead of reintroducing a page
+      // alias (for example, "ISCA 2007") that can spuriously conflict with
+      // the plan's full venue name during the post-verification parse.
+      return (
+        paper.leadingVenueAssessment.venueName ||
+        paper.leadingVenueAssessment.venueAcronym ||
+        candidate
+      );
+    }
   }
   return undefined;
+}
+
+function hostnameMatchesVenueAuthority(
+  hostname: string,
+  paper: DiscoveryResult["verifiedMain"][number],
+) {
+  const hostLabels = hostname
+    .toLowerCase()
+    .split(".")
+    .map((label) => label.replace(/[^a-z0-9]+/g, ""));
+  const venueKeys = [
+    paper.venueAcronym,
+    paper.leadingVenueAssessment.venueAcronym,
+    paper.venueName,
+    paper.leadingVenueAssessment.venueName,
+  ]
+    .filter((value): value is string => Boolean(value))
+    .flatMap((value) => {
+      const normalized = normalizeDiscoveryTitle(value);
+      const words = normalized
+        .split(" ")
+        .filter(
+          (part) =>
+            part &&
+            ![
+              "conference",
+              "symposium",
+              "proceedings",
+              "international",
+            ].includes(part),
+        );
+      return [
+        normalized.replace(/[^a-z0-9]+/g, ""),
+        words.length >= 2 ? words.map((word) => word[0]).join("") : "",
+      ];
+    })
+    .filter((value) => value.length >= 3);
+  return venueKeys.some((key) =>
+    hostLabels.some((label) =>
+      [key, `${key}conf`, `${key}conference`, `${key}org`].includes(label),
+    ),
+  );
+}
+
+function hasGenericSourceAuthority(
+  inspection: Awaited<ReturnType<typeof inspectOfficialEvidenceURL>>,
+  paper: DiscoveryResult["verifiedMain"][number],
+) {
+  const parsed = new URL(inspection.url);
+  const header = `${inspection.pageTitle || ""} ${inspection.searchableText.slice(0, 800)}`;
+  const venueObserved = observedVenue(paper, header);
+  const structuralPath =
+    /(?:^|\/)(?:program|programme|schedule|proceedings|accepted(?:-papers?)?|decisions?)(?:[/.\-_]|$)/i.test(
+      parsed.pathname,
+    );
+  const structuralHeader =
+    /\b(program|programme|schedule|proceedings|accepted papers|conference decision)\b/i.test(
+      header,
+    );
+  return Boolean(
+    venueObserved &&
+      structuralPath &&
+      structuralHeader &&
+      hostnameMatchesVenueAuthority(inspection.hostname, paper),
+  );
 }
 
 function inferEvidenceType(
@@ -108,6 +189,70 @@ function inferTrack(page: string, url: string) {
   return undefined;
 }
 
+function titleIndex(page: string, title: string) {
+  const words = title
+    .toLocaleLowerCase()
+    .match(/[\p{L}\p{N}]+/gu)
+    ?.slice(0, 6);
+  const pattern = words?.length
+    ? new RegExp(words.map(escapeRegExp).join("[^\\p{L}\\p{N}]+"), "iu")
+    : undefined;
+  return pattern ? page.search(pattern) : -1;
+}
+
+function inferEntryBoundTrack(params: {
+  page: string;
+  title: string;
+  url: string;
+  type: PublicationEvidence["type"];
+  sourceFamily: string;
+}) {
+  const index = titleIndex(params.page, params.title);
+  const entryContext =
+    index < 0
+      ? params.page
+      : params.page.slice(
+          Math.max(0, index - 1_600),
+          index + params.title.length + 1_600,
+        );
+  const local = inferTrack(entryContext, params.url);
+  if (local?.main === false) return local;
+
+  const prefix = index < 0 ? params.page : params.page.slice(0, index);
+  const trackScopePattern =
+    /\b(main|technical) (?:conference )?(?:program|programme)|\b(?:workshop|findings|demo(?:nstration)?|industry track|shared[ -]?task|tutorial|doctoral consortium)\b/gi;
+  let nearestTrackScope = "";
+  for (const match of prefix.matchAll(trackScopePattern)) {
+    nearestTrackScope = match[0];
+  }
+  const scoped = inferTrack(nearestTrackScope, params.url);
+  if (scoped) return scoped;
+
+  const sessionPattern = /\bsession\s+[\w.-]+/gi;
+  let nearestSession = "";
+  for (const match of prefix.matchAll(sessionPattern))
+    nearestSession = match[0];
+
+  const headerMain =
+    /\b(main|technical) (?:conference )?(?:program|programme)\b/i.test(
+      params.page.slice(0, 800),
+    );
+  if (nearestSession && headerMain) {
+    return { label: "Main program", main: true };
+  }
+  if (
+    params.sourceFamily !== "generic-official-web" &&
+    /\b(?:accepted )?(?:oral|poster|spotlight)\b/i.test(entryContext) &&
+    !NON_MAIN_TRACKS.some(([pattern]) =>
+      pattern.test(`${prefix} ${params.url}`),
+    )
+  ) {
+    return { label: "Main conference oral/poster", main: true };
+  }
+  if (local?.main === true) return local;
+  return undefined;
+}
+
 function inferDecision(page: string) {
   if (/\b(reject(?:ed|ion)?|withdrawn?|retracted?)\b/i.test(page)) {
     return { label: "Rejected or withdrawn", accepted: false };
@@ -118,21 +263,43 @@ function inferDecision(page: string) {
   return undefined;
 }
 
+function authorIdentityKeys(authors: string[]) {
+  return authors
+    .map((author) => {
+      const words = normalizeDiscoveryTitle(author).split(" ").filter(Boolean);
+      return words.at(-1) || "";
+    })
+    .filter((key) => key.length >= 3);
+}
+
+function pageMatchesPaperIdentity(
+  page: string,
+  paper: DiscoveryResult["verifiedMain"][number],
+) {
+  if (!pageMatchesPaperTitle(page, paper.title)) return false;
+  const normalizedPage = normalizeDiscoveryTitle(page);
+  const normalizedRaw = page.toLowerCase();
+  const doiMatch = paper.doi && normalizedRaw.includes(paper.doi.toLowerCase());
+  if (doiMatch) return true;
+  if (!paper.year || !new RegExp(`\\b${paper.year}\\b`).test(normalizedPage)) {
+    return false;
+  }
+  const authorKeys = authorIdentityKeys(paper.authors);
+  if (!authorKeys.length) return false;
+  const requiredMatches = Math.min(2, authorKeys.length);
+  const observedMatches = authorKeys.filter((key) =>
+    new RegExp(`(?:^| )${escapeRegExp(key)}(?: |$)`, "u").test(normalizedPage),
+  ).length;
+  return observedMatches >= requiredMatches;
+}
+
 function paperEvidenceContext(page: string, title: string) {
-  const lowerPage = page.toLocaleLowerCase();
-  const words = title
-    .toLocaleLowerCase()
-    .match(/[\p{L}\p{N}]+/gu)
-    ?.slice(0, 6);
-  const pattern = words?.length
-    ? new RegExp(words.map(escapeRegExp).join("[^\\p{L}\\p{N}]+"), "iu")
-    : undefined;
-  const index = pattern ? lowerPage.search(pattern) : -1;
+  const index = titleIndex(page, title);
   if (index < 0) return page;
   return page.slice(Math.max(0, index - 1_200), index + title.length + 1_200);
 }
 
-function reconstructOfficialEvidence(
+export function reconstructOfficialEvidence(
   paper: DiscoveryResult["verifiedMain"][number],
   inspection: Awaited<ReturnType<typeof inspectOfficialEvidenceURL>>,
 ): PublicationEvidence | undefined {
@@ -140,18 +307,37 @@ function reconstructOfficialEvidence(
   const page = [inspection.pageTitle, inspection.searchableText]
     .filter(Boolean)
     .join(" ");
-  if (!pageMatchesPaperTitle(page, paper.title)) return undefined;
+  if (!pageMatchesPaperIdentity(`${page} ${inspection.url}`, paper)) {
+    return undefined;
+  }
   const venue = observedVenue(paper, page);
   // A venue-bearing claim must be corroborated on the inspected paper page.
   if ((paper.venueName || paper.venueAcronym) && !venue) return undefined;
   const type = inferEvidenceType(inspection);
   if (!type) return undefined;
+  if (
+    inspection.sourceFamily === "generic-official-web" &&
+    !hasGenericSourceAuthority(inspection, paper)
+  ) {
+    return undefined;
+  }
+  if (
+    inspection.sourceFamily === "generic-official-web" &&
+    type === "official_decision"
+  ) {
+    // Open-world verification is supported through venue-owned programs and
+    // proceedings. A generic prose acceptance claim is not an official
+    // decision surface and remains ambiguous.
+    return undefined;
+  }
   const context = paperEvidenceContext(page, paper.title);
-  const track =
-    inferTrack(context, inspection.url) ||
-    (type === "official_program"
-      ? { label: "Official program", main: true }
-      : undefined);
+  const resolvedTrack = inferEntryBoundTrack({
+    page,
+    title: paper.title,
+    url: inspection.url,
+    type,
+    sourceFamily: inspection.sourceFamily,
+  });
   const decision = inferDecision(context);
   const supports: PublicationEvidence["supports"] = ["identity"];
   if (
@@ -166,11 +352,11 @@ function reconstructOfficialEvidence(
   }
   if (
     decision?.accepted ||
-    (type === "official_program" && track?.main === true)
+    (type === "official_program" && resolvedTrack?.main === true)
   ) {
     supports.push("accepted");
   }
-  if (track?.main) supports.push("main_track");
+  if (resolvedTrack?.main) supports.push("main_track");
   if (
     inspection.sourceFamily === "openreview" &&
     /\b(review|forum|meta-review|decision)\b/i.test(page)
@@ -186,10 +372,10 @@ function reconstructOfficialEvidence(
     url: inspection.url,
     observedTitle: paper.title,
     observedVenue: venue,
-    observedTrack: track?.label,
+    observedTrack: resolvedTrack?.label,
     observedDecision:
       decision?.label ||
-      (type === "official_program" && track?.main === true
+      (type === "official_program" && resolvedTrack?.main === true
         ? "Listed in official program"
         : undefined),
     checkedAt: inspection.checkedAt,
@@ -268,9 +454,6 @@ export async function verifyDiscoveryEvidenceLive(params: {
   }
 
   const papersWithLiveEvidence = allPapers.map((paper) => {
-    const nonDirect = paper.publicationEvidence.filter(
-      (entry) => !DIRECT_TYPES.has(entry.type),
-    );
     const reconstructed = paper.publicationEvidence
       .filter((entry) => DIRECT_TYPES.has(entry.type))
       .flatMap((entry) => {
@@ -293,12 +476,16 @@ export async function verifyDiscoveryEvidenceLive(params: {
       track: reconstructed.find((entry) => entry.observedTrack)?.observedTrack,
       reviewURL: verifiedReviewURL,
       reviewInsight: verifiedReviewURL ? paper.reviewInsight : undefined,
-      publicationEvidence: [...nonDirect, ...reconstructed],
+      publicationEvidence: reconstructed.length ? reconstructed : [],
     };
   });
 
   const verifiedPayload = {
     ...params.discovery,
+    liveVerification: {
+      verifierVersion: 1,
+      verifiedAt: new Date().toISOString(),
+    },
     verifiedMain: papersWithLiveEvidence,
     otherPeerReviewed: [],
     noveltyRadar: [],
@@ -314,5 +501,6 @@ export async function verifyDiscoveryEvidenceLive(params: {
   };
   return parseDiscoveryResult(JSON.stringify(verifiedPayload), {
     allowReviewLinks: true,
+    allowLiveVerificationMarker: true,
   });
 }

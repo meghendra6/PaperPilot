@@ -94,6 +94,7 @@ export function buildDiscoveryRow(params: {
   paper: RecommendedPaper;
   actions: DiscoveryRowActions;
   reviewInsightsVisible?: boolean;
+  canViewReviewInsights?: () => boolean;
   reviewInsightRunning?: boolean;
 }) {
   const { doc, paper, actions } = params;
@@ -200,13 +201,23 @@ export function buildDiscoveryRow(params: {
     buttons.appendChild(evidenceStatus);
   }
   if (paper.reviewURL && params.reviewInsightsVisible !== false) {
+    const requireLiveReviewGate = () => {
+      if (params.canViewReviewInsights?.() === false) {
+        throw new Error(
+          "Complete Critical Read Steps 4–6 before viewing public review insights.",
+        );
+      }
+    };
     if (!params.reviewInsightRunning) {
       buttons.appendChild(
         actionButton({
           doc,
           label: "Open reviews",
           className: "pp-btn pp-btn--ghost",
-          onClick: () => actions.onOpenURL(paper.reviewURL!),
+          onClick: () => {
+            requireLiveReviewGate();
+            return actions.onOpenURL(paper.reviewURL!);
+          },
           onError: actions.onError,
         }),
       );
@@ -220,7 +231,10 @@ export function buildDiscoveryRow(params: {
             ? "Refresh review insights"
             : "Review insights",
         className: "pp-btn pp-btn--secondary",
-        onClick: () => actions.onReviewInsight(paper),
+        onClick: () => {
+          requireLiveReviewGate();
+          return actions.onReviewInsight(paper);
+        },
         onError: actions.onError,
       }),
     );

@@ -5,13 +5,23 @@ import { type DiscoveryFetch, withDiscoveryFetchTimeout } from "./types";
 declare const Zotero: any;
 declare const Components: any;
 
-type HostResolver = (hostname: string) => Promise<string[]>;
+type HostResolver = (
+  hostname: string,
+  signal?: AbortSignal,
+) => Promise<string[]>;
 
 type ResponseWithConnection = Response & {
   remoteAddress?: string;
 };
 
 const MAX_OFFICIAL_BODY_BYTES = 200_000;
+
+function normalizedHostname(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/^\[|\]$/g, "")
+    .replace(/\.+$/g, "");
+}
 
 const SOURCE_FAMILIES: Array<{
   id: string;
@@ -56,7 +66,10 @@ const SOURCE_FAMILIES: Array<{
 export function classifyOfficialEvidenceURL(urlValue: string) {
   const normalized = normalizeHttpURL(urlValue);
   if (!normalized) return undefined;
-  const hostname = new URL(normalized).hostname.toLowerCase();
+  const parsed = new URL(normalized);
+  const rawHostname = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  const hostname = normalizedHostname(rawHostname);
+  if (!hostname || hostname !== rawHostname) return undefined;
   const family = SOURCE_FAMILIES.find((entry) =>
     entry.domains.some(
       (domain) => hostname === domain || hostname.endsWith(`.${domain}`),
@@ -79,9 +92,12 @@ export function isPlausibleOfficialEvidenceURL(urlValue: string) {
   const normalized = normalizeHttpURL(urlValue);
   if (!normalized) return false;
   const parsed = new URL(normalized);
-  const hostname = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  const rawHostname = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  const hostname = normalizedHostname(rawHostname);
   return (
     parsed.protocol === "https:" &&
+    Boolean(hostname) &&
+    hostname === rawHostname &&
     !NON_OFFICIAL_DOMAINS.some(
       (domain) => hostname === domain || hostname.endsWith(`.${domain}`),
     ) &&
@@ -100,15 +116,34 @@ function parseIPv4(value: string) {
     : undefined;
 }
 
-function mappedIPv4(value: string) {
-  const normalized = value.toLowerCase().replace(/^\[|\]$/g, "");
-  const dotted = normalized.match(/(?:^|:)ffff:(\d+\.\d+\.\d+\.\d+)$/)?.[1];
-  if (dotted) return dotted;
-  const hex = normalized.match(/(?:^|:)ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
-  if (!hex) return undefined;
-  const high = Number.parseInt(hex[1], 16);
-  const low = Number.parseInt(hex[2], 16);
-  return `${high >> 8}.${high & 255}.${low >> 8}.${low & 255}`;
+function parseIPv6(value: string) {
+  let normalized = value.toLowerCase().split("%")[0];
+  const dottedTail = normalized.match(/(\d+\.\d+\.\d+\.\d+)$/)?.[1];
+  if (dottedTail) {
+    const ipv4 = parseIPv4(dottedTail);
+    if (!ipv4) return undefined;
+    const [a, b, c, d] = ipv4;
+    normalized = `${normalized.slice(0, -dottedTail.length)}${((a << 8) | b).toString(16)}:${((c << 8) | d).toString(16)}`;
+  }
+  if (!/^[0-9a-f:]+$/.test(normalized) || normalized.split("::").length > 2) {
+    return undefined;
+  }
+  const [leftText, rightText] = normalized.split("::");
+  const left = leftText ? leftText.split(":") : [];
+  const right = rightText ? rightText.split(":") : [];
+  if ([...left, ...right].some((part) => !/^[0-9a-f]{1,4}$/.test(part))) {
+    return undefined;
+  }
+  const missing = 8 - left.length - right.length;
+  if (
+    (normalized.includes("::") && missing < 1) ||
+    (!normalized.includes("::") && missing !== 0)
+  ) {
+    return undefined;
+  }
+  return [...left, ...Array(Math.max(0, missing)).fill("0"), ...right].map(
+    (part) => Number.parseInt(part, 16),
+  );
 }
 
 export function isNonPublicIPAddress(value: string) {
@@ -116,8 +151,7 @@ export function isNonPublicIPAddress(value: string) {
     .toLowerCase()
     .replace(/^\[|\]$/g, "")
     .split("%")[0];
-  const mapped = mappedIPv4(normalized);
-  const ipv4 = parseIPv4(mapped || normalized);
+  const ipv4 = parseIPv4(normalized);
   if (ipv4) {
     const [a, b, c] = ipv4;
     return (
@@ -138,23 +172,67 @@ export function isNonPublicIPAddress(value: string) {
     );
   }
   if (!normalized.includes(":")) return false;
-  return (
-    normalized === "::" ||
-    normalized === "::1" ||
-    normalized.startsWith("fc") ||
-    normalized.startsWith("fd") ||
-    /^fe[89ab]/.test(normalized) ||
-    normalized.startsWith("ff") ||
-    normalized.startsWith("2001:db8:")
-  );
+  const words = parseIPv6(normalized);
+  if (!words) return true;
+
+  // Fail closed: only globally routable IPv6 unicast (2000::/3) may cross the
+  // official-source boundary. Explicitly reject documentation, benchmark,
+  // ORCHID, and transition ranges inside that aggregate.
+  if (words[0] < 0x2000 || words[0] > 0x3fff) return true;
+  if (words[0] === 0x2001) {
+    if (words[1] === 0x0000) return true; // Teredo and related special use
+    if (words[1] === 0x0002) return true; // benchmarking
+    if (words[1] === 0x0db8) return true; // documentation
+    if (words[1] >= 0x0010 && words[1] <= 0x002f) return true; // ORCHID
+  }
+  if (words[0] === 0x2002) {
+    const embedded = [
+      words[1] >> 8,
+      words[1] & 255,
+      words[2] >> 8,
+      words[2] & 255,
+    ].join(".");
+    return isNonPublicIPAddress(embedded);
+  }
+  return false;
 }
 
-async function defaultResolveHost(hostname: string) {
+function isIPAddressLiteral(value: string) {
+  const normalized = value
+    .toLowerCase()
+    .replace(/^\[|\]$/g, "")
+    .split("%")[0];
+  return Boolean(parseIPv4(normalized) || parseIPv6(normalized));
+}
+
+async function defaultResolveHost(hostname: string, signal?: AbortSignal) {
   if (parseIPv4(hostname) || hostname.includes(":")) return [hostname];
   const services = (globalThis as { Services?: any }).Services;
   if (!services?.dns) return [];
   return new Promise<string[]>((resolve, reject) => {
-    services.dns.asyncResolve(
+    let settled = false;
+    const finish = (callback: () => void) => {
+      if (settled) return;
+      settled = true;
+      signal?.removeEventListener("abort", onAbort);
+      callback();
+    };
+    const requestHolder: {
+      current?: { cancel?: (status: number) => void };
+    } = {};
+    const onAbort = () => {
+      try {
+        requestHolder.current?.cancel?.(Components.results.NS_BINDING_ABORTED);
+      } finally {
+        finish(() => reject(new Error("Official evidence request cancelled.")));
+      }
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+    if (signal?.aborted) {
+      onAbort();
+      return;
+    }
+    requestHolder.current = services.dns.asyncResolve(
       hostname,
       0,
       1,
@@ -162,7 +240,9 @@ async function defaultResolveHost(hostname: string) {
       {
         onLookupComplete(_request: unknown, record: any, status: number) {
           if (!Components.isSuccessCode(status)) {
-            reject(new Error("Official evidence DNS resolution failed."));
+            finish(() =>
+              reject(new Error("Official evidence DNS resolution failed.")),
+            );
             return;
           }
           const addresses: string[] = [];
@@ -171,17 +251,19 @@ async function defaultResolveHost(hostname: string) {
               Components.interfaces.nsIDNSAddrRecord,
             );
             if (!addressRecord) {
-              reject(
-                new Error("Official evidence DNS record was unavailable."),
+              finish(() =>
+                reject(
+                  new Error("Official evidence DNS record was unavailable."),
+                ),
               );
               return;
             }
             while (addressRecord.hasMore()) {
               addresses.push(addressRecord.getNextAddrAsString());
             }
-            resolve(addresses);
+            finish(() => resolve(addresses));
           } catch (error) {
-            reject(error);
+            finish(() => reject(error));
           }
         },
       },
@@ -190,32 +272,107 @@ async function defaultResolveHost(hostname: string) {
   });
 }
 
+function waitForBoundary<T>(
+  operation: Promise<T>,
+  params: {
+    signal?: AbortSignal;
+    deadline: number;
+    now: () => number;
+    timeoutMessage: string;
+    cancelMessage: string;
+  },
+) {
+  return new Promise<T>((resolve, reject) => {
+    let settled = false;
+    const finish = (callback: () => void) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      params.signal?.removeEventListener("abort", onAbort);
+      callback();
+    };
+    const onAbort = () => finish(() => reject(new Error(params.cancelMessage)));
+    const remaining = Math.max(0, params.deadline - params.now());
+    const timer = setTimeout(
+      () => finish(() => reject(new Error(params.timeoutMessage))),
+      remaining,
+    );
+    params.signal?.addEventListener("abort", onAbort, { once: true });
+    if (params.signal?.aborted) {
+      onAbort();
+      return;
+    }
+    operation.then(
+      (value) => finish(() => resolve(value)),
+      (error) => finish(() => reject(error)),
+    );
+  });
+}
+
 async function assertPublicResolution(
   hostname: string,
   resolver: HostResolver,
+  signal: AbortSignal | undefined,
+  deadline: number,
+  now: () => number,
 ) {
-  const addresses = await resolver(hostname);
+  const resolutionController = new AbortController();
+  const propagateAbort = () => resolutionController.abort(signal?.reason);
+  signal?.addEventListener("abort", propagateAbort, { once: true });
+  if (signal?.aborted) propagateAbort();
+  let addresses: string[];
+  try {
+    addresses = await waitForBoundary(
+      resolver(normalizedHostname(hostname), resolutionController.signal),
+      {
+        signal,
+        deadline,
+        now,
+        timeoutMessage: "Discovery DNS resolution timed out.",
+        cancelMessage: "Official evidence request cancelled.",
+      },
+    );
+  } finally {
+    resolutionController.abort();
+    signal?.removeEventListener("abort", propagateAbort);
+  }
   if (!addresses.length) {
     // Node/test fetchers do not expose Gecko DNS. Production Zotero always does.
     return;
   }
-  if (addresses.some(isNonPublicIPAddress)) {
+  if (
+    addresses.some(
+      (address) =>
+        !isIPAddressLiteral(address) || isNonPublicIPAddress(address),
+    )
+  ) {
     throw new Error("Official evidence host resolved to a non-public address.");
   }
 }
 
-function headersFromXHR(xhr: XMLHttpRequest) {
+export function headersFromXHR(
+  xhr: Partial<
+    Pick<XMLHttpRequest, "getAllResponseHeaders" | "getResponseHeader">
+  >,
+) {
   const headers = new Headers();
-  for (const line of xhr
-    .getAllResponseHeaders()
-    .trim()
-    .split(/[\r\n]+/)) {
+  const raw =
+    typeof xhr.getAllResponseHeaders === "function"
+      ? xhr.getAllResponseHeaders() || ""
+      : "";
+  for (const line of raw.trim().split(/[\r\n]+/)) {
     const separator = line.indexOf(":");
     if (separator > 0) {
       headers.append(
         line.slice(0, separator).trim(),
         line.slice(separator + 1).trim(),
       );
+    }
+  }
+  for (const name of ["location", "content-type"]) {
+    if (!headers.has(name) && typeof xhr.getResponseHeader === "function") {
+      const value = xhr.getResponseHeader(name);
+      if (value) headers.set(name, value);
     }
   }
   return headers;
@@ -250,7 +407,7 @@ async function secureZoteroRequest(
   try {
     if (signal?.aborted)
       throw new Error("Official evidence request cancelled.");
-    const xhr = await Zotero.HTTP.request("GET", url, {
+    const request = Zotero.HTTP.request("GET", url, {
       headers: {
         Accept: "text/html,application/json",
         Connection: "close",
@@ -289,7 +446,7 @@ async function secureZoteroRequest(
           const address = getXHRRemoteAddress(request);
           if (!address) return;
           observedRemoteAddress = address;
-          if (isNonPublicIPAddress(address)) {
+          if (!isIPAddressLiteral(address) || isNonPublicIPAddress(address)) {
             boundaryError = new Error(
               "Official evidence connection used a non-public address.",
             );
@@ -314,6 +471,19 @@ async function secureZoteroRequest(
       }
       throw error;
     });
+    let xhr: XMLHttpRequest;
+    try {
+      xhr = await waitForBoundary<XMLHttpRequest>(request, {
+        signal,
+        deadline: Date.now() + Math.max(1, timeoutMs),
+        now: Date.now,
+        timeoutMessage: "Official evidence request timed out.",
+        cancelMessage: "Official evidence request cancelled.",
+      });
+    } catch (error) {
+      cancel?.();
+      throw error;
+    }
     const finalRemoteAddress =
       observedRemoteAddress || getXHRRemoteAddress(xhr);
     if (!finalRemoteAddress) {
@@ -321,15 +491,18 @@ async function secureZoteroRequest(
         "Official evidence connection address could not be verified.",
       );
     }
-    if (isNonPublicIPAddress(finalRemoteAddress)) {
+    if (
+      !isIPAddressLiteral(finalRemoteAddress) ||
+      isNonPublicIPAddress(finalRemoteAddress)
+    ) {
       throw new Error(
         "Official evidence connection used a non-public address.",
       );
     }
     const response = new Response(xhr.responseText || "", {
       status: xhr.status,
-      statusText: xhr.statusText,
-      headers: headersFromXHR(xhr),
+      statusText: xhr.statusText || "",
+      headers: headersFromXHR(xhr as XMLHttpRequest),
     }) as ResponseWithConnection;
     response.remoteAddress = finalRemoteAddress;
     return response;
@@ -351,8 +524,14 @@ function stripHtml(value: string) {
 
 async function readResponseTextBounded(
   response: Response,
-  maxBytes = MAX_OFFICIAL_BODY_BYTES,
+  params: {
+    maxBytes?: number;
+    signal?: AbortSignal;
+    deadline: number;
+    now: () => number;
+  },
 ) {
+  const maxBytes = params.maxBytes ?? MAX_OFFICIAL_BODY_BYTES;
   if (!response.body) return "";
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
@@ -360,7 +539,15 @@ async function readResponseTextBounded(
   let output = "";
   try {
     while (bytesRead < maxBytes) {
-      const { value, done } = await reader.read();
+      const { value, done } = await waitForBoundary<
+        ReadableStreamReadResult<any>
+      >(reader.read(), {
+        signal: params.signal,
+        deadline: params.deadline,
+        now: params.now,
+        timeoutMessage: "Official evidence response body timed out.",
+        cancelMessage: "Official evidence request cancelled.",
+      });
       if (done) break;
       const remaining = maxBytes - bytesRead;
       const chunk =
@@ -372,7 +559,7 @@ async function readResponseTextBounded(
     output += decoder.decode();
     return output;
   } finally {
-    await reader.cancel().catch(() => undefined);
+    void reader.cancel().catch(() => undefined);
   }
 }
 
@@ -403,7 +590,13 @@ export async function inspectOfficialEvidenceURL(params: {
         "Official evidence redirect left the public HTTPS boundary.",
       );
     }
-    await assertPublicResolution(new URL(url).hostname, resolver);
+    await assertPublicResolution(
+      new URL(url).hostname,
+      resolver,
+      params.signal,
+      deadline,
+      now,
+    );
     response = fetcher
       ? ((await fetcher(url, {
           headers: { Accept: "text/html,application/json" },
@@ -412,16 +605,17 @@ export async function inspectOfficialEvidenceURL(params: {
       : await secureZoteroRequest(url, params.signal, requestTimeout());
     if (
       response.remoteAddress &&
-      isNonPublicIPAddress(response.remoteAddress)
+      (!isIPAddressLiteral(response.remoteAddress) ||
+        isNonPublicIPAddress(response.remoteAddress))
     ) {
-      await response.body?.cancel().catch(() => undefined);
+      void response.body?.cancel().catch(() => undefined);
       throw new Error(
         "Official evidence connection used a non-public address.",
       );
     }
     if (![301, 302, 303, 307, 308].includes(response.status)) break;
     const location = response.headers.get("location");
-    await response.body?.cancel().catch(() => undefined);
+    void response.body?.cancel().catch(() => undefined);
     if (!location)
       throw new Error("Official evidence redirect was incomplete.");
     if (redirects === 5)
@@ -435,15 +629,21 @@ export async function inspectOfficialEvidenceURL(params: {
   }
   const finalURL = url;
   if (!isPlausibleOfficialEvidenceURL(finalURL)) {
-    await response.body?.cancel().catch(() => undefined);
+    void response.body?.cancel().catch(() => undefined);
     throw new Error(
       "Official evidence redirect left the public HTTPS boundary.",
     );
   }
   const contentType = response.headers.get("content-type")?.toLowerCase() || "";
   const isPdf = contentType.includes("application/pdf");
-  const body = isPdf ? "" : await readResponseTextBounded(response);
-  if (isPdf) await response.body?.cancel().catch(() => undefined);
+  const body = isPdf
+    ? ""
+    : await readResponseTextBounded(response, {
+        signal: params.signal,
+        deadline,
+        now,
+      });
+  if (isPdf) void response.body?.cancel().catch(() => undefined);
   const title =
     body
       .match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1]

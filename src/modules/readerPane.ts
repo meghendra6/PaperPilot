@@ -64,6 +64,7 @@ import {
   buildInitialCriticalReadState,
   canViewPublicReviewInsights,
   completeCriticalReadStep,
+  attachPublicReviewInsightToCriticalRead,
   failCriticalReadStep,
   getCriticalReadStep,
   markCriticalReadStepRunning,
@@ -85,6 +86,11 @@ import {
 } from "./paperCompare";
 
 const publicReviewAbortControllers = new Map<number, AbortController>();
+const relatedDiscoveryAbortControllers = new Map<number, AbortController>();
+const criticalReadDiscoveryAbortControllers = new Map<
+  number,
+  AbortController
+>();
 
 function createPaneAbortController(doc: Document) {
   const AbortControllerConstructor =
@@ -167,13 +173,22 @@ export function disposeReaderPaneRunProgressCards(): void {
 }
 
 export function setReaderActionDraft(
-  draft: typeof addon.data.readerActionDraft,
+  draft: NonNullable<typeof addon.data.readerActionDrafts> extends Map<
+    number,
+    infer Draft
+  >
+    ? Draft
+    : never,
 ) {
-  addon.data.readerActionDraft = draft;
+  addon.data.readerActionDrafts?.set(draft.itemID, draft);
 }
 
-export function clearReaderActionDraft() {
-  addon.data.readerActionDraft = undefined;
+export function clearReaderActionDraft(itemID?: number) {
+  if (itemID === undefined) {
+    addon.data.readerActionDrafts?.clear();
+  } else {
+    addon.data.readerActionDrafts?.delete(itemID);
+  }
 }
 
 export function registerPaperPilotPaneSection() {
@@ -617,7 +632,9 @@ export function registerPaperPilotPaneSection() {
             await stopGeminiRunSilently({
               itemID: item.id,
             });
-            clearReaderActionDraft();
+            clearReaderActionDraft(item.id);
+            addon.data.pendingReaderActions?.delete(item.id);
+            addon.data.pendingDiscoveryConcerns?.delete(item.id);
             renderStreamingIndicator(streamingIndicator, false);
             return transitionToken;
           } catch (error) {
@@ -673,16 +690,55 @@ export function registerPaperPilotPaneSection() {
           if (markUpdated) relatedSection.markUpdated();
         };
 
-        const getCriticalReadStateForItem = () =>
-          addon.data.criticalReadStates?.get(item.id) ||
-          buildInitialCriticalReadState();
+        const getCriticalReadStateForItem = () => {
+          const paperTitle = String(item.getField("title") || "");
+          const sessionID = sessionStore.getOrCreate(
+            item.id,
+            getModeForItem(item.id),
+            paperTitle,
+          ).sessionId;
+          const stored = addon.data.criticalReadStates?.get(item.id);
+          if (stored?.sessionID === sessionID) {
+            if (stored.phase === "complete" && !stored.reportMarkdown) {
+              const rebuilt = {
+                ...stored,
+                reportMarkdown: buildCriticalReadReportMarkdown({
+                  paperTitle,
+                  state: stored,
+                }),
+              };
+              addon.data.criticalReadStates!.set(item.id, rebuilt);
+              return rebuilt;
+            }
+            return stored;
+          }
+          return buildInitialCriticalReadState(undefined, {
+            itemID: item.id,
+            sessionID,
+          });
+        };
         const setCriticalReadStateForItem = (state: CriticalReadState) => {
           if (!addon.data.criticalReadStates) {
             addon.data.criticalReadStates = new Map();
           }
           addon.data.criticalReadStates.set(item.id, state);
+          if (!canViewPublicReviewInsights(state)) {
+            publicReviewAbortControllers
+              .get(item.id)
+              ?.abort(
+                new Error("Public-review analysis closed by Critical Read."),
+              );
+          }
+          renderRelatedRecommendationState(
+            relatedRecommendButton,
+            relatedStatus,
+            relatedGroups,
+            compareButton,
+            compareHelper,
+            item.id,
+            String(item.getField("title") || ""),
+          );
         };
-        let criticalReadDiscoveryAbortController: AbortController | undefined;
         const persistCriticalReadState = async () => {
           await sessionHistoryService.persistActiveSession({
             itemID: item.id,
@@ -704,8 +760,10 @@ export function registerPaperPilotPaneSection() {
             state,
             actions: {
               onCancel: async () => {
-                if (criticalReadDiscoveryAbortController) {
-                  criticalReadDiscoveryAbortController.abort();
+                const discoveryController =
+                  criticalReadDiscoveryAbortControllers.get(item.id);
+                if (discoveryController) {
+                  discoveryController.abort();
                   const current = getCriticalReadStateForItem();
                   setCriticalReadStateForItem({
                     ...current,
@@ -838,7 +896,10 @@ export function registerPaperPilotPaneSection() {
                   const abortController = createPaneAbortController(
                     criticalReadRoot.ownerDocument,
                   );
-                  criticalReadDiscoveryAbortController = abortController;
+                  criticalReadDiscoveryAbortControllers.set(
+                    item.id,
+                    abortController,
+                  );
                   try {
                     await generateRelatedPaperGroups({
                       itemID: item.id,
@@ -880,6 +941,7 @@ export function registerPaperPilotPaneSection() {
                         });
                         setCriticalReadStateForItem(completed);
                         addon.data.relatedRecommendationStates?.set(item.id, {
+                          sessionID: sessionStore.get(item.id)?.sessionId,
                           running: false,
                           status: "Critical Read prior-work map ready",
                           groups: result.groups,
@@ -926,9 +988,10 @@ export function registerPaperPilotPaneSection() {
                     }
                   } finally {
                     if (
-                      criticalReadDiscoveryAbortController === abortController
+                      criticalReadDiscoveryAbortControllers.get(item.id) ===
+                      abortController
                     ) {
-                      criticalReadDiscoveryAbortController = undefined;
+                      criticalReadDiscoveryAbortControllers.delete(item.id);
                     }
                   }
                   return;
@@ -1040,6 +1103,18 @@ export function registerPaperPilotPaneSection() {
             isCurrent: isCurrentRender,
           });
           if (disposed) return;
+          renderRelatedRecommendationState(
+            relatedRecommendButton,
+            relatedStatus,
+            relatedGroups,
+            compareButton,
+            compareHelper,
+            item.id,
+            String(item.getField("title") || ""),
+          );
+          relatedConcern.value =
+            getRelatedRecommendationState(item.id).concern || "";
+          renderCriticalRead();
           await renderSessionHistory();
           if (disposed) return;
           updateWorkbenchSummary();
@@ -1750,7 +1825,6 @@ export function registerPaperPilotPaneSection() {
           updateWorkbenchSummary();
         });
 
-        let relatedDiscoveryAbortController: AbortController | undefined;
         let relatedConcernOrigin =
           getRelatedRecommendationState(item.id).concernOrigin || "user_text";
         relatedConcern.addEventListener("input", () => {
@@ -1767,7 +1841,7 @@ export function registerPaperPilotPaneSection() {
             return;
           }
           if (currentRelatedState.running) {
-            relatedDiscoveryAbortController?.abort();
+            relatedDiscoveryAbortControllers.get(item.id)?.abort();
             const current = getRelatedRecommendationState(item.id);
             addon.data.relatedRecommendationStates?.set(item.id, {
               ...current,
@@ -1787,7 +1861,7 @@ export function registerPaperPilotPaneSection() {
           const abortController = createPaneAbortController(
             relatedRecommendButton.ownerDocument,
           );
-          relatedDiscoveryAbortController = abortController;
+          relatedDiscoveryAbortControllers.set(item.id, abortController);
           let reservationOwned = false;
           try {
             await generateRelatedPaperGroups({
@@ -1841,6 +1915,7 @@ export function registerPaperPilotPaneSection() {
               },
               onSuccess: async (result) => {
                 addon.data.relatedRecommendationStates?.set(item.id, {
+                  sessionID: sessionStore.get(item.id)?.sessionId,
                   running: false,
                   status: `Found ${result.groups.reduce((count, group) => count + group.papers.length, 0)} papers across verified evidence lanes`,
                   groups: result.groups,
@@ -1856,6 +1931,7 @@ export function registerPaperPilotPaneSection() {
               onFailure: async (error) => {
                 const previous = getRelatedRecommendationState(item.id);
                 addon.data.relatedRecommendationStates?.set(item.id, {
+                  sessionID: sessionStore.get(item.id)?.sessionId,
                   running: false,
                   status:
                     error instanceof Error
@@ -1884,8 +1960,10 @@ export function registerPaperPilotPaneSection() {
               return;
             }
           } finally {
-            if (relatedDiscoveryAbortController === abortController) {
-              relatedDiscoveryAbortController = undefined;
+            if (
+              relatedDiscoveryAbortControllers.get(item.id) === abortController
+            ) {
+              relatedDiscoveryAbortControllers.delete(item.id);
             }
           }
           renderRelatedRecommendationState(
@@ -1911,6 +1989,9 @@ export function registerPaperPilotPaneSection() {
               paperTitle: String(item.getField("title") || "Current paper"),
               concern: state.concern,
               discovery: state.discovery,
+              includeReviewInsights: canViewPublicReviewInsights(
+                addon.data.criticalReadStates?.get(item.id),
+              ),
             });
             addon.data.relatedRecommendationStates?.set(item.id, {
               ...state,
@@ -2890,7 +2971,7 @@ export function registerPaperPilotPaneSection() {
             descriptor.placeholderResponse,
             streamingIndicator,
           );
-          renderDraftCard(draftCard);
+          renderDraftCard(draftCard, item.id);
           await renderSessionHistory();
         };
 
@@ -2903,17 +2984,33 @@ export function registerPaperPilotPaneSection() {
         sendButton.addEventListener("click", submitCurrentInput);
 
         const applyReaderActionToPane = async () => {
-          const pendingDiscovery = addon.data.pendingDiscoveryConcern;
+          const pendingDiscovery = addon.data.pendingDiscoveryConcerns?.get(
+            item.id,
+          );
           if (pendingDiscovery) {
+            const activeSessionID = sessionStore.get(item.id)?.sessionId;
+            if (
+              pendingDiscovery.sessionId &&
+              pendingDiscovery.sessionId !== activeSessionID
+            ) {
+              addon.data.pendingDiscoveryConcerns?.delete(item.id);
+              return;
+            }
             relatedConcern.value = pendingDiscovery.text;
             relatedConcernOrigin = pendingDiscovery.origin;
             relatedSection.setExpanded(true);
-            addon.data.pendingDiscoveryConcern = undefined;
+            addon.data.pendingDiscoveryConcerns?.delete(item.id);
             relatedRecommendButton.click();
             return;
           }
-          const pending = addon.data.pendingReaderAction;
+          const pending = addon.data.pendingReaderActions?.get(item.id);
           if (!pending) {
+            return;
+          }
+          const activeSessionID = sessionStore.get(item.id)?.sessionId;
+          if (pending.sessionId && pending.sessionId !== activeSessionID) {
+            addon.data.pendingReaderActions?.delete(item.id);
+            clearReaderActionDraft(item.id);
             return;
           }
 
@@ -2921,22 +3018,28 @@ export function registerPaperPilotPaneSection() {
           input.dispatchEvent(
             new input.ownerDocument.defaultView!.Event("input"),
           );
-          renderDraftCard(draftCard);
+          renderDraftCard(draftCard, item.id);
           input.focus();
 
           if (pending.autoSubmit) {
             await submitCurrentInput();
           }
 
-          addon.data.pendingReaderAction = undefined;
+          addon.data.pendingReaderActions?.delete(item.id);
         };
-        addon.data.applyReaderActionToPane = applyReaderActionToPane;
+        addon.data.applyReaderActionToPane?.set(
+          item.id,
+          applyReaderActionToPane,
+        );
         cleanupTasks.push(() => {
-          if (addon.data.applyReaderActionToPane === applyReaderActionToPane) {
-            addon.data.applyReaderActionToPane = undefined;
+          if (
+            addon.data.applyReaderActionToPane?.get(item.id) ===
+            applyReaderActionToPane
+          ) {
+            addon.data.applyReaderActionToPane.delete(item.id);
           }
         });
-        void addon.data.applyReaderActionToPane();
+        void addon.data.applyReaderActionToPane?.get(item.id)?.();
       }
     },
     onDestroy: ({ body }) => {
@@ -2951,8 +3054,8 @@ export function registerPaperPilotPaneSection() {
   }
 }
 
-function renderDraftCard(draftCard: HTMLElement) {
-  const draft = addon.data.readerActionDraft;
+function renderDraftCard(draftCard: HTMLElement, itemID: number) {
+  const draft = addon.data.readerActionDrafts?.get(itemID);
   if (!draft) {
     draftCard.style.display = "none";
     draftCard.textContent = "";
@@ -3092,7 +3195,7 @@ async function renderPaneState(params: {
     session.sessionId,
     descriptor.placeholderResponse,
   );
-  renderDraftCard(params.draftCard);
+  renderDraftCard(params.draftCard, params.itemID);
   renderStreamingIndicator(params.streamingIndicator, false);
   params.setSectionSummary(`${descriptor.label} · ${descriptor.status}`);
   if (mode !== defaultMode) {
@@ -3218,7 +3321,7 @@ function renderPaperArtifactState(
   cardsElement.style.display = "flex";
   const doc = cardsElement.ownerDocument;
   for (const card of state.cards) {
-    cardsElement.appendChild(buildPaperArtifactCardElement(doc, card));
+    cardsElement.appendChild(buildPaperArtifactCardElement(doc, card, itemID));
   }
 }
 
@@ -3281,7 +3384,11 @@ function renderCompareHelperState(
       : "pp-compare-helper pp-compare-helper--default";
 }
 
-function buildPaperArtifactCardElement(doc: Document, card: PaperArtifactCard) {
+function buildPaperArtifactCardElement(
+  doc: Document,
+  card: PaperArtifactCard,
+  itemID: number,
+) {
   const root = doc.createElement("section");
   root.className = "pp-artifact-card";
 
@@ -3340,13 +3447,14 @@ function buildPaperArtifactCardElement(doc: Document, card: PaperArtifactCard) {
         findPriorWork.className = "pp-btn pp-btn--ghost";
         findPriorWork.textContent = "Find prior work";
         findPriorWork.addEventListener("click", () => {
-          addon.data.pendingDiscoveryConcern = {
+          addon.data.pendingDiscoveryConcerns?.set(itemID, {
+            sessionId: sessionStore.get(itemID)?.sessionId,
             text: item,
             origin:
               card.kind === "extract-limitations" ? "limitation" : "follow_up",
             updatedAt: new Date().toISOString(),
-          };
-          void addon.data.applyReaderActionToPane?.();
+          });
+          void addon.data.applyReaderActionToPane?.get(itemID)?.();
         });
         bullet.appendChild(findPriorWork);
       }
@@ -3379,13 +3487,16 @@ function buildPaperArtifactCardElement(doc: Document, card: PaperArtifactCard) {
 }
 
 function getRelatedRecommendationState(itemID: number) {
-  return (
-    addon.data.relatedRecommendationStates?.get(itemID) || {
-      running: false,
-      status: "",
-      groups: [],
-    }
-  );
+  const activeSessionID = sessionStore.get(itemID)?.sessionId;
+  const stored = addon.data.relatedRecommendationStates?.get(itemID);
+  return stored && stored.sessionID === activeSessionID
+    ? stored
+    : {
+        sessionID: activeSessionID,
+        running: false,
+        status: "",
+        groups: [],
+      };
 }
 
 function renderRelatedRecommendationState(
@@ -3481,6 +3592,10 @@ function renderRelatedRecommendationState(
         doc,
         paper,
         reviewInsightsVisible,
+        canViewReviewInsights: () =>
+          canViewPublicReviewInsights(
+            addon.data.criticalReadStates?.get(itemID),
+          ),
         reviewInsightRunning:
           state.reviewInsightRunningCandidateID === paper.candidateID,
         actions: {
@@ -3491,6 +3606,9 @@ function renderRelatedRecommendationState(
             const result = await addRecommendationToCollection({
               sourceItemID: itemID,
               paper: target,
+              includeReviewURL: canViewPublicReviewInsights(
+                addon.data.criticalReadStates?.get(itemID),
+              ),
             });
             const current = getRelatedRecommendationState(itemID);
             const patch = { existingItemID: result.itemID };
@@ -3526,7 +3644,11 @@ function renderRelatedRecommendationState(
               rerender();
               return;
             }
-            if (!reviewInsightsVisible) {
+            if (
+              !canViewPublicReviewInsights(
+                addon.data.criticalReadStates?.get(itemID),
+              )
+            ) {
               throw new Error(
                 "Complete Critical Read Steps 4–6 before viewing public review insights.",
               );
@@ -3575,6 +3697,27 @@ function renderRelatedRecommendationState(
                   patch,
                 ),
               });
+              const criticalState = addon.data.criticalReadStates?.get(itemID);
+              if (criticalState) {
+                let updatedCritical = attachPublicReviewInsightToCriticalRead({
+                  state: criticalState,
+                  candidateID: target.candidateID || target.title,
+                  insight,
+                });
+                if (updatedCritical !== criticalState) {
+                  updatedCritical = {
+                    ...updatedCritical,
+                    reportMarkdown:
+                      updatedCritical.phase === "complete"
+                        ? buildCriticalReadReportMarkdown({
+                            paperTitle: currentPaperTitle,
+                            state: updatedCritical,
+                          })
+                        : undefined,
+                  };
+                  addon.data.criticalReadStates?.set(itemID, updatedCritical);
+                }
+              }
             } finally {
               if (
                 publicReviewAbortControllers.get(itemID) === abortController
@@ -4226,7 +4369,15 @@ async function handleUserInput(
     input.disabled = true;
     renderStreamingIndicator(streamingIndicator, true);
 
-    const draft = addon.data.readerActionDraft;
+    const activeSessionID = sessionStore.get(itemID)?.sessionId;
+    const candidateDraft = addon.data.readerActionDrafts?.get(itemID);
+    const draft =
+      candidateDraft &&
+      (!candidateDraft.sessionId ||
+        candidateDraft.sessionId === activeSessionID)
+        ? candidateDraft
+        : undefined;
+    if (candidateDraft && !draft) clearReaderActionDraft(itemID);
     const readerContext: { selectedText?: string } | undefined = draft
       ? undefined
       : await getCurrentReaderContext().catch(() => ({
@@ -4254,7 +4405,7 @@ async function handleUserInput(
             "ai",
           );
         }
-        clearReaderActionDraft();
+        clearReaderActionDraft(itemID);
       }
 
       await handleCodexQuestion({
@@ -4285,7 +4436,7 @@ async function handleUserInput(
             "ai",
           );
         }
-        clearReaderActionDraft();
+        clearReaderActionDraft(itemID);
       }
 
       await handleClaudeQuestion({
@@ -4315,7 +4466,7 @@ async function handleUserInput(
             "ai",
           );
         }
-        clearReaderActionDraft();
+        clearReaderActionDraft(itemID);
       }
 
       await handleGeminiQuestion({
@@ -4344,7 +4495,7 @@ async function handleUserInput(
           "ai",
         );
       }
-      clearReaderActionDraft();
+      clearReaderActionDraft(itemID);
     }
     const assistantText = `${placeholderResponse}\n\nGemini CLI mode is active.`;
     if (!options?.suppressChatMessages) {

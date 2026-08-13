@@ -30,10 +30,12 @@ export async function saveCriticalReadToNote(params: {
   const parent =
     params.item.isAttachment?.() && params.item.parentItemID
       ? zotero.Items.get(params.item.parentItemID) || params.item
-      : params.item;
+      : params.item.isAttachment?.()
+        ? undefined
+        : params.item;
   const note = new zotero.Item("note");
-  note.libraryID = parent.libraryID;
-  note.parentID = parent.id;
+  note.libraryID = parent?.libraryID ?? params.item.libraryID;
+  if (parent) note.parentID = parent.id;
   note.setNote(buildCriticalReadNoteHtml(params));
   await note.saveTx();
   return note;

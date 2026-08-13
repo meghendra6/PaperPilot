@@ -31,7 +31,7 @@ This note documents the purpose, target answer shape, and guardrails for the mai
 
 - Files: `src/modules/discovery/prompt.ts`, `src/modules/discovery/parser.ts`, `src/modules/relatedRecommendations.ts`
 - Purpose: let the active agent infer the relevant fields and leading venues, search broadly, and return prior work with publication status separated from novelty monitoring
-- Shape: one strict JSON object with `plan`, `verifiedMain`, `otherPeerReviewed`, `noveltyRadar`, `excluded`, `limitations`, and `completedAt`
+- Shape: one strict JSON object with `plan`, `verifiedMain`, `otherPeerReviewed`, `noveltyRadar`, `excluded`, `limitations`, and `completedAt`; `liveVerification` is an internal verifier marker and is never accepted from ordinary agent output
 - Guardrails:
   - the user supplies only an optional research concern; the agent infers the primary field, adjacent fields, bounded leading-venue set, and query families
   - venue judgment is open-world and evidence-based rather than a static ACL/CVPR/NeurIPS-style allowlist
@@ -39,6 +39,9 @@ This note documents the purpose, target answer shape, and guardrails for the mai
   - user concerns, prior reader answers, and structured candidates are serialized as JSON source data instead of interpolated into closable tags
   - required plan fields, three distinct query families, bounded venue assessments, and a safe paper open target are parser-enforced; incomplete rows become visible parse warnings or a workflow failure
   - only a title-matched official proceeding/program/decision, authoritative publisher proceeding, or official anthology can support the primary main-conference lane
+  - paper identity requires a DOI match or compatible title, year, and author evidence; title-only matches do not qualify
+  - venue identity must agree across the bounded plan, candidate metadata, leading-venue assessment, and inspected publication page
+  - an open-world generic source must prove venue-owned program/proceedings authority; an arbitrary public author, lab, or project page is not official evidence
   - live verification reconstructs identity, venue, track, decision, and review support from the inspected page; agent-supplied evidence claims are never retained on their own
   - workshop, Findings, demo, industry, shared-task, tutorial/abstract, rejected/withdrawn, track-unknown, and preprint-only records cannot enter `verifiedMain`
   - results are recalculated locally into three fixed lanes capped at 12/6/6; DOI/provider/title-author deduplication and ranking are deterministic
@@ -47,6 +50,7 @@ This note documents the purpose, target answer shape, and guardrails for the mai
   - bounded retries, request timeouts, short-lived caching, public-HTTPS validation, private-address/redirect rejection, and bounded HTML inspection apply to built-in retrieval
   - official PDF response bodies are not consumed during evidence checks
   - failed refreshes preserve the previous successful discovery result
+  - saved live evidence is trusted across restart only with current internal verifier provenance; legacy/model-era evidence is reopened for a live check
 
 ### Public review insight
 
@@ -58,12 +62,13 @@ This note documents the purpose, target answer shape, and guardrails for the mai
   - disagreement is preserved; incompatible scales are not averaged and unavailable/private material is not inferred
   - raw review text is not persisted in session or Zotero notes
   - review insight is excluded from Critical Read's reader-first analysis
+  - the live Critical Read gate is applied at rendering, click handling, note export, and collection export; generated summaries remain internal until Steps 4-6 are complete
 
 ### Critical Read
 
 - Files: `src/modules/criticalRead/prompt.ts`, `src/modules/criticalRead/parser.ts`, `src/modules/criticalRead/report.ts`
 - Purpose: guide a reader through the seven-step paper-reading method while preserving independent judgment before agent synthesis
-- Shape: one strict JSON object per analysis step (`summary`, `items`, `sourceLocators`, `limitations`), verified discovery at Step 3, and a final Markdown report
+- Shape: one strict JSON object per analysis step. Beyond `summary`, `items`, `sourceLocators`, and `limitations`, Step 1 requires `scanObservations`; Step 2 requires `researchQuestion`; Step 4 requires every locale-independent `methodChecks.areaCode`; Step 5 requires `evidenceConclusion`; Step 6 requires every `authorComparison` category plus explicit agent-inference provenance (and paper-claim provenance only when the conclusion is actually observable); Step 7 requires `alternatives` plus `finalSynthesis`. Step 3 stores verified discovery, and completion produces a Markdown report.
 - Guardrails:
   - exactly one step is active and later steps remain locked
   - Steps 1, 2, 4, 5, and 7 require reader input before agent analysis
@@ -74,6 +79,8 @@ This note documents the purpose, target answer shape, and guardrails for the mai
   - revising an earlier step invalidates all dependent downstream outputs and the report
   - caption/source-location orientation is used when available; degraded extraction is stated as “not visually inspected” rather than implying image understanding
   - the final report distinguishes reader input, paper claims, agent inference, and discovery evidence, including all three prior-work lanes and evidence links
+  - a permitted public-review insight appears only as a separate reviewer-perspective section with public source links; it never rewrites the seven reader-first steps
+  - serialized reports are rebuilt from validated step state on reopen instead of being displayed as authority after migration
 
 ### Paper tools
 

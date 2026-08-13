@@ -162,6 +162,10 @@ export interface ExcludedDiscoveryCandidate {
 
 export interface DiscoveryResult {
   schemaVersion: 1;
+  liveVerification?: {
+    verifierVersion: 1;
+    verifiedAt: string;
+  };
   plan: AgentSearchPlan;
   verifiedMain: DiscoveredPaper[];
   otherPeerReviewed: DiscoveredPaper[];

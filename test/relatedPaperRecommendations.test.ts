@@ -2,6 +2,7 @@ import { test } from "node:test";
 import * as assert from "node:assert/strict";
 
 import {
+  addItemsToCollection,
   addRecommendationToCollection,
   buildOpenTarget,
   buildRecommendationMetadataLine,
@@ -13,6 +14,37 @@ import {
   openRecommendedPaper,
   parseRelatedPaperResponse,
 } from "../src/modules/relatedRecommendations";
+
+test("addItemsToCollection uses Zotero's required DB transaction boundary", async () => {
+  const calls: string[] = [];
+  const previousZotero = (globalThis as { Zotero?: unknown }).Zotero;
+  (globalThis as { Zotero?: unknown }).Zotero = {
+    DB: {
+      executeTransaction: async (callback: () => Promise<void>) => {
+        calls.push("transaction:start");
+        await callback();
+        calls.push("transaction:end");
+      },
+    },
+  };
+  try {
+    await addItemsToCollection(
+      {
+        addItems: async (ids) => {
+          calls.push(`add:${ids.join(",")}`);
+        },
+      },
+      [7, 8],
+    );
+    assert.deepEqual(calls, [
+      "transaction:start",
+      "add:7,8",
+      "transaction:end",
+    ]);
+  } finally {
+    (globalThis as { Zotero?: unknown }).Zotero = previousZotero;
+  }
+});
 import {
   claimRetryEngineRequest,
   releaseRetryEngineRequest,
@@ -83,6 +115,7 @@ test("findExistingLibraryItem prefers DOI over title fallback", () => {
       title: "Matching Paper",
       doi: "10.1000/test",
       year: 2024,
+      authors: ["Ada Author"],
     },
     [
       { id: 20, title: "Matching Paper", year: 2024 },
@@ -98,11 +131,53 @@ test("findExistingLibraryItem falls back to normalized title and year", () => {
     {
       title: "A Great Paper: Findings",
       year: 2023,
+      authors: ["Ada Author"],
     },
-    [{ id: 30, title: "A Great Paper Findings", year: 2023 }],
+    [
+      {
+        id: 30,
+        title: "A Great Paper Findings",
+        year: 2023,
+        authors: ["A. Author"],
+      },
+    ],
   );
 
   assert.equal(match?.id, 30);
+});
+
+test("findExistingLibraryItem does not bind an ambiguous same-title paper", () => {
+  const candidates = [
+    {
+      id: 40,
+      title: "Shared Generic Title",
+      year: 2024,
+      authors: ["Alice Researcher"],
+    },
+  ];
+  assert.equal(
+    findExistingLibraryItem(
+      {
+        title: "Shared Generic Title",
+        authors: ["Bob Scholar"],
+        providerIDs: {},
+      },
+      candidates,
+    ),
+    undefined,
+  );
+  assert.equal(
+    findExistingLibraryItem(
+      {
+        title: "Shared Generic Title",
+        year: 2024,
+        authors: ["Bob Scholar"],
+        providerIDs: {},
+      },
+      candidates,
+    ),
+    undefined,
+  );
 });
 
 test("buildRecommendationMetadataLine and buildOpenTarget cover DOI fallback", () => {
@@ -204,8 +279,27 @@ test("addRecommendationToCollection reuses an existing item and adds it to the c
   (globalThis as any).Zotero = {
     Items: {
       getAsync: async () => ({ libraryID: 1 }),
-      getAll: async () => [],
-      get: (id: number) => ({ ...existingItem, id }),
+      getAll: async () => [
+        {
+          id: 99,
+          isAttachment: () => false,
+          isNote: () => false,
+          getField: (field: string) =>
+            field === "title"
+              ? "Paper"
+              : field === "year" || field === "date"
+                ? "2026"
+                : "",
+          getCreators: () => [{ firstName: "Ada", lastName: "Author" }],
+        },
+      ],
+      get: (id: number) => ({
+        ...existingItem,
+        id,
+        getField: () => "",
+        setField: () => undefined,
+        saveTx: async () => undefined,
+      }),
     },
     Collections: {
       get: (id: number) => ({
@@ -237,7 +331,8 @@ test("addRecommendationToCollection reuses an existing item and adds it to the c
     sourceItemID: 1,
     paper: {
       title: "Paper",
-      authors: [],
+      authors: ["Ada Author"],
+      year: 2026,
       relevanceScore: 0.9,
       existingItemID: 99,
     },

@@ -97,6 +97,7 @@ export async function startWorkspaceTextRun(params: {
   title: string;
   sessionId: string;
   question: string;
+  requiredDiscoveryCapabilities?: import("../discovery/types").DiscoveryCapabilities;
 }): Promise<WorkspaceRunResult | FailedWorkspaceRun> {
   if (
     !isDirectWorkspaceRunClaimCurrent(
@@ -128,6 +129,14 @@ export async function startWorkspaceTextRun(params: {
         question: params.question,
       });
     } else {
+      if (
+        params.requiredDiscoveryCapabilities &&
+        params.requiredDiscoveryCapabilities.agentWebSearch !== true
+      ) {
+        throw new Error(
+          "The admitted discovery run no longer has a verified web-search capability.",
+        );
+      }
       const { startCodexRunForQuestion } = await import("../codex/runner");
       result = await startCodexRunForQuestion({
         itemID: params.itemID,
@@ -135,6 +144,9 @@ export async function startWorkspaceTextRun(params: {
         sessionId: params.sessionId,
         question: params.question,
         useResume: false,
+        webSearchEnabledOverride: params.requiredDiscoveryCapabilities
+          ? true
+          : undefined,
       });
     }
 

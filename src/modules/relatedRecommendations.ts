@@ -85,6 +85,8 @@ export interface LibraryItemCandidate {
   title?: string;
   year?: number;
   doi?: string;
+  authors?: string[];
+  providerIDs?: Record<string, string>;
 }
 
 export const PREFERRED_CATEGORY_ORDER = [
@@ -355,7 +357,10 @@ export function parseRelatedPaperResponse(raw: string): RelatedPaperResponse {
 }
 
 export function findExistingLibraryItem(
-  paper: Pick<RecommendedPaper, "title" | "year" | "doi">,
+  paper: Pick<
+    RecommendedPaper,
+    "title" | "year" | "doi" | "authors" | "providerIDs"
+  >,
   candidates: LibraryItemCandidate[],
 ) {
   const normalizedDOI = paper.doi ? normalizeDOI(paper.doi) : undefined;
@@ -369,7 +374,19 @@ export function findExistingLibraryItem(
     }
   }
 
+  const stableIDMatch = candidates.find((candidate) =>
+    Object.entries(paper.providerIDs || {}).some(
+      ([provider, id]) => id && candidate.providerIDs?.[provider] === id,
+    ),
+  );
+  if (stableIDMatch) return stableIDMatch;
+
   const normalizedPaperTitle = normalizeTitle(paper.title);
+  const authorKeys = new Set(
+    paper.authors
+      .map((author) => normalizeTitle(author).split(" ").at(-1))
+      .filter(Boolean),
+  );
   return candidates.find((candidate) => {
     if (!candidate.title) {
       return false;
@@ -377,10 +394,13 @@ export function findExistingLibraryItem(
     if (normalizeTitle(candidate.title) !== normalizedPaperTitle) {
       return false;
     }
-    if (paper.year && candidate.year) {
-      return paper.year === candidate.year;
+    if (!paper.year || !candidate.year || paper.year !== candidate.year) {
+      return false;
     }
-    return true;
+    if (!paper.authors.length || !candidate.authors?.length) return false;
+    return candidate.authors.some((author) =>
+      authorKeys.has(normalizeTitle(author).split(" ").at(-1)),
+    );
   });
 }
 
@@ -463,7 +483,10 @@ function splitCreatorName(name: string) {
   };
 }
 
-export function buildDiscoveryEvidenceExtra(paper: RecommendedPaper) {
+export function buildDiscoveryEvidenceExtra(
+  paper: RecommendedPaper,
+  options: { includeReviewURL?: boolean } = {},
+) {
   if (!paper.publicationClass && !paper.publicationEvidence?.length) return "";
   return [
     "Paper Pilot discovery evidence:",
@@ -477,7 +500,9 @@ export function buildDiscoveryEvidenceExtra(paper: RecommendedPaper) {
       (entry) =>
         `Evidence (${entry.type}; ${entry.supports.join(", ")}): ${entry.url}`,
     ),
-    paper.reviewURL ? `Public review: ${paper.reviewURL}` : undefined,
+    options.includeReviewURL !== false && paper.reviewURL
+      ? `Public review: ${paper.reviewURL}`
+      : undefined,
     paper.searchConcern ? `Search concern: ${paper.searchConcern}` : undefined,
   ]
     .filter(Boolean)
@@ -509,6 +534,31 @@ function resolveCollectionReference(collection: any) {
   return undefined;
 }
 
+export async function addItemsToCollection(
+  collection: { addItems?: (itemIDs: number[]) => Promise<unknown> },
+  itemIDs: number[],
+) {
+  if (typeof collection.addItems !== "function" || !itemIDs.length) {
+    return;
+  }
+  const database = (
+    globalThis as {
+      Zotero?: {
+        DB?: {
+          executeTransaction?: (callback: () => Promise<void>) => Promise<void>;
+        };
+      };
+    }
+  ).Zotero?.DB;
+  if (typeof database?.executeTransaction === "function") {
+    await database.executeTransaction(async () => {
+      await collection.addItems!(itemIDs);
+    });
+    return;
+  }
+  await collection.addItems(itemIDs);
+}
+
 export async function getLibraryItemCandidates(libraryID: number) {
   const items = await Zotero.Items.getAll(libraryID, true, false, false);
   return items
@@ -518,6 +568,14 @@ export async function getLibraryItemCandidates(libraryID: number) {
       title: String(item.getField("title") || "").trim(),
       year: toOptionalYear(item.getField("year") || item.getField("date")),
       doi: toOptionalString(item.getField("DOI")),
+      authors:
+        typeof item.getCreators === "function"
+          ? item
+              .getCreators()
+              .map((creator: any) =>
+                [creator.firstName, creator.lastName].filter(Boolean).join(" "),
+              )
+          : [],
     })) satisfies LibraryItemCandidate[];
 }
 
@@ -554,7 +612,9 @@ export async function generateRelatedPaperGroups(params: {
     const capabilities = getDiscoveryCapabilities(mode);
     if (!canRunDiscovery(capabilities)) {
       throw new Error(
-        "Research discovery requires agent web search so official venue, track, and decision evidence can be found. Enable web search for the active engine and try again.",
+        mode === "codex_cli"
+          ? "Research discovery requires Codex web search so official venue, track, and decision evidence can be found. Enable Codex web search and try again."
+          : "Research discovery is unavailable because this engine does not expose a verified web-search capability. Select Codex with web search enabled.",
       );
     }
     params.onStatus?.("Understanding the research question");
@@ -617,6 +677,7 @@ export async function generateRelatedPaperGroups(params: {
       reservationToken,
       title: params.itemTitle,
       sessionId: session.sessionId,
+      requiredDiscoveryCapabilities: capabilities,
       question: `${buildRelatedPaperQuestion(
         item,
         params.concern,
@@ -741,9 +802,12 @@ export async function generatePublicReviewInsight(params: {
     throw new Error("No public review source is available for this paper.");
   }
   const mode = getModeForItem(params.itemID);
-  if (!getDiscoveryCapabilities(mode).agentWebSearch) {
+  const capabilities = getDiscoveryCapabilities(mode);
+  if (!capabilities.agentWebSearch) {
     throw new Error(
-      "Public review insight requires agent web search. Enable web search for the active engine and try again.",
+      mode === "codex_cli"
+        ? "Public review insight requires Codex web search. Enable Codex web search and try again."
+        : "Public review insight is unavailable because this engine does not expose a verified web-search capability. Select Codex with web search enabled.",
     );
   }
   const reservationToken = claimWorkspaceRunReservation(mode, params.itemID);
@@ -764,6 +828,7 @@ export async function generatePublicReviewInsight(params: {
       reservationToken,
       title: params.itemTitle,
       sessionId: session.sessionId,
+      requiredDiscoveryCapabilities: capabilities,
       question: buildPublicReviewInsightQuestion({
         title: params.paper.title,
         venue: params.paper.venue,
@@ -909,6 +974,7 @@ export async function chooseCollectionForRecommendation(sourceItem: any) {
 export async function addRecommendationToCollection(params: {
   sourceItemID: number;
   paper: RecommendedPaper;
+  includeReviewURL?: boolean;
 }) {
   const sourceItem = await Zotero.Items.getAsync(params.sourceItemID);
   const collection = await chooseCollectionForRecommendation(sourceItem);
@@ -918,12 +984,20 @@ export async function addRecommendationToCollection(params: {
     );
   }
 
-  const existingCandidate = params.paper.existingItemID
-    ? { id: params.paper.existingItemID }
-    : findExistingLibraryItem(
-        params.paper,
-        await getLibraryItemCandidates(sourceItem.libraryID),
-      );
+  const libraryCandidates = await getLibraryItemCandidates(
+    sourceItem.libraryID,
+  );
+  const persistedCandidate = params.paper.existingItemID
+    ? libraryCandidates.find(
+        (candidate: LibraryItemCandidate) =>
+          candidate.id === params.paper.existingItemID,
+      )
+    : undefined;
+  const existingCandidate =
+    persistedCandidate &&
+    findExistingLibraryItem(params.paper, [persistedCandidate])
+      ? persistedCandidate
+      : findExistingLibraryItem(params.paper, libraryCandidates);
   const existing = existingCandidate
     ? Zotero.Items.get(existingCandidate.id)
     : undefined;
@@ -954,7 +1028,9 @@ export async function addRecommendationToCollection(params: {
     needsSave = true;
   }
 
-  const evidenceExtra = buildDiscoveryEvidenceExtra(params.paper);
+  const evidenceExtra = buildDiscoveryEvidenceExtra(params.paper, {
+    includeReviewURL: params.includeReviewURL,
+  });
   if (evidenceExtra) {
     const existingExtra = String(item.getField("extra") || "").trim();
     if (!existingExtra.includes(evidenceExtra)) {
@@ -973,7 +1049,7 @@ export async function addRecommendationToCollection(params: {
     typeof collection.hasItem !== "function" ||
     !collection.hasItem(item.id)
   ) {
-    await collection.addItems([item.id]);
+    await addItemsToCollection(collection, [item.id]);
   }
 
   return {

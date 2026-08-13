@@ -4,6 +4,7 @@ import type {
   CriticalReadStepID,
   CriticalReadStepState,
 } from "./types";
+import type { DiscoveredPaper, PublicReviewInsight } from "../discovery/types";
 
 export const CRITICAL_READ_STEP_DEFINITIONS: ReadonlyArray<
   Pick<
@@ -66,9 +67,13 @@ function nowISO(now?: Date) {
   return (now || new Date()).toISOString();
 }
 
-export function buildInitialCriticalReadState(now?: Date): CriticalReadState {
+export function buildInitialCriticalReadState(
+  now?: Date,
+  scope?: { itemID: number; sessionID: string },
+): CriticalReadState {
   return {
     schemaVersion: 1,
+    ...scope,
     phase: "idle",
     running: false,
     status: "Ready to start a seven-step critical read.",
@@ -252,4 +257,41 @@ export function reviseCriticalReadStep(
     }),
     updatedAt: nowISO(now),
   } satisfies CriticalReadState;
+}
+
+export function attachPublicReviewInsightToCriticalRead(params: {
+  state: CriticalReadState;
+  candidateID: string;
+  insight: PublicReviewInsight;
+  now?: Date;
+}) {
+  let attached = false;
+  const updatePaper = (paper: DiscoveredPaper) => {
+    if (paper.candidateID !== params.candidateID || !paper.reviewURL) {
+      return paper;
+    }
+    attached = true;
+    return { ...paper, reviewInsight: params.insight };
+  };
+  const steps = params.state.steps.map((step) => {
+    if (!step.discovery) return step;
+    return {
+      ...step,
+      discovery: {
+        ...step.discovery,
+        verifiedMain: step.discovery.verifiedMain.map(updatePaper),
+        otherPeerReviewed: step.discovery.otherPeerReviewed.map(updatePaper),
+        noveltyRadar: step.discovery.noveltyRadar.map(updatePaper),
+      },
+    };
+  });
+  return attached
+    ? {
+        ...params.state,
+        steps,
+        reportMarkdown: undefined,
+        reportNoteItemID: undefined,
+        updatedAt: nowISO(params.now),
+      }
+    : params.state;
 }
