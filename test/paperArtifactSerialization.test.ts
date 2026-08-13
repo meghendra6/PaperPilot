@@ -56,6 +56,7 @@ test("serializePaperArtifactCard normalizes text and drops empty sections", () =
         rationale: "find follow-up baselines",
       },
     ],
+    provenance: [],
     sourceLabel:
       "Grounded in the active paper context. Follow-up ideas may include inference.",
     updatedAt: "2026-03-15T00:00:00.000Z",

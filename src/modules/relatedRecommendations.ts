@@ -39,7 +39,12 @@ import {
   searchCandidateProviders,
 } from "./discovery/providers/search";
 import { verifyDiscoveryEvidenceLive } from "./discovery/workflow";
-import { deduplicateProviderCandidates } from "./discovery/normalize";
+import {
+  areLikelySamePaper,
+  deduplicateProviderCandidates,
+  isPublicReviewURL,
+  normalizeHttpURL,
+} from "./discovery/normalize";
 import { RUN_TIMEOUT_MS } from "./ai/runProgress";
 
 declare const Zotero: any;
@@ -87,6 +92,14 @@ export interface LibraryItemCandidate {
   doi?: string;
   authors?: string[];
   providerIDs?: Record<string, string>;
+}
+
+function safePaperURLs(
+  paper: Pick<RecommendedPaper, "url" | "urls" | "reviewURL">,
+) {
+  return [paper.url, ...(paper.urls || [])]
+    .filter((value): value is string => Boolean(value))
+    .filter((value) => !isPublicReviewURL(value, paper.reviewURL));
 }
 
 export const PREFERRED_CATEGORY_ORDER = [
@@ -277,83 +290,26 @@ export function parseRelatedPaperResponse(raw: string): RelatedPaperResponse {
     );
   }
 
+  if (!parsed || typeof parsed !== "object") {
+    throw new Error("Discovery response must be a structured object.");
+  }
   if (
-    parsed &&
-    typeof parsed === "object" &&
-    (Array.isArray((parsed as { verifiedMain?: unknown }).verifiedMain) ||
-      Array.isArray(
-        (parsed as { otherPeerReviewed?: unknown }).otherPeerReviewed,
-      ) ||
-      Array.isArray((parsed as { noveltyRadar?: unknown }).noveltyRadar))
+    !Array.isArray((parsed as { verifiedMain?: unknown }).verifiedMain) ||
+    !Array.isArray(
+      (parsed as { otherPeerReviewed?: unknown }).otherPeerReviewed,
+    ) ||
+    !Array.isArray((parsed as { noveltyRadar?: unknown }).noveltyRadar)
   ) {
-    const discovery = parseDiscoveryResult(raw);
-    const groups = discoveryResultToRecommendationGroups(discovery);
-    if (!groups.some((group) => group.papers.length)) {
-      throw new Error("Discovery response did not include any usable papers.");
-    }
-    return { groups, discovery };
-  }
-
-  if (
-    !parsed ||
-    typeof parsed !== "object" ||
-    !Array.isArray((parsed as { groups?: unknown }).groups)
-  ) {
-    throw new Error("Recommendation JSON must include a groups array.");
-  }
-
-  const groups: RecommendationGroup[] = [];
-  for (const group of (parsed as { groups: unknown[] }).groups) {
-    if (!group || typeof group !== "object") {
-      continue;
-    }
-    const category = toOptionalString(
-      (group as { category?: unknown }).category,
-    );
-    const papersRaw = Array.isArray((group as { papers?: unknown }).papers)
-      ? (group as { papers: unknown[] }).papers
-      : [];
-    const papers: RecommendedPaper[] = [];
-
-    for (const paper of papersRaw) {
-      if (!paper || typeof paper !== "object") {
-        continue;
-      }
-      const title = toOptionalString((paper as { title?: unknown }).title);
-      if (!title) {
-        continue;
-      }
-      papers.push({
-        title,
-        authors: toAuthors((paper as { authors?: unknown }).authors),
-        year: toOptionalYear((paper as { year?: unknown }).year),
-        venue: toOptionalString((paper as { venue?: unknown }).venue),
-        doi: toOptionalString((paper as { doi?: unknown }).doi),
-        url: toOptionalString((paper as { url?: unknown }).url),
-        abstract: toOptionalString((paper as { abstract?: unknown }).abstract),
-        relevanceScore: toRelevanceScore(
-          (paper as { relevanceScore?: unknown }).relevanceScore,
-        ),
-        reason: toOptionalString((paper as { reason?: unknown }).reason),
-      });
-    }
-
-    if (!category || !papers.length) {
-      continue;
-    }
-
-    groups.push({ category, papers });
-  }
-
-  if (!groups.length) {
     throw new Error(
-      "Recommendation response did not include any usable groups.",
+      "Discovery response must use the verified discovery schema; legacy recommendation groups are not accepted.",
     );
   }
-
-  return {
-    groups: sortRecommendationGroups(groups),
-  };
+  const discovery = parseDiscoveryResult(raw);
+  const groups = discoveryResultToRecommendationGroups(discovery);
+  if (!groups.some((group) => group.papers.length)) {
+    throw new Error("Discovery response did not include any usable papers.");
+  }
+  return { groups, discovery };
 }
 
 export function findExistingLibraryItem(
@@ -420,12 +376,19 @@ export function attachExistingItems(
 }
 
 export function buildOpenTarget(
-  paper: Pick<RecommendedPaper, "existingItemID" | "doi" | "url" | "urls">,
+  paper: Pick<
+    RecommendedPaper,
+    "existingItemID" | "doi" | "url" | "urls" | "reviewURL"
+  >,
+  options: { includeReviewURL?: boolean } = {},
 ) {
   if (paper.existingItemID) {
     return { kind: "zotero", itemID: paper.existingItemID } as const;
   }
-  const url = paper.url || paper.urls?.[0];
+  const url =
+    options.includeReviewURL === false
+      ? safePaperURLs(paper)[0]
+      : paper.url || paper.urls?.[0];
   if (url) {
     return { kind: "external", url } as const;
   }
@@ -496,10 +459,16 @@ export function buildDiscoveryEvidenceExtra(
     paper.evidenceConfidence
       ? `Evidence confidence: ${paper.evidenceConfidence}`
       : undefined,
-    ...(paper.publicationEvidence || []).map(
-      (entry) =>
-        `Evidence (${entry.type}; ${entry.supports.join(", ")}): ${entry.url}`,
-    ),
+    ...(paper.publicationEvidence || [])
+      .filter(
+        (entry) =>
+          options.includeReviewURL !== false ||
+          !isPublicReviewURL(entry.url, paper.reviewURL),
+      )
+      .map(
+        (entry) =>
+          `Evidence (${entry.type}; ${entry.supports.join(", ")}): ${entry.url}`,
+      ),
     options.includeReviewURL !== false && paper.reviewURL
       ? `Public review: ${paper.reviewURL}`
       : undefined,
@@ -617,10 +586,20 @@ export async function generateRelatedPaperGroups(params: {
           : "Research discovery is unavailable because this engine does not expose a verified web-search capability. Select Codex with web search enabled.",
       );
     }
+    const assertCapabilitiesUnchanged = () => {
+      const current = getDiscoveryCapabilities(mode);
+      if (!canRunDiscovery(current)) {
+        throw new Error(
+          "Research discovery capability changed before the run started. Re-enable verified web search and retry.",
+        );
+      }
+      return current;
+    };
     params.onStatus?.("Understanding the research question");
     const seedQueries = buildStructuredSeedQueries({
       title: params.itemTitle,
       concern: params.concern?.text,
+      concernOrigin: params.concern?.origin,
     });
     params.onStatus?.("Selecting fields and leading venues");
     const providerResults: Array<{
@@ -677,7 +656,7 @@ export async function generateRelatedPaperGroups(params: {
       reservationToken,
       title: params.itemTitle,
       sessionId: session.sessionId,
-      requiredDiscoveryCapabilities: capabilities,
+      requiredDiscoveryCapabilities: assertCapabilitiesUnchanged(),
       question: `${buildRelatedPaperQuestion(
         item,
         params.concern,
@@ -723,9 +702,15 @@ export async function generateRelatedPaperGroups(params: {
           }
           params.onStatus?.("Verifying publication status");
           let parsed = parseRelatedPaperResponse(responseText);
-          if (parsed.discovery && capabilities.officialEvidenceFetch) {
+          if (!parsed.discovery || !capabilities.officialEvidenceFetch) {
+            throw new Error(
+              "Research discovery requires a verified discovery payload and live official-evidence checks.",
+            );
+          }
+          if (parsed.discovery) {
             const discovery = await verifyDiscoveryEvidenceLive({
               discovery: parsed.discovery,
+              providerCandidates: providerResult.candidates,
               signal: params.signal,
               deadline,
             });
@@ -828,7 +813,15 @@ export async function generatePublicReviewInsight(params: {
       reservationToken,
       title: params.itemTitle,
       sessionId: session.sessionId,
-      requiredDiscoveryCapabilities: capabilities,
+      requiredDiscoveryCapabilities: (() => {
+        const current = getDiscoveryCapabilities(mode);
+        if (!current.agentWebSearch) {
+          throw new Error(
+            "Public-review web-search capability changed before the run started.",
+          );
+        }
+        return current;
+      })(),
       question: buildPublicReviewInsightQuestion({
         title: params.paper.title,
         venue: params.paper.venue,
@@ -862,7 +855,10 @@ export async function generatePublicReviewInsight(params: {
           if (progress.exitCode !== "0") {
             throw new Error(responseText || "Public-review analysis failed.");
           }
-          insight = parsePublicReviewInsight(responseText);
+          insight = parsePublicReviewInsight(
+            responseText,
+            params.paper.reviewURL,
+          );
           break;
         }
         await new Promise((resolve) => setTimeout(resolve, 800));
@@ -897,8 +893,11 @@ export async function generatePublicReviewInsight(params: {
   }
 }
 
-export async function openRecommendedPaper(paper: RecommendedPaper) {
-  const target = buildOpenTarget(paper);
+export async function openRecommendedPaper(
+  paper: RecommendedPaper,
+  options: { includeReviewURL?: boolean } = {},
+) {
+  const target = buildOpenTarget(paper, options);
   if (target.kind === "zotero") {
     const pane = getMainWindowPane();
     if (!pane) {
@@ -1016,8 +1015,12 @@ export async function addRecommendationToCollection(params: {
     if (params.paper.doi) {
       item.setField("DOI", normalizeDOI(params.paper.doi));
     }
-    if (params.paper.url) {
-      item.setField("url", params.paper.url);
+    const safeURL =
+      params.includeReviewURL === false
+        ? safePaperURLs(params.paper)[0]
+        : params.paper.url || params.paper.urls?.[0];
+    if (safeURL) {
+      item.setField("url", safeURL);
     }
     if (params.paper.abstract) {
       item.setField("abstractNote", params.paper.abstract);
@@ -1026,6 +1029,26 @@ export async function addRecommendationToCollection(params: {
       item.setCreators(params.paper.authors.map(splitCreatorName));
     }
     needsSave = true;
+  }
+
+  if (existing) {
+    const fillIfMissing = (field: string, value?: string) => {
+      if (value && !String(item.getField(field) || "").trim()) {
+        item.setField(field, value);
+        needsSave = true;
+      }
+    };
+    fillIfMissing(
+      "DOI",
+      params.paper.doi ? normalizeDOI(params.paper.doi) : undefined,
+    );
+    fillIfMissing("publicationTitle", params.paper.venue);
+    fillIfMissing(
+      "url",
+      params.includeReviewURL === false
+        ? safePaperURLs(params.paper)[0]
+        : params.paper.url || params.paper.urls?.[0],
+    );
   }
 
   const evidenceExtra = buildDiscoveryEvidenceExtra(params.paper, {

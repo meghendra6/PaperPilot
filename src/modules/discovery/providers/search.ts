@@ -12,12 +12,33 @@ const cache = new Map<
   { expiresAt: number; candidates: DiscoveryProviderCandidate[] }
 >();
 
+function boundedSearchTerms(value: string, maxLength: number) {
+  const withoutSensitiveTokens = value
+    .replace(/https?:\/\/\S+/gi, " ")
+    .replace(/\b\S+@\S+\b/g, " ")
+    .replace(/[^\p{L}\p{N}-]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const terms = withoutSensitiveTokens.split(" ").filter(Boolean).slice(0, 18);
+  let output = "";
+  for (const term of terms) {
+    const next = output ? `${output} ${term}` : term;
+    if (next.length > maxLength) break;
+    output = next;
+  }
+  return output;
+}
+
 export function buildStructuredSeedQueries(params: {
   title: string;
   concern?: string;
+  concernOrigin?: import("../types").ResearchConcernOrigin;
 }) {
-  const title = params.title.replace(/\s+/g, " ").trim();
-  const concern = params.concern?.replace(/\s+/g, " ").trim();
+  const title = boundedSearchTerms(params.title, 160);
+  const concern =
+    params.concern && params.concernOrigin !== "selection"
+      ? boundedSearchTerms(params.concern, 180)
+      : undefined;
   const focus = concern || title;
   const seeds = [
     { family: "problem_setting", query: focus },

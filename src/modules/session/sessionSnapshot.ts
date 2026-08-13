@@ -16,7 +16,11 @@ import type {
   CriticalReadState,
   CriticalReadStepID,
 } from "../criticalRead/types";
-import { normalizeHttpURL } from "../discovery/normalize";
+import {
+  areLikelySamePaper,
+  canonicalDiscoveryPaperID,
+  normalizeHttpURL,
+} from "../discovery/normalize";
 
 declare const addon: { data: AddonSessionData } | undefined;
 
@@ -97,14 +101,12 @@ function migrateRecommendationState(value: unknown) {
   if (!isPlainObject(value) || !Array.isArray(value.groups)) return undefined;
   const discovery = migrateDiscoveryResult(value.discovery);
   const allowed = discovery
-    ? new Map(
-        [
-          ...discovery.verifiedMain,
-          ...discovery.otherPeerReviewed,
-          ...discovery.noveltyRadar,
-        ].map((paper) => [paper.candidateID, paper]),
-      )
-    : new Map();
+    ? [
+        ...discovery.verifiedMain,
+        ...discovery.otherPeerReviewed,
+        ...discovery.noveltyRadar,
+      ]
+    : [];
   const groups = value.groups.flatMap((group) => {
     if (!isPlainObject(group) || !Array.isArray(group.papers)) return [];
     return [
@@ -113,13 +115,36 @@ function migrateRecommendationState(value: unknown) {
           typeof group.category === "string" ? group.category : "Related work",
         papers: group.papers.flatMap((paper) => {
           if (!isPlainObject(paper)) return [];
-          const candidateID =
-            typeof paper.candidateID === "string" ? paper.candidateID : "";
-          const valid = allowed.get(candidateID);
+          const authors = Array.isArray(paper.authors)
+            ? paper.authors.filter(
+                (entry): entry is string => typeof entry === "string",
+              )
+            : [];
+          const providerIDs = isPlainObject(paper.providerIDs)
+            ? Object.fromEntries(
+                Object.entries(paper.providerIDs).filter(
+                  (entry): entry is [string, string] =>
+                    typeof entry[1] === "string",
+                ),
+              )
+            : {};
+          const matching = allowed.filter(
+            (candidate) =>
+              typeof paper.title === "string" &&
+              areLikelySamePaper(candidate, {
+                title: paper.title,
+                authors,
+                year: typeof paper.year === "number" ? paper.year : undefined,
+                doi: typeof paper.doi === "string" ? paper.doi : undefined,
+                providerIDs,
+              }),
+          );
+          const valid = matching.length === 1 ? matching[0] : undefined;
           if (valid) {
             return [
               {
                 ...cloneValue(paper),
+                candidateID: valid.candidateID,
                 existingItemID: undefined,
                 publicationClass: valid.publicationClass,
                 publicationEvidence: cloneValue(valid.publicationEvidence),
@@ -159,12 +184,18 @@ function migrateRecommendationState(value: unknown) {
           return [
             {
               ...cloneValue(paper),
+              candidateID: canonicalDiscoveryPaperID({
+                title: String(paper.title || ""),
+                authors,
+                year: typeof paper.year === "number" ? paper.year : undefined,
+                doi: typeof paper.doi === "string" ? paper.doi : undefined,
+              }),
               existingItemID: undefined,
               url: safeURL,
               urls: safeURLs,
-              publicationClass: "unverified",
+              publicationClass: "unverified" as const,
               publicationEvidence: [],
-              evidenceConfidence: "none",
+              evidenceConfidence: "none" as const,
               reviewURL: undefined,
               reviewInsight: undefined,
             },
@@ -238,7 +269,7 @@ function migrateCriticalReadState(
       // Only evidence reconstructed by this verifier generation can cross a
       // restart. Legacy/model-authored snapshots have no trusted marker and
       // must be checked live again.
-      if (discovery?.liveVerification?.verifierVersion !== 1) {
+      if (discovery?.liveVerification?.verifierVersion !== 2) {
         status = "ready";
         invalidSteps.add(3);
       }
@@ -254,10 +285,50 @@ function migrateCriticalReadState(
         status === "complete" && typeof raw.completedAt === "string"
           ? raw.completedAt
           : undefined,
+      orientation:
+        isPlainObject(raw.orientation) &&
+        ["structured-captions", "caption-text", "text-only"].includes(
+          String(raw.orientation.extractionMode),
+        ) &&
+        typeof raw.orientation.notice === "string" &&
+        raw.orientation.notice.trim()
+          ? {
+              extractionMode: raw.orientation.extractionMode as
+                | "structured-captions"
+                | "caption-text"
+                | "text-only",
+              notice: raw.orientation.notice.slice(0, 1_000),
+              abstract:
+                typeof raw.orientation.abstract === "string"
+                  ? raw.orientation.abstract.slice(0, 4_000)
+                  : undefined,
+              sourceLocations: Array.isArray(raw.orientation.sourceLocations)
+                ? raw.orientation.sourceLocations
+                    .filter(
+                      (entry): entry is string => typeof entry === "string",
+                    )
+                    .map((entry) => entry.slice(0, 500))
+                    .slice(0, 40)
+                : [],
+              captions: Array.isArray(raw.orientation.captions)
+                ? raw.orientation.captions
+                    .filter(
+                      (entry): entry is string => typeof entry === "string",
+                    )
+                    .map((entry) => entry.slice(0, 1_000))
+                    .slice(0, 30)
+                : [],
+            }
+          : undefined,
     };
   });
   if (invalidSteps.has(2)) invalidSteps.add(3);
   if (invalidSteps.has(5)) invalidSteps.add(6);
+  if (
+    [2, 3, 4, 5, 6].some((id) => invalidSteps.has(id as CriticalReadStepID))
+  ) {
+    invalidSteps.add(7);
+  }
   const migratedSteps = steps.map((step) =>
     invalidSteps.has(step.id)
       ? {

@@ -1,4 +1,5 @@
 import {
+  canonicalDiscoveryPaperID,
   deduplicateDiscoveredPapers,
   normalizeDiscoveryDOI,
   normalizeDiscoveryTitle,
@@ -101,6 +102,12 @@ const NOVELTY_CLASSES = new Set<PublicationClass>([
 const MAX_PRIMARY = 12;
 const MAX_SECONDARY = 6;
 const MAX_QUERIES = 12;
+const PREPRINT_HOSTS = new Set([
+  "arxiv.org",
+  "biorxiv.org",
+  "medrxiv.org",
+  "ssrn.com",
+]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -315,7 +322,28 @@ function parseEvidence(value: unknown): PublicationEvidence | undefined {
   };
 }
 
-function parseReviewInsight(value: unknown): PublicReviewInsight | undefined {
+const MAX_REVIEW_FIELD_CHARS = 600;
+const MAX_REVIEW_TOTAL_CHARS = 6_000;
+
+function boundedReviewText(value: unknown) {
+  const normalized = text(value);
+  return normalized && normalized.length <= MAX_REVIEW_FIELD_CHARS
+    ? normalized
+    : undefined;
+}
+
+function boundedReviewList(value: unknown, max = 8) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map(boundedReviewText)
+    .filter((entry): entry is string => Boolean(entry))
+    .slice(0, max);
+}
+
+function parseReviewInsight(
+  value: unknown,
+  expectedReviewURL?: string,
+): PublicReviewInsight | undefined {
   if (!isRecord(value)) return undefined;
   const sourceURLs = Array.isArray(value.sourceURLs)
     ? value.sourceURLs
@@ -326,15 +354,57 @@ function parseReviewInsight(value: unknown): PublicReviewInsight | undefined {
         .slice(0, 12)
     : [];
   if (!sourceURLs.length) return undefined;
+  const expected = expectedReviewURL
+    ? normalizeHttpURL(expectedReviewURL)
+    : undefined;
+  if (expected && !sourceURLs.includes(expected)) return undefined;
+  const valuedStrengths = boundedReviewList(value.valuedStrengths);
+  const concerns = boundedReviewList(value.concerns);
+  const reviewerPriorities = boundedReviewList(value.reviewerPriorities);
+  const disagreements = boundedReviewList(value.disagreements);
+  const authorResponseContext = boundedReviewText(value.authorResponseContext);
+  const decisionContext = boundedReviewText(value.decisionContext);
+  const limitations = boundedReviewList(value.limitations);
+  const hadOversizedContent = [
+    ...(Array.isArray(value.valuedStrengths) ? value.valuedStrengths : []),
+    ...(Array.isArray(value.concerns) ? value.concerns : []),
+    ...(Array.isArray(value.reviewerPriorities)
+      ? value.reviewerPriorities
+      : []),
+    ...(Array.isArray(value.disagreements) ? value.disagreements : []),
+    value.authorResponseContext,
+    value.decisionContext,
+    ...(Array.isArray(value.limitations) ? value.limitations : []),
+  ].some(
+    (entry) =>
+      typeof entry === "string" && text(entry).length > MAX_REVIEW_FIELD_CHARS,
+  );
+  if (hadOversizedContent) {
+    limitations.push(
+      "Oversized review text was omitted; only concise source-linked summaries are retained.",
+    );
+  }
+  const total = [
+    ...valuedStrengths,
+    ...concerns,
+    ...reviewerPriorities,
+    ...disagreements,
+    authorResponseContext,
+    decisionContext,
+    ...limitations,
+  ]
+    .filter(Boolean)
+    .join(" ").length;
+  if (!total || total > MAX_REVIEW_TOTAL_CHARS) return undefined;
   return {
     sourceURLs,
-    valuedStrengths: stringList(value.valuedStrengths, 8),
-    concerns: stringList(value.concerns, 8),
-    reviewerPriorities: stringList(value.reviewerPriorities, 8),
-    disagreements: stringList(value.disagreements, 8),
-    authorResponseContext: optionalText(value.authorResponseContext),
-    decisionContext: optionalText(value.decisionContext),
-    limitations: stringList(value.limitations, 8),
+    valuedStrengths,
+    concerns,
+    reviewerPriorities,
+    disagreements,
+    authorResponseContext,
+    decisionContext,
+    limitations: limitations.slice(0, 8),
     generatedAt: text(value.generatedAt) || new Date().toISOString(),
   };
 }
@@ -416,18 +486,24 @@ function parsePaper(
     typeof value.doi === "string"
       ? normalizeDiscoveryDOI(value.doi)
       : undefined;
-  if (!leadingVenueAssessment || (!urls.length && !reviewURL && !doi)) {
+  if (
+    !leadingVenueAssessment ||
+    (!urls.length && !reviewURL && !doi) ||
+    (!stringList(value.authors, 32).length && !doi)
+  ) {
     return undefined;
   }
 
-  return {
-    candidateID:
-      text(value.candidateID) ||
-      (typeof value.doi === "string"
-        ? `doi:${normalizeDiscoveryDOI(value.doi)}`
-        : `title:${title.toLowerCase()}`),
+  const identity = {
     title,
     authors: stringList(value.authors, 32),
+    year,
+    doi,
+  };
+  return {
+    candidateID: canonicalDiscoveryPaperID(identity),
+    title,
+    authors: identity.authors,
     year,
     abstract: optionalText(value.abstract),
     doi,
@@ -446,7 +522,7 @@ function parsePaper(
     noveltyRelationship,
     reviewURL,
     reviewInsight: reviewURL
-      ? parseReviewInsight(value.reviewInsight)
+      ? parseReviewInsight(value.reviewInsight, reviewURL)
       : undefined,
     existingItemID:
       typeof value.existingItemID === "number"
@@ -554,6 +630,39 @@ function hasDisqualifyingDecision(paper: DiscoveredPaper) {
   );
 }
 
+function hasNoveltyLaneEvidence(paper: DiscoveredPaper, requireLive: boolean) {
+  return paper.urls.some((value) => {
+    try {
+      const hostname = new URL(value).hostname.toLowerCase();
+      if (paper.publicationClass === "under_review_or_submission") {
+        const isOpenReview =
+          hostname === "openreview.net" || hostname.endsWith(".openreview.net");
+        if (!isOpenReview) return false;
+        if (!requireLive) return Boolean(Object.keys(paper.providerIDs).length);
+        return paper.publicationEvidence.some(
+          (entry) =>
+            entry.type === "official_decision" &&
+            entry.sourceName === "openreview" &&
+            entry.supports.includes("identity"),
+        );
+      }
+      const isRepository = [...PREPRINT_HOSTS].some(
+        (host) => hostname === host || hostname.endsWith(`.${host}`),
+      );
+      if (!isRepository) return false;
+      if (!requireLive) return Boolean(Object.keys(paper.providerIDs).length);
+      return paper.publicationEvidence.some(
+        (entry) =>
+          entry.type === "scholarly_index" &&
+          entry.sourceName.startsWith("Live scholarly provider:") &&
+          entry.supports.includes("identity"),
+      );
+    } catch {
+      return false;
+    }
+  });
+}
+
 export function isPrimaryLaneEligible(paper: DiscoveredPaper) {
   const venue = paper.leadingVenueAssessment;
   return (
@@ -625,8 +734,9 @@ function normalizeResult(
   const parsed = allRaw
     .map((paper) => parsePaper(paper, options.allowReviewLinks === true))
     .filter((paper): paper is DiscoveredPaper => Boolean(paper));
-  const canonicalized = parsed.map((paper) => {
-    if (NOVELTY_CLASSES.has(paper.publicationClass)) return paper;
+  const coherenceWarnings: string[] = [];
+  const canonicalized = parsed.flatMap((paper) => {
+    if (NOVELTY_CLASSES.has(paper.publicationClass)) return [paper];
     const paperVenue = venueAliasKeys({
       venueName: paper.venueName,
       venueAcronym: paper.venueAcronym,
@@ -636,9 +746,10 @@ function normalizeResult(
       paperVenue.size === 0 ||
       !venueAliasesOverlap(paperVenue, assessmentVenue)
     ) {
-      throw new Error(
-        `Discovery paper venue did not match its venue assessment: ${paper.title}`,
+      coherenceWarnings.push(
+        `Omitted ${paper.title}: publication venue did not match its venue assessment.`,
       );
+      return [];
     }
     const canonical = plan.venues.find((venue) => {
       const plannedVenue = venueAliasKeys(venue);
@@ -653,9 +764,10 @@ function normalizeResult(
         paper.leadingVenueAssessment.judgment,
       )
     ) {
-      throw new Error(
-        `Discovery paper venue did not match its bounded plan assessment: ${paper.title}`,
+      coherenceWarnings.push(
+        `Omitted ${paper.title}: leading-venue claim did not match the bounded venue plan.`,
       );
+      return [];
     }
     const effectiveAssessment = canonical || paper.leadingVenueAssessment;
     const evidenceConflict = paper.publicationEvidence.some(
@@ -667,14 +779,32 @@ function normalizeResult(
         ),
     );
     if (evidenceConflict) {
-      throw new Error(
-        `Discovery publication evidence venue conflicted with the bounded plan: ${paper.title}`,
+      coherenceWarnings.push(
+        `Omitted ${paper.title}: publication evidence venue conflicted with the bounded venue plan.`,
       );
+      return [];
     }
-    return { ...paper, leadingVenueAssessment: effectiveAssessment };
+    return [{ ...paper, leadingVenueAssessment: effectiveAssessment }];
   });
-  const deduplicated = deduplicateDiscoveredPapers(canonicalized);
-  const parseWarnings: string[] = stringList(record.parseWarnings, 20);
+  const identityCounts = new Map<string, number>();
+  const uniquelyIdentified = canonicalized.map((paper) => {
+    const count = identityCounts.get(paper.candidateID) || 0;
+    identityCounts.set(paper.candidateID, count + 1);
+    return count === 0
+      ? paper
+      : {
+          ...paper,
+          candidateID: canonicalDiscoveryPaperID(
+            paper,
+            `${paper.urls[0] || ""}:${count + 1}`,
+          ),
+        };
+  });
+  const deduplicated = deduplicateDiscoveredPapers(uniquelyIdentified);
+  const parseWarnings: string[] = [
+    ...stringList(record.parseWarnings, 20),
+    ...coherenceWarnings,
+  ].slice(0, 20);
   if (parsed.length < allRaw.length) {
     parseWarnings.push(
       `${allRaw.length - parsed.length} paper result(s) were omitted because required fields, a safe open target, or a complete venue assessment were missing.`,
@@ -718,7 +848,13 @@ function normalizeResult(
       hasPublishedIdentityEvidence(paper)
     ) {
       otherPeerReviewed.push(paper);
-    } else if (NOVELTY_CLASSES.has(paper.publicationClass)) {
+    } else if (
+      NOVELTY_CLASSES.has(paper.publicationClass) &&
+      hasNoveltyLaneEvidence(
+        paper,
+        options.allowLiveVerificationMarker === true,
+      )
+    ) {
       noveltyRadar.push(paper);
     } else {
       excluded.push({ title: paper.title, reason: "unsupported_claim" });
@@ -754,10 +890,10 @@ function normalizeResult(
     liveVerification:
       options.allowLiveVerificationMarker &&
       isRecord(record.liveVerification) &&
-      record.liveVerification.verifierVersion === 1 &&
+      record.liveVerification.verifierVersion === 2 &&
       Boolean(text(record.liveVerification.verifiedAt))
         ? {
-            verifierVersion: 1,
+            verifierVersion: 2,
             verifiedAt: text(record.liveVerification.verifiedAt),
           }
         : undefined,
@@ -798,7 +934,7 @@ export function migrateDiscoveryResult(value: unknown) {
   try {
     const hasCurrentLiveVerification =
       isRecord(value.liveVerification) &&
-      value.liveVerification.verifierVersion === 1 &&
+      value.liveVerification.verifierVersion === 2 &&
       Boolean(text(value.liveVerification.verifiedAt));
     const migrated = normalizeResult(value, {
       allowReviewLinks: hasCurrentLiveVerification,
@@ -838,12 +974,15 @@ export function migrateDiscoveryResult(value: unknown) {
   }
 }
 
-export function parsePublicReviewInsight(raw: string): PublicReviewInsight {
+export function parsePublicReviewInsight(
+  raw: string,
+  expectedReviewURL: string,
+): PublicReviewInsight {
   let lastError: unknown;
   for (const candidate of extractJsonCandidates(raw)) {
     try {
       const parsed = JSON.parse(candidate);
-      const insight = parseReviewInsight(parsed);
+      const insight = parseReviewInsight(parsed, expectedReviewURL);
       if (insight) return insight;
     } catch (error) {
       lastError = error;

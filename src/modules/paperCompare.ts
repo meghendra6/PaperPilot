@@ -13,7 +13,11 @@ export interface PaperCompareCandidate {
   reason?: string;
   publicationClass?: string;
   evidenceConfidence?: string;
-  publicationEvidenceSummary?: string;
+  publicationEvidence?: Array<{
+    sourceName: string;
+    supports: string[];
+    url: string;
+  }>;
 }
 
 export interface PaperCompareSelection {
@@ -250,8 +254,13 @@ function formatCandidate(candidate: PaperCompareCandidate, index?: number) {
     candidate.evidenceConfidence
       ? `Evidence confidence: ${candidate.evidenceConfidence}`
       : undefined,
-    candidate.publicationEvidenceSummary
-      ? `Official publication evidence: ${candidate.publicationEvidenceSummary}`
+    candidate.publicationEvidence?.length
+      ? `Official publication evidence: ${candidate.publicationEvidence
+          .map(
+            (entry) =>
+              `${entry.sourceName} (${entry.supports.join(", ")}): ${entry.url}`,
+          )
+          .join("; ")}`
       : undefined,
     candidate.abstract ? `Abstract: ${candidate.abstract}` : undefined,
   ]
@@ -360,12 +369,6 @@ export function buildCompareSelectionFromRecommendations(params: {
   maxComparePapers?: number;
 }): PaperCompareSelection {
   const candidates = selectCompareCandidates(params.groups).map((paper) => {
-    const publicationEvidenceSummary = paper.publicationEvidence
-      ?.map(
-        (entry) =>
-          `${entry.sourceName} (${entry.supports.join(", ")}): ${entry.url}`,
-      )
-      .join("; ");
     return {
       title: paper.title,
       authors: paper.authors,
@@ -378,7 +381,15 @@ export function buildCompareSelectionFromRecommendations(params: {
       ...(paper.evidenceConfidence
         ? { evidenceConfidence: paper.evidenceConfidence }
         : {}),
-      ...(publicationEvidenceSummary ? { publicationEvidenceSummary } : {}),
+      ...(paper.publicationEvidence?.length
+        ? {
+            publicationEvidence: paper.publicationEvidence.map((entry) => ({
+              sourceName: entry.sourceName,
+              supports: [...entry.supports],
+              url: entry.url,
+            })),
+          }
+        : {}),
     };
   });
 
@@ -572,6 +583,7 @@ export function parsePaperCompareResponse(raw: string): PaperCompareResult {
 
 export function buildPaperCompareCard(
   result: PaperCompareResult,
+  selection?: PaperCompareSelection,
 ): PaperArtifactCard {
   const sections: PaperArtifactSection[] = [
     {
@@ -608,6 +620,12 @@ export function buildPaperCompareCard(
     title: "Compare papers",
     summary: result.overview,
     sections,
+    provenance: selection?.comparePapers.map((paper) => ({
+      title: paper.title,
+      publicationClass: paper.publicationClass,
+      evidenceConfidence: paper.evidenceConfidence,
+      evidenceURLs: (paper.publicationEvidence || []).map((entry) => entry.url),
+    })),
     sourceLabel:
       "Compare output is a compact synthesis across the current paper and a bounded related-paper set; cross-paper conclusions may include model inference.",
     updatedAt: new Date().toISOString(),

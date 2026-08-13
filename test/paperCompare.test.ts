@@ -187,12 +187,24 @@ test("buildCompareSelectionFromRecommendations converts related-paper groups int
             abstract: "Compare abstract.",
             relevanceScore: 0.9,
             reason: "Recommended follow-up",
+            publicationClass: "verified_main",
+            evidenceConfidence: "high",
+            publicationEvidence: [
+              {
+                type: "official_proceedings",
+                sourceName: "Official proceedings",
+                url: "https://proceedings.example/paper-b",
+                supports: ["identity", "published", "main_track"],
+                checkedAt: "2026-08-14T00:00:00.000Z",
+              },
+            ],
           },
           {
             title: "Paper C",
             authors: ["Barbara Liskov"],
             year: 2024,
             relevanceScore: 0.8,
+            publicationClass: "verified_main",
           },
         ],
       },
@@ -208,6 +220,15 @@ test("buildCompareSelectionFromRecommendations converts related-paper groups int
       year: 2025,
       abstract: "Compare abstract.",
       reason: "Recommended follow-up",
+      publicationClass: "verified_main",
+      evidenceConfidence: "high",
+      publicationEvidence: [
+        {
+          sourceName: "Official proceedings",
+          supports: ["identity", "published", "main_track"],
+          url: "https://proceedings.example/paper-b",
+        },
+      ],
     },
   ]);
   assert.deepEqual(selection.droppedTitles, ["Paper C"]);
@@ -230,12 +251,24 @@ test("buildPaperCompareRequestFromRecommendations packages a compare prompt from
             year: 2025,
             relevanceScore: 0.9,
             reason: "Recommended follow-up",
+            publicationClass: "verified_main",
+            evidenceConfidence: "high",
+            publicationEvidence: [
+              {
+                type: "official_proceedings",
+                sourceName: "Official proceedings",
+                url: "https://proceedings.example/paper-b",
+                supports: ["identity", "published", "main_track"],
+                checkedAt: "2026-08-14T00:00:00.000Z",
+              },
+            ],
           },
           {
             title: "Paper C",
             authors: ["Barbara Liskov"],
             year: 2024,
             relevanceScore: 0.8,
+            publicationClass: "verified_main",
           },
         ],
       },
@@ -533,6 +566,17 @@ test("compare pipeline builds a compare request and shapes the parsed response i
             abstract: "Compare abstract.",
             relevanceScore: 0.9,
             reason: "Recommended follow-up",
+            publicationClass: "verified_main",
+            evidenceConfidence: "high",
+            publicationEvidence: [
+              {
+                type: "official_proceedings",
+                sourceName: "Official proceedings",
+                url: "https://proceedings.example/paper-b",
+                supports: ["identity", "published", "main_track"],
+                checkedAt: "2026-08-14T00:00:00.000Z",
+              },
+            ],
           },
           {
             title: "Paper C",
@@ -540,6 +584,7 @@ test("compare pipeline builds a compare request and shapes the parsed response i
             year: 2024,
             relevanceScore: 0.8,
             reason: "Alternative baseline",
+            publicationClass: "verified_main",
           },
         ],
       },
@@ -580,7 +625,7 @@ test("compare pipeline builds a compare request and shapes the parsed response i
     }),
   );
 
-  const card = buildPaperCompareCard(result);
+  const card = buildPaperCompareCard(result, request.selection);
 
   assert.equal(request.selection.comparePapers.length, 2);
   assert.match(request.prompt, /Comparison set:/);
@@ -593,6 +638,8 @@ test("compare pipeline builds a compare request and shapes the parsed response i
     /Current Paper: Fast in-pane baseline/,
   );
   assert.equal(card.sections[2].heading, "Recommended next reading");
+  assert.equal(card.provenance?.[0].publicationClass, "verified_main");
+  assert.match(card.provenance?.[0].evidenceURLs[0] || "", /^https:\/\//);
 });
 
 test("buildPaperCompareCardFromResponse converts raw compare JSON straight into a compare card", () => {

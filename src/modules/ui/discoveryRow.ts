@@ -2,6 +2,7 @@ import {
   buildRecommendationMetadataLine,
   type RecommendedPaper,
 } from "../relatedRecommendations";
+import { isPublicReviewURL } from "../discovery/normalize";
 
 export interface DiscoveryRowActions {
   onOpen(paper: RecommendedPaper): void | Promise<void>;
@@ -62,6 +63,17 @@ function appendReviewInsight(
       list.appendChild(item);
     }
     details.append(heading, list);
+  }
+  for (const [label, value] of [
+    ["Author response / revision", paper.reviewInsight.authorResponseContext],
+    ["Decision context", paper.reviewInsight.decisionContext],
+  ] as const) {
+    if (!value) continue;
+    const heading = doc.createElement("strong");
+    heading.textContent = label;
+    const paragraph = doc.createElement("p");
+    paragraph.textContent = value;
+    details.append(heading, paragraph);
   }
   parent.appendChild(details);
 }
@@ -166,21 +178,34 @@ export function buildDiscoveryRow(params: {
     }),
   );
 
-  const evidence = paper.publicationEvidence?.find((entry) =>
-    [
-      "official_proceedings",
-      "official_program",
-      "official_decision",
-      "publisher_proceedings",
-      "official_anthology",
-    ].includes(entry.type),
+  const evidence = paper.publicationEvidence?.find(
+    (entry) =>
+      [
+        "official_proceedings",
+        "official_program",
+        "official_decision",
+        "publisher_proceedings",
+        "official_anthology",
+      ].includes(entry.type) &&
+      (params.reviewInsightsVisible !== false ||
+        !isPublicReviewURL(entry.url, paper.reviewURL)),
   );
   if (evidence) {
     const evidenceButton = actionButton({
       doc,
       label: "Evidence",
       className: "pp-btn pp-btn--ghost",
-      onClick: () => actions.onOpenURL(evidence.url),
+      onClick: () => {
+        if (
+          isPublicReviewURL(evidence.url, paper.reviewURL) &&
+          params.canViewReviewInsights?.() === false
+        ) {
+          throw new Error(
+            "Complete Critical Read Steps 4–6 before opening public review sources.",
+          );
+        }
+        return actions.onOpenURL(evidence.url);
+      },
       onError: actions.onError,
     });
     evidenceButton.title = `${evidence.sourceName}: ${evidence.supports.join(", ")}`;

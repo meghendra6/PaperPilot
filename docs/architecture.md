@@ -303,7 +303,8 @@ Zotero never starts a second model process implicitly. Public review text is not
 stored; only generated insight summaries and their public source links may be
 saved. Current live-verifier provenance permits reconstructed publication
 evidence to survive a restart; legacy or model-authored claims without that
-marker reopen for verification. Critical Read step outputs are parsed again on
+marker reopen for verification. The marker is generation-specific, so verifier
+hardening invalidates older reconstructed evidence. Critical Read step outputs are parsed again on
 migration, and reports are rebuilt from that validated state rather than shown
 from serialized Markdown.
 

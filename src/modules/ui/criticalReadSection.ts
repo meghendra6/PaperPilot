@@ -121,6 +121,19 @@ export function renderCriticalReadSection(params: {
             `${check.area} — ${check.status}: ${check.finding}${check.sourceLocator ? ` (${check.sourceLocator})` : ""}`,
         ),
       );
+      if (step.output.methodComparison) {
+        appendList(doc, details, [
+          ...step.output.methodComparison.agreements.map(
+            (value) => `Reader-agent agreement: ${value}`,
+          ),
+          ...step.output.methodComparison.differences.map(
+            (value) => `Reader-agent difference: ${value}`,
+          ),
+          ...step.output.methodComparison.unresolved.map(
+            (value) => `Reader-agent unresolved: ${value}`,
+          ),
+        ]);
+      }
       appendList(
         doc,
         details,

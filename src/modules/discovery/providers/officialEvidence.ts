@@ -1,6 +1,10 @@
 import { normalizeHttpURL } from "../normalize";
 import type { PublicationEvidenceType } from "../types";
-import { type DiscoveryFetch, withDiscoveryFetchTimeout } from "./types";
+import {
+  createDiscoveryAbortController,
+  type DiscoveryFetch,
+  withDiscoveryFetchTimeout,
+} from "./types";
 
 declare const Zotero: any;
 declare const Components: any;
@@ -56,6 +60,7 @@ const SOURCE_FAMILIES: Array<{
     domains: ["ieeexplore.ieee.org"],
   },
   { id: "usenix", type: "official_proceedings", domains: ["usenix.org"] },
+  { id: "isca", type: "official_program", domains: ["iscaconf.org"] },
   {
     id: "springer",
     type: "publisher_proceedings",
@@ -316,7 +321,7 @@ async function assertPublicResolution(
   deadline: number,
   now: () => number,
 ) {
-  const resolutionController = new AbortController();
+  const resolutionController = createDiscoveryAbortController();
   const propagateAbort = () => resolutionController.abort(signal?.reason);
   signal?.addEventListener("abort", propagateAbort, { once: true });
   if (signal?.aborted) propagateAbort();
@@ -363,10 +368,15 @@ export function headersFromXHR(
   for (const line of raw.trim().split(/[\r\n]+/)) {
     const separator = line.indexOf(":");
     if (separator > 0) {
-      headers.append(
-        line.slice(0, separator).trim(),
-        line.slice(separator + 1).trim(),
-      );
+      const name = line.slice(0, separator).trim();
+      const value = line.slice(separator + 1).trim();
+      if (/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/.test(name)) {
+        try {
+          headers.append(name, value);
+        } catch {
+          // Ignore malformed response-header lines from the Gecko XHR shim.
+        }
+      }
     }
   }
   for (const name of ["location", "content-type"]) {
@@ -522,6 +532,32 @@ function stripHtml(value: string) {
     .trim();
 }
 
+function linkedHostnames(value: string, baseURL: string) {
+  const hosts = new Set<string>();
+  for (const match of value.matchAll(
+    /<a\b[^>]*\bhref\s*=\s*["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi,
+  )) {
+    const label = stripHtml(match[2]);
+    if (
+      !/\bofficial\b/i.test(label) ||
+      !/\b(?:conference|venue|program(?:me)?|proceedings|website)\b/i.test(
+        label,
+      )
+    ) {
+      continue;
+    }
+    try {
+      const linked = new URL(match[1], baseURL);
+      if (linked.protocol === "https:") {
+        hosts.add(normalizedHostname(linked.hostname));
+      }
+    } catch {
+      // Ignore malformed links from untrusted response bodies.
+    }
+  }
+  return [...hosts];
+}
+
 async function readResponseTextBounded(
   response: Response,
   params: {
@@ -656,6 +692,7 @@ export async function inspectOfficialEvidenceURL(params: {
       classifyOfficialEvidenceURL(finalURL)?.id || "generic-official-web",
     pageTitle: title,
     searchableText: stripHtml(body),
+    linkedHostnames: linkedHostnames(body, url),
     contentType: contentType || undefined,
     bodyInspected: !isPdf,
     checkedAt: new Date().toISOString(),

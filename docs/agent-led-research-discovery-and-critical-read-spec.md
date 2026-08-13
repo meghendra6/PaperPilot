@@ -1050,7 +1050,9 @@ paper-specific evaluation form covering, when applicable:
 The reader records their assessment before the agent's evaluation is revealed.
 The agent then independently classifies each item as `supported`, `concern`,
 `unclear`, or `not_applicable`, with a source location when available, and
-compares it with the reader's assessment. `unclear` is preferred over invention.
+compares it with the reader's assessment in explicit agreement, difference,
+and unresolved lists. At least one comparison item is required. `unclear` is
+preferred over invention.
 Public review insights remain hidden until the reader submits this step and the
 independent agent assessment completes. Afterwards, Paper Pilot may show
 reviewer concerns in a separate `What reviewers emphasized` disclosure; it MUST
@@ -1083,6 +1085,8 @@ Step 5 conclusion. The output identifies:
 - differences caused by interpretation rather than factual error.
 
 Paper claims and agent inference MUST be labelled separately.
+When the authors' conclusion is unavailable, the output MUST say so explicitly,
+record the extraction limitation, and MUST NOT fabricate a paper claim.
 
 After the reader submits Step 6, any available public review insights may be
 revealed as a third perspective. The comparison MUST keep reader judgment,

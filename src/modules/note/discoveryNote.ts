@@ -1,4 +1,5 @@
 import type { DiscoveryResult, DiscoveredPaper } from "../discovery/types";
+import { isPublicReviewURL } from "../discovery/normalize";
 
 function escapeHtml(value: string) {
   return value
@@ -9,6 +10,10 @@ function escapeHtml(value: string) {
 
 function paperMarkdown(paper: DiscoveredPaper, includeReviewInsights: boolean) {
   const evidence = paper.publicationEvidence
+    .filter(
+      (entry) =>
+        includeReviewInsights || !isPublicReviewURL(entry.url, paper.reviewURL),
+    )
     .map(
       (entry) =>
         `  - ${entry.sourceName} (${entry.supports.join(", ")}): ${entry.url}`,
@@ -35,6 +40,20 @@ function paperMarkdown(paper: DiscoveredPaper, includeReviewInsights: boolean) {
           ),
           ...paper.reviewInsight.disagreements.map(
             (value) => `    - Disagreement: ${value}`,
+          ),
+          ...(paper.reviewInsight.authorResponseContext
+            ? [
+                `    - Author response/revision: ${paper.reviewInsight.authorResponseContext}`,
+              ]
+            : []),
+          ...(paper.reviewInsight.decisionContext
+            ? [`    - Decision context: ${paper.reviewInsight.decisionContext}`]
+            : []),
+          ...paper.reviewInsight.reviewerPriorities.map(
+            (value) => `    - Reviewer priority: ${value}`,
+          ),
+          ...paper.reviewInsight.limitations.map(
+            (value) => `    - Limitation: ${value}`,
           ),
           ...paper.reviewInsight.sourceURLs.map(
             (value) => `    - Source: ${value}`,

@@ -5,6 +5,8 @@ import type {
   CriticalReadStepState,
 } from "./types";
 import type { DiscoveredPaper, PublicReviewInsight } from "../discovery/types";
+import { areLikelySamePaper } from "../discovery/normalize";
+import type { RecommendedPaper } from "../relatedRecommendations";
 
 export const CRITICAL_READ_STEP_DEFINITIONS: ReadonlyArray<
   Pick<
@@ -225,13 +227,27 @@ export function reviseCriticalReadStep(
   stepID: CriticalReadStepID,
   now?: Date,
 ) {
+  if (state.running) {
+    throw new Error(
+      "Cancel the active Critical Read run before revising a step.",
+    );
+  }
   const invalidated = new Map<CriticalReadStepID, string>([
     [stepID, `Step ${stepID} is being revised.`],
   ]);
   if (stepID === 2) {
     invalidated.set(3, "Step 2 changed the prior-work research question.");
+    invalidated.set(7, "Step 2 changed evidence used by the final synthesis.");
+  } else if (stepID === 3) {
+    invalidated.set(7, "Step 3 changed evidence used by the final synthesis.");
+  } else if (stepID === 4) {
+    invalidated.set(
+      7,
+      "Step 4 changed the methodology assessment used by the final synthesis.",
+    );
   } else if (stepID === 5) {
     invalidated.set(6, "Step 5 changed the independent conclusion.");
+    invalidated.set(7, "Step 5 changed evidence used by the final synthesis.");
   }
   return {
     ...state,
@@ -261,13 +277,25 @@ export function reviseCriticalReadStep(
 
 export function attachPublicReviewInsightToCriticalRead(params: {
   state: CriticalReadState;
-  candidateID: string;
+  paper: RecommendedPaper;
   insight: PublicReviewInsight;
   now?: Date;
 }) {
   let attached = false;
   const updatePaper = (paper: DiscoveredPaper) => {
-    if (paper.candidateID !== params.candidateID || !paper.reviewURL) {
+    if (
+      !paper.reviewURL ||
+      (paper.candidateID &&
+        params.paper.candidateID &&
+        paper.candidateID !== params.paper.candidateID) ||
+      !areLikelySamePaper(paper, {
+        title: params.paper.title,
+        authors: params.paper.authors || [],
+        year: params.paper.year,
+        doi: params.paper.doi,
+        providerIDs: params.paper.providerIDs || {},
+      })
+    ) {
       return paper;
     }
     attached = true;

@@ -24,11 +24,38 @@ export function normalizeHttpURL(value: string) {
     if (url.protocol !== "http:" && url.protocol !== "https:") {
       return undefined;
     }
+    if (url.username || url.password) return undefined;
     url.hash = "";
     return url.href;
   } catch {
     return undefined;
   }
+}
+
+export function canonicalDiscoveryPaperID(
+  paper: Pick<DiscoveredPaper, "title" | "authors" | "year" | "doi">,
+  disambiguator = "",
+) {
+  if (paper.doi) return `doi:${normalizeDiscoveryDOI(paper.doi)}`;
+  const author = paper.authors
+    .map(authorKey)
+    .filter(Boolean)
+    .slice(0, 2)
+    .join("+");
+  const base = `paper:${normalizeDiscoveryTitle(paper.title)}:${paper.year || "unknown"}:${author || "unknown"}`;
+  return disambiguator
+    ? `${base}:${normalizeDiscoveryTitle(disambiguator) || "distinct"}`
+    : base;
+}
+
+export function isPublicReviewURL(value?: string, reviewURL?: string) {
+  if (!value) return false;
+  const normalized = normalizeHttpURL(value);
+  if (!normalized) return false;
+  const expected = reviewURL ? normalizeHttpURL(reviewURL) : undefined;
+  if (expected && normalized === expected) return true;
+  const hostname = new URL(normalized).hostname.toLowerCase();
+  return hostname === "openreview.net" || hostname.endsWith(".openreview.net");
 }
 
 function authorKey(author: string) {
@@ -54,28 +81,15 @@ export function areLikelySamePaper(
     return normalizeDiscoveryDOI(left.doi) === normalizeDiscoveryDOI(right.doi);
   }
 
-  const leftIDs = Object.entries(left.providerIDs);
-  if (
-    leftIDs.some(([provider, id]) => id && right.providerIDs[provider] === id)
-  ) {
-    return true;
-  }
-
   if (
     normalizeDiscoveryTitle(left.title) !== normalizeDiscoveryTitle(right.title)
   ) {
     return false;
   }
 
-  if (left.year && right.year && Math.abs(left.year - right.year) > 1) {
-    return false;
-  }
-
-  return (
-    !left.authors.length ||
-    !right.authors.length ||
-    hasAuthorOverlap(left.authors, right.authors)
-  );
+  if (!left.year || !right.year || left.year !== right.year) return false;
+  if (!left.authors.length || !right.authors.length) return false;
+  return hasAuthorOverlap(left.authors, right.authors);
 }
 
 export function deduplicateDiscoveredPapers(papers: DiscoveredPaper[]) {
@@ -152,8 +166,10 @@ export function deduplicateDiscoveredPapers(papers: DiscoveredPaper[]) {
   };
 
   for (const paper of papers) {
-    const existingIndex = unique.findIndex((candidate) =>
-      areLikelySamePaper(candidate, paper),
+    const existingIndex = unique.findIndex(
+      (candidate) =>
+        candidate.candidateID === paper.candidateID &&
+        areLikelySamePaper(candidate, paper),
     );
     if (existingIndex >= 0) {
       duplicateTitles.push(paper.title);

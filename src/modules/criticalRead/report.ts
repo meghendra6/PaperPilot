@@ -49,6 +49,9 @@ export function buildCriticalReadReportMarkdown(params: {
       step.output
         ? `### Paper Pilot synthesis\n\n${step.output.summary}`
         : undefined,
+      step.orientation
+        ? `### Extraction orientation\n\n- Mode: ${step.orientation.extractionMode}\n- Notice: ${step.orientation.notice}${step.orientation.sourceLocations.length ? `\n- Indexed source locations: ${step.orientation.sourceLocations.join("; ")}` : ""}${step.orientation.captions.length ? `\n- Caption coverage: ${step.orientation.captions.join("; ")}` : ""}`
+        : undefined,
       step.output?.scanObservations
         ? `### Scan observations\n\n- Abstract signal: ${step.output.scanObservations.abstractSignal}\n- Figure/table signals: ${bullets(step.output.scanObservations.figureTableSignals)}\n- Open questions: ${bullets(step.output.scanObservations.openQuestions)}`
         : undefined,
@@ -59,7 +62,10 @@ export function buildCriticalReadReportMarkdown(params: {
         ? `### Independent evidence conclusion\n\n- Supports: ${bullets(step.output.evidenceConclusion.supports)}\n- Does not support: ${bullets(step.output.evidenceConclusion.doesNotSupport)}\n- Strongest result: ${step.output.evidenceConclusion.strongestResult}\n- Weakest result: ${step.output.evidenceConclusion.weakestResult}\n- Confidence: ${step.output.evidenceConclusion.confidence}`
         : undefined,
       step.output?.authorComparison
-        ? `### Author comparison\n\n- Agreements: ${bullets(step.output.authorComparison.agreements)}\n- Reader omissions: ${bullets(step.output.authorComparison.readerOmissions)}\n- Stronger author claims: ${bullets(step.output.authorComparison.strongerAuthorClaims)}\n- Author caveats: ${bullets(step.output.authorComparison.authorCaveats)}\n- Interpretive differences: ${bullets(step.output.authorComparison.interpretiveDifferences)}`
+        ? `### Author comparison\n\n- Author conclusion: ${step.output.authorComparison.authorConclusionStatus}${step.output.authorComparison.unavailableReason ? ` — ${step.output.authorComparison.unavailableReason}` : ""}\n- Agreements: ${bullets(step.output.authorComparison.agreements)}\n- Reader omissions: ${bullets(step.output.authorComparison.readerOmissions)}\n- Stronger author claims: ${bullets(step.output.authorComparison.strongerAuthorClaims)}\n- Author caveats: ${bullets(step.output.authorComparison.authorCaveats)}\n- Interpretive differences: ${bullets(step.output.authorComparison.interpretiveDifferences)}`
+        : undefined,
+      step.output?.methodComparison
+        ? `### Reader vs Paper Pilot method comparison\n\n- Agreements: ${bullets(step.output.methodComparison.agreements)}\n- Differences: ${bullets(step.output.methodComparison.differences)}\n- Unresolved: ${bullets(step.output.methodComparison.unresolved)}`
         : undefined,
       step.output?.finalSynthesis
         ? `### Final synthesis\n\n- Strongest supported claim: ${step.output.finalSynthesis.strongestSupportedClaim}\n- Key residual uncertainty: ${step.output.finalSynthesis.keyResidualUncertainty}\n- Next reading or experiment: ${step.output.finalSynthesis.nextReadingOrExperiment}`
@@ -137,10 +143,19 @@ export function buildCriticalReadReportMarkdown(params: {
             `- Concerns: ${insight.concerns.join("; ") || "Not recorded"}`,
             `- Reviewer priorities: ${insight.reviewerPriorities.join("; ") || "Not recorded"}`,
             `- Disagreements: ${insight.disagreements.join("; ") || "Not recorded"}`,
+            insight.authorResponseContext
+              ? `- Author response / revision: ${insight.authorResponseContext}`
+              : undefined,
+            insight.decisionContext
+              ? `- Decision context: ${insight.decisionContext}`
+              : undefined,
+            `- Limitations: ${insight.limitations.join("; ") || "Not recorded"}`,
             ...insight.sourceURLs.map(
               (url) => `- Public review source: ${url}`,
             ),
-          ].join("\n");
+          ]
+            .filter(Boolean)
+            .join("\n");
         }),
       ].join("\n\n")
     : undefined;

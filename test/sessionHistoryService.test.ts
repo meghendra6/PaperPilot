@@ -777,6 +777,11 @@ test("snapshot migration retains current live evidence and rebuilds a reviewer-a
         status: "supported",
         finding: "Checked",
       })),
+      methodComparison: {
+        agreements: ["Aligned method concern"],
+        differences: [],
+        unresolved: [],
+      },
       evidenceConclusion: {
         supports: ["Claim"],
         doesNotSupport: ["Universal claim"],
@@ -785,6 +790,7 @@ test("snapshot migration retains current live evidence and rebuilds a reviewer-a
         confidence: "medium",
       },
       authorComparison: {
+        authorConclusionStatus: "available",
         agreements: ["Core claim"],
         readerOmissions: ["Caveat"],
         strongerAuthorClaims: ["Generality"],
@@ -814,7 +820,7 @@ test("snapshot migration retains current live evidence and rebuilds a reviewer-a
       JSON.stringify({
         schemaVersion: 1,
         liveVerification: {
-          verifierVersion: 1,
+          verifierVersion: 2,
           verifiedAt: "2026-08-13T00:00:00.000Z",
         },
         plan: {
@@ -927,7 +933,7 @@ test("snapshot migration retains current live evidence and rebuilds a reviewer-a
     assert.equal(restored.steps[2].status, "complete");
     assert.equal(
       restored.steps[2].discovery.liveVerification.verifierVersion,
-      1,
+      2,
     );
     assert.equal(restored.reportMarkdown, undefined);
     const rebuilt = buildCriticalReadReportMarkdown({

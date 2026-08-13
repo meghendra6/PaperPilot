@@ -75,6 +75,28 @@ test("revising an earlier Critical Read step invalidates only dependent work", (
   assert.equal(revised.reportMarkdown, undefined);
 });
 
+test("revising evidence-bearing steps always invalidates the final synthesis", () => {
+  const completed = {
+    ...buildInitialCriticalReadState(),
+    phase: "complete" as const,
+    currentStep: 7 as const,
+    reportMarkdown: "OLD REPORT",
+    steps: buildInitialCriticalReadState().steps.map((step) => ({
+      ...step,
+      status: "complete" as const,
+      output:
+        step.id === 7 ? { ...output, summary: "OLD FINAL" } : { ...output },
+    })),
+  };
+
+  for (const stepID of [2, 3, 4, 5] as const) {
+    const revised = reviseCriticalReadStep(completed, stepID);
+    assert.equal(revised.steps[6].status, "locked", `Step ${stepID}`);
+    assert.equal(revised.steps[6].output, undefined, `Step ${stepID}`);
+    assert.equal(revised.reportMarkdown, undefined, `Step ${stepID}`);
+  }
+});
+
 test("Critical Read parser accepts fenced JSON and requires a summary", () => {
   assert.deepEqual(
     parseCriticalReadOutput(`\`\`\`json\n${JSON.stringify(output)}\n\`\`\``),
@@ -127,6 +149,7 @@ test("Critical Read step-aware contracts reject incomplete methodology, provenan
         JSON.stringify({
           ...output,
           authorComparison: {
+            authorConclusionStatus: "available",
             agreements: [],
             readerOmissions: [],
             strongerAuthorClaims: [],
@@ -173,6 +196,8 @@ test("Critical Read Step 6 omits unavailable author claims instead of fabricatin
     JSON.stringify({
       ...output,
       authorComparison: {
+        authorConclusionStatus: "unavailable",
+        unavailableReason: "The conclusion section was unavailable.",
         agreements: [],
         readerOmissions: [],
         strongerAuthorClaims: [],
@@ -267,6 +292,7 @@ test("Critical Read report renders every step-specific conclusion contract", () 
                 ? {
                     ...output,
                     authorComparison: {
+                      authorConclusionStatus: "available" as const,
                       agreements: ["Agreement"],
                       readerOmissions: ["Omission"],
                       strongerAuthorClaims: ["Stronger claim"],
@@ -320,7 +346,15 @@ test("Critical Read accepts localized method labels through stable area codes", 
     finding: "본문 근거를 추가로 확인해야 합니다.",
   }));
   const parsed = parseCriticalReadOutput(
-    JSON.stringify({ ...output, methodChecks }),
+    JSON.stringify({
+      ...output,
+      methodChecks,
+      methodComparison: {
+        agreements: ["The reader and agent both flagged missing evidence."],
+        differences: [],
+        unresolved: [],
+      },
+    }),
     4,
   );
   assert.equal(parsed.methodChecks?.length, 9);
@@ -349,7 +383,8 @@ test("a post-gate review insight is attached to Critical Read and exported separ
                 {
                   candidateID: "peer-1",
                   title: "Peer",
-                  authors: [],
+                  authors: ["A. Author"],
+                  year: 2026,
                   urls: ["https://openreview.net/forum?id=peer"],
                   providerIDs: {},
                   publicationClass: "verified_main",
@@ -381,7 +416,13 @@ test("a post-gate review insight is attached to Critical Read and exported separ
   };
   state = attachPublicReviewInsightToCriticalRead({
     state,
-    candidateID: "peer-1",
+    paper: {
+      title: "Peer",
+      authors: ["A. Author"],
+      year: 2026,
+      relevanceScore: 1,
+      candidateID: "peer-1",
+    },
     insight: {
       sourceURLs: ["https://openreview.net/forum?id=peer"],
       valuedStrengths: ["Clear question"],
@@ -399,6 +440,81 @@ test("a post-gate review insight is attached to Critical Read and exported separ
   assert.match(report, /Reviewer perspective \(public sources\)/);
   assert.match(report, /Clear question/);
   assert.match(report, /https:\/\/openreview\.net\/forum\?id=peer/);
+});
+
+test("Critical Read review attachment requires canonical row identity", () => {
+  let state = startCriticalRead(buildInitialCriticalReadState());
+  state = {
+    ...state,
+    steps: state.steps.map((step) =>
+      step.id === 3
+        ? {
+            ...step,
+            discovery: {
+              schemaVersion: 1,
+              plan: {
+                concernSummary: "Concern",
+                primaryField: "Field",
+                adjacentFields: [],
+                venues: [],
+                queries: [],
+                scopeSummary: "Scope",
+              },
+              verifiedMain: [
+                {
+                  candidateID: "paper:peer:2026:author",
+                  title: "Peer",
+                  authors: ["A. Author"],
+                  year: 2026,
+                  urls: ["https://openreview.net/forum?id=peer"],
+                  providerIDs: {},
+                  publicationClass: "verified_main",
+                  publicationEvidence: [],
+                  evidenceConfidence: "high",
+                  leadingVenueAssessment: {
+                    venueName: "Venue",
+                    fields: ["Field"],
+                    judgment: "leading",
+                    confidence: "high",
+                    basis: "Field-specific assessment",
+                  },
+                  relationship: "direct",
+                  relevanceReason: "Same question",
+                  noveltyRelationship: "same_problem_different_method",
+                  reviewURL: "https://openreview.net/forum?id=peer",
+                },
+              ],
+              otherPeerReviewed: [],
+              noveltyRadar: [],
+              excluded: [],
+              limitations: [],
+              parseWarnings: [],
+              completedAt: "2026-08-13T00:00:00.000Z",
+            },
+          }
+        : step,
+    ),
+  };
+  const unchanged = attachPublicReviewInsightToCriticalRead({
+    state,
+    paper: {
+      candidateID: "paper:peer:2026:author:other",
+      title: "Peer",
+      authors: ["A. Author"],
+      year: 2026,
+      relevanceScore: 1,
+    },
+    insight: {
+      sourceURLs: ["https://openreview.net/forum?id=peer"],
+      valuedStrengths: ["Clear question"],
+      concerns: [],
+      reviewerPriorities: [],
+      disagreements: [],
+      limitations: [],
+      generatedAt: "2026-08-13T00:00:00.000Z",
+    },
+  });
+  assert.equal(unchanged, state);
 });
 
 test("Critical Read caption orientation is truthful about degraded visual access", () => {

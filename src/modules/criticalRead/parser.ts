@@ -127,12 +127,43 @@ function authorComparison(value: unknown) {
     "interpretiveDifferences",
   ] as const;
   if (keys.some((key) => !Array.isArray(value[key]))) return undefined;
+  const authorConclusionStatus = text(value.authorConclusionStatus);
+  if (
+    authorConclusionStatus !== "available" &&
+    authorConclusionStatus !== "unavailable"
+  ) {
+    return undefined;
+  }
+  const unavailableReason = text(value.unavailableReason) || undefined;
+  if (authorConclusionStatus === "unavailable" && !unavailableReason) {
+    return undefined;
+  }
   return {
+    authorConclusionStatus: authorConclusionStatus as
+      | "available"
+      | "unavailable",
+    unavailableReason,
     agreements: list(value.agreements, 12),
     readerOmissions: list(value.readerOmissions, 12),
     strongerAuthorClaims: list(value.strongerAuthorClaims, 12),
     authorCaveats: list(value.authorCaveats, 12),
     interpretiveDifferences: list(value.interpretiveDifferences, 12),
+  };
+}
+
+function comparison(value: unknown) {
+  if (!record(value)) return undefined;
+  if (
+    !Array.isArray(value.agreements) ||
+    !Array.isArray(value.differences) ||
+    !Array.isArray(value.unresolved)
+  ) {
+    return undefined;
+  }
+  return {
+    agreements: list(value.agreements, 12),
+    differences: list(value.differences, 12),
+    unresolved: list(value.unresolved, 12),
   };
 }
 
@@ -236,6 +267,7 @@ export function parseCriticalReadOutput(
   ] as const);
   const parsedConclusion = evidenceConclusion(parsed.evidenceConclusion);
   const parsedAuthorComparison = authorComparison(parsed.authorComparison);
+  const parsedMethodComparison = comparison(parsed.methodComparison);
   const parsedFinalSynthesis = requiredTextObject(parsed.finalSynthesis, [
     "strongestSupportedClaim",
     "keyResidualUncertainty",
@@ -261,6 +293,19 @@ export function parseCriticalReadOutput(
         "Critical Read Step 4 must classify every locale-independent methodology area code.",
       );
     }
+    if (
+      !items.length ||
+      !parsedMethodComparison ||
+      ![
+        ...parsedMethodComparison.agreements,
+        ...parsedMethodComparison.differences,
+        ...parsedMethodComparison.unresolved,
+      ].length
+    ) {
+      throw new Error(
+        "Critical Read Step 4 must compare the reader assessment with the agent's independent method evaluation.",
+      );
+    }
   }
   if (stepID === 5 && (!parsedConclusion || !items.length)) {
     throw new Error(
@@ -270,7 +315,18 @@ export function parseCriticalReadOutput(
   if (
     stepID === 6 &&
     (!parsedAuthorComparison ||
-      !sourcedClaims.some((entry) => entry.source === "agent_inference"))
+      !sourcedClaims.some((entry) => entry.source === "agent_inference") ||
+      (parsedAuthorComparison.authorConclusionStatus === "available" &&
+        (!sourcedClaims.some((entry) => entry.source === "paper_claim") ||
+          ![
+            ...parsedAuthorComparison.agreements,
+            ...parsedAuthorComparison.readerOmissions,
+            ...parsedAuthorComparison.strongerAuthorClaims,
+            ...parsedAuthorComparison.authorCaveats,
+            ...parsedAuthorComparison.interpretiveDifferences,
+          ].length)) ||
+      (parsedAuthorComparison.authorConclusionStatus === "unavailable" &&
+        !limitations.length))
   ) {
     throw new Error(
       "Critical Read Step 6 must complete every comparison category and mark agent inference explicitly.",
@@ -291,6 +347,9 @@ export function parseCriticalReadOutput(
       ? { researchQuestion: parsedResearchQuestion }
       : {}),
     ...(checks.length ? { methodChecks: checks } : {}),
+    ...(parsedMethodComparison
+      ? { methodComparison: parsedMethodComparison }
+      : {}),
     ...(sourcedClaims.length ? { provenance: sourcedClaims } : {}),
     ...(parsedConclusion ? { evidenceConclusion: parsedConclusion } : {}),
     ...(parsedAuthorComparison

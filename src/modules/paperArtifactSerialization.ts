@@ -14,6 +14,7 @@ export interface SerializedPaperArtifact {
   summary: string;
   sections: SerializedPaperArtifactSection[];
   searchQueries: ResearchBriefQuery[];
+  provenance: NonNullable<PaperArtifactCard["provenance"]>;
   sourceLabel: string;
   updatedAt: string;
 }
@@ -58,6 +59,12 @@ export function serializePaperArtifactCard(
           : {}),
       }))
       .filter((entry) => entry.query),
+    provenance: (card.provenance || []).map((entry) => ({
+      title: normalizeText(entry.title),
+      publicationClass: entry.publicationClass,
+      evidenceConfidence: entry.evidenceConfidence,
+      evidenceURLs: normalizeList(entry.evidenceURLs),
+    })),
     sourceLabel: normalizeText(card.sourceLabel),
     updatedAt: card.updatedAt,
   };
@@ -109,6 +116,16 @@ export function buildPaperArtifactMarkdown(card: PaperArtifactCard) {
       lines.push(
         `- ${query.query}${query.rationale ? ` — ${query.rationale}` : ""}`,
       );
+    }
+  }
+
+  if (serialized.provenance.length) {
+    lines.push("", "## Verified publication provenance");
+    for (const entry of serialized.provenance) {
+      lines.push(
+        `- ${entry.title}: ${entry.publicationClass || "unclassified"}; ${entry.evidenceConfidence || "unknown"} confidence`,
+      );
+      for (const url of entry.evidenceURLs) lines.push(`  - Evidence: ${url}`);
     }
   }
 

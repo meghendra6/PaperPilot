@@ -42,6 +42,11 @@ export interface CriticalReadAgentOutput {
     finding: string;
     sourceLocator?: string;
   }>;
+  methodComparison?: {
+    agreements: string[];
+    differences: string[];
+    unresolved: string[];
+  };
   provenance?: Array<{
     source: "paper_claim" | "agent_inference";
     text: string;
@@ -55,6 +60,8 @@ export interface CriticalReadAgentOutput {
     confidence: "high" | "medium" | "low" | "unclear";
   };
   authorComparison?: {
+    authorConclusionStatus: "available" | "unavailable";
+    unavailableReason?: string;
     agreements: string[];
     readerOmissions: string[];
     strongerAuthorClaims: string[];

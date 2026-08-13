@@ -82,30 +82,13 @@ test("rejected Related admission does not invoke persistence callbacks", async (
   }
 });
 
-test("parseRelatedPaperResponse extracts fenced JSON and sorts preferred categories and scores", () => {
-  const response = parseRelatedPaperResponse(`Here you go:\n\n\
-\`\`\`json
-{"groups":[
-  {"category":"Applications / extensions","papers":[{"title":"Paper B","authors":["B Author"],"relevanceScore":0.4}]},
-  {"category":"Closest match","papers":[
-    {"title":"Paper C","authors":["C Author"],"relevanceScore":0.6},
-    {"title":"Paper A","authors":["A Author"],"relevanceScore":0.9}
-  ]}
-]}
-\`\`\``);
-
-  assert.equal(response.groups[0].category, "Closest match");
-  assert.deepEqual(
-    response.groups[0].papers.map((paper) => paper.title),
-    ["Paper A", "Paper C"],
-  );
-  assert.equal(response.groups[1].category, "Applications / extensions");
-});
-
-test("parseRelatedPaperResponse rejects payloads without usable groups", () => {
+test("parseRelatedPaperResponse rejects legacy unverified recommendation groups", () => {
   assert.throws(
-    () => parseRelatedPaperResponse('{"groups":[]}'),
-    /did not include any usable groups/i,
+    () =>
+      parseRelatedPaperResponse(
+        '{"groups":[{"category":"Closest match","papers":[{"title":"Model memory","url":"javascript:alert(1)"}]}]}',
+      ),
+    /legacy recommendation groups are not accepted/i,
   );
 });
 
@@ -199,6 +182,21 @@ test("buildRecommendationMetadataLine and buildOpenTarget cover DOI fallback", (
   assert.equal(normalizeDOI("10.5555/ABC"), "10.5555/abc");
 });
 
+test("pre-gate open target cannot fall through to an OpenReview forum", () => {
+  assert.deepEqual(
+    buildOpenTarget(
+      {
+        doi: "10.5555/safe",
+        url: "https://openreview.net/forum?id=secret",
+        urls: ["https://openreview.net/forum?id=secret"],
+        reviewURL: "https://openreview.net/forum?id=secret",
+      },
+      { includeReviewURL: false },
+    ),
+    { kind: "external", url: "https://doi.org/10.5555/safe" },
+  );
+});
+
 test("buildRelatedPaperQuestion includes the current paper context", () => {
   const question = buildRelatedPaperQuestion({
     getField: (field: string) => {
@@ -275,6 +273,12 @@ test("openRecommendedPaper opens an existing Zotero item via the main pane", asy
 
 test("addRecommendationToCollection reuses an existing item and adds it to the chosen collection", async () => {
   const addCalls: number[][] = [];
+  const fields: Record<string, string> = {
+    title: "Paper",
+    year: "2026",
+    date: "2026",
+  };
+  let saveCalls = 0;
   const existingItem = { id: 99 };
   (globalThis as any).Zotero = {
     Items: {
@@ -284,21 +288,20 @@ test("addRecommendationToCollection reuses an existing item and adds it to the c
           id: 99,
           isAttachment: () => false,
           isNote: () => false,
-          getField: (field: string) =>
-            field === "title"
-              ? "Paper"
-              : field === "year" || field === "date"
-                ? "2026"
-                : "",
+          getField: (field: string) => fields[field] || "",
           getCreators: () => [{ firstName: "Ada", lastName: "Author" }],
         },
       ],
       get: (id: number) => ({
         ...existingItem,
         id,
-        getField: () => "",
-        setField: () => undefined,
-        saveTx: async () => undefined,
+        getField: (field: string) => fields[field] || "",
+        setField: (field: string, value: string) => {
+          fields[field] = value;
+        },
+        saveTx: async () => {
+          saveCalls += 1;
+        },
       }),
     },
     Collections: {
@@ -335,7 +338,13 @@ test("addRecommendationToCollection reuses an existing item and adds it to the c
       year: 2026,
       relevanceScore: 0.9,
       existingItemID: 99,
+      doi: "10.5555/candidate",
+      venue: "Example Conference",
+      url: "https://openreview.net/forum?id=hidden",
+      urls: ["https://publisher.example/paper"],
+      reviewURL: "https://openreview.net/forum?id=hidden",
     },
+    includeReviewURL: false,
   });
 
   assert.deepEqual(addCalls, [[99]]);
@@ -344,4 +353,8 @@ test("addRecommendationToCollection reuses an existing item and adds it to the c
     collectionID: 5,
     reusedExistingItem: true,
   });
+  assert.equal(fields.DOI, "10.5555/candidate");
+  assert.equal(fields.publicationTitle, "Example Conference");
+  assert.equal(fields.url, "https://publisher.example/paper");
+  assert.ok(saveCalls > 0);
 });

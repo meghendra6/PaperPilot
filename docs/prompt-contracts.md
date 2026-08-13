@@ -42,6 +42,8 @@ This note documents the purpose, target answer shape, and guardrails for the mai
   - paper identity requires a DOI match or compatible title, year, and author evidence; title-only matches do not qualify
   - venue identity must agree across the bounded plan, candidate metadata, leading-venue assessment, and inspected publication page
   - an open-world generic source must prove venue-owned program/proceedings authority; an arbitrary public author, lab, or project page is not official evidence
+  - generic venue sites require a corroborating link from a successfully reconstructed known publisher/proceedings source; a venue-looking hostname is not ownership proof
+  - track wording must be bound to the target paper's structured entry or a recognized official source; nearby rows and abstract prose cannot supply main-track status
   - live verification reconstructs identity, venue, track, decision, and review support from the inspected page; agent-supplied evidence claims are never retained on their own
   - workshop, Findings, demo, industry, shared-task, tutorial/abstract, rejected/withdrawn, track-unknown, and preprint-only records cannot enter `verifiedMain`
   - results are recalculated locally into three fixed lanes capped at 12/6/6; DOI/provider/title-author deduplication and ranking are deterministic
@@ -51,6 +53,8 @@ This note documents the purpose, target answer shape, and guardrails for the mai
   - official PDF response bodies are not consumed during evidence checks
   - failed refreshes preserve the previous successful discovery result
   - saved live evidence is trusted across restart only with current internal verifier provenance; legacy/model-era evidence is reopened for a live check
+  - legacy `groups[]` recommendation output is rejected by this workflow; it cannot bypass the venue plan or live verifier
+  - novelty-radar rows require a recognized repository/provider identity or an identity-bound public submission record
 
 ### Public review insight
 
@@ -61,6 +65,7 @@ This note documents the purpose, target answer shape, and guardrails for the mai
   - only public review/forum/decision sources are used
   - disagreement is preserved; incompatible scales are not averaged and unavailable/private material is not inferred
   - raw review text is not persisted in session or Zotero notes
+  - source URLs must include the exact live-verified forum URL, and concise fields have per-field and aggregate size bounds
   - review insight is excluded from Critical Read's reader-first analysis
   - the live Critical Read gate is applied at rendering, click handling, note export, and collection export; generated summaries remain internal until Steps 4-6 are complete
 
@@ -68,7 +73,7 @@ This note documents the purpose, target answer shape, and guardrails for the mai
 
 - Files: `src/modules/criticalRead/prompt.ts`, `src/modules/criticalRead/parser.ts`, `src/modules/criticalRead/report.ts`
 - Purpose: guide a reader through the seven-step paper-reading method while preserving independent judgment before agent synthesis
-- Shape: one strict JSON object per analysis step. Beyond `summary`, `items`, `sourceLocators`, and `limitations`, Step 1 requires `scanObservations`; Step 2 requires `researchQuestion`; Step 4 requires every locale-independent `methodChecks.areaCode`; Step 5 requires `evidenceConclusion`; Step 6 requires every `authorComparison` category plus explicit agent-inference provenance (and paper-claim provenance only when the conclusion is actually observable); Step 7 requires `alternatives` plus `finalSynthesis`. Step 3 stores verified discovery, and completion produces a Markdown report.
+- Shape: one strict JSON object per analysis step. Beyond `summary`, `items`, `sourceLocators`, and `limitations`, Step 1 requires `scanObservations`; Step 2 requires `researchQuestion`; Step 4 requires every locale-independent `methodChecks.areaCode` plus a non-empty `methodComparison`; Step 5 requires `evidenceConclusion`; Step 6 requires `authorConclusionStatus`, every `authorComparison` category, and explicit agent-inference provenance (plus paper-claim provenance when the conclusion is observable, or an explicit unavailable reason and limitation otherwise); Step 7 requires `alternatives` plus `finalSynthesis`. Step 3 stores verified discovery, and completion produces a Markdown report.
 - Guardrails:
   - exactly one step is active and later steps remain locked
   - Steps 1, 2, 4, 5, and 7 require reader input before agent analysis
@@ -78,7 +83,7 @@ This note documents the purpose, target answer shape, and guardrails for the mai
   - Step 7 considers alternatives and discriminating evidence or experiments
   - revising an earlier step invalidates all dependent downstream outputs and the report
   - caption/source-location orientation is used when available; degraded extraction is stated as “not visually inspected” rather than implying image understanding
-  - the final report distinguishes reader input, paper claims, agent inference, and discovery evidence, including all three prior-work lanes and evidence links
+  - the final report distinguishes reader input, paper claims, agent inference, and discovery evidence, including all three prior-work lanes, evidence links, and extraction orientation/limitations
   - a permitted public-review insight appears only as a separate reviewer-perspective section with public source links; it never rewrites the seven reader-first steps
   - serialized reports are rebuilt from validated step state on reopen instead of being displayed as authority after migration
 

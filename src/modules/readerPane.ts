@@ -77,6 +77,7 @@ import { saveDiscoveryToNote } from "./note/discoveryNote";
 import { renderCriticalReadSection } from "./ui/criticalReadSection";
 import { buildDiscoveryRow } from "./ui/discoveryRow";
 import { renderDiscoverySection } from "./ui/discoverySection";
+import { areLikelySamePaper } from "./discovery/normalize";
 import {
   buildPaperCompareCard,
   getPaperCompareButtonState,
@@ -347,6 +348,8 @@ export function registerPaperPilotPaneSection() {
       const cleanup = () => {
         if (disposed) return;
         disposed = true;
+        // Controllers are item-scoped rather than pane-scoped so a rebuilt
+        // pane can still cancel the active task. Do not abort them here.
         for (const task of cleanupTasks) task();
       };
       paneCleanupByBody.set(body, cleanup);
@@ -3548,10 +3551,35 @@ function renderRelatedRecommendationState(
     });
     rerender();
   };
-  const samePaper = (left: RecommendedPaper, right: RecommendedPaper) =>
-    left.candidateID && right.candidateID
-      ? left.candidateID === right.candidateID
-      : left.title === right.title && left.doi === right.doi;
+  const samePaper = (
+    left: Pick<
+      RecommendedPaper,
+      "candidateID" | "title" | "authors" | "year" | "doi" | "providerIDs"
+    >,
+    right: Pick<
+      RecommendedPaper,
+      "candidateID" | "title" | "authors" | "year" | "doi" | "providerIDs"
+    >,
+  ) =>
+    (!left.candidateID ||
+      !right.candidateID ||
+      left.candidateID === right.candidateID) &&
+    areLikelySamePaper(
+      {
+        title: left.title,
+        authors: left.authors || [],
+        year: left.year,
+        doi: left.doi,
+        providerIDs: left.providerIDs || {},
+      },
+      {
+        title: right.title,
+        authors: right.authors || [],
+        year: right.year,
+        doi: right.doi,
+        providerIDs: right.providerIDs || {},
+      },
+    );
   const updateDiscoveryPaper = (
     discovery: typeof state.discovery,
     paper: RecommendedPaper,
@@ -3560,8 +3588,7 @@ function renderRelatedRecommendationState(
     if (!discovery) return discovery;
     const updateLane = (lane: typeof discovery.verifiedMain) =>
       lane.map((entry) =>
-        (paper.candidateID && entry.candidateID === paper.candidateID) ||
-        (entry.title === paper.title && entry.doi === paper.doi)
+        samePaper(entry, paper)
           ? {
               ...entry,
               ...(patch.existingItemID
@@ -3599,7 +3626,12 @@ function renderRelatedRecommendationState(
         reviewInsightRunning:
           state.reviewInsightRunningCandidateID === paper.candidateID,
         actions: {
-          onOpen: (target) => openRecommendedPaper(target),
+          onOpen: (target) =>
+            openRecommendedPaper(target, {
+              includeReviewURL: canViewPublicReviewInsights(
+                addon.data.criticalReadStates?.get(itemID),
+              ),
+            }),
           onOpenURL: (url) => Zotero.launchURL(url),
           onError: setFailure,
           onAdd: async (target) => {
@@ -3701,7 +3733,7 @@ function renderRelatedRecommendationState(
               if (criticalState) {
                 let updatedCritical = attachPublicReviewInsightToCriticalRead({
                   state: criticalState,
-                  candidateID: target.candidateID || target.title,
+                  paper: target,
                   insight,
                 });
                 if (updatedCritical !== criticalState) {
@@ -4243,6 +4275,7 @@ async function runPaperCompareRequest(params: {
           try {
             const card = buildPaperCompareCard(
               parsePaperCompareResponse(assistantText),
+              request.selection,
             );
             const cards = [
               card,

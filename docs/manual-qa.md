@@ -236,6 +236,39 @@ pane-reconstruction cancellation remain covered by the automated state-machine
 tests. The Zotero 7/8, cross-engine success, and operating-system matrix remains
 manual release QA.
 
+### Final verifier-v2 runtime record — 2026-08-14
+
+The final hardened source tree was exercised in Zotero 9.0.6, and its production
+bundle was built separately, without opening another PDF or reader window. The
+only reader tab remained `Paper Pilot QA Fixture`. Two authenticated Codex
+discovery runs used the real provider, workspace, CLI, parser, and live-network
+verification path.
+
+The first run intentionally supplied only the cache-policy research concern.
+The agent selected ISCA, HPCA, MICRO, and SBAC-PAD without a user venue picker,
+but supplied no independently sufficient main-track source. Verifier generation
+2 therefore failed closed to 0 primary, 2 other-peer-reviewed, and 0 novelty
+papers, while retaining explicit limitations instead of trusting model-authored
+publication claims.
+
+The second run requested the same research area and named one known paper whose
+official status should be independently checked. The agent again selected the
+venue plan and returned 1 primary, 2 other-peer-reviewed, and 0 novelty papers.
+`Adaptive Insertion Policies for High Performance Caching` was retained as
+`verified_main` with high evidence confidence only after the live verifier bound
+its title, authors, and 2007 edition to the official ISCA main-program entry at
+`https://iscaconf.org/isca2007/program.html`. A separate ACM proceedings page
+corroborated identity and publication. The reconstructed ISCA evidence recorded
+`identity`, `accepted`, and `main_track`; the ACM evidence recorded `identity`
+and `published`. Unusable PDF and non-paper-level sources remained limitations
+and did not create a primary-lane record.
+
+The Zotero-native provider pass also exercised the window-owned
+`AbortController` compatibility path and tolerant XHR header parsing that are
+not represented by Node globals. The run finished as `Found 3 papers across
+verified evidence lanes`, with verifier generation 2 and no additional reader
+tab. Automatic generated-workspace cleanup was restored after evidence capture.
+
 - [ ] Run `Find verified prior work` with no concern and confirm the agent infers fields, adjacent fields, venues, and query families without asking the user to choose a conference
 - [ ] Enter an optional research concern, then run discovery from the main section, selected-PDF `Find prior work` action, a limitation card, and a follow-up card; confirm each source is carried into the saved scope
 - [ ] In AI, computer architecture, and a third field, confirm an appropriate leading venue absent from any built-in source shortcut can still be selected and justified

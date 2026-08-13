@@ -68,10 +68,18 @@ function emptyDiscovery() {
           authors: ["A. Author"],
           year: 2026,
           urls: ["https://arxiv.org/abs/2601.00001"],
-          providerIDs: {},
+          providerIDs: { arxiv: "2601.00001" },
           venueName: "arXiv",
           publicationClass: "preprint_only",
-          publicationEvidence: [],
+          publicationEvidence: [
+            {
+              type: "scholarly_index",
+              sourceName: "Live scholarly provider: arxiv",
+              url: "https://arxiv.org/abs/2601.00001",
+              observedTitle: "Novelty signal",
+              supports: ["identity"],
+            },
+          ],
           evidenceConfidence: "none",
           leadingVenueAssessment: {
             venueName: "arXiv",

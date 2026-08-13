@@ -4,7 +4,30 @@ import type {
   PublicationEvidence,
 } from "../types";
 
+declare const _globalThis: typeof globalThis | undefined;
+declare const Zotero:
+  | {
+      getMainWindow?: () => Window & {
+        AbortController?: typeof AbortController;
+      };
+    }
+  | undefined;
+
 export type DiscoveryFetch = typeof fetch;
+
+export function createDiscoveryAbortController(): AbortController {
+  const runtimeGlobal =
+    typeof _globalThis !== "undefined" ? _globalThis : globalThis;
+  const Constructor = (runtimeGlobal.AbortController ||
+    (typeof Zotero !== "undefined"
+      ? Zotero.getMainWindow?.()?.AbortController
+      : undefined) ||
+    globalThis.AbortController) as typeof AbortController | undefined;
+  if (!Constructor) {
+    throw new Error("Discovery cancellation support is unavailable.");
+  }
+  return new Constructor();
+}
 
 export function withDiscoveryFetchTimeout(
   fetcher: DiscoveryFetch = fetch,
@@ -12,7 +35,7 @@ export function withDiscoveryFetchTimeout(
   outerSignal?: AbortSignal,
 ): DiscoveryFetch {
   return (async (input, init = {}) => {
-    const controller = new AbortController();
+    const controller = createDiscoveryAbortController();
     const timeout = setTimeout(
       () => controller.abort(new Error("Discovery request timed out.")),
       timeoutMs,

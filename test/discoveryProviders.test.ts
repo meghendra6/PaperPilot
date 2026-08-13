@@ -10,7 +10,10 @@ import {
   isPlausibleOfficialEvidenceURL,
   isNonPublicIPAddress,
 } from "../src/modules/discovery/providers/officialEvidence";
-import { withDiscoveryFetchTimeout } from "../src/modules/discovery/providers/types";
+import {
+  createDiscoveryAbortController,
+  withDiscoveryFetchTimeout,
+} from "../src/modules/discovery/providers/types";
 import {
   crossrefProvider,
   dblpProvider,
@@ -24,6 +27,24 @@ import {
 
 const fixture = (name: string) =>
   readFileSync(join(__dirname, "fixtures", "discovery", name), "utf8");
+
+test("discovery cancellation resolves the Zotero runtime global", () => {
+  const original = (globalThis as any)._globalThis;
+  const originalZotero = (globalThis as any).Zotero;
+  const RuntimeAbortController = class extends AbortController {};
+  (globalThis as any)._globalThis = {};
+  (globalThis as any).Zotero = {
+    getMainWindow: () => ({ AbortController: RuntimeAbortController }),
+  };
+  try {
+    assert.ok(
+      createDiscoveryAbortController() instanceof RuntimeAbortController,
+    );
+  } finally {
+    (globalThis as any)._globalThis = original;
+    (globalThis as any).Zotero = originalZotero;
+  }
+});
 
 test("official evidence shortcuts cover common AI and architecture publisher families", () => {
   assert.equal(
@@ -48,6 +69,11 @@ test("official evidence shortcuts cover common AI and architecture publisher fam
     classifyOfficialEvidenceURL("https://www.usenix.org/conference/example")
       ?.id,
     "usenix",
+  );
+  assert.equal(
+    classifyOfficialEvidenceURL("https://iscaconf.org/isca2007/program.html")
+      ?.id,
+    "isca",
   );
 });
 
@@ -199,6 +225,16 @@ test("Zotero-shaped fake redirect headers remain readable", () => {
   assert.equal(headers.get("location"), "https://venue.example.org/final");
 });
 
+test("malformed Gecko response-header lines are ignored", () => {
+  const headers = headersFromXHR({
+    getAllResponseHeaders: () =>
+      "content-type: text/html\r\nmaid=secret; path=/; secure\r\n",
+    getResponseHeader: () => null,
+  });
+  assert.equal(headers.get("content-type"), "text/html");
+  assert.deepEqual([...headers.keys()], ["content-type"]);
+});
+
 test("injected official-evidence transport requires a public connected address when exposed", async () => {
   await assert.rejects(
     inspectOfficialEvidenceURL({
@@ -320,4 +356,26 @@ test("structured discovery supplies distinct problem, method, evaluation, and re
     ],
   );
   assert.equal(new Set(seeds.map((seed) => seed.query)).size, 4);
+});
+
+test("structured discovery never sends an unbounded raw PDF selection", () => {
+  const trailingSecret = "UNIQUE_TRAILING_PRIVATE_FRAGMENT";
+  const selection = `${"SENSITIVE_PDF_TEXT ".repeat(5_000)}${trailingSecret}`;
+  const seeds = buildStructuredSeedQueries({
+    title: "Bounded paper title",
+    concern: selection,
+    concernOrigin: "selection",
+  });
+  for (const seed of seeds) {
+    assert.ok(seed.query.length <= 260, String(seed.query.length));
+    assert.doesNotMatch(seed.query, new RegExp(trailingSecret));
+    assert.doesNotMatch(seed.query, /SENSITIVE_PDF_TEXT/);
+  }
+});
+
+test("external evidence URLs reject embedded credentials", () => {
+  const credentialURL =
+    "https://api-user:super-secret@isca-conference.org/program";
+  assert.equal(isPlausibleOfficialEvidenceURL(credentialURL), false);
+  assert.equal(classifyOfficialEvidenceURL(credentialURL), undefined);
 });

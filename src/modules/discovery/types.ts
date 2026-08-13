@@ -163,7 +163,7 @@ export interface ExcludedDiscoveryCandidate {
 export interface DiscoveryResult {
   schemaVersion: 1;
   liveVerification?: {
-    verifierVersion: 1;
+    verifierVersion: 2;
     verifiedAt: string;
   };
   plan: AgentSearchPlan;
