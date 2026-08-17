@@ -2,7 +2,7 @@ import { parseDiscoveryResult } from "./parser";
 import {
   areLikelySamePaper,
   normalizeDiscoveryTitle,
-  SPELLED_ORDINAL_WORDS,
+  isSpelledOrdinalWord,
 } from "./normalize";
 import {
   classifyOfficialEvidenceURL,
@@ -442,8 +442,6 @@ const VENUE_TYPE_WORDS = new Set([
   "workshop",
 ]);
 
-const VENUE_ORDINAL_WORDS = SPELLED_ORDINAL_WORDS;
-
 const VENUE_STOPWORDS = new Set([
   "a",
   "an",
@@ -482,7 +480,7 @@ function significantVenueWords(text: string) {
     (word) =>
       word.length >= 3 &&
       !/^\d+$/.test(word) &&
-      !VENUE_ORDINAL_WORDS.has(word) &&
+      !isSpelledOrdinalWord(word) &&
       !GENERIC_VENUE_WORDS.has(word) &&
       !VENUE_CONTEXT_WORDS.has(word),
   );
@@ -496,9 +494,7 @@ function venueTypeWords(text: string) {
 
 function venueNameInitials(value: string) {
   return normalizedVenueWords(value)
-    .filter(
-      (word) => !VENUE_STOPWORDS.has(word) && !VENUE_ORDINAL_WORDS.has(word),
-    )
+    .filter((word) => !VENUE_STOPWORDS.has(word) && !isSpelledOrdinalWord(word))
     .map((word) => word[0])
     .join("");
 }
@@ -526,7 +522,7 @@ function claimAcronymKeys(venue: {
     }
     if (words.length >= 2) {
       const meaningful = words.filter(
-        (word) => !VENUE_STOPWORDS.has(word) && !VENUE_ORDINAL_WORDS.has(word),
+        (word) => !VENUE_STOPWORDS.has(word) && !isSpelledOrdinalWord(word),
       );
       const compact = meaningful.join("");
       if (compact.length >= 6) keys.add(compact);
@@ -851,12 +847,23 @@ function registrarIdentityConfirms(
 ) {
   if (!pageMatchesPaperTitle(registrar.title, paper.title)) return false;
   const claimedKeys = authorIdentityKeys(paper.authors);
-  const registrarKeys = new Set(authorIdentityKeys(registrar.authors));
+  // Each claimed author key consumes one registrar author entry, so a
+  // duplicated claimed surname cannot count twice against a single registrar
+  // author while two genuine same-surname authors still match.
+  const registrarKeyCounts = new Map<string, number>();
+  for (const key of authorIdentityKeys(registrar.authors)) {
+    registrarKeyCounts.set(key, (registrarKeyCounts.get(key) || 0) + 1);
+  }
   const requiredMatches = Math.min(2, claimedKeys.length);
-  if (!claimedKeys.length || !registrarKeys.size) return false;
-  const observedMatches = claimedKeys.filter((key) =>
-    registrarKeys.has(key),
-  ).length;
+  if (!claimedKeys.length || !registrarKeyCounts.size) return false;
+  let observedMatches = 0;
+  for (const key of claimedKeys) {
+    const remaining = registrarKeyCounts.get(key) || 0;
+    if (remaining > 0) {
+      registrarKeyCounts.set(key, remaining - 1);
+      observedMatches += 1;
+    }
+  }
   if (observedMatches < requiredMatches) return false;
   if (!paper.year) return false;
   return new RegExp(`\\b${paper.year}\\b`).test(

@@ -5,7 +5,7 @@ import {
   normalizeDiscoveryTitle,
   normalizeHttpURL,
   normalizeWhitespace,
-  SPELLED_ORDINAL_WORDS,
+  isSpelledOrdinalWord,
 } from "./normalize";
 import type {
   AgentSearchPlan,
@@ -156,7 +156,7 @@ function venueAliasKeys(venue: { venueName?: string; venueAcronym?: string }) {
         (word) =>
           word &&
           !["a", "an", "and", "for", "of", "on", "the"].includes(word) &&
-          !SPELLED_ORDINAL_WORDS.has(word),
+          !isSpelledOrdinalWord(word),
       )
       .map((word) => word[0])
       .join("");
@@ -172,7 +172,7 @@ function venueAliasKeys(venue: { venueName?: string; venueAcronym?: string }) {
         (word) =>
           word &&
           !["a", "an", "and", "for", "of", "on", "the"].includes(word) &&
-          !SPELLED_ORDINAL_WORDS.has(word),
+          !isSpelledOrdinalWord(word),
       )
       .map((word) => word[0])
       .join("");

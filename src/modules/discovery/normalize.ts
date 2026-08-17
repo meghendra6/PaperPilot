@@ -55,35 +55,21 @@ export function isSecretQueryParameterName(key: string) {
   return lower.split(/[-_.]/).some((word) => SECRET_PARAMETER_WORDS.has(word));
 }
 
-export const SPELLED_ORDINAL_WORDS = new Set([
-  "first",
-  "second",
-  "third",
-  "fourth",
-  "fifth",
-  "sixth",
-  "seventh",
-  "eighth",
-  "ninth",
-  "tenth",
-  "eleventh",
-  "twelfth",
-  "thirteenth",
-  "fourteenth",
-  "fifteenth",
-  "sixteenth",
-  "seventeenth",
-  "eighteenth",
-  "nineteenth",
-  "twentieth",
-  "twenty",
-  "thirtieth",
-  "thirty",
-  "fortieth",
-  "forty",
-  "fiftieth",
-  "fifty",
-]);
+// Spelled edition ordinals are open-ended ("The Sixtieth ...", "Sixty-First"),
+// so membership is pattern-based rather than a finite word list. Hyphenated
+// composites are normalized to separate words before this check, so the tens
+// cardinals ("sixty" in "sixty first") are covered too.
+const SPELLED_ORDINAL_PATTERNS = [
+  /^(?:first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|eleventh|twelfth)$/,
+  /^(?:thir|four|fif|six|seven|eigh|nine)teenth$/,
+  /^(?:twen|thir|for|fif|six|seven|eigh|nine)tieth$/,
+  /^(?:twen|thir|for|fif|six|seven|eigh|nine)ty$/,
+  /^(?:hundredth|thousandth)$/,
+];
+
+export function isSpelledOrdinalWord(word: string) {
+  return SPELLED_ORDINAL_PATTERNS.some((pattern) => pattern.test(word));
+}
 
 export function normalizeHttpURL(value: string) {
   try {

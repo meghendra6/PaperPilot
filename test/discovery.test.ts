@@ -809,6 +809,96 @@ test("challenge fallback rejects authors that only match venue words", async () 
   );
 });
 
+test("duplicate claimed surnames cannot satisfy the registrar author match", async () => {
+  const officialURL = "https://openreview.net/forum?id=challenge-twins";
+  const claim = (candidateID: string) =>
+    paper({
+      candidateID,
+      authors: ["Alice Smith", "Bob Smith"],
+      urls: [officialURL],
+      publicationEvidence: [
+        {
+          type: "official_decision",
+          sourceName: "OpenReview",
+          url: officialURL,
+          observedTitle: "Verified Paper",
+          observedVenue: "Example Conference",
+          observedTrack: "Main Conference",
+          observedDecision: "Accepted",
+          supports: ["identity", "accepted", "main_track"],
+        },
+      ],
+    });
+  const fetchWithAuthors = (authors: string[]) =>
+    openReviewChallengeFetch({
+      forumID: "challenge-twins",
+      title: "Verified Paper",
+      authors,
+      decision: "Accept (Oral)",
+      venue: "Example Conference Main Conference",
+      venueID: "Example.cc/2026/Conference",
+    });
+  // One shared surname must not count twice against two claimed authors.
+  await assert.rejects(
+    verifyDiscoveryEvidenceLive({
+      discovery: parseDiscoveryResult(result([claim("twins-reject")])),
+      fetch: fetchWithAuthors(["Mallory Smith", "Carol Brown"]),
+    }),
+    /did not include any usable papers/,
+  );
+  // Two genuine same-surname registrar authors still verify.
+  const verified = await verifyDiscoveryEvidenceLive({
+    discovery: parseDiscoveryResult(result([claim("twins-accept")])),
+    fetch: fetchWithAuthors(["Alice Smith", "Bob Smith"]),
+  });
+  assert.equal(verified.verifiedMain.length, 1);
+});
+
+test("higher spelled ordinals cannot mint fake venue aliases at parse time", () => {
+  const officialURL = "https://openreview.net/forum?id=ordinal-sixty";
+  const rejectAtParse = (venueName: string) => {
+    const assessment = {
+      venueName,
+      fields: ["example field"],
+      judgment: "leading",
+      confidence: "high",
+      basis: "Field-specific archival venue assessment.",
+    };
+    assert.throws(
+      () =>
+        parseDiscoveryResult(
+          result([
+            paper({
+              venueName: "SILR",
+              track: undefined,
+              urls: [officialURL],
+              publicationEvidence: [
+                {
+                  type: "official_decision",
+                  sourceName: "OpenReview",
+                  url: officialURL,
+                  observedTitle: "Verified Paper",
+                  observedVenue: "SILR",
+                  observedTrack: "Poster",
+                  observedDecision: "Accepted",
+                  supports: ["identity", "accepted", "main_track"],
+                },
+              ],
+              leadingVenueAssessment: assessment,
+            }),
+          ]),
+        ),
+      /did not include any usable papers/,
+    );
+  };
+  rejectAtParse(
+    "The Sixtieth International Conference on Learning Representations",
+  );
+  rejectAtParse(
+    "The Sixty-First International Conference on Learning Representations",
+  );
+});
+
 test("challenge fallback binds the claimed year to the registrar edition surface", async () => {
   const officialURL = "https://openreview.net/forum?id=challenge-2025";
   const discovery = parseDiscoveryResult(
