@@ -1,4 +1,4 @@
-import { parseDiscoveryResult } from "./parser";
+import { parseDiscoveryResult, venueAliasKeys } from "./parser";
 import { areLikelySamePaper, normalizeDiscoveryTitle } from "./normalize";
 import {
   classifyOfficialEvidenceURL,
@@ -362,6 +362,46 @@ function openReviewForumID(url: string) {
   }
 }
 
+function venueIdentityKeys(venue: {
+  venueName?: string;
+  venueAcronym?: string;
+}) {
+  const keys = venueAliasKeys(venue);
+  // OpenReview ids abbreviate the full venue name including the word
+  // "conference" (ICLR.cc), so initials are also derived without the
+  // edition-word stripping that venueAliasKeys applies.
+  for (const value of [venue.venueName, venue.venueAcronym]) {
+    if (!value) continue;
+    const initials = normalizeDiscoveryTitle(value)
+      .split(" ")
+      .filter(
+        (word) =>
+          word && !["a", "an", "and", "for", "of", "on", "the"].includes(word),
+      )
+      .map((word) => word[0])
+      .join("");
+    if (initials.length >= 3) keys.add(initials);
+  }
+  return keys;
+}
+
+function officialVenueMatches(
+  paper: DiscoveryResult["verifiedMain"][number],
+  surface: string,
+) {
+  return [
+    { venueName: paper.venueName, venueAcronym: paper.venueAcronym },
+    {
+      venueName: paper.leadingVenueAssessment.venueName,
+      venueAcronym: paper.leadingVenueAssessment.venueAcronym,
+    },
+  ].some((venue) =>
+    [...venueIdentityKeys(venue)].some(
+      (key) => key.length >= 3 && containsNormalized(surface, key),
+    ),
+  );
+}
+
 function noteInvitations(note: unknown): string[] {
   if (!note || typeof note !== "object") return [];
   const record = note as Record<string, unknown>;
@@ -578,9 +618,16 @@ export function reconstructOfficialEvidence(
   // A venue-bearing claim must be corroborated on the inspected paper page.
   // When an official OpenReview decision or track is in play, only the
   // official API venue surface may corroborate it: forum prose is writable by
-  // any user and cannot vouch for the venue behind an acceptance.
+  // any user and cannot vouch for the venue behind an acceptance. The surface
+  // is matched with the parser's venue-alias rules so full names still bind
+  // to acronym-style OpenReview ids.
   const venue = statusClaims
-    ? observedVenue(paper, statusClaims.officialVenueText)
+    ? officialVenueMatches(paper, statusClaims.officialVenueText)
+      ? paper.leadingVenueAssessment.venueName ||
+        paper.leadingVenueAssessment.venueAcronym ||
+        paper.venueName ||
+        paper.venueAcronym
+      : undefined
     : observedVenue(paper, page);
   if ((paper.venueName || paper.venueAcronym) && !venue) return undefined;
   const type = inferEvidenceType(inspection);

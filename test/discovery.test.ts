@@ -107,14 +107,16 @@ function openReviewNotes(params: {
   forumID: string;
   decision?: string;
   venue?: string;
+  invitationPrefix?: string;
   officialReview?: boolean;
   extraNotes?: unknown[];
 }) {
+  const prefix = params.invitationPrefix || "Example.cc/2026/Conference";
   return [
     {
       id: params.forumID,
       forum: params.forumID,
-      invitation: "Example.cc/2026/Conference/-/Submission",
+      invitation: `${prefix}/-/Submission`,
       content: params.venue ? { venue: params.venue } : {},
     },
     ...(params.decision
@@ -122,7 +124,7 @@ function openReviewNotes(params: {
           {
             id: `${params.forumID}-decision`,
             forum: params.forumID,
-            invitation: "Example.cc/2026/Conference/Paper1/-/Decision",
+            invitation: `${prefix}/Paper1/-/Decision`,
             content: { decision: params.decision },
           },
         ]
@@ -132,9 +134,7 @@ function openReviewNotes(params: {
           {
             id: `${params.forumID}-review`,
             forum: params.forumID,
-            invitations: [
-              "Example.cc/2026/Conference/Paper1/-/Official_Review",
-            ],
+            invitations: [`${prefix}/Paper1/-/Official_Review`],
             content: { review: { value: "Official review text" } },
           },
         ]
@@ -148,6 +148,7 @@ function openReviewFetch(params: {
   page: string;
   decision?: string;
   venue?: string;
+  invitationPrefix?: string;
   officialReview?: boolean;
   extraNotes?: unknown[];
 }) {
@@ -697,10 +698,54 @@ test("an official OpenReview decision cannot ride a prose-only venue match", asy
         page: "<title>Verified Paper</title><main>Verified Paper — A. Author — 2026 — Example Conference</main>",
         decision: "Accept (Poster)",
         venue: "Unrelated Symposium 2026 Poster",
+        invitationPrefix: "UnrelatedSymposium.org/2026/Symposium",
       }),
     }),
     /did not include any usable papers/,
   );
+});
+
+test("official OpenReview status accepts a full venue name against acronym ids", async () => {
+  const officialURL = "https://openreview.net/forum?id=full-name";
+  const fullName = "International Conference on Learning Representations";
+  const discovery = parseDiscoveryResult(
+    result([
+      paper({
+        venueName: fullName,
+        venueAcronym: undefined,
+        urls: [officialURL],
+        publicationEvidence: [
+          {
+            type: "official_decision",
+            sourceName: "OpenReview",
+            url: officialURL,
+            observedTitle: "Verified Paper",
+            observedVenue: fullName,
+            observedTrack: "Poster",
+            observedDecision: "Accepted",
+            supports: ["identity", "accepted", "main_track"],
+          },
+        ],
+        leadingVenueAssessment: {
+          venueName: fullName,
+          fields: ["example field"],
+          judgment: "leading",
+          confidence: "high",
+          basis: "Field-specific archival venue assessment.",
+        },
+      }),
+    ]),
+  );
+  const verified = await verifyDiscoveryEvidenceLive({
+    discovery,
+    fetch: openReviewFetch({
+      forumID: "full-name",
+      page: `<title>Verified Paper</title><main>Verified Paper — A. Author — 2026 — ${fullName}</main>`,
+      decision: "Accept (Poster)",
+      invitationPrefix: "ICLR.cc/2026/Conference",
+    }),
+  });
+  assert.equal(verified.verifiedMain.length, 1);
 });
 
 test("a bare OpenReview acceptance without a track marker stays track-unknown", async () => {

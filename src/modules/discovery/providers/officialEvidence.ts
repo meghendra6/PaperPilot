@@ -819,10 +819,16 @@ export async function fetchOpenReviewForumNotes(params: {
       lastError = error;
     }
   }
+  if (lastError !== undefined) {
+    // A host failure after another host reported no notes is a partial
+    // outage, not proof that the forum is empty; fail closed instead of
+    // silently dropping a possibly legacy forum.
+    throw lastError instanceof Error
+      ? lastError
+      : new Error("OpenReview official status was unavailable.");
+  }
   if (reachedEmptyList) return [];
-  throw lastError instanceof Error
-    ? lastError
-    : new Error("OpenReview official status was unavailable.");
+  throw new Error("OpenReview official status was unavailable.");
 }
 
 export const OFFICIAL_SOURCE_FAMILIES = SOURCE_FAMILIES.map((entry) => ({

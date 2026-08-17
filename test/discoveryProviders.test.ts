@@ -495,6 +495,22 @@ test("OpenReview status falls back to the legacy v1 API and bare-array notes", a
   });
   assert.deepEqual(empty, []);
 
+  // One empty API plus one failing API is a partial outage, not an empty
+  // forum: the legacy host might hold the notes.
+  await assert.rejects(
+    fetchOpenReviewForumNotes({
+      forumID: "partial-outage",
+      fetch: (async (input: unknown) =>
+        String(input).startsWith("https://api2.openreview.net/")
+          ? new Response(JSON.stringify({ notes: [] }), {
+              status: 200,
+              headers: { "content-type": "application/json" },
+            })
+          : new Response("unavailable", { status: 503 })) as typeof fetch,
+    }),
+    /failed \(503\)/,
+  );
+
   await assert.rejects(
     fetchOpenReviewForumNotes({
       forumID: "../evil path",
