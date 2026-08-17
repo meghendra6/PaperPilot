@@ -1,5 +1,9 @@
 import { parseDiscoveryResult } from "./parser";
-import { areLikelySamePaper, normalizeDiscoveryTitle } from "./normalize";
+import {
+  areLikelySamePaper,
+  normalizeDiscoveryTitle,
+  SPELLED_ORDINAL_WORDS,
+} from "./normalize";
 import {
   classifyOfficialEvidenceURL,
   fetchOpenReviewForumNotes,
@@ -436,35 +440,7 @@ const VENUE_TYPE_WORDS = new Set([
   "workshop",
 ]);
 
-const VENUE_ORDINAL_WORDS = new Set([
-  "first",
-  "second",
-  "third",
-  "fourth",
-  "fifth",
-  "sixth",
-  "seventh",
-  "eighth",
-  "ninth",
-  "tenth",
-  "eleventh",
-  "twelfth",
-  "thirteenth",
-  "fourteenth",
-  "fifteenth",
-  "sixteenth",
-  "seventeenth",
-  "eighteenth",
-  "nineteenth",
-  "twentieth",
-  "twenty",
-  "thirtieth",
-  "thirty",
-  "fortieth",
-  "forty",
-  "fiftieth",
-  "fifty",
-]);
+const VENUE_ORDINAL_WORDS = SPELLED_ORDINAL_WORDS;
 
 const VENUE_STOPWORDS = new Set([
   "a",
@@ -481,8 +457,17 @@ const VENUE_STOPWORDS = new Set([
 
 function normalizedVenueWords(text: string) {
   return normalizeDiscoveryTitle(
-    // Parenthetical acronyms are handled as acronym keys, not name words.
-    text.replace(/\([^)]*\)/g, " "),
+    // Only acronym-shaped parentheticals (single token, two or more capital
+    // letters) become acronym keys instead of name words. Descriptive
+    // parentheticals such as "(Security)" stay distinctive name words so
+    // they can still conflict with a different official parenthetical.
+    text.replace(/\(([^)]*)\)/g, (fullMatch, inner: string) => {
+      const trimmed = inner.trim();
+      return /^[A-Za-z0-9]{2,12}$/.test(trimmed) &&
+        trimmed.replace(/[^A-Z]/g, "").length >= 2
+        ? " "
+        : ` ${trimmed} `;
+    }),
   )
     .replace(/\b(?:19|20)\d{2}\b/g, " ")
     .replace(/\b\d+(?:st|nd|rd|th)\b/g, " ")
@@ -509,7 +494,9 @@ function venueTypeWords(text: string) {
 
 function venueNameInitials(value: string) {
   return normalizedVenueWords(value)
-    .filter((word) => !VENUE_STOPWORDS.has(word))
+    .filter(
+      (word) => !VENUE_STOPWORDS.has(word) && !VENUE_ORDINAL_WORDS.has(word),
+    )
     .map((word) => word[0])
     .join("");
 }
@@ -536,7 +523,9 @@ function claimAcronymKeys(venue: {
       keys.add(words[0]);
     }
     if (words.length >= 2) {
-      const meaningful = words.filter((word) => !VENUE_STOPWORDS.has(word));
+      const meaningful = words.filter(
+        (word) => !VENUE_STOPWORDS.has(word) && !VENUE_ORDINAL_WORDS.has(word),
+      );
       const compact = meaningful.join("");
       if (compact.length >= 6) keys.add(compact);
       const initials = meaningful.map((word) => word[0]).join("");
@@ -557,7 +546,7 @@ function claimAcronymKeys(venue: {
 function officialVenueAgreement(
   paper: DiscoveryResult["verifiedMain"][number],
   status: OpenReviewOfficialStatus,
-): "name" | "acronym" | undefined {
+): { kind: "name" | "acronym"; label: string } | undefined {
   const fieldWords = new Set(
     normalizedVenueWords(status.officialVenueFieldText),
   );
@@ -595,34 +584,51 @@ function officialVenueAgreement(
     const initials = venueNameInitials(value);
     return initials.length < 3 || !officialTokens.has(initials);
   };
-  for (const venue of [
+  const sources = [
     { venueName: paper.venueName, venueAcronym: paper.venueAcronym },
     {
       venueName: paper.leadingVenueAssessment.venueName,
       venueAcronym: paper.leadingVenueAssessment.venueAcronym,
     },
-  ]) {
-    if (!venue.venueName && !venue.venueAcronym) continue;
+  ].filter((venue) => venue.venueName || venue.venueAcronym);
+  // One contradicted source poisons the whole claim: a correct assessment
+  // must not rescue conflicting paper metadata, and vice versa.
+  for (const venue of sources) {
     const claimTypes = venueTypeWords(venue.venueName || "");
     if (
       claimTypes.size &&
       officialTypes.size &&
       [...claimTypes].every((word) => !officialTypes.has(word))
     ) {
-      continue;
+      return undefined;
     }
     const values = [venue.venueName, venue.venueAcronym].filter(
       (value): value is string => Boolean(value),
     );
-    if (values.some(valueContradicts)) continue;
-    const agreedValue = values.find(valueAgrees);
-    if (agreedValue) {
-      return [...new Set(significantVenueWords(agreedValue))].length >= 2
-        ? "name"
-        : "acronym";
-    }
-    if ([...claimAcronymKeys(venue)].some((key) => officialTokens.has(key))) {
-      return "acronym";
+    if (values.some(valueContradicts)) return undefined;
+  }
+  for (const venue of sources) {
+    const agreedValue = [venue.venueName, venue.venueAcronym]
+      .filter((value): value is string => Boolean(value))
+      .find(valueAgrees);
+    if (agreedValue) return { kind: "name", label: agreedValue };
+  }
+  for (const venue of sources) {
+    const matched = [...claimAcronymKeys(venue)].find((key) =>
+      officialTokens.has(key),
+    );
+    if (matched) {
+      // Acronym-only agreement records the registrar token that actually
+      // matched, never an unverified full-name expansion.
+      const rawAcronym = [
+        venue.venueAcronym,
+        paper.venueAcronym,
+        paper.leadingVenueAssessment.venueAcronym,
+      ].find(
+        (value) =>
+          value && normalizeDiscoveryTitle(value).replace(/ /g, "") === matched,
+      );
+      return { kind: "acronym", label: rawAcronym || matched.toUpperCase() };
     }
   }
   return undefined;
@@ -849,21 +855,8 @@ export function reconstructOfficialEvidence(
   // any user and cannot vouch for the venue behind an acceptance. When only
   // the acronym could be verified, the evidence records the verified acronym
   // rather than endorsing an unverified full-name expansion.
-  const venueAgreement = statusClaims
-    ? officialVenueAgreement(paper, statusClaims)
-    : undefined;
   const venue = statusClaims
-    ? venueAgreement === "name"
-      ? paper.leadingVenueAssessment.venueName ||
-        paper.leadingVenueAssessment.venueAcronym ||
-        paper.venueName ||
-        paper.venueAcronym
-      : venueAgreement === "acronym"
-        ? paper.venueAcronym ||
-          paper.leadingVenueAssessment.venueAcronym ||
-          paper.leadingVenueAssessment.venueName ||
-          paper.venueName
-        : undefined
+    ? officialVenueAgreement(paper, statusClaims)?.label
     : observedVenue(paper, page);
   if ((paper.venueName || paper.venueAcronym) && !venue) return undefined;
   const type = inferEvidenceType(inspection);

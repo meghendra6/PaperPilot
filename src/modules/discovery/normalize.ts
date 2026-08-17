@@ -55,6 +55,36 @@ export function isSecretQueryParameterName(key: string) {
   return lower.split(/[-_.]/).some((word) => SECRET_PARAMETER_WORDS.has(word));
 }
 
+export const SPELLED_ORDINAL_WORDS = new Set([
+  "first",
+  "second",
+  "third",
+  "fourth",
+  "fifth",
+  "sixth",
+  "seventh",
+  "eighth",
+  "ninth",
+  "tenth",
+  "eleventh",
+  "twelfth",
+  "thirteenth",
+  "fourteenth",
+  "fifteenth",
+  "sixteenth",
+  "seventeenth",
+  "eighteenth",
+  "nineteenth",
+  "twentieth",
+  "twenty",
+  "thirtieth",
+  "thirty",
+  "fortieth",
+  "forty",
+  "fiftieth",
+  "fifty",
+]);
+
 export function normalizeHttpURL(value: string) {
   try {
     const url = new URL(value.trim());
