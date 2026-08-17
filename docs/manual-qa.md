@@ -408,6 +408,18 @@ SHA-256 `f1b1ef06acf08409677fb479dc65ba27f5e6b8a7cb73ce2b16aa251502c29266`)
 was reinstalled into the same running Zotero with the replay smoke-check
 repeated and the same fail-closed outcome.
 
+The round-13 follow-up found three precision issues in the new mechanisms: a
+terminator anywhere in a number run erased the cardinals after it ("First One
+Health"), an "and" connector split compound ordinals ("One Hundred and
+First") and rejected genuine claims, and greedy author consumption made a
+valid pairing depend on registrar ordering. Commit `8d1484b` ends ordinal
+runs at their terminator with "and" connectors kept inside the run, and
+computes registrar author matches as a maximum bipartite assignment, with
+regression tests in both directions. That build (XPI SHA-256
+`6efdff977e02adcb621de8426123728d9051e567ef5f09fd17a2045941cc2f7e`) was
+reinstalled into the same running Zotero with the replay smoke-check repeated
+and the same fail-closed outcome.
+
 - [ ] Run `Find verified prior work` with no concern and confirm the agent infers fields, adjacent fields, venues, and query families without asking the user to choose a conference
 - [ ] Enter an optional research concern, then run discovery from the main section, selected-PDF `Find prior work` action, a limitation card, and a follow-up card; confirm each source is carried into the saved scope
 - [ ] In AI, computer architecture, and a third field, confirm an appropriate leading venue absent from any built-in source shortcut can still be selected and justified
