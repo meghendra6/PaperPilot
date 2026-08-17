@@ -158,6 +158,16 @@ export function buildRelatedRunFailureState(params: {
   };
 }
 
+export function releaseReservationAfterConfirmedCleanup(
+  cleanup: Promise<void>,
+  release: () => void,
+) {
+  // A rejected late cleanup means the old detached process could not be
+  // confirmed stopped, so the workspace reservation stays held instead of
+  // letting a new run share the same workspace.
+  void cleanup.then(release, () => undefined);
+}
+
 export interface LibraryItemCandidate {
   id: number;
   title?: string;
@@ -392,21 +402,48 @@ export function findExistingLibraryItem(
   >,
   candidates: LibraryItemCandidate[],
 ) {
+  // A shared DOI or provider id is only a binding when the candidate's own
+  // metadata stays compatible; a copied identifier on a conflicting item must
+  // not rebind Open/Add onto the wrong Zotero record.
+  const isCompatibleCandidate = (
+    candidate: LibraryItemCandidate,
+    options: { trustProviderIDs?: boolean } = {},
+  ) =>
+    areLikelySamePaper(
+      {
+        title: paper.title,
+        authors: paper.authors,
+        year: paper.year,
+        doi: paper.doi,
+        providerIDs: paper.providerIDs || {},
+      },
+      {
+        title: candidate.title || paper.title,
+        authors: candidate.authors || [],
+        year: candidate.year,
+        doi: candidate.doi,
+        providerIDs: candidate.providerIDs || {},
+      },
+      options,
+    );
   const normalizedDOI = paper.doi ? normalizeDOI(paper.doi) : undefined;
   if (normalizedDOI) {
     const doiMatch = candidates.find(
       (candidate) =>
-        candidate.doi && normalizeDOI(candidate.doi) === normalizedDOI,
+        candidate.doi &&
+        normalizeDOI(candidate.doi) === normalizedDOI &&
+        isCompatibleCandidate(candidate),
     );
     if (doiMatch) {
       return doiMatch;
     }
   }
 
-  const stableIDMatch = candidates.find((candidate) =>
-    Object.entries(paper.providerIDs || {}).some(
-      ([provider, id]) => id && candidate.providerIDs?.[provider] === id,
-    ),
+  const stableIDMatch = candidates.find(
+    (candidate) =>
+      Object.entries(paper.providerIDs || {}).some(
+        ([provider, id]) => id && candidate.providerIDs?.[provider] === id,
+      ) && isCompatibleCandidate(candidate, { trustProviderIDs: true }),
   );
   if (stableIDMatch) return stableIDMatch;
 
@@ -734,11 +771,9 @@ export async function generateRelatedPaperGroups(params: {
       deadline,
       onDeferredCleanup: (cleanup) => {
         releaseReservation = false;
-        void cleanup
-          .catch(() => undefined)
-          .finally(() =>
-            releaseWorkspaceRunReservation(params.itemID, reservationToken),
-          );
+        releaseReservationAfterConfirmedCleanup(cleanup, () =>
+          releaseWorkspaceRunReservation(params.itemID, reservationToken),
+        );
       },
       question: `${buildRelatedPaperQuestion(
         item,
@@ -910,11 +945,9 @@ export async function generatePublicReviewInsight(params: {
       deadline,
       onDeferredCleanup: (cleanup) => {
         releaseReservation = false;
-        void cleanup
-          .catch(() => undefined)
-          .finally(() =>
-            releaseWorkspaceRunReservation(params.itemID, reservationToken),
-          );
+        releaseReservationAfterConfirmedCleanup(cleanup, () =>
+          releaseWorkspaceRunReservation(params.itemID, reservationToken),
+        );
       },
       question: buildPublicReviewInsightQuestion({
         title: params.paper.title,

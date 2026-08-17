@@ -458,16 +458,23 @@ test("external evidence URLs reject embedded credentials", () => {
 });
 
 test("external evidence URLs reject secret-bearing query parameters", () => {
-  assert.equal(
-    isPlausibleOfficialEvidenceURL(
-      "https://venue.example.org/program?token=supersecret",
-    ),
-    false,
-  );
-  assert.equal(
-    isPlausibleOfficialEvidenceURL(
-      "https://openreview.net/forum?id=public-paper-id",
-    ),
-    true,
-  );
+  for (const url of [
+    "https://venue.example.org/program?token=supersecret",
+    "https://venue.example.org/program?X-Amz-Signature=TOPSECRET",
+    "https://venue.example.org/program?X-Amz-Security-Token=TOPSECRET",
+    "https://venue.example.org/program?access_token=abc",
+    "https://venue.example.org/program?X-Goog-Signature=abc",
+    "https://venue.example.org/program?code=oauth-code",
+    "https://venue.example.org/program?apiKey=abc",
+    "https://venue.example.org/program?session_key=abc",
+  ]) {
+    assert.equal(isPlausibleOfficialEvidenceURL(url), false, url);
+  }
+  for (const url of [
+    "https://openreview.net/forum?id=public-paper-id",
+    "https://venue.example.org/program?author=smith&page=2",
+    "https://venue.example.org/schedule?track=main&year=2026",
+  ]) {
+    assert.equal(isPlausibleOfficialEvidenceURL(url), true, url);
+  }
 });

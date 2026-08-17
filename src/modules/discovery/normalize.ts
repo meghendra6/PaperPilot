@@ -21,6 +21,40 @@ export function normalizeDiscoveryDOI(value: string) {
     : undefined;
 }
 
+const SECRET_PARAMETER_SUBSTRINGS = [
+  "token",
+  "secret",
+  "signature",
+  "credential",
+  "password",
+  "passwd",
+  "apikey",
+  "api_key",
+  "sessionid",
+];
+const SECRET_PARAMETER_WORDS = new Set([
+  "auth",
+  "authorization",
+  "bearer",
+  "code",
+  "jwt",
+  "key",
+  "sess",
+  "session",
+  "sig",
+]);
+
+// Prefixed credential names such as X-Amz-Signature must match, so secret
+// vocabulary is checked per separator-delimited word and, for the strong
+// terms, as substrings of the whole name.
+export function isSecretQueryParameterName(key: string) {
+  const lower = key.toLowerCase();
+  if (SECRET_PARAMETER_SUBSTRINGS.some((term) => lower.includes(term))) {
+    return true;
+  }
+  return lower.split(/[-_.]/).some((word) => SECRET_PARAMETER_WORDS.has(word));
+}
+
 export function normalizeHttpURL(value: string) {
   try {
     const url = new URL(value.trim());
@@ -28,12 +62,9 @@ export function normalizeHttpURL(value: string) {
       return undefined;
     }
     if (url.username || url.password) return undefined;
-    const secretParameter = [...url.searchParams.keys()].some((key) =>
-      /^(?:access_?token|auth|authorization|code|credential|key|api_?key|secret|signature|sig|token)$/i.test(
-        key,
-      ),
-    );
-    if (secretParameter) return undefined;
+    if ([...url.searchParams.keys()].some(isSecretQueryParameterName)) {
+      return undefined;
+    }
     url.hash = "";
     return url.href;
   } catch {

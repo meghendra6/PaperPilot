@@ -10,7 +10,10 @@ import {
 import { buildSessionTitle } from "./sessionTitle";
 import type { PaperSession } from "./types";
 import { migrateDiscoveryResult } from "../discovery/parser";
-import { buildInitialCriticalReadState } from "../criticalRead/workflow";
+import {
+  buildInitialCriticalReadState,
+  canViewPublicReviewInsights,
+} from "../criticalRead/workflow";
 import { parseCriticalReadOutput } from "../criticalRead/parser";
 import type {
   CriticalReadState,
@@ -398,6 +401,21 @@ function migrateCriticalReadState(
   };
 }
 
+// Persisted snapshots are a public-review sink: while the reader-first gate
+// is closed, review URLs and reviewer content must not reach disk. The
+// insight is regenerated on demand once the gate reopens.
+function stripReviewContent<T>(value: T): T {
+  if (Array.isArray(value)) {
+    for (const entry of value) stripReviewContent(entry);
+  } else if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    delete record.reviewURL;
+    delete record.reviewInsight;
+    for (const child of Object.values(record)) stripReviewContent(child);
+  }
+  return value;
+}
+
 function persistedCriticalReadState(value: unknown) {
   if (!hasCriticalReadState(value)) return undefined;
   const cloned = cloneValue(value) as Record<string, unknown>;
@@ -488,6 +506,17 @@ export function captureSessionSnapshot(params: {
         data.criticalReadStates?.get(params.session.itemID),
       )
     : undefined;
+  const liveCriticalRead = data.criticalReadStates?.get(params.session.itemID);
+  if (
+    !canViewPublicReviewInsights(
+      hasCriticalReadState(liveCriticalRead)
+        ? (liveCriticalRead as unknown as CriticalReadState)
+        : undefined,
+    )
+  ) {
+    stripReviewContent(relatedRecommendations);
+    stripReviewContent(criticalRead);
+  }
 
   if (
     !messages.length &&

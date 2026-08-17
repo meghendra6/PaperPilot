@@ -445,6 +445,95 @@ test("SessionHistoryService persists the active session snapshot with mixed-mode
   }
 });
 
+test("pre-gate snapshots never persist public-review URLs or reviewer content", async () => {
+  const { globals, service } = createService({
+    saveDocumentSessions: true,
+    privacyStoreLocalHistory: true,
+    privacySavePromptsOnly: false,
+    privacySaveResponses: true,
+  });
+
+  try {
+    const session = service.ensureDraftSession({
+      itemID: 508,
+      mode: "codex_cli",
+    });
+    messageStore.append(session.sessionId, {
+      role: "user",
+      text: "Review gate snapshot",
+      sourceMode: "codex_cli",
+      status: "done",
+    });
+    const gatedState = () => ({
+      running: false,
+      status: "Recommended",
+      groups: [
+        {
+          category: "Verified main-conference papers",
+          papers: [
+            {
+              title: "Gated Paper",
+              authors: ["A. Researcher"],
+              relevanceScore: 0.9,
+              reviewURL: "https://openreview.net/forum?id=gated",
+              reviewInsight: {
+                sourceURLs: ["https://openreview.net/forum?id=gated"],
+                valuedStrengths: ["Strong evaluation"],
+                concerns: [],
+                reviewerPriorities: [],
+                disagreements: [],
+                limitations: [],
+                generatedAt: "2026-08-17T00:00:00.000Z",
+              },
+            },
+          ],
+        },
+      ],
+    });
+    const data = (
+      globalThis as {
+        addon?: {
+          data?: {
+            relatedRecommendationStates?: Map<number, unknown>;
+            criticalReadStates?: Map<number, unknown>;
+          };
+        };
+      }
+    ).addon?.data;
+    data?.relatedRecommendationStates?.set(508, gatedState());
+    // Steps 4-6 are incomplete, so the reader-first gate is closed.
+    data?.criticalReadStates?.set(
+      508,
+      startCriticalRead(buildInitialCriticalReadState()),
+    );
+
+    const persisted = await service.persistActiveSession({
+      itemID: 508,
+      paperTitle: "Gated paper",
+    });
+    assert.ok(persisted?.relatedRecommendations);
+    const serialized = JSON.stringify(persisted);
+    assert.doesNotMatch(serialized, /reviewURL/);
+    assert.doesNotMatch(serialized, /reviewInsight/);
+    assert.doesNotMatch(serialized, /openreview\.net/);
+
+    // Without an active Critical Read the gate is open and the same state
+    // keeps its verified review link.
+    data?.criticalReadStates?.delete(508);
+    data?.relatedRecommendationStates?.set(508, gatedState());
+    const open = await service.persistActiveSession({
+      itemID: 508,
+      paperTitle: "Gated paper",
+    });
+    assert.match(JSON.stringify(open), /forum\?id=gated/);
+
+    messageStore.clear(session.sessionId);
+    sessionStore.reset(508, "codex_cli");
+  } finally {
+    globals.restore();
+  }
+});
+
 test("SessionHistoryService honors prompts-only persistence for snapshots", async () => {
   const { globals, repository, service } = createService({
     saveDocumentSessions: true,

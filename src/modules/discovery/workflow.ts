@@ -1,6 +1,10 @@
 import { parseDiscoveryResult } from "./parser";
 import { areLikelySamePaper, normalizeDiscoveryTitle } from "./normalize";
-import { inspectOfficialEvidenceURL } from "./providers/officialEvidence";
+import {
+  classifyOfficialEvidenceURL,
+  fetchOpenReviewForumNotes,
+  inspectOfficialEvidenceURL,
+} from "./providers/officialEvidence";
 import type { DiscoveryFetch } from "./providers/types";
 import type {
   DiscoveryProviderCandidate,
@@ -338,27 +342,96 @@ function inferDecision(page: string) {
   return undefined;
 }
 
-function inferStructuredOpenReviewStatus(page: string) {
-  const decisionMatch = page.match(
-    /\b(?:official decision|decision|recommendation)\s*[:—-]\s*(accept(?:ed|ance)?|reject(?:ed|ion)?|withdrawn?)\b/i,
+export interface OpenReviewOfficialStatus {
+  decision?: { label: string; accepted: boolean };
+  track?: { label: string; main: boolean };
+  reviewsAvailable: boolean;
+}
+
+function openReviewForumID(url: string) {
+  try {
+    if (classifyOfficialEvidenceURL(url)?.id !== "openreview") {
+      return undefined;
+    }
+    const parsed = new URL(url);
+    if (parsed.pathname !== "/forum") return undefined;
+    return parsed.searchParams.get("id") || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function noteInvitations(note: unknown): string[] {
+  if (!note || typeof note !== "object") return [];
+  const record = note as Record<string, unknown>;
+  return [
+    ...(typeof record.invitation === "string" ? [record.invitation] : []),
+    ...(Array.isArray(record.invitations)
+      ? record.invitations.filter(
+          (value): value is string => typeof value === "string",
+        )
+      : []),
+  ];
+}
+
+function noteContentValue(note: unknown, key: string) {
+  if (!note || typeof note !== "object") return undefined;
+  const content = (note as Record<string, unknown>).content;
+  if (!content || typeof content !== "object") return undefined;
+  const raw = (content as Record<string, unknown>)[key];
+  if (typeof raw === "string") return raw;
+  if (
+    raw &&
+    typeof raw === "object" &&
+    typeof (raw as Record<string, unknown>).value === "string"
+  ) {
+    return (raw as Record<string, unknown>).value as string;
+  }
+  return undefined;
+}
+
+// Forum text is writable by any OpenReview user, so decision and track are
+// derived only from API notes whose invitation names OpenReview itself
+// controls, never from prose on the rendered page.
+export function deriveOpenReviewOfficialStatus(
+  notes: unknown[],
+  forumID: string,
+): OpenReviewOfficialStatus {
+  const forumNotes = notes.filter((note) => {
+    if (!note || typeof note !== "object") return false;
+    const record = note as Record<string, unknown>;
+    return record.forum === forumID || record.id === forumID;
+  });
+  const decisionNote = forumNotes.find((note) =>
+    noteInvitations(note).some((invitation) =>
+      /\/-\/decision$/i.test(invitation),
+    ),
   );
-  const venueMatch = page.match(
-    /\b(?:venue|presentation type|track)\s*[:—-]\s*([^|\n]{1,100})/i,
+  const decisionText = [
+    noteContentValue(decisionNote, "decision"),
+    noteContentValue(decisionNote, "recommendation"),
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const submission = forumNotes.find(
+    (note) => (note as Record<string, unknown>).id === forumID,
   );
-  const decisionValue = decisionMatch?.[1] || "";
-  const venueValue = venueMatch?.[1]?.trim() || "";
-  const explicitDecisionTrack = page.match(
-    /\b(?:official decision|decision)\s*[:—-]\s*(?:accept(?:ed|ance)?)[^|\n]{0,80}\b(oral|poster|spotlight|main(?: conference| track)?)\b/i,
+  const venueText = [
+    noteContentValue(submission, "venue"),
+    noteContentValue(submission, "venueid"),
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const rejected =
+    /reject|withdraw/i.test(decisionText) || /withdraw/i.test(venueText);
+  const accepted = !rejected && /accept/i.test(decisionText);
+  const trackSurface = `${decisionText} ${venueText}`;
+  const nonMain = NON_MAIN_TRACKS.find(([pattern]) =>
+    pattern.test(trackSurface),
+  );
+  const trackLabel = trackSurface.match(
+    /\b(oral|poster|spotlight|main(?: conference| track)?)\b/i,
   )?.[1];
-  const rejected = /reject|withdraw/i.test(decisionValue);
-  const accepted = /accept/i.test(decisionValue);
-  const nonMain = NON_MAIN_TRACKS.find(([pattern]) => pattern.test(venueValue));
-  const main =
-    accepted &&
-    !nonMain &&
-    /\b(?:main(?: conference| track)?|oral|poster|spotlight|accept(?:ed|ance)?)\b/i.test(
-      venueValue,
-    );
   return {
     decision: rejected
       ? { label: "Rejected or withdrawn", accepted: false }
@@ -367,11 +440,14 @@ function inferStructuredOpenReviewStatus(page: string) {
         : undefined,
     track: nonMain
       ? { label: nonMain[1], main: false }
-      : main
-        ? { label: venueValue, main: true }
-        : accepted && explicitDecisionTrack
-          ? { label: explicitDecisionTrack, main: true }
-          : undefined,
+      : accepted
+        ? { label: trackLabel || "Main conference", main: true }
+        : undefined,
+    reviewsAvailable: forumNotes.some((note) =>
+      noteInvitations(note).some((invitation) =>
+        /\/-\/official_review$/i.test(invitation),
+      ),
+    ),
   };
 }
 
@@ -421,6 +497,11 @@ function paperIdentityContext(
     ) {
       return { context, index };
     }
+    // A claimed DOI binds identity only when the official page itself shows
+    // that DOI. Without on-page DOI corroboration, author evidence is
+    // required, so an authorless row cannot ride a copied DOI through the
+    // title/year path.
+    if (!authorKeys.length) continue;
     if (!paper.year) {
       continue;
     }
@@ -443,7 +524,10 @@ function paperIdentityContext(
 export function reconstructOfficialEvidence(
   paper: DiscoveryResult["verifiedMain"][number],
   inspection: Awaited<ReturnType<typeof inspectOfficialEvidenceURL>>,
-  options: { authorityValidated?: boolean } = {},
+  options: {
+    authorityValidated?: boolean;
+    openReviewStatus?: OpenReviewOfficialStatus;
+  } = {},
 ): PublicationEvidence | undefined {
   if (!inspection.bodyInspected) return undefined;
   const page = [inspection.pageTitle, inspection.searchableText]
@@ -493,24 +577,24 @@ export function reconstructOfficialEvidence(
   const context = identity.context;
   const openReviewStatus =
     inspection.sourceFamily === "openreview"
-      ? inferStructuredOpenReviewStatus(context)
+      ? options.openReviewStatus
       : undefined;
-  const resolvedTrack = openReviewStatus
-    ? openReviewStatus.track
-    : inferEntryBoundTrack({
-        page,
-        entryContext: context,
-        titleIndex: identity.index,
-        title: paper.title,
-        url: inspection.url,
-        type,
-        sourceFamily: inspection.sourceFamily,
-      });
+  const resolvedTrack =
+    inspection.sourceFamily === "openreview"
+      ? openReviewStatus?.track
+      : inferEntryBoundTrack({
+          page,
+          entryContext: context,
+          titleIndex: identity.index,
+          title: paper.title,
+          url: inspection.url,
+          type,
+          sourceFamily: inspection.sourceFamily,
+        });
   const decision =
-    openReviewStatus?.decision ||
-    (inspection.sourceFamily === "openreview"
-      ? undefined
-      : inferDecision(context));
+    inspection.sourceFamily === "openreview"
+      ? openReviewStatus?.decision
+      : inferDecision(context);
   const supports: PublicationEvidence["supports"] = ["identity"];
   if (
     decision?.accepted ||
@@ -531,8 +615,7 @@ export function reconstructOfficialEvidence(
   if (resolvedTrack?.main) supports.push("main_track");
   if (
     inspection.sourceFamily === "openreview" &&
-    new URL(inspection.url).pathname === "/forum" &&
-    Boolean(new URL(inspection.url).searchParams.get("id"))
+    openReviewStatus?.reviewsAvailable
   ) {
     supports.push("reviews_available");
   }
@@ -614,6 +697,7 @@ export async function verifyDiscoveryEvidenceLive(params: {
     ),
   ];
 
+  const openReviewStatuses = new Map<string, OpenReviewOfficialStatus>();
   for (const url of urls) {
     try {
       evidenceInspections.set(
@@ -624,6 +708,33 @@ export async function verifyDiscoveryEvidenceLive(params: {
       if (params.signal?.aborted) throw error;
       failures.push(
         `${url}: ${error instanceof Error ? error.message : "unavailable"}`,
+      );
+      continue;
+    }
+    // The status forum id must come from the inspected final URL so a
+    // redirecting claimed URL cannot pair another forum's page with its own
+    // decision record.
+    const forumID = openReviewForumID(evidenceInspections.get(url)!.url);
+    if (!forumID) continue;
+    try {
+      openReviewStatuses.set(
+        url,
+        deriveOpenReviewOfficialStatus(
+          await fetchOpenReviewForumNotes({
+            forumID,
+            fetch: params.fetch,
+            signal: params.signal,
+            deadline,
+          }),
+          forumID,
+        ),
+      );
+    } catch (error) {
+      if (params.signal?.aborted) throw error;
+      failures.push(
+        `${url}: official OpenReview status was unavailable (${
+          error instanceof Error ? error.message : "unavailable"
+        }).`,
       );
     }
   }
@@ -664,6 +775,7 @@ export async function verifyDiscoveryEvidenceLive(params: {
                 inspection.sourceFamily !== "generic-official-web" ||
                 authorityHostnames.has(inspection.hostname) ||
                 hasVenueNamedDomainAuthority(inspection, paper),
+              openReviewStatus: openReviewStatuses.get(entry.url),
             })
           : undefined;
         if (!evidence) {

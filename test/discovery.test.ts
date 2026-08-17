@@ -103,6 +103,68 @@ function result(papers: unknown[]) {
   });
 }
 
+function openReviewNotes(params: {
+  forumID: string;
+  decision?: string;
+  venue?: string;
+  officialReview?: boolean;
+  extraNotes?: unknown[];
+}) {
+  return [
+    {
+      id: params.forumID,
+      forum: params.forumID,
+      invitation: "Example.cc/2026/Conference/-/Submission",
+      content: params.venue ? { venue: params.venue } : {},
+    },
+    ...(params.decision
+      ? [
+          {
+            id: `${params.forumID}-decision`,
+            forum: params.forumID,
+            invitation: "Example.cc/2026/Conference/Paper1/-/Decision",
+            content: { decision: params.decision },
+          },
+        ]
+      : []),
+    ...(params.officialReview
+      ? [
+          {
+            id: `${params.forumID}-review`,
+            forum: params.forumID,
+            invitations: [
+              "Example.cc/2026/Conference/Paper1/-/Official_Review",
+            ],
+            content: { review: { value: "Official review text" } },
+          },
+        ]
+      : []),
+    ...(params.extraNotes || []),
+  ];
+}
+
+function openReviewFetch(params: {
+  forumID: string;
+  page: string;
+  decision?: string;
+  venue?: string;
+  officialReview?: boolean;
+  extraNotes?: unknown[];
+}) {
+  return (async (input: unknown) => {
+    if (String(input).includes("openreview.net/notes?forum=")) {
+      return new Response(JSON.stringify({ notes: openReviewNotes(params) }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }
+    return new Response(params.page, {
+      status: 200,
+      headers: { "content-type": "text/html" },
+    });
+  }) as typeof fetch;
+}
+
 test("discovery keeps only high-confidence official main-track evidence in the primary lane", () => {
   const parsed = parseDiscoveryResult(
     result([
@@ -516,22 +578,24 @@ test("live evidence verification requires the official page to match the paper",
   );
   const matched = await verifyDiscoveryEvidenceLive({
     discovery,
-    fetch: (async () =>
-      new Response(
-        "<title>Example Conference</title><main>Verified Paper — A. Author — 2026 — venue: Main Conference — official decision: Accepted</main>",
-        { status: 200, headers: { "content-type": "text/html" } },
-      )) as typeof fetch,
+    fetch: openReviewFetch({
+      forumID: "verified-paper",
+      page: "<title>Example Conference</title><main>Verified Paper — A. Author — 2026 — Example Conference</main>",
+      decision: "Accept (Oral)",
+      venue: "Example Conference Main Conference",
+    }),
   });
   assert.equal(matched.verifiedMain.length, 1);
 
   await assert.rejects(
     verifyDiscoveryEvidenceLive({
       discovery,
-      fetch: (async () =>
-        new Response("<title>A different work</title>", {
-          status: 200,
-          headers: { "content-type": "text/html" },
-        })) as typeof fetch,
+      fetch: openReviewFetch({
+        forumID: "verified-paper",
+        page: "<title>A different work</title>",
+        decision: "Accept (Oral)",
+        venue: "Example Conference Main Conference",
+      }),
     }),
     /did not include any usable papers/,
   );
@@ -555,16 +619,53 @@ test("OpenReview reviewer prose cannot impersonate an official decision", async 
       }),
     ]),
   );
+  const reviewerProse = {
+    forumID: "review-prose",
+    page: "<title>Verified Paper</title><main>Verified Paper — A. Author — 2026 — Example Conference. Reviewer comment: Decision: Accept — Venue: Main Conference.</main>",
+    extraNotes: [
+      {
+        id: "review-prose-comment",
+        forum: "review-prose",
+        invitation: "Example.cc/2026/Conference/Paper1/-/Official_Comment",
+        content: {
+          comment: "Decision: Accept — Venue: Main Conference",
+        },
+      },
+    ],
+  };
   const verified = await verifyDiscoveryEvidenceLive({
     discovery,
-    fetch: (async () =>
-      new Response(
-        "<title>Verified Paper</title><main>Verified Paper — A. Author — 2026 — Example Conference. Reviewer: I accept this paper because the main contribution is strong.</main>",
-        { status: 200, headers: { "content-type": "text/html" } },
-      )) as typeof fetch,
+    fetch: openReviewFetch(reviewerProse),
   });
   assert.equal(verified.verifiedMain.length, 0);
   assert.equal(verified.noveltyRadar.length, 1);
+
+  const claimedMain = parseDiscoveryResult(
+    result([
+      paper({
+        urls: ["https://openreview.net/forum?id=review-prose"],
+        publicationEvidence: [
+          {
+            type: "official_decision",
+            sourceName: "OpenReview",
+            url: "https://openreview.net/forum?id=review-prose",
+            observedTitle: "Verified Paper",
+            observedVenue: "Example Conference",
+            observedTrack: "Main Conference",
+            observedDecision: "Accepted",
+            supports: ["identity", "accepted", "main_track"],
+          },
+        ],
+      }),
+    ]),
+  );
+  await assert.rejects(
+    verifyDiscoveryEvidenceLive({
+      discovery: claimedMain,
+      fetch: openReviewFetch(reviewerProse),
+    }),
+    /did not include any usable papers/,
+  );
 });
 
 test("live submission evidence preserves an identity-bound OpenReview forum", async () => {
@@ -594,11 +695,11 @@ test("live submission evidence preserves an identity-bound OpenReview forum", as
         urls: ["https://openalex.org/W1"],
       },
     ],
-    fetch: (async () =>
-      new Response(
-        "<title>Verified Paper</title><main>Verified Paper — A. Author — 2026 — Example Conference — forum reviews</main>",
-        { status: 200, headers: { "content-type": "text/html" } },
-      )) as typeof fetch,
+    fetch: openReviewFetch({
+      forumID: "active-submission",
+      page: "<title>Verified Paper</title><main>Verified Paper — A. Author — 2026 — Example Conference</main>",
+      officialReview: true,
+    }),
   });
   assert.equal(verified.noveltyRadar.length, 1);
   assert.ok(
@@ -641,6 +742,32 @@ test("malformed DOI text cannot bypass author and year identity", () => {
       ),
     /usable papers/i,
   );
+});
+
+test("a copied DOI absent from the official page cannot replace author identity", () => {
+  const inspection: Parameters<typeof reconstructOfficialEvidence>[1] = {
+    url: "https://proceedings.mlr.press/v300/verified.html",
+    hostname: "proceedings.mlr.press",
+    sourceFamily: "pmlr",
+    pageTitle: "Verified Paper",
+    searchableText: "Verified Paper — 2026 — Example Conference — Poster",
+    linkedHostnames: [],
+    contentType: "text/html",
+    checkedAt: "2026-08-17T00:00:00.000Z",
+    bodyInspected: true,
+  };
+  const copied = paper({
+    authors: [],
+    doi: "10.9999/copied-from-another-paper",
+  }) as Parameters<typeof reconstructOfficialEvidence>[0];
+  assert.equal(reconstructOfficialEvidence(copied, inspection), undefined);
+
+  const onPageDOI = reconstructOfficialEvidence(copied, {
+    ...inspection,
+    searchableText:
+      "Verified Paper — 2026 — Example Conference — Poster — DOI: 10.9999/copied-from-another-paper",
+  });
+  assert.ok(onPageDOI?.supports.includes("identity"));
 });
 
 test("dedup follows DOI, trusted stable identity, and compatible title years", () => {
@@ -939,11 +1066,13 @@ test("public review links remain hidden until a live official-page recheck", asy
 
   const verified = await verifyDiscoveryEvidenceLive({
     discovery,
-    fetch: (async () =>
-      new Response(
-        "<title>Verified Paper</title><main>Verified Paper — A. Author — 2026 — Example Conference — venue: Main Conference — official decision: Accepted</main>",
-        { status: 200, headers: { "content-type": "text/html" } },
-      )) as typeof fetch,
+    fetch: openReviewFetch({
+      forumID: "verified-paper",
+      page: "<title>Verified Paper</title><main>Verified Paper — A. Author — 2026 — Example Conference</main>",
+      decision: "Accept (Oral)",
+      venue: "Example Conference Main Conference",
+      officialReview: true,
+    }),
   });
   assert.equal(verified.verifiedMain[0].reviewURL, reviewURL);
 });
@@ -976,22 +1105,30 @@ test("live verification ignores an agent review URL that the official page redir
       }),
     ]),
   );
+  const actualFetch = openReviewFetch({
+    forumID: "actual",
+    page: "<title>Verified Paper</title><main>Verified Paper — A. Author — 2026 — Example Conference</main>",
+    decision: "Accept (Oral)",
+    venue: "Example Conference Main Conference",
+    officialReview: true,
+  });
   const verified = await verifyDiscoveryEvidenceLive({
     discovery,
-    fetch: (async (input) => {
+    fetch: (async (input: unknown, init?: unknown) => {
       if (String(input) === claimedReviewURL) {
         return new Response(null, {
           status: 302,
           headers: { location: actualReviewURL },
         });
       }
-      return new Response(
-        "<title>Verified Paper</title><main>Verified Paper — A. Author — 2026 — Example Conference — venue: Main Conference — official decision: Accepted</main>",
-        { status: 200, headers: { "content-type": "text/html" } },
-      );
+      return actualFetch(input as never, init as never);
     }) as typeof fetch,
   });
   assert.equal(verified.verifiedMain[0].reviewURL, actualReviewURL);
+  assert.match(
+    verified.verifiedMain[0].publicationEvidence[0].url,
+    /forum\?id=actual/,
+  );
 });
 
 test("live verification rejects same-title author/year conflicts", async () => {
@@ -1333,27 +1470,39 @@ test("known official oral and poster decisions require a non-workshop scope", as
         }),
       ]),
     );
+    const identityPage =
+      "<title>Verified Paper</title><main>Verified Paper — A. Author — 2026 — Example Conference</main>";
     const verified = await verifyDiscoveryEvidenceLive({
       discovery,
-      fetch: (async () =>
-        new Response(
-          url.includes("openreview")
-            ? `<title>Verified Paper</title><main>Verified Paper — A. Author — 2026 — Example Conference — venue: ${label} — official decision: Accepted</main>`
-            : `<title>Verified Paper</title><main>Verified Paper — A. Author — 2026 — Example Conference — accepted ${label}</main>`,
-          { status: 200, headers: { "content-type": "text/html" } },
-        )) as typeof fetch,
+      fetch: url.includes("openreview")
+        ? openReviewFetch({
+            forumID: "paper",
+            page: identityPage,
+            decision: `Accept (${label})`,
+            venue: "Example Conference Main Conference",
+          })
+        : ((async () =>
+            new Response(
+              `<title>Verified Paper</title><main>Verified Paper — A. Author — 2026 — Example Conference — accepted ${label}</main>`,
+              { status: 200, headers: { "content-type": "text/html" } },
+            )) as typeof fetch),
     });
     assert.equal(verified.verifiedMain.length, 1, url);
 
     const workshop = await verifyDiscoveryEvidenceLive({
       discovery,
-      fetch: (async () =>
-        new Response(
-          url.includes("openreview")
-            ? `<title>Verified Paper</title><main>Verified Paper — A. Author — 2026 — Example Conference — venue: Workshop poster — official decision: Accepted</main>`
-            : `<title>Verified Paper</title><main>Workshop poster — Example Conference — accepted ${label} — Verified Paper — A. Author — 2026</main>`,
-          { status: 200, headers: { "content-type": "text/html" } },
-        )) as typeof fetch,
+      fetch: url.includes("openreview")
+        ? openReviewFetch({
+            forumID: "paper",
+            page: identityPage,
+            decision: `Accept (${label})`,
+            venue: "Example Conference Workshop poster",
+          })
+        : ((async () =>
+            new Response(
+              `<title>Verified Paper</title><main>Workshop poster — Example Conference — accepted ${label} — Verified Paper — A. Author — 2026</main>`,
+              { status: 200, headers: { "content-type": "text/html" } },
+            )) as typeof fetch),
     });
     assert.equal(workshop.verifiedMain.length, 0, url);
     assert.equal(

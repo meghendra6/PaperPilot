@@ -729,6 +729,89 @@ export async function inspectOfficialEvidenceURL(params: {
   };
 }
 
+const OPENREVIEW_API_HOSTS = ["api2.openreview.net", "api.openreview.net"];
+
+export async function fetchOpenReviewForumNotes(params: {
+  forumID: string;
+  fetch?: DiscoveryFetch;
+  signal?: AbortSignal;
+  resolveHost?: HostResolver;
+  now?: () => number;
+  deadline?: number;
+}): Promise<unknown[]> {
+  // Forum ids come from untrusted evidence URLs; only a safe identifier may
+  // reach the fixed official API hosts.
+  if (!/^[A-Za-z0-9_.~-]{1,64}$/.test(params.forumID)) {
+    throw new Error("OpenReview forum id is not a safe identifier.");
+  }
+  const resolver = params.resolveHost || defaultResolveHost;
+  const now = params.now || Date.now;
+  const deadline = params.deadline ?? now() + 15_000;
+  const requestTimeout = () => Math.max(1, Math.min(15_000, deadline - now()));
+  let lastError: unknown;
+  for (const host of OPENREVIEW_API_HOSTS) {
+    const url = `https://${host}/notes?forum=${encodeURIComponent(params.forumID)}`;
+    try {
+      if (params.signal?.aborted) {
+        throw new Error("Official evidence request cancelled.");
+      }
+      if (now() >= deadline) throw new Error("Discovery request timed out.");
+      await assertPublicResolution(
+        host,
+        resolver,
+        params.signal,
+        deadline,
+        now,
+      );
+      const fetcher = params.fetch
+        ? withDiscoveryFetchTimeout(
+            params.fetch,
+            requestTimeout(),
+            params.signal,
+          )
+        : undefined;
+      const response = fetcher
+        ? ((await fetcher(url, {
+            headers: { Accept: "application/json" },
+            redirect: "manual",
+          })) as ResponseWithConnection)
+        : await secureZoteroRequest(url, params.signal, requestTimeout());
+      if (
+        response.remoteAddress &&
+        (!isIPAddressLiteral(response.remoteAddress) ||
+          isNonPublicIPAddress(response.remoteAddress))
+      ) {
+        void response.body?.cancel().catch(() => undefined);
+        throw new Error(
+          "OpenReview status connection used a non-public address.",
+        );
+      }
+      if (!response.ok) {
+        void response.body?.cancel().catch(() => undefined);
+        throw new Error(
+          `OpenReview status request failed (${response.status}).`,
+        );
+      }
+      const body = await readResponseTextBounded(response, {
+        signal: params.signal,
+        deadline,
+        now,
+      });
+      const parsed = JSON.parse(body) as { notes?: unknown[] };
+      if (!Array.isArray(parsed.notes)) {
+        throw new Error("OpenReview status response had no notes list.");
+      }
+      return parsed.notes;
+    } catch (error) {
+      if (params.signal?.aborted) throw error;
+      lastError = error;
+    }
+  }
+  throw lastError instanceof Error
+    ? lastError
+    : new Error("OpenReview official status was unavailable.");
+}
+
 export const OFFICIAL_SOURCE_FAMILIES = SOURCE_FAMILIES.map((entry) => ({
   ...entry,
   domains: [...entry.domains],

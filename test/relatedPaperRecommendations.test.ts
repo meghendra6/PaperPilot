@@ -16,6 +16,7 @@ import {
   normalizeDOI,
   openRecommendedPaper,
   parseRelatedPaperResponse,
+  releaseReservationAfterConfirmedCleanup,
   type RelatedRunSubmission,
 } from "../src/modules/relatedRecommendations";
 
@@ -173,12 +174,61 @@ test("findExistingLibraryItem prefers DOI over title fallback", () => {
       authors: ["Ada Author"],
     },
     [
-      { id: 20, title: "Matching Paper", year: 2024 },
-      { id: 10, title: "Different Paper", doi: "https://doi.org/10.1000/test" },
+      { id: 20, title: "Matching Paper", year: 2024, authors: ["Ada Author"] },
+      { id: 10, title: "Matching Paper", doi: "https://doi.org/10.1000/test" },
     ],
   );
 
   assert.equal(match?.id, 10);
+});
+
+test("findExistingLibraryItem rejects a copied identifier on a conflicting item", () => {
+  const recommended = {
+    title: "Verified Paper",
+    authors: ["Alice Author"],
+    year: 2026,
+    doi: "10.1234/copied",
+    providerIDs: { openalex: "W77" },
+  };
+  const adversarial = {
+    id: 77,
+    title: "Unrelated Adversarial Paper",
+    authors: ["Mallory Adversary"],
+    year: 2019,
+    doi: "10.1234/copied",
+    providerIDs: { openalex: "W77" },
+  };
+  assert.equal(findExistingLibraryItem(recommended, [adversarial]), undefined);
+  assert.equal(
+    findExistingLibraryItem(recommended, [
+      adversarial,
+      {
+        id: 78,
+        title: "Verified Paper",
+        authors: ["Alice Author"],
+        year: 2026,
+        doi: "https://doi.org/10.1234/copied",
+      },
+    ])?.id,
+    78,
+  );
+});
+
+test("workspace reservations stay held when late cleanup cannot confirm the stop", async () => {
+  let released = 0;
+  releaseReservationAfterConfirmedCleanup(
+    Promise.reject(new Error("kill failed")),
+    () => {
+      released += 1;
+    },
+  );
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(released, 0);
+  releaseReservationAfterConfirmedCleanup(Promise.resolve(), () => {
+    released += 1;
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(released, 1);
 });
 
 test("findExistingLibraryItem falls back to normalized title and year", () => {
