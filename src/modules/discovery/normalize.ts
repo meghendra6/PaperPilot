@@ -81,30 +81,53 @@ function isSpelledCardinalPart(word: string) {
   return SPELLED_CARDINAL_PARTS.some((pattern) => pattern.test(word));
 }
 
-// Removes maximal runs of spelled number words that end in an ordinal form
-// ("one hundredth", "sixty first", "twelfth") while keeping number words that
-// are part of the venue's actual name ("One Health").
+// Removes spelled number runs that END in an ordinal form ("one hundredth",
+// "one hundred and first", "sixty first", "twelfth") while keeping number
+// words that are part of the venue's actual name: a lone cardinal ("One
+// Health") and cardinals AFTER a terminator ("First One Health") both stay.
 export function stripSpelledOrdinalSequences(words: string[]): string[] {
   const kept: string[] = [];
-  let run: string[] = [];
-  let runHasTerminator = false;
-  const flush = () => {
-    if (!runHasTerminator) kept.push(...run);
-    run = [];
-    runHasTerminator = false;
-  };
-  for (const word of words) {
-    if (isSpelledOrdinalTerminator(word)) {
-      run.push(word);
-      runHasTerminator = true;
-    } else if (isSpelledCardinalPart(word)) {
-      run.push(word);
-    } else {
-      flush();
+  let index = 0;
+  while (index < words.length) {
+    const word = words[index];
+    if (isSpelledCardinalPart(word) || isSpelledOrdinalTerminator(word)) {
+      // Scan one candidate run: cardinals joined by optional "and"
+      // connectors, ending at the first ordinal terminator.
+      let cursor = index;
+      let terminatorEnd = -1;
+      while (cursor < words.length) {
+        const current = words[cursor];
+        if (isSpelledOrdinalTerminator(current)) {
+          terminatorEnd = cursor + 1;
+          break;
+        }
+        if (isSpelledCardinalPart(current)) {
+          cursor += 1;
+          continue;
+        }
+        if (
+          current === "and" &&
+          cursor > index &&
+          cursor + 1 < words.length &&
+          (isSpelledCardinalPart(words[cursor + 1]) ||
+            isSpelledOrdinalTerminator(words[cursor + 1]))
+        ) {
+          cursor += 1;
+          continue;
+        }
+        break;
+      }
+      if (terminatorEnd >= 0) {
+        index = terminatorEnd;
+        continue;
+      }
       kept.push(word);
+      index += 1;
+      continue;
     }
+    kept.push(word);
+    index += 1;
   }
-  flush();
   return kept;
 }
 

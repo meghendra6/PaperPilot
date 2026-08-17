@@ -898,26 +898,46 @@ function registrarIdentityConfirms(
     .filter((identity) => identity.surname);
   const registrarIdentities = registrar.authors
     .map(registrarAuthorIdentity)
-    .filter((identity) => identity.surname)
-    .map((identity) => ({ ...identity, consumed: false }));
+    .filter((identity) => identity.surname);
   if (!claimedIdentities.length || !registrarIdentities.length) return false;
   // Each claimed author consumes one registrar author entry, so a duplicated
   // claimed surname cannot count twice against a single registrar author
   // while two genuine same-surname authors still match. The threshold uses
-  // the claimed author count, so unusable names cannot lower the bar.
+  // the claimed author count, so unusable names cannot lower the bar. The
+  // assignment is a maximum bipartite matching (augmenting paths), so a valid
+  // pairing cannot be lost to registrar ordering when an initial is
+  // compatible with several full names.
+  const compatible = claimedIdentities.map((claimed) =>
+    registrarIdentities.flatMap((candidate, registrarIndex) =>
+      candidate.surname === claimed.surname &&
+      givenNamesCompatible(claimed.given, candidate.given)
+        ? [registrarIndex]
+        : [],
+    ),
+  );
+  const assignedClaim = new Array<number>(registrarIdentities.length).fill(-1);
+  const assign = (claimIndex: number, visited: Set<number>): boolean => {
+    for (const registrarIndex of compatible[claimIndex]) {
+      if (visited.has(registrarIndex)) continue;
+      visited.add(registrarIndex);
+      if (
+        assignedClaim[registrarIndex] === -1 ||
+        assign(assignedClaim[registrarIndex], visited)
+      ) {
+        assignedClaim[registrarIndex] = claimIndex;
+        return true;
+      }
+    }
+    return false;
+  };
   const requiredMatches = Math.min(2, paper.authors.length);
   let observedMatches = 0;
-  for (const claimed of claimedIdentities) {
-    const match = registrarIdentities.find(
-      (candidate) =>
-        !candidate.consumed &&
-        candidate.surname === claimed.surname &&
-        givenNamesCompatible(claimed.given, candidate.given),
-    );
-    if (match) {
-      match.consumed = true;
-      observedMatches += 1;
-    }
+  for (
+    let claimIndex = 0;
+    claimIndex < claimedIdentities.length;
+    claimIndex += 1
+  ) {
+    if (assign(claimIndex, new Set())) observedMatches += 1;
   }
   if (observedMatches < requiredMatches) return false;
   if (!paper.year) return false;

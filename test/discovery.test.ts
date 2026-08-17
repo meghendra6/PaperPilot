@@ -1046,6 +1046,156 @@ test("cardinal venue words outside edition ordinals stay distinctive", async () 
   assert.equal(genuine.verifiedMain.length, 1);
 });
 
+test("cardinals after an edition ordinal stay distinctive", async () => {
+  const officialURL = "https://openreview.net/forum?id=first-one-health";
+  const claim = (candidateID: string, venueName: string) =>
+    paper({
+      candidateID,
+      venueName,
+      venueAcronym: undefined,
+      track: undefined,
+      urls: [officialURL],
+      publicationEvidence: [
+        {
+          type: "official_decision",
+          sourceName: "OpenReview",
+          url: officialURL,
+          observedTitle: "Verified Paper",
+          observedVenue: venueName,
+          observedTrack: "Main Conference",
+          observedDecision: "Accepted",
+          supports: ["identity", "accepted", "main_track"],
+        },
+      ],
+      leadingVenueAssessment: {
+        venueName,
+        fields: ["example field"],
+        judgment: "leading",
+        confidence: "high",
+        basis: "Field-specific archival venue assessment.",
+      },
+    });
+  const registrarFetch = openReviewChallengeFetch({
+    forumID: "first-one-health",
+    title: "Verified Paper",
+    authors: ["A. Author"],
+    decision: "Accept (Oral)",
+    venue: "First One Health Conference Main Conference",
+    venueID: "OneHealth.org/2026/Conference",
+  });
+  // Only the leading ordinal is an edition marker; "One" after it is part of
+  // the venue's name, so "First Health Conference" is a different venue.
+  await assert.rejects(
+    verifyDiscoveryEvidenceLive({
+      discovery: parseDiscoveryResult(
+        result([claim("first-one-wrong", "First Health Conference")]),
+      ),
+      fetch: registrarFetch,
+    }),
+    /did not include any usable papers/,
+  );
+  const genuine = await verifyDiscoveryEvidenceLive({
+    discovery: parseDiscoveryResult(
+      result([claim("first-one-right", "First One Health Conference")]),
+    ),
+    fetch: registrarFetch,
+  });
+  assert.equal(genuine.verifiedMain.length, 1);
+});
+
+test("a conjunction inside a compound ordinal does not break agreement", async () => {
+  const officialURL = "https://openreview.net/forum?id=hundred-and-first";
+  const discovery = parseDiscoveryResult(
+    result([
+      paper({
+        venueName: "International Conference on Learning Representations",
+        venueAcronym: undefined,
+        track: undefined,
+        urls: [officialURL],
+        publicationEvidence: [
+          {
+            type: "official_decision",
+            sourceName: "OpenReview",
+            url: officialURL,
+            observedTitle: "Verified Paper",
+            observedVenue:
+              "International Conference on Learning Representations",
+            observedTrack: "Main Conference",
+            observedDecision: "Accepted",
+            supports: ["identity", "accepted", "main_track"],
+          },
+        ],
+        leadingVenueAssessment: {
+          venueName: "International Conference on Learning Representations",
+          fields: ["example field"],
+          judgment: "leading",
+          confidence: "high",
+          basis: "Field-specific archival venue assessment.",
+        },
+      }),
+    ]),
+  );
+  const verified = await verifyDiscoveryEvidenceLive({
+    discovery,
+    fetch: openReviewChallengeFetch({
+      forumID: "hundred-and-first",
+      title: "Verified Paper",
+      authors: ["A. Author"],
+      decision: "Accept (Oral)",
+      venue:
+        "The One Hundred and First International Conference on Learning Representations 2026 Poster",
+      venueID: "ICLR.cc/2026/Conference",
+    }),
+  });
+  assert.equal(verified.verifiedMain.length, 1);
+});
+
+test("author matching does not depend on registrar ordering", async () => {
+  const officialURL = "https://openreview.net/forum?id=author-order";
+  const discovery = () =>
+    parseDiscoveryResult(
+      result([
+        paper({
+          authors: ["A. Smith", "Alice Smith"],
+          urls: [officialURL],
+          publicationEvidence: [
+            {
+              type: "official_decision",
+              sourceName: "OpenReview",
+              url: officialURL,
+              observedTitle: "Verified Paper",
+              observedVenue: "Example Conference",
+              observedTrack: "Main Conference",
+              observedDecision: "Accepted",
+              supports: ["identity", "accepted", "main_track"],
+            },
+          ],
+        }),
+      ]),
+    );
+  const fetchWithAuthors = (authors: string[]) =>
+    openReviewChallengeFetch({
+      forumID: "author-order",
+      title: "Verified Paper",
+      authors,
+      decision: "Accept (Oral)",
+      venue: "Example Conference Main Conference",
+      venueID: "Example.cc/2026/Conference",
+    });
+  // "A. Smith" must not greedily consume "Alice Smith" and strand the exact
+  // "Alice Smith" claim on the incompatible "Alan Smith".
+  const forward = await verifyDiscoveryEvidenceLive({
+    discovery: discovery(),
+    fetch: fetchWithAuthors(["Alice Smith", "Alan Smith"]),
+  });
+  assert.equal(forward.verifiedMain.length, 1);
+  const reversed = await verifyDiscoveryEvidenceLive({
+    discovery: discovery(),
+    fetch: fetchWithAuthors(["Alan Smith", "Alice Smith"]),
+  });
+  assert.equal(reversed.verifiedMain.length, 1);
+});
+
 test("composite spelled ordinals cannot mint fake venue aliases", () => {
   const officialURL = "https://openreview.net/forum?id=ordinal-hundredth";
   const assessment = {
