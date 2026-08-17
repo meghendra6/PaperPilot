@@ -385,6 +385,18 @@ regression tests for both reproductions. That build (XPI SHA-256
 reinstalled into the same running Zotero and the replay smoke-check repeated
 with the same fail-closed outcome.
 
+The round-11 follow-up found two further author/ordinal edge cases: dropping
+sub-three-character surname keys lowered the registrar match threshold, and
+generational suffixes ("III") acted as shared surnames, while composite
+ordinals ("The One Hundredth ...") still minted a false initials alias.
+Commit `5c6dbae` compares registrar surnames structurally (suffix-stripped
+exact equality, short surnames significant, threshold from the claimed author
+count) and extends spelled-ordinal detection to composite cardinal parts,
+with regression tests for all reproductions. That build (XPI SHA-256
+`c2304f58f68f0003a16aa95c4fed0760eff9cd7594526f32092679d265ea38fa`) was
+reinstalled into the same running Zotero with the replay smoke-check repeated
+and the same fail-closed outcome.
+
 - [ ] Run `Find verified prior work` with no concern and confirm the agent infers fields, adjacent fields, venues, and query families without asking the user to choose a conference
 - [ ] Enter an optional research concern, then run discovery from the main section, selected-PDF `Find prior work` action, a limitation card, and a follow-up card; confirm each source is carried into the saved scope
 - [ ] In AI, computer architecture, and a third field, confirm an appropriate leading venue absent from any built-in source shortcut can still be selected and justified
