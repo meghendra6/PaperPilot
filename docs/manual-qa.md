@@ -269,6 +269,97 @@ not represented by Node globals. The run finished as `Found 3 papers across
 verified evidence lanes`, with verifier generation 2 and no additional reader
 tab. Automatic generated-workspace cleanup was restored after evidence capture.
 
+### Challenge-gate and Critical Read runtime record — 2026-08-18
+
+The candidate was exercised in the user's default-profile Zotero 9.0.6 on
+macOS, launched with the remote debugger enabled and driven over the Firefox
+remote debugging protocol. Only the already-open standalone attachment
+`LLM_Serving_Tutorial_Survey_IEEE_Style_v5` was used; no new PDF or reader tab
+was opened. Replacing the `.xpi` file on disk did not reload the plugin —
+Zotero kept serving the cached previous bundle until the XPI was reinstalled
+through `AddonManager`, which is now the documented install path for QA. The
+tested bundle was SHA-256
+`2bd1a71da9668489347cbab1b83e2f5c5ebc7dd5fc8ea30571dc8465c9407369`, built from
+source state `1715cc0`.
+
+Three defects were found in this runtime and fixed with unit regressions
+before the record below was completed:
+
+- `202fb97`: OpenReview redirects anonymous forum page loads to a challenge
+  interstitial with no forum id, so the registrar notes API was never
+  consulted and every OpenReview-hosted verification failed. The claimed forum
+  id now drives the fixed-host notes lookup and identity binds to the
+  registrar submission record (title, authors, venue/venueid edition year).
+- `eeba0ec`: cancelling during provider/verification fetches surfaced the
+  generic failure message because the window-compartment `DOMException` fails
+  `instanceof Error` in plugin code; aborted non-Error rejections now
+  normalize to a cancellation message.
+- `1715cc0`: restoring a session dropped empty lanes, losing the explicit
+  "no main-track paper was verified" statement; restored groups now keep all
+  three lanes.
+
+Observed live, using the real authenticated Codex CLI with web search:
+
+- A full discovery run returned 6 papers, all fail-closed into
+  `published_track_unknown` in the second lane with live PMLR/ACM/NeurIPS
+  official evidence, a Semantic Scholar 429 recorded as an honest partial
+  limitation, and the named ICLR paper excluded with per-URL limitations
+  because its official pages did not independently verify it.
+- A refresh whose response contained no usable papers failed with a clear
+  parse message while the previous successful result and its concern were
+  restored intact.
+- Every official-evidence request observed during verification carried the
+  anonymous flag; a deterministic replay of a captured response through a
+  stub CLI drove 12 OpenReview candidates through the live verifier, which
+  attempted the notes API for each after the challenge fix.
+- OpenReview currently challenge-gates the `/notes` API itself (HTTP 403
+  `ChallengeRequiredError`, Cloudflare Turnstile) for anonymous clients, so an
+  OpenReview-verified primary-lane paper and a verified `reviewURL` could not
+  be produced end to end in this environment; the fail-closed exclusion and
+  limitations were verified instead.
+- Cancelling a fresh discovery during preparation returned the button to its
+  idle state, left no Codex process, and allowed an immediate restart.
+- All seven Critical Read steps completed in order through real Codex runs.
+  Steps 1, 2, 4, 5, and 7 kept their run buttons disabled until reader input
+  existed. Step 3 ran the three-lane discovery and verified six
+  `verified_main` papers with high confidence from live `usenix.org` official
+  proceedings pages (OSDI '22/'24, FAST '25/'26 — venues absent from any
+  built-in shortcut), with the one unconfirmed publisher page conservatively
+  downgraded and recorded in limitations.
+- All typed step outputs rendered in the completed-step details: scan
+  observations, research question with reader comparison, method checks,
+  evidence conclusion, author comparison, paper-claim/agent-inference
+  provenance, final synthesis, alternatives, and the discovery lane summary.
+- Revising Step 4 opened a real confirmation dialog. Cancel preserved all
+  state; accept reopened Step 4 with its reader input preserved, kept Steps
+  5-6 complete, invalidated Step 7 and the report ("Only dependent outputs
+  were invalidated"), and after rerunning Steps 4 and 7 the report was
+  regenerated and saved to a note carrying the reader-input, paper-claim,
+  agent-inference, and external-evidence separations. `Start Paper Mastery`
+  remained available after completion.
+- With Critical Read active below the Step 4-6 gate, review content injected
+  into the live state was completely absent from the persisted session
+  snapshot on disk while the live state stayed untouched, and recommendation
+  rows showed no review link or insight.
+- The saved discovery note for the standalone attachment kept the concern,
+  three lanes, publication classes, and official evidence URLs without any
+  raw public-review text.
+- Saved sessions reopened across a full add-on reload with the discovery
+  result, limitations, and concern restored, and (after `1715cc0`) all three
+  lanes present including the empty primary lane.
+- Compare enabled at `Compare (3)`, selected exactly the top three
+  verified-main peers, completed through the real CLI, and rendered the
+  compact snapshots, synthesis, and next-reading sections under the bounded
+  provenance label.
+
+Not performed in this environment and still owed to release QA: Zotero 7/8,
+Windows/Linux, Claude Code and Gemini CLI engine passes, the two-paper visual
+switch (single supplied PDF), an end-to-end OpenReview-verified primary-lane
+paper with `Review insight` (blocked by OpenReview's Turnstile gating of the
+notes API), and OpenDataLoader-backed extraction (its bundled-asset resolution
+failure predates this branch; the honest `zotero-attachment-text` fallback and
+extraction notes were verified instead).
+
 - [ ] Run `Find verified prior work` with no concern and confirm the agent infers fields, adjacent fields, venues, and query families without asking the user to choose a conference
 - [ ] Enter an optional research concern, then run discovery from the main section, selected-PDF `Find prior work` action, a limitation card, and a follow-up card; confirm each source is carried into the saved scope
 - [ ] In AI, computer architecture, and a third field, confirm an appropriate leading venue absent from any built-in source shortcut can still be selected and justified
