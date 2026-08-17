@@ -347,6 +347,7 @@ export interface OpenReviewOfficialStatus {
   track?: { label: string; main: boolean };
   reviewsAvailable: boolean;
   officialVenueText: string;
+  officialVenueFieldText: string;
 }
 
 function openReviewForumID(url: string) {
@@ -364,13 +365,66 @@ function openReviewForumID(url: string) {
 
 const GENERIC_VENUE_WORDS = new Set([
   "annual",
+  "association",
+  "bulletin",
+  "colloquium",
   "conference",
+  "congress",
+  "forum",
+  "international",
   "journal",
+  "letters",
+  "magazine",
+  "meeting",
   "proceedings",
+  "review",
+  "reviews",
+  "seminar",
+  "society",
+  "summit",
   "symposium",
   "transactions",
   "workshop",
 ]);
+
+const VENUE_CONTEXT_WORDS = new Set([
+  "a",
+  "an",
+  "and",
+  "accepted",
+  "acceptance",
+  "at",
+  "camera",
+  "decision",
+  "for",
+  "in",
+  "main",
+  "notable",
+  "of",
+  "on",
+  "oral",
+  "poster",
+  "ready",
+  "spotlight",
+  "submitted",
+  "the",
+  "to",
+  "track",
+]);
+
+function significantVenueWords(text: string) {
+  return normalizeDiscoveryTitle(text)
+    .replace(/\b(?:19|20)\d{2}\b/g, " ")
+    .replace(/\b\d+(?:st|nd|rd|th)\b/g, " ")
+    .split(" ")
+    .filter(
+      (word) =>
+        word.length >= 3 &&
+        !/^\d+$/.test(word) &&
+        !GENERIC_VENUE_WORDS.has(word) &&
+        !VENUE_CONTEXT_WORDS.has(word),
+    );
+}
 
 // Official-surface venue keys are stricter than the parser's alias keys:
 // multi-word names keep their venue-type word so "Example Conference" can
@@ -418,8 +472,17 @@ function officialVenueKeys(venue: {
 
 function officialVenueMatches(
   paper: DiscoveryResult["verifiedMain"][number],
-  surface: string,
+  status: OpenReviewOfficialStatus,
 ) {
+  // Derived initials can collide across different full names ("Learning
+  // Research" vs "Learning Representations" both yield "iclr"), so when the
+  // official venue field spells out a distinctive multi-word name, the claim
+  // must match that field text itself; invitation ids alone may corroborate
+  // only when the field is absent or non-distinctive.
+  const surface =
+    significantVenueWords(status.officialVenueFieldText).length >= 2
+      ? status.officialVenueFieldText
+      : status.officialVenueText;
   return [
     { venueName: paper.venueName, venueAcronym: paper.venueAcronym },
     {
@@ -535,6 +598,7 @@ export function deriveOpenReviewOfficialStatus(
       .filter(Boolean)
       .join(" ")
       .trim(),
+    officialVenueFieldText: venueText,
   };
 }
 
@@ -653,7 +717,7 @@ export function reconstructOfficialEvidence(
   // is matched with the parser's venue-alias rules so full names still bind
   // to acronym-style OpenReview ids.
   const venue = statusClaims
-    ? officialVenueMatches(paper, statusClaims.officialVenueText)
+    ? officialVenueMatches(paper, statusClaims)
       ? paper.leadingVenueAssessment.venueName ||
         paper.leadingVenueAssessment.venueAcronym ||
         paper.venueName ||
