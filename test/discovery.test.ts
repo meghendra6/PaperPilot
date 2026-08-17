@@ -854,6 +854,111 @@ test("duplicate claimed surnames cannot satisfy the registrar author match", asy
   assert.equal(verified.verifiedMain.length, 1);
 });
 
+test("short and suffixed surnames cannot ride a single shared surname", async () => {
+  const officialURL = "https://openreview.net/forum?id=challenge-suffix";
+  const claim = (candidateID: string, authors: string[]) =>
+    paper({
+      candidateID,
+      authors,
+      urls: [officialURL],
+      publicationEvidence: [
+        {
+          type: "official_decision",
+          sourceName: "OpenReview",
+          url: officialURL,
+          observedTitle: "Verified Paper",
+          observedVenue: "Example Conference",
+          observedTrack: "Main Conference",
+          observedDecision: "Accepted",
+          supports: ["identity", "accepted", "main_track"],
+        },
+      ],
+    });
+  const fetchWithAuthors = (authors: string[]) =>
+    openReviewChallengeFetch({
+      forumID: "challenge-suffix",
+      title: "Verified Paper",
+      authors,
+      decision: "Accept (Oral)",
+      venue: "Example Conference Main Conference",
+      venueID: "Example.cc/2026/Conference",
+    });
+  // A short surname must still count toward the required match total, so a
+  // single shared surname cannot carry a conflicting short-surname author.
+  await assert.rejects(
+    verifyDiscoveryEvidenceLive({
+      discovery: parseDiscoveryResult(
+        result([claim("short-reject", ["Li", "Alice Smith"])]),
+      ),
+      fetch: fetchWithAuthors(["Wu", "Mallory Smith"]),
+    }),
+    /did not include any usable papers/,
+  );
+  // Genuine short surnames still verify by exact registrar equality.
+  const shortOk = await verifyDiscoveryEvidenceLive({
+    discovery: parseDiscoveryResult(
+      result([claim("short-accept", ["Li", "Alice Smith"])]),
+    ),
+    fetch: fetchWithAuthors(["Li", "Alice Smith"]),
+  });
+  assert.equal(shortOk.verifiedMain.length, 1);
+  // Generational suffixes are not surnames.
+  await assert.rejects(
+    verifyDiscoveryEvidenceLive({
+      discovery: parseDiscoveryResult(
+        result([claim("suffix-reject", ["Alice Smith III", "Bob Jones III"])]),
+      ),
+      fetch: fetchWithAuthors(["Mallory Brown III", "Carol White III"]),
+    }),
+    /did not include any usable papers/,
+  );
+  const suffixOk = await verifyDiscoveryEvidenceLive({
+    discovery: parseDiscoveryResult(
+      result([claim("suffix-accept", ["Alice Smith III", "Bob Jones III"])]),
+    ),
+    fetch: fetchWithAuthors(["Alice Smith III", "Bob Jones III"]),
+  });
+  assert.equal(suffixOk.verifiedMain.length, 1);
+});
+
+test("composite spelled ordinals cannot mint fake venue aliases", () => {
+  const officialURL = "https://openreview.net/forum?id=ordinal-hundredth";
+  const assessment = {
+    venueName:
+      "The One Hundredth International Conference on Learning Representations",
+    fields: ["example field"],
+    judgment: "leading",
+    confidence: "high",
+    basis: "Field-specific archival venue assessment.",
+  };
+  assert.throws(
+    () =>
+      parseDiscoveryResult(
+        result([
+          paper({
+            venueName: "OICLR",
+            track: undefined,
+            urls: [officialURL],
+            publicationEvidence: [
+              {
+                type: "official_decision",
+                sourceName: "OpenReview",
+                url: officialURL,
+                observedTitle: "Verified Paper",
+                observedVenue: "OICLR",
+                observedTrack: "Poster",
+                observedDecision: "Accepted",
+                supports: ["identity", "accepted", "main_track"],
+              },
+            ],
+            leadingVenueAssessment: assessment,
+          }),
+        ]),
+      ),
+    /did not include any usable papers/,
+  );
+});
+
 test("higher spelled ordinals cannot mint fake venue aliases at parse time", () => {
   const officialURL = "https://openreview.net/forum?id=ordinal-sixty";
   const rejectAtParse = (venueName: string) => {

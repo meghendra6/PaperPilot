@@ -841,20 +841,41 @@ export type EvidenceInspection = Awaited<
   registrarIdentity?: RegistrarIdentityRecord;
 };
 
+const GENERATIONAL_NAME_SUFFIXES = new Set(["jr", "sr", "ii", "iii", "iv"]);
+
+// Registrar author fields are structured, so surnames compare by exact
+// equality (short surnames such as "Li" stay significant) after stripping
+// generational suffixes that are not surnames.
+function registrarSurnameKey(author: string) {
+  const tokens = normalizeDiscoveryTitle(author).split(" ").filter(Boolean);
+  while (
+    tokens.length > 1 &&
+    GENERATIONAL_NAME_SUFFIXES.has(tokens[tokens.length - 1])
+  ) {
+    tokens.pop();
+  }
+  return tokens.at(-1) || "";
+}
+
 function registrarIdentityConfirms(
   paper: DiscoveryResult["verifiedMain"][number],
   registrar: RegistrarIdentityRecord,
 ) {
   if (!pageMatchesPaperTitle(registrar.title, paper.title)) return false;
-  const claimedKeys = authorIdentityKeys(paper.authors);
-  // Each claimed author key consumes one registrar author entry, so a
-  // duplicated claimed surname cannot count twice against a single registrar
-  // author while two genuine same-surname authors still match.
+  const claimedKeys = paper.authors
+    .map(registrarSurnameKey)
+    .filter((key) => key.length >= 2);
+  // Each claimed surname consumes one registrar author entry, so a duplicated
+  // claimed surname cannot count twice against a single registrar author
+  // while two genuine same-surname authors still match. The threshold uses
+  // the claimed author count, so unusable names cannot lower the bar.
   const registrarKeyCounts = new Map<string, number>();
-  for (const key of authorIdentityKeys(registrar.authors)) {
+  for (const author of registrar.authors) {
+    const key = registrarSurnameKey(author);
+    if (!key) continue;
     registrarKeyCounts.set(key, (registrarKeyCounts.get(key) || 0) + 1);
   }
-  const requiredMatches = Math.min(2, claimedKeys.length);
+  const requiredMatches = Math.min(2, paper.authors.length);
   if (!claimedKeys.length || !registrarKeyCounts.size) return false;
   let observedMatches = 0;
   for (const key of claimedKeys) {

@@ -64,7 +64,12 @@ const SPELLED_ORDINAL_PATTERNS = [
   /^(?:thir|four|fif|six|seven|eigh|nine)teenth$/,
   /^(?:twen|thir|for|fif|six|seven|eigh|nine)tieth$/,
   /^(?:twen|thir|for|fif|six|seven|eigh|nine)ty$/,
-  /^(?:hundredth|thousandth)$/,
+  // Composite ordinals spell their cardinal parts ("One Hundredth",
+  // "Twenty One Hundred and First"), so small cardinals count as edition
+  // words too.
+  /^(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)$/,
+  /^(?:thir|four|fif|six|seven|eigh|nine)teen$/,
+  /^(?:hundred|thousand)(?:th)?$/,
 ];
 
 export function isSpelledOrdinalWord(word: string) {
