@@ -5,6 +5,7 @@ import { join } from "node:path";
 
 import {
   classifyOfficialEvidenceURL,
+  fetchOpenReviewForumNotes,
   headersFromXHR,
   inspectOfficialEvidenceURL,
   isPlausibleOfficialEvidenceURL,
@@ -455,6 +456,56 @@ test("external evidence URLs reject embedded credentials", () => {
     "https://api-user:super-secret@isca-conference.org/program";
   assert.equal(isPlausibleOfficialEvidenceURL(credentialURL), false);
   assert.equal(classifyOfficialEvidenceURL(credentialURL), undefined);
+});
+
+test("OpenReview status falls back to the legacy v1 API and bare-array notes", async () => {
+  const calls: string[] = [];
+  const legacyNote = {
+    id: "legacy-paper",
+    forum: "legacy-paper",
+    invitation: "ICLR.cc/2017/conference/-/submission",
+    content: {},
+  };
+  const notes = await fetchOpenReviewForumNotes({
+    forumID: "legacy-paper",
+    fetch: (async (input: unknown) => {
+      const url = String(input);
+      calls.push(url);
+      return url.startsWith("https://api2.openreview.net/")
+        ? new Response(JSON.stringify({ notes: [] }), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          })
+        : new Response(JSON.stringify([legacyNote]), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          });
+    }) as typeof fetch,
+  });
+  assert.deepEqual(notes, [legacyNote]);
+  assert.ok(calls.some((url) => url.startsWith("https://api.openreview.net/")));
+
+  const empty = await fetchOpenReviewForumNotes({
+    forumID: "empty-forum",
+    fetch: (async () =>
+      new Response(JSON.stringify({ notes: [] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      })) as typeof fetch,
+  });
+  assert.deepEqual(empty, []);
+
+  await assert.rejects(
+    fetchOpenReviewForumNotes({
+      forumID: "../evil path",
+      fetch: (async () =>
+        new Response(JSON.stringify({ notes: [] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        })) as typeof fetch,
+    }),
+    /safe identifier/i,
+  );
 });
 
 test("external evidence URLs reject secret-bearing query parameters", () => {

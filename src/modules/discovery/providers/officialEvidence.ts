@@ -749,6 +749,7 @@ export async function fetchOpenReviewForumNotes(params: {
   const deadline = params.deadline ?? now() + 15_000;
   const requestTimeout = () => Math.max(1, Math.min(15_000, deadline - now()));
   let lastError: unknown;
+  let reachedEmptyList = false;
   for (const host of OPENREVIEW_API_HOSTS) {
     const url = `https://${host}/notes?forum=${encodeURIComponent(params.forumID)}`;
     try {
@@ -797,16 +798,28 @@ export async function fetchOpenReviewForumNotes(params: {
         deadline,
         now,
       });
-      const parsed = JSON.parse(body) as { notes?: unknown[] };
-      if (!Array.isArray(parsed.notes)) {
+      // API v2 wraps notes in an object; legacy API v1 responses may be a
+      // bare note array. A forum lives in exactly one API generation, so an
+      // empty list means "keep trying the older API", not "no notes exist".
+      const parsed = JSON.parse(body) as unknown;
+      const notes = Array.isArray(parsed)
+        ? parsed
+        : parsed &&
+            typeof parsed === "object" &&
+            Array.isArray((parsed as { notes?: unknown[] }).notes)
+          ? (parsed as { notes: unknown[] }).notes
+          : undefined;
+      if (!notes) {
         throw new Error("OpenReview status response had no notes list.");
       }
-      return parsed.notes;
+      if (notes.length) return notes;
+      reachedEmptyList = true;
     } catch (error) {
       if (params.signal?.aborted) throw error;
       lastError = error;
     }
   }
+  if (reachedEmptyList) return [];
   throw lastError instanceof Error
     ? lastError
     : new Error("OpenReview official status was unavailable.");

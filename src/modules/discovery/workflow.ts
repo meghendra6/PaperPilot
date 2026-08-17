@@ -346,6 +346,7 @@ export interface OpenReviewOfficialStatus {
   decision?: { label: string; accepted: boolean };
   track?: { label: string; main: boolean };
   reviewsAvailable: boolean;
+  officialVenueText: string;
 }
 
 function openReviewForumID(url: string) {
@@ -438,16 +439,31 @@ export function deriveOpenReviewOfficialStatus(
       : accepted
         ? { label: "Accepted", accepted: true }
         : undefined,
+    // A bare acceptance without an explicit main-program marker stays
+    // track-unknown; only an official oral/poster/spotlight/main label may
+    // claim the main track.
     track: nonMain
       ? { label: nonMain[1], main: false }
-      : accepted
-        ? { label: trackLabel || "Main conference", main: true }
+      : accepted && trackLabel
+        ? { label: trackLabel, main: true }
         : undefined,
     reviewsAvailable: forumNotes.some((note) =>
       noteInvitations(note).some((invitation) =>
         /\/-\/official_review$/i.test(invitation),
       ),
     ),
+    // Legacy API v1 submissions often carry the venue only in the invitation
+    // id (for example "ICLR.cc/2017/conference/-/submission"), so invitations
+    // join the official venue surface.
+    officialVenueText: [
+      venueText,
+      decisionText,
+      ...noteInvitations(submission),
+      ...noteInvitations(decisionNote),
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .trim(),
   };
 }
 
@@ -550,8 +566,22 @@ export function reconstructOfficialEvidence(
     `${inspection.pageTitle || ""} ${inspection.url}`,
   );
   if (!identity) return undefined;
-  const venue = observedVenue(paper, page);
+  const statusClaims =
+    inspection.sourceFamily === "openreview"
+      ? options.openReviewStatus &&
+        Boolean(
+          options.openReviewStatus.decision || options.openReviewStatus.track,
+        )
+        ? options.openReviewStatus
+        : undefined
+      : undefined;
   // A venue-bearing claim must be corroborated on the inspected paper page.
+  // When an official OpenReview decision or track is in play, only the
+  // official API venue surface may corroborate it: forum prose is writable by
+  // any user and cannot vouch for the venue behind an acceptance.
+  const venue = statusClaims
+    ? observedVenue(paper, statusClaims.officialVenueText)
+    : observedVenue(paper, page);
   if ((paper.venueName || paper.venueAcronym) && !venue) return undefined;
   const type = inferEvidenceType(inspection);
   if (!type) return undefined;

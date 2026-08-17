@@ -668,6 +668,78 @@ test("OpenReview reviewer prose cannot impersonate an official decision", async 
   );
 });
 
+test("an official OpenReview decision cannot ride a prose-only venue match", async () => {
+  const officialURL = "https://openreview.net/forum?id=wrong-venue";
+  const discovery = parseDiscoveryResult(
+    result([
+      paper({
+        urls: [officialURL],
+        publicationEvidence: [
+          {
+            type: "official_decision",
+            sourceName: "OpenReview",
+            url: officialURL,
+            observedTitle: "Verified Paper",
+            observedVenue: "Example Conference",
+            observedTrack: "Main Conference",
+            observedDecision: "Accepted",
+            supports: ["identity", "accepted", "main_track"],
+          },
+        ],
+      }),
+    ]),
+  );
+  await assert.rejects(
+    verifyDiscoveryEvidenceLive({
+      discovery,
+      fetch: openReviewFetch({
+        forumID: "wrong-venue",
+        page: "<title>Verified Paper</title><main>Verified Paper — A. Author — 2026 — Example Conference</main>",
+        decision: "Accept (Poster)",
+        venue: "Unrelated Symposium 2026 Poster",
+      }),
+    }),
+    /did not include any usable papers/,
+  );
+});
+
+test("a bare OpenReview acceptance without a track marker stays track-unknown", async () => {
+  const officialURL = "https://openreview.net/forum?id=bare-accept";
+  const discovery = parseDiscoveryResult(
+    result([
+      paper({
+        urls: [officialURL],
+        publicationEvidence: [
+          {
+            type: "official_decision",
+            sourceName: "OpenReview",
+            url: officialURL,
+            observedTitle: "Verified Paper",
+            observedVenue: "Example Conference",
+            observedTrack: "Main Conference",
+            observedDecision: "Accepted",
+            supports: ["identity", "accepted", "main_track"],
+          },
+        ],
+      }),
+    ]),
+  );
+  const verified = await verifyDiscoveryEvidenceLive({
+    discovery,
+    fetch: openReviewFetch({
+      forumID: "bare-accept",
+      page: "<title>Verified Paper</title><main>Verified Paper — A. Author — 2026 — Example Conference</main>",
+      decision: "Accept",
+      venue: "Example Conference",
+    }),
+  });
+  assert.equal(verified.verifiedMain.length, 0);
+  assert.equal(
+    verified.otherPeerReviewed[0]?.publicationClass,
+    "published_track_unknown",
+  );
+});
+
 test("live submission evidence preserves an identity-bound OpenReview forum", async () => {
   const forum = "https://openreview.net/forum?id=active-submission";
   const submission = paper({

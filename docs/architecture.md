@@ -243,12 +243,16 @@ evidence recheck. Raw pages and review text are not persisted.
 
 The fetched page is authoritative only as inspected source data: Paper Pilot
 reconstructs title, venue, track, decision, and review availability from that
-page instead of retaining the agent's claimed `supports` fields. Candidate
-identity requires DOI or compatible title/year/author evidence, and venue
-identity must agree across the plan, paper metadata, assessment, and inspected
-page. Open-world hosts qualify only when venue-owned structural program or
-proceedings authority is established. Public-review
-links stay hidden until this live reconstruction succeeds.
+page instead of retaining the agent's claimed `supports` fields. OpenReview is
+the exception: forum prose is writable by any user, so decision, track, and
+review availability come from the official OpenReview API notes (API v2 with a
+legacy v1 fallback), fetched for the forum id of the final inspected URL, and
+an official decision or track binds only to the API-reported venue surface.
+Candidate identity requires DOI or compatible title/year/author evidence, and
+venue identity must agree across the plan, paper metadata, assessment, and
+inspected page. Open-world hosts qualify only when venue-owned structural
+program or proceedings authority is established. Public-review links stay
+hidden until this live reconstruction succeeds.
 
 Discovery admission uses one observed capability snapshot for the whole run.
 Codex binds its configured web-search state at admission; Claude Code and Gemini

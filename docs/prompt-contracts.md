@@ -45,6 +45,7 @@ This note documents the purpose, target answer shape, and guardrails for the mai
   - generic venue sites require a corroborating link from a successfully reconstructed known publisher/proceedings source; a venue-looking hostname is not ownership proof
   - track wording must be bound to the target paper's structured entry or a recognized official source; nearby rows and abstract prose cannot supply main-track status
   - live verification reconstructs identity, venue, track, decision, and review support from the inspected page; agent-supplied evidence claims are never retained on their own
+  - OpenReview decision, track, and review availability come only from official OpenReview API notes (v2 with legacy v1 fallback) for the final inspected forum id; forum prose never supplies status, a bare acceptance without an official main-program marker stays track-unknown, and an official decision binds only to the API-reported venue surface
   - workshop, Findings, demo, industry, shared-task, tutorial/abstract, rejected/withdrawn, track-unknown, and preprint-only records cannot enter `verifiedMain`
   - results are recalculated locally into three fixed lanes capped at 12/6/6; DOI/provider/title-author deduplication and ranking are deterministic
   - relevance is ordinal (`direct`, `strong`, `adjacent`) and accompanied by the key difference and novelty relationship; no fabricated relevance percentage is shown
