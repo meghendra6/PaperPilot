@@ -158,6 +158,16 @@ export function buildRelatedRunFailureState(params: {
   };
 }
 
+// A window-owned AbortController rejects with a DOMException created in the
+// window compartment, which fails `instanceof Error` in plugin code and would
+// surface as a generic failure message after a user-initiated cancel.
+export function normalizeDiscoveryRunFailure(error: unknown, aborted: boolean) {
+  if (aborted && !(error instanceof Error)) {
+    return new Error("Research discovery cancelled.");
+  }
+  return error;
+}
+
 export function releaseReservationAfterConfirmedCleanup(
   cleanup: Promise<void>,
   release: () => void,
@@ -885,8 +895,12 @@ export async function generateRelatedPaperGroups(params: {
     await params.onSuccess?.(recommendationResult);
     return recommendationResult;
   } catch (error) {
-    await params.onFailure?.(error);
-    throw error;
+    const failure = normalizeDiscoveryRunFailure(
+      error,
+      params.signal?.aborted === true,
+    );
+    await params.onFailure?.(failure);
+    throw failure;
   } finally {
     if (releaseReservation) {
       releaseWorkspaceRunReservation(params.itemID, reservationToken);

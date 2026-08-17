@@ -14,6 +14,7 @@ import {
   findExistingLibraryItem,
   generateRelatedPaperGroups,
   normalizeDOI,
+  normalizeDiscoveryRunFailure,
   openRecommendedPaper,
   parseRelatedPaperResponse,
   releaseReservationAfterConfirmedCleanup,
@@ -86,6 +87,27 @@ test("related-run failure restores the pre-run recommendation scope", () => {
   assert.equal(failure.concern, "previous concern");
   assert.equal(failure.concernOrigin, "selection");
   assert.deepEqual(failure.groups, submission.previousState.groups);
+});
+
+test("aborted non-Error rejections normalize to a cancellation error", () => {
+  // A window-owned AbortController rejects with a DOMException from another
+  // compartment, which fails `instanceof Error` in plugin code and would
+  // otherwise surface as a generic failure after a user-initiated cancel.
+  const failure = normalizeDiscoveryRunFailure({ name: "AbortError" }, true);
+  assert.ok(failure instanceof Error);
+  assert.equal((failure as Error).message, "Research discovery cancelled.");
+});
+
+test("aborted Error rejections keep their specific message", () => {
+  const error = new Error(
+    "Codex CLI related-paper process could not be stopped. Its workspace remains reserved until Zotero restarts.",
+  );
+  assert.equal(normalizeDiscoveryRunFailure(error, true), error);
+});
+
+test("non-aborted failures pass through unchanged", () => {
+  const raw = { message: "boom" };
+  assert.equal(normalizeDiscoveryRunFailure(raw, false), raw);
 });
 
 test("addItemsToCollection uses Zotero's required DB transaction boundary", async () => {
