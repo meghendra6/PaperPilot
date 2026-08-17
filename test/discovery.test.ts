@@ -748,6 +748,86 @@ test("official OpenReview status accepts a full venue name against acronym ids",
   assert.equal(verified.verifiedMain.length, 1);
 });
 
+test("edition-bearing full venue names still bind to acronym ids", async () => {
+  const officialURL = "https://openreview.net/forum?id=edition-name";
+  const editionName =
+    "International Conference on Learning Representations 2026";
+  const discovery = parseDiscoveryResult(
+    result([
+      paper({
+        venueName: editionName,
+        venueAcronym: undefined,
+        urls: [officialURL],
+        publicationEvidence: [
+          {
+            type: "official_decision",
+            sourceName: "OpenReview",
+            url: officialURL,
+            observedTitle: "Verified Paper",
+            observedVenue: editionName,
+            observedTrack: "Poster",
+            observedDecision: "Accepted",
+            supports: ["identity", "accepted", "main_track"],
+          },
+        ],
+        leadingVenueAssessment: {
+          venueName: editionName,
+          fields: ["example field"],
+          judgment: "leading",
+          confidence: "high",
+          basis: "Field-specific archival venue assessment.",
+        },
+      }),
+    ]),
+  );
+  const verified = await verifyDiscoveryEvidenceLive({
+    discovery,
+    fetch: openReviewFetch({
+      forumID: "edition-name",
+      page: `<title>Verified Paper</title><main>Verified Paper — A. Author — 2026 — ${editionName}</main>`,
+      decision: "Accept (Poster)",
+      invitationPrefix: "ICLR.cc/2026/Conference",
+    }),
+  });
+  assert.equal(verified.verifiedMain.length, 1);
+});
+
+test("a similarly named venue's official decision cannot validate the claim", async () => {
+  const officialURL = "https://openreview.net/forum?id=similar-name";
+  const discovery = parseDiscoveryResult(
+    result([
+      paper({
+        urls: [officialURL],
+        publicationEvidence: [
+          {
+            type: "official_decision",
+            sourceName: "OpenReview",
+            url: officialURL,
+            observedTitle: "Verified Paper",
+            observedVenue: "Example Conference",
+            observedTrack: "Main Conference",
+            observedDecision: "Accepted",
+            supports: ["identity", "accepted", "main_track"],
+          },
+        ],
+      }),
+    ]),
+  );
+  await assert.rejects(
+    verifyDiscoveryEvidenceLive({
+      discovery,
+      fetch: openReviewFetch({
+        forumID: "similar-name",
+        page: "<title>Verified Paper</title><main>Verified Paper — A. Author — 2026 — Example Conference</main>",
+        decision: "Accept (Poster)",
+        venue: "Example Symposium 2026 Poster",
+        invitationPrefix: "ExampleSymposium.org/2026/Symposium",
+      }),
+    }),
+    /did not include any usable papers/,
+  );
+});
+
 test("a bare OpenReview acceptance without a track marker stays track-unknown", async () => {
   const officialURL = "https://openreview.net/forum?id=bare-accept";
   const discovery = parseDiscoveryResult(

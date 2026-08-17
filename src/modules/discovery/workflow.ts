@@ -1,4 +1,4 @@
-import { parseDiscoveryResult, venueAliasKeys } from "./parser";
+import { parseDiscoveryResult } from "./parser";
 import { areLikelySamePaper, normalizeDiscoveryTitle } from "./normalize";
 import {
   classifyOfficialEvidenceURL,
@@ -362,21 +362,52 @@ function openReviewForumID(url: string) {
   }
 }
 
-function venueIdentityKeys(venue: {
+const GENERIC_VENUE_WORDS = new Set([
+  "annual",
+  "conference",
+  "journal",
+  "proceedings",
+  "symposium",
+  "transactions",
+  "workshop",
+]);
+
+// Official-surface venue keys are stricter than the parser's alias keys:
+// multi-word names keep their venue-type word so "Example Conference" can
+// never bind to an "Example Symposium" decision, while initials keep the
+// word "conference" (after dropping edition years and ordinals) so a full
+// name like "International Conference on Learning Representations 2026"
+// still yields "iclr" for acronym-style OpenReview ids.
+function officialVenueKeys(venue: {
   venueName?: string;
   venueAcronym?: string;
 }) {
-  const keys = venueAliasKeys(venue);
-  // OpenReview ids abbreviate the full venue name including the word
-  // "conference" (ICLR.cc), so initials are also derived without the
-  // edition-word stripping that venueAliasKeys applies.
+  const keys = new Set<string>();
   for (const value of [venue.venueName, venue.venueAcronym]) {
     if (!value) continue;
-    const initials = normalizeDiscoveryTitle(value)
-      .split(" ")
+    for (const parenthetical of value.matchAll(/\(([A-Za-z0-9]{2,12})\)/g)) {
+      if (parenthetical[1].length >= 3) {
+        keys.add(parenthetical[1].toLowerCase());
+      }
+    }
+    const withoutEdition = normalizeDiscoveryTitle(value)
+      .replace(/\b(?:19|20)\d{2}\b/g, " ")
+      .replace(/\b\d+(?:st|nd|rd|th)\b/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    const words = withoutEdition.split(" ").filter(Boolean);
+    if (words.length >= 2) {
+      keys.add(withoutEdition);
+      keys.add(words.join(""));
+    } else if (
+      withoutEdition.length >= 3 &&
+      !GENERIC_VENUE_WORDS.has(withoutEdition)
+    ) {
+      keys.add(withoutEdition);
+    }
+    const initials = words
       .filter(
-        (word) =>
-          word && !["a", "an", "and", "for", "of", "on", "the"].includes(word),
+        (word) => !["a", "an", "and", "for", "of", "on", "the"].includes(word),
       )
       .map((word) => word[0])
       .join("");
@@ -396,7 +427,7 @@ function officialVenueMatches(
       venueAcronym: paper.leadingVenueAssessment.venueAcronym,
     },
   ].some((venue) =>
-    [...venueIdentityKeys(venue)].some(
+    [...officialVenueKeys(venue)].some(
       (key) => key.length >= 3 && containsNormalized(surface, key),
     ),
   );

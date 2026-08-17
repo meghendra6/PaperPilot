@@ -127,10 +127,7 @@ function stringList(value: unknown, max = 12) {
   return value.map(text).filter(Boolean).slice(0, max);
 }
 
-export function venueAliasKeys(venue: {
-  venueName?: string;
-  venueAcronym?: string;
-}) {
+function venueAliasKeys(venue: { venueName?: string; venueAcronym?: string }) {
   const values = [venue.venueName, venue.venueAcronym].filter(
     (value): value is string => Boolean(value),
   );
