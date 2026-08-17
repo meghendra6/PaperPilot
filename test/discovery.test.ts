@@ -771,6 +771,133 @@ test("OpenReview challenge fallback fails closed when the notes API is unavailab
   );
 });
 
+test("challenge fallback rejects authors that only match venue words", async () => {
+  const officialURL = "https://openreview.net/forum?id=challenge-authors";
+  const discovery = parseDiscoveryResult(
+    result([
+      paper({
+        authors: ["C. Conference"],
+        urls: [officialURL],
+        publicationEvidence: [
+          {
+            type: "official_decision",
+            sourceName: "OpenReview",
+            url: officialURL,
+            observedTitle: "Verified Paper",
+            observedVenue: "Example Conference",
+            observedTrack: "Main Conference",
+            observedDecision: "Accepted",
+            supports: ["identity", "accepted", "main_track"],
+          },
+        ],
+      }),
+    ]),
+  );
+  await assert.rejects(
+    verifyDiscoveryEvidenceLive({
+      discovery,
+      fetch: openReviewChallengeFetch({
+        forumID: "challenge-authors",
+        title: "Verified Paper",
+        authors: ["B. Other"],
+        decision: "Accept (Oral)",
+        venue: "Example Conference Main Conference",
+        venueID: "Example.cc/2026/Conference",
+      }),
+    }),
+    /did not include any usable papers/,
+  );
+});
+
+test("challenge fallback binds the claimed year to the registrar edition surface", async () => {
+  const officialURL = "https://openreview.net/forum?id=challenge-2025";
+  const discovery = parseDiscoveryResult(
+    result([
+      paper({
+        year: 2025,
+        urls: [officialURL],
+        publicationEvidence: [
+          {
+            type: "official_decision",
+            sourceName: "OpenReview",
+            url: officialURL,
+            observedTitle: "Verified Paper",
+            observedVenue: "Example Conference",
+            observedTrack: "Main Conference",
+            observedDecision: "Accepted",
+            supports: ["identity", "accepted", "main_track"],
+          },
+        ],
+      }),
+    ]),
+  );
+  // The forum id and any registrar title digits must not satisfy the claimed
+  // year; only the registrar venue/venueid/invitation edition surface may.
+  await assert.rejects(
+    verifyDiscoveryEvidenceLive({
+      discovery,
+      fetch: openReviewChallengeFetch({
+        forumID: "challenge-2025",
+        title: "Verified Paper",
+        authors: ["A. Author"],
+        decision: "Accept (Oral)",
+        venue: "Example Conference Main Conference",
+        venueID: "Example.cc/2026/Conference",
+      }),
+    }),
+    /did not include any usable papers/,
+  );
+});
+
+test("spelled-ordinal initials cannot mint a fake venue alias", async () => {
+  const officialURL = "https://openreview.net/forum?id=ordinal-alias";
+  const assessment = {
+    venueName:
+      "The Twelfth International Conference on Learning Representations",
+    fields: ["example field"],
+    judgment: "leading",
+    confidence: "high",
+    basis: "Field-specific archival venue assessment.",
+  };
+  const discovery = () =>
+    parseDiscoveryResult(
+      result([
+        paper({
+          venueName: "TILR",
+          track: undefined,
+          urls: [officialURL],
+          publicationEvidence: [
+            {
+              type: "official_decision",
+              sourceName: "OpenReview",
+              url: officialURL,
+              observedTitle: "Verified Paper",
+              observedVenue: "TILR",
+              observedTrack: "Poster",
+              observedDecision: "Accepted",
+              supports: ["identity", "accepted", "main_track"],
+            },
+          ],
+          leadingVenueAssessment: assessment,
+        }),
+      ]),
+    );
+  await assert.rejects(
+    (async () =>
+      verifyDiscoveryEvidenceLive({
+        discovery: discovery(),
+        fetch: openReviewFetch({
+          forumID: "ordinal-alias",
+          page: "<title>ICLR 2026</title><main>Verified Paper — A. Author — 2026 — ICLR 2026</main>",
+          decision: "Accept (Poster)",
+          venue: "ICLR 2026 Poster",
+          venueID: "ICLR.cc/2026/Conference",
+        }),
+      }))(),
+    /did not include any usable papers/,
+  );
+});
+
 test("OpenReview reviewer prose cannot impersonate an official decision", async () => {
   const officialURL = "https://openreview.net/forum?id=review-prose";
   const discovery = parseDiscoveryResult(

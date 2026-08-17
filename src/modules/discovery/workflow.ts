@@ -829,9 +829,44 @@ function paperIdentityContext(
   return undefined;
 }
 
+// Identity fields recovered from the OpenReview registrar API when the human
+// page is challenge-gated. They are checked field-by-field: a flattened text
+// surface would let venue words satisfy the author match or let title/URL
+// digits satisfy the edition-year match.
+export interface RegistrarIdentityRecord {
+  title: string;
+  authors: string[];
+  editionSurface: string;
+}
+
+export type EvidenceInspection = Awaited<
+  ReturnType<typeof inspectOfficialEvidenceURL>
+> & {
+  registrarIdentity?: RegistrarIdentityRecord;
+};
+
+function registrarIdentityConfirms(
+  paper: DiscoveryResult["verifiedMain"][number],
+  registrar: RegistrarIdentityRecord,
+) {
+  if (!pageMatchesPaperTitle(registrar.title, paper.title)) return false;
+  const claimedKeys = authorIdentityKeys(paper.authors);
+  const registrarKeys = new Set(authorIdentityKeys(registrar.authors));
+  const requiredMatches = Math.min(2, claimedKeys.length);
+  if (!claimedKeys.length || !registrarKeys.size) return false;
+  const observedMatches = claimedKeys.filter((key) =>
+    registrarKeys.has(key),
+  ).length;
+  if (observedMatches < requiredMatches) return false;
+  if (!paper.year) return false;
+  return new RegExp(`\\b${paper.year}\\b`).test(
+    normalizeDiscoveryTitle(registrar.editionSurface),
+  );
+}
+
 export function reconstructOfficialEvidence(
   paper: DiscoveryResult["verifiedMain"][number],
-  inspection: Awaited<ReturnType<typeof inspectOfficialEvidenceURL>>,
+  inspection: EvidenceInspection,
   options: {
     authorityValidated?: boolean;
     openReviewStatus?: OpenReviewOfficialStatus;
@@ -841,23 +876,30 @@ export function reconstructOfficialEvidence(
   const page = [inspection.pageTitle, inspection.searchableText]
     .filter(Boolean)
     .join(" ");
-  const primaryTitleSurface =
-    inspection.sourceFamily !== "generic-official-web" &&
-    !["openreview", "isca"].includes(inspection.sourceFamily)
-      ? inspection.pageTitle || ""
-      : page;
-  if (
-    primaryTitleSurface &&
-    !pageMatchesPaperTitle(primaryTitleSurface, paper.title)
-  ) {
-    return undefined;
+  let identity: ReturnType<typeof paperIdentityContext>;
+  if (inspection.registrarIdentity) {
+    if (!registrarIdentityConfirms(paper, inspection.registrarIdentity)) {
+      return undefined;
+    }
+  } else {
+    const primaryTitleSurface =
+      inspection.sourceFamily !== "generic-official-web" &&
+      !["openreview", "isca"].includes(inspection.sourceFamily)
+        ? inspection.pageTitle || ""
+        : page;
+    if (
+      primaryTitleSurface &&
+      !pageMatchesPaperTitle(primaryTitleSurface, paper.title)
+    ) {
+      return undefined;
+    }
+    identity = paperIdentityContext(
+      `${page} ${inspection.url}`,
+      paper,
+      `${inspection.pageTitle || ""} ${inspection.url}`,
+    );
+    if (!identity) return undefined;
   }
-  const identity = paperIdentityContext(
-    `${page} ${inspection.url}`,
-    paper,
-    `${inspection.pageTitle || ""} ${inspection.url}`,
-  );
-  if (!identity) return undefined;
   const statusClaims =
     inspection.sourceFamily === "openreview"
       ? options.openReviewStatus &&
@@ -898,7 +940,9 @@ export function reconstructOfficialEvidence(
     // decision surface and remains ambiguous.
     return undefined;
   }
-  const context = identity.context;
+  // identity is only absent on the registrar path, which is openreview-only,
+  // so the non-openreview branches below always see a resolved context.
+  const context = identity?.context ?? "";
   const openReviewStatus =
     inspection.sourceFamily === "openreview"
       ? options.openReviewStatus
@@ -909,7 +953,7 @@ export function reconstructOfficialEvidence(
       : inferEntryBoundTrack({
           page,
           entryContext: context,
-          titleIndex: identity.index,
+          titleIndex: identity?.index ?? 0,
           title: paper.title,
           url: inspection.url,
           type,
@@ -1001,10 +1045,7 @@ export async function verifyDiscoveryEvidenceLive(params: {
   deadline?: number;
 }) {
   const deadline = params.deadline ?? Date.now() + 60_000;
-  const evidenceInspections = new Map<
-    string,
-    Awaited<ReturnType<typeof inspectOfficialEvidenceURL>>
-  >();
+  const evidenceInspections = new Map<string, EvidenceInspection>();
   const failures: string[] = [];
   const allPapers = [
     ...params.discovery.verifiedMain,
@@ -1067,21 +1108,26 @@ export async function verifyDiscoveryEvidenceLive(params: {
       );
       openReviewStatuses.set(url, status);
       if (identityFromRegistrar && status.submissionTitle) {
-        // officialVenueText keeps the registrar venue/venueid/invitation ids,
-        // whose edition year must corroborate the claimed year exactly like a
-        // rendered proceedings page would.
-        const registrarSurface = [
-          status.submissionTitle,
-          status.submissionAuthors.join(", "),
-          status.officialVenueText,
-        ]
-          .filter(Boolean)
-          .join(" — ");
+        // Identity is validated field-by-field against this record instead of
+        // a flattened text surface: authors must match the registrar author
+        // list and the claimed year must appear in the registrar
+        // venue/venueid/invitation edition surface.
         evidenceInspections.set(url, {
           ...inspection,
           url: `https://openreview.net/forum?id=${forumID}`,
           pageTitle: status.submissionTitle,
-          searchableText: registrarSurface,
+          searchableText: [
+            status.submissionTitle,
+            status.submissionAuthors.join(", "),
+            status.officialVenueText,
+          ]
+            .filter(Boolean)
+            .join(" — "),
+          registrarIdentity: {
+            title: status.submissionTitle,
+            authors: status.submissionAuthors,
+            editionSurface: status.officialVenueText,
+          },
         });
       }
     } catch (error) {

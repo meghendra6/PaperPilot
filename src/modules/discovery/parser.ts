@@ -154,7 +154,9 @@ function venueAliasKeys(venue: { venueName?: string; venueAcronym?: string }) {
       .split(" ")
       .filter(
         (word) =>
-          word && !["a", "an", "and", "for", "of", "on", "the"].includes(word),
+          word &&
+          !["a", "an", "and", "for", "of", "on", "the"].includes(word) &&
+          !SPELLED_ORDINAL_WORDS.has(word),
       )
       .map((word) => word[0])
       .join("");
