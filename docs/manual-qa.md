@@ -375,6 +375,16 @@ re-run: the challenge fallback still reaches the notes API and fails closed
 under the Turnstile gating with the same clear failure status and no state
 corruption.
 
+The round-10 follow-up review found two residual issues: a duplicated claimed
+surname could count twice against a single registrar author, and the finite
+ordinal word list ended at fifty, letting "The Sixtieth ..." forms mint false
+initials aliases. Commit `5f43819` matches registrar authors as a multiset
+and replaces the list with pattern-based spelled-ordinal detection, with
+regression tests for both reproductions. That build (XPI SHA-256
+`92957415862017d8915f6c5c182ae1d909ae0b3924d952b917d70c05612beb59`) was
+reinstalled into the same running Zotero and the replay smoke-check repeated
+with the same fail-closed outcome.
+
 - [ ] Run `Find verified prior work` with no concern and confirm the agent infers fields, adjacent fields, venues, and query families without asking the user to choose a conference
 - [ ] Enter an optional research concern, then run discovery from the main section, selected-PDF `Find prior work` action, a limitation card, and a follow-up card; confirm each source is carried into the saved scope
 - [ ] In AI, computer architecture, and a third field, confirm an appropriate leading venue absent from any built-in source shortcut can still be selected and justified
