@@ -4,7 +4,10 @@ import {
   type WorkspaceArtifactBundle,
 } from "../workspace/artifactBundle";
 import type { PaperArtifactCard } from "../paperArtifacts";
-import { chooseCollectionForRecommendation } from "../relatedRecommendations";
+import {
+  addItemsToCollection,
+  chooseCollectionForRecommendation,
+} from "../relatedRecommendations";
 
 type NoteParentCandidate = {
   id: number;
@@ -27,15 +30,18 @@ function resolveNoteParentItem(item: NoteParentCandidate) {
   }
 
   const parentID = item.parentItemID;
+  if (!parentID) {
+    return undefined;
+  }
   const parent =
-    parentID && "Zotero" in globalThis
+    "Zotero" in globalThis
       ? (
           globalThis as {
             Zotero?: { Items?: { get: (id: number) => unknown } };
           }
         ).Zotero?.Items?.get(parentID)
       : undefined;
-  return (parent as NoteParentCandidate | undefined) || item;
+  return parent as NoteParentCandidate | undefined;
 }
 
 export function buildPaperArtifactNoteHtml(card: PaperArtifactCard) {
@@ -119,8 +125,10 @@ export async function savePaperArtifactToNote(params: {
     throw new Error("Zotero note APIs are unavailable.");
   }
   const note = new zotero.Item("note");
-  note.libraryID = parentItem.libraryID;
-  note.parentID = parentItem.id;
+  note.libraryID = parentItem?.libraryID || params.item.libraryID;
+  if (parentItem) {
+    note.parentID = parentItem.id;
+  }
   note.setNote(buildPaperArtifactNoteHtml(params.card));
   await note.saveTx();
   return note;
@@ -159,9 +167,7 @@ export async function savePaperArtifactToCollection(params: {
     buildPaperArtifactNoteHtml(params.card),
   );
   await note.saveTx();
-  if (typeof collection.addItems === "function") {
-    await collection.addItems([note.id]);
-  }
+  await addItemsToCollection(collection, [note.id]);
   return { note, collection };
 }
 
@@ -216,9 +222,7 @@ export async function savePaperArtifactSetToCollection(params: {
     }),
   );
   await note.saveTx();
-  if (typeof collection.addItems === "function") {
-    await collection.addItems([note.id]);
-  }
+  await addItemsToCollection(collection, [note.id]);
   return {
     note,
     collection,

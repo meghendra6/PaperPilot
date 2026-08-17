@@ -1,0 +1,15 @@
+{
+  "results": [
+    {
+      "id": "https://openalex.org/W123",
+      "title": "OpenAlex Example",
+      "publication_year": 2024,
+      "doi": "https://doi.org/10.1000/openalex",
+      "authorships": [{ "author": { "display_name": "Ada Researcher" } }],
+      "primary_location": {
+        "landing_page_url": "https://publisher.example.org/openalex",
+        "source": { "display_name": "Example Proceedings" }
+      }
+    }
+  ]
+}

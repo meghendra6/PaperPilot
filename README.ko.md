@@ -4,7 +4,7 @@
 
 **Paper Pilot는 Zotero 7-9 PDF 리더를 AI 기반 논문 워크벤치로 바꿔줍니다.**
 
-Paper Pilot는 Zotero 7-9 PDF 리더를 위한 AI 읽기 워크벤치입니다. Zotero 안에서 논문별 채팅 패널, 구조화된 논문 도구, 관련 논문 탐색, 로컬 CLI 기반 AI 실행 기능을 제공합니다.
+Paper Pilot는 Zotero 7-9 PDF 리더를 위한 AI 읽기 워크벤치입니다. Zotero 안에서 논문별 채팅 패널, 구조화된 논문 도구, 에이전트 주도 검증형 선행연구 탐색, 로컬 CLI 기반 AI 실행 기능을 제공합니다.
 
 ![Zotero 7-9](https://img.shields.io/badge/Zotero-7--9-cc2936) ![Node 20+](https://img.shields.io/badge/Node-20%2B-339933) ![Java 11+](https://img.shields.io/badge/Java-11%2B-007396) ![License](https://img.shields.io/badge/License-AGPL--3.0--or--later-blue) ![Engines](https://img.shields.io/badge/Engines-Codex%20CLI%20%7C%20Claude%20Code%20%7C%20Gemini%20CLI-6f42c1)
 
@@ -13,10 +13,11 @@ Paper Pilot는 Zotero 7-9 PDF 리더를 위한 AI 읽기 워크벤치입니다. 
 - Zotero Reader 안에서 바로 사용하는 AI 채팅
 - 세 가지 로컬 엔진 모드: **Codex CLI**, **Claude Code**, **Gemini CLI**
 - brief, compare, contributions, limitations, follow-ups를 위한 구조화된 논문 워크벤치
-- 관련 논문 추천, 열기, 컬렉션 추가 흐름 지원
+- 사용자 설정 없이 공식 출판 근거와 세 결과 레인으로 선행연구 탐색
+- **Critical Read** — 독자 판단을 우선하는 7단계 비판적 논문 읽기와 최종 리포트
 - auto-highlight 및 저장되는 논문 단위 세션 기록 지원
 - **Paper Mastery** — 다회차 소크라테스식 이해도 점검 후 Markdown 학습 리포트 생성
-- 자동화된 로컬 검증은 갖춰져 있지만, 실제 Zotero 런타임 QA는 아직 남아 있음
+- 자동 검증과 Zotero 9 탐색/Critical Read 런타임 스모크를 기록했으며, 더 넓은 Zotero 7-9·크로스엔진 매트릭스는 수동 QA로 유지
 
 ## 스크린샷과 데모
 
@@ -26,7 +27,8 @@ Paper Pilot는 Zotero 7-9 PDF 리더를 위한 AI 읽기 워크벤치입니다. 
 
 - AI 사이드바가 보이는 Zotero 리더 패널 화면
 - 구조화된 **Research brief** 카드
-- 그룹형 **Related papers** 추천 화면
+- 세 레인으로 나뉜 **검증형 선행연구** 결과
+- 7단계 **Critical Read** 워크플로우
 - **Compare** 워크플로우와 저장 아티팩트 흐름
 
 향후 UI 시각 자료를 문서화할 때는 `docs/images/` 경로와 짧은 캡션 링크를 사용하는 방식을 권장합니다.
@@ -83,14 +85,19 @@ PDF 선택 영역이나 주석에서 다음과 같은 AI 워크플로우를 시�
 
 이 워크플로우는 긴 일반형 채팅 응답보다, 리더 패널에 맞는 짧고 구조화된 결과를 만들도록 설계되어 있습니다.
 
-### 4. 관련 논문 탐색
+### 4. 에이전트 주도 검증형 선행연구 탐색
 
-Paper Pilot는 그룹화된 관련 논문 추천을 생성하고 다음 작업을 도와줍니다.
+**Find verified prior work**를 누르고 필요할 때만 연구 문제의식을 적습니다. 활성 에이전트가 관련 분야, 인접 분야, 1티어 학회, 검색 쿼리를 스스로 판단하므로 사용자가 학회 목록을 고를 필요가 없습니다. 결과는 다음 세 레인으로 구분됩니다.
 
-- 카테고리별 인접 논문 확인
-- 추천 논문 열기
-- 추천 논문을 Zotero 컬렉션에 추가
-- 비교 워크플로우에 사용할 제한된 입력 집합 구성
+- **Verified main-conference papers** — 1티어 학회 main track임을 논문 단위 공식 출처로 높은 신뢰도로 확인한 논문
+- **Other peer-reviewed work** — 저널, workshop, Findings, 기타 track 또는 main 여부가 확정되지 않은 출판 논문
+- **Frontier / novelty radar** — 최신 동향이나 아이디어 중복 가능성을 빠르게 확인하기 위한 최근 preprint와 submission
+
+검색은 정형화된 학술 소스와 재현 가능한 워크스페이스 아티팩트를 사용하지만, 학회 판단은 폐쇄형 allowlist가 아니라 open-world 방식입니다. ACL, EMNLP, CVPR, NeurIPS, ICLR, ISCA, MICRO, HPCA, ASPLOS, USENIX 계열뿐 아니라 다른 분야의 적절한 학회도 근거에 따라 선택할 수 있습니다. 공식 근거와 공개 리뷰를 열고, review insight를 요청하고, 근거 메타데이터와 함께 컬렉션에 추가하거나 전체 결과를 Zotero note로 저장할 수 있습니다.
+
+### Critical Read
+
+**Critical Read**는 초록·그림·표 훑기, 핵심 연구 질문 찾기, 선행연구 조사, 방법론 평가, 결과만 보고 독립적으로 결론 내리기, 저자 결론과 대조하기, 대안 설명 검토의 7단계를 순서대로 안내합니다. 독립 판단 단계에서는 독자가 먼저 입력해야 하며, 앞 단계를 수정하면 이에 의존하는 뒤 단계와 리포트가 무효화됩니다. 최종 리포트는 독자 관찰, 논문 주장, 에이전트 추론, 외부 탐색 근거를 구분합니다.
 
 ### 5. 자동 하이라이트 워크플로우
 
@@ -120,7 +127,7 @@ Mastery 프롬프트는 질문/평가 응답을 엄격한 JSON으로 강제하�
 - `metadata.json`
 - `annotations.json`
 
-Codex CLI 모드에서는 `CONTEXT_INDEX.md`(파일 읽기 순서 맵)와 `figures/` 디렉터리를 추가로 생성합니다. 해당 인덱스를 읽도록 지시하는 프롬프트가 Codex 경로에만 있기 때문입니다.
+모든 엔진은 `CONTEXT_INDEX.md`(파일 읽기 순서 맵)를 추가로 생성합니다. 탐색 실행은 `discovery-request.json`, `discovery-plan.json`, `discovery-candidates.json`, `discovery-evidence.json`도 준비하며, Codex CLI는 `figures/` 디렉터리도 만듭니다.
 
 `paper.md`는 구조화 Markdown 추출 결과이고, `paper.json`은 구조화 PDF 요소와 추출 메타데이터를 담습니다. `paper.txt`는 하위 호환성과 평문 폴백 경로로 유지됩니다.
 
@@ -135,7 +142,8 @@ Java를 사용할 수 없으면 Paper Pilot는 폴백 사실을 `metadata.json`�
 | 리더 채팅      | Zotero Reader 내부의 논문 단위 AI 채팅                          |
 | 엔진           | Codex CLI, Claude Code, Gemini CLI                              |
 | 논문 워크벤치  | Research brief, compare, contributions, limitations, follow-ups |
-| 탐색           | 그룹형 관련 논문 추천                                           |
+| 탐색           | 에이전트가 분야/학회를 판단하고 공식 근거로 검증한 세 레인 결과 |
+| 비판적 읽기    | 독자 우선 7단계, 의존 단계 무효화, 출처 구분 최종 리포트        |
 | 저장           | 최신 결과 note 저장, 컬렉션용 workbench artifact 저장           |
 | 맥락 기반 응답 | workspace artifact, retrieval context, 최근 대화 연속성         |
 | 하이라이트     | 핵심 구절용 auto-highlight 워크플로우                           |
@@ -187,7 +195,9 @@ Gemini 모드는 더 가벼운 로컬 CLI 경로입니다. 현재 코드베이�
 현재 프롬프트 표면:
 
 - **Research brief**
-- **Related paper recommendations**
+- **Agent-led verified research discovery**
+- **Public review insight**
+- **Critical Read**
 - **Paper tools**
 - **Paper compare**
 - **Auto-highlight**
@@ -332,7 +342,9 @@ build/      생성된 애드온 아티팩트
 - `src/modules/autoHighlight/` — 하이라이트 추출 워크플로우
 - `src/modules/paperTools.ts` — 구조화된 contribution/limitation/follow-up 프롬프트
 - `src/modules/researchBrief.ts` — 논문별 compact brief 생성
-- `src/modules/relatedRecommendations.ts` — 그룹형 관련 논문 추천
+- `src/modules/discovery/` — 에이전트 주도 검색 계획, provider 수집, 근거 검증, 파싱, 순위화
+- `src/modules/relatedRecommendations.ts` — 검증형 탐색 실행과 Zotero 컬렉션 연동
+- `src/modules/criticalRead/` — 독자 우선 7단계 분석과 리포트 워크플로우
 - `src/modules/paperCompare.ts` — 제한된 다중 논문 비교 흐름
 
 ## 검증
@@ -360,7 +372,7 @@ npm run build
 ## 알려진 제한 사항
 
 - 아직 완전한 프로덕션 준비 상태를 주장하지 않습니다.
-- 실제 Zotero 런타임 QA는 명시적으로 남아 있는 작업입니다.
+- Zotero 9 집중 런타임 QA는 `docs/manual-qa.md`에 기록했으며, 더 넓은 호환성·크로스엔진 매트릭스는 수동 QA로 남아 있습니다.
 
 ## 로드맵
 

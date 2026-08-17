@@ -4,6 +4,7 @@ import type {
 } from "./relatedRecommendations";
 import type { PaperArtifactCard, PaperArtifactSection } from "./paperArtifacts";
 import { buildResponseLanguageInstruction } from "./translation/responseLanguage";
+import { isPublicReviewURL } from "./discovery/normalize";
 
 export interface PaperCompareCandidate {
   title: string;
@@ -11,6 +12,13 @@ export interface PaperCompareCandidate {
   year?: number | string;
   abstract?: string;
   reason?: string;
+  publicationClass?: string;
+  evidenceConfidence?: string;
+  publicationEvidence?: Array<{
+    sourceName: string;
+    supports: string[];
+    url: string;
+  }>;
 }
 
 export interface PaperCompareSelection {
@@ -198,6 +206,7 @@ function normalizeCompareEntry(parsed: unknown): PaperCompareEntry | undefined {
 
 function normalizePaperCompareResult(
   parsed: unknown,
+  selection?: PaperCompareSelection,
 ): PaperCompareResult | undefined {
   if (!parsed || typeof parsed !== "object") {
     return undefined;
@@ -224,6 +233,31 @@ function normalizePaperCompareResult(
     );
   }
 
+  if (selection) {
+    const expected = [selection.currentPaper, ...selection.comparePapers];
+    const expectedByTitle = new Map(
+      expected.map((paper) => [
+        normalizeWhitespace(paper.title).toLowerCase(),
+        paper,
+      ]),
+    );
+    const observedTitles = papers.map((paper) =>
+      normalizeWhitespace(paper.title).toLowerCase(),
+    );
+    if (
+      observedTitles.length !== expectedByTitle.size ||
+      new Set(observedTitles).size !== observedTitles.length ||
+      observedTitles.some((title) => !expectedByTitle.has(title)) ||
+      [...expectedByTitle.keys()].some(
+        (title) => !observedTitles.includes(title),
+      )
+    ) {
+      throw new Error(
+        "Paper compare result did not match the exact selected paper set.",
+      );
+    }
+  }
+
   return {
     overview,
     papers,
@@ -241,6 +275,20 @@ function formatCandidate(candidate: PaperCompareCandidate, index?: number) {
       : undefined,
     candidate.year ? `Year: ${candidate.year}` : undefined,
     candidate.reason ? `Why it was selected: ${candidate.reason}` : undefined,
+    candidate.publicationClass
+      ? `Publication class: ${candidate.publicationClass}`
+      : undefined,
+    candidate.evidenceConfidence
+      ? `Evidence confidence: ${candidate.evidenceConfidence}`
+      : undefined,
+    candidate.publicationEvidence?.length
+      ? `Official publication evidence: ${candidate.publicationEvidence
+          .map(
+            (entry) =>
+              `${entry.sourceName} (${entry.supports.join(", ")}): ${entry.url}`,
+          )
+          .join("; ")}`
+      : undefined,
     candidate.abstract ? `Abstract: ${candidate.abstract}` : undefined,
   ]
     .filter(Boolean)
@@ -311,18 +359,31 @@ export function selectCompareCandidates(
 ) {
   const selected: RecommendedPaper[] = [];
   const seen = new Set<string>();
+  const flattened = groups.flatMap((group) => group.papers);
+  const primary = flattened.filter(
+    (paper) => paper.publicationClass === "verified_main",
+  );
+  const peerReviewed = flattened.filter(
+    (paper) =>
+      (paper.publicationClass?.startsWith("verified_") &&
+        paper.publicationClass !== "verified_main") ||
+      paper.publicationClass === "published_track_unknown",
+  );
+  const candidates = flattened.some((paper) => paper.publicationClass)
+    ? primary.length
+      ? primary
+      : peerReviewed
+    : flattened;
 
-  for (const group of groups) {
-    for (const paper of group.papers) {
-      const key = `${paper.title.toLowerCase()}|${paper.doi || ""}`;
-      if (seen.has(key)) {
-        continue;
-      }
-      seen.add(key);
-      selected.push(paper);
-      if (selected.length >= MAX_COMPARE_PAPERS) {
-        return selected;
-      }
+  for (const paper of candidates) {
+    const key = `${paper.title.toLowerCase()}|${paper.doi || ""}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    selected.push(paper);
+    if (selected.length >= MAX_COMPARE_PAPERS) {
+      return selected;
     }
   }
 
@@ -333,14 +394,38 @@ export function buildCompareSelectionFromRecommendations(params: {
   currentPaper: PaperCompareCandidate;
   groups: RecommendationGroup[];
   maxComparePapers?: number;
+  includeReviewURLs?: boolean;
 }): PaperCompareSelection {
-  const candidates = selectCompareCandidates(params.groups).map((paper) => ({
-    title: paper.title,
-    authors: paper.authors,
-    year: paper.year,
-    abstract: paper.abstract,
-    reason: paper.reason,
-  }));
+  const candidates = selectCompareCandidates(params.groups).map((paper) => {
+    return {
+      title: paper.title,
+      authors: paper.authors,
+      year: paper.year,
+      abstract: paper.abstract,
+      reason: paper.reason,
+      ...(paper.publicationClass
+        ? { publicationClass: paper.publicationClass }
+        : {}),
+      ...(paper.evidenceConfidence
+        ? { evidenceConfidence: paper.evidenceConfidence }
+        : {}),
+      ...(paper.publicationEvidence?.length
+        ? {
+            publicationEvidence: paper.publicationEvidence
+              .map((entry) => ({
+                sourceName: entry.sourceName,
+                supports: [...entry.supports],
+                url: entry.url,
+              }))
+              .filter(
+                (entry) =>
+                  params.includeReviewURLs !== false ||
+                  !isPublicReviewURL(entry.url, paper.reviewURL),
+              ),
+          }
+        : {}),
+    };
+  });
 
   return buildCompareSelection({
     currentPaper: params.currentPaper,
@@ -354,6 +439,7 @@ export function buildPaperCompareRequestFromRecommendations(params: {
   groups: RecommendationGroup[];
   maxComparePapers?: number;
   responseLanguage?: string;
+  includeReviewURLs?: boolean;
 }): PaperCompareRequest {
   const selection = buildCompareSelectionFromRecommendations(params);
   return {
@@ -506,13 +592,16 @@ export function buildPaperCompareQuestion(params: {
   ].join("\n");
 }
 
-export function parsePaperCompareResponse(raw: string): PaperCompareResult {
+export function parsePaperCompareResponse(
+  raw: string,
+  selection?: PaperCompareSelection,
+): PaperCompareResult {
   let parseError: unknown;
 
   for (const candidate of extractJsonCandidates(raw)) {
     try {
       const parsed = JSON.parse(candidate);
-      const normalized = normalizePaperCompareResult(parsed);
+      const normalized = normalizePaperCompareResult(parsed, selection);
       if (normalized) {
         return normalized;
       }
@@ -532,6 +621,7 @@ export function parsePaperCompareResponse(raw: string): PaperCompareResult {
 
 export function buildPaperCompareCard(
   result: PaperCompareResult,
+  selection?: PaperCompareSelection,
 ): PaperArtifactCard {
   const sections: PaperArtifactSection[] = [
     {
@@ -568,6 +658,27 @@ export function buildPaperCompareCard(
     title: "Compare papers",
     summary: result.overview,
     sections,
+    provenance: selection
+      ? result.papers.flatMap((resultPaper) => {
+          const selected = selection.comparePapers.find(
+            (paper) =>
+              normalizeWhitespace(paper.title).toLowerCase() ===
+              normalizeWhitespace(resultPaper.title).toLowerCase(),
+          );
+          return selected
+            ? [
+                {
+                  title: selected.title,
+                  publicationClass: selected.publicationClass,
+                  evidenceConfidence: selected.evidenceConfidence,
+                  evidenceURLs: (selected.publicationEvidence || []).map(
+                    (entry) => entry.url,
+                  ),
+                },
+              ]
+            : [];
+        })
+      : undefined,
     sourceLabel:
       "Compare output is a compact synthesis across the current paper and a bounded related-paper set; cross-paper conclusions may include model inference.",
     updatedAt: new Date().toISOString(),

@@ -3,9 +3,7 @@ import * as assert from "node:assert/strict";
 
 import { messageStore } from "../src/modules/message/messageStore";
 import type { EngineMode } from "../src/modules/ai/types";
-import {
-  SessionHistoryRepository,
-} from "../src/modules/session/sessionHistoryRepository";
+import { SessionHistoryRepository } from "../src/modules/session/sessionHistoryRepository";
 import {
   SESSION_HISTORY_STORAGE_VERSION,
   type SessionHistoryFileOps,
@@ -43,9 +41,10 @@ class MemoryFileOps implements SessionHistoryFileOps {
 
   async listDirectory(path: string) {
     const normalizedPrefix = path.replace(/\/+$/, "");
-    return [...this.files.keys()].filter((filePath) =>
-      filePath.startsWith(`${normalizedPrefix}/`) ||
-      filePath.startsWith(`${normalizedPrefix}\\`),
+    return [...this.files.keys()].filter(
+      (filePath) =>
+        filePath.startsWith(`${normalizedPrefix}/`) ||
+        filePath.startsWith(`${normalizedPrefix}\\`),
     );
   }
 }
@@ -429,7 +428,10 @@ test("SessionHistoryService persists a late assistant turn back to the originati
     assert.ok(activeSnapshot);
     assert.ok(activeSnapshot.messages);
     assert.equal(activeSnapshot.messages.length, 1);
-    assert.equal(activeSnapshot.messages[0].text, "New active session question");
+    assert.equal(
+      activeSnapshot.messages[0].text,
+      "New active session question",
+    );
     assert.equal(sessionStore.get(7023)?.sessionId, activeDraft.sessionId);
   } finally {
     globals.restore();
@@ -490,7 +492,10 @@ test("SessionHistoryService does not persist late assistant messages for inactiv
     assert.ok(originalSnapshot);
     assert.ok(originalSnapshot.messages);
     assert.equal(originalSnapshot.messages.length, 1);
-    assert.equal(originalSnapshot.messages[0].text, "Original session question");
+    assert.equal(
+      originalSnapshot.messages[0].text,
+      "Original session question",
+    );
     assert.equal(
       originalSnapshot.lastCodexSessionID,
       "codex-thread-late-prompts-only",
@@ -499,7 +504,10 @@ test("SessionHistoryService does not persist late assistant messages for inactiv
     assert.ok(activeSnapshot);
     assert.ok(activeSnapshot.messages);
     assert.equal(activeSnapshot.messages.length, 1);
-    assert.equal(activeSnapshot.messages[0].text, "New active session question");
+    assert.equal(
+      activeSnapshot.messages[0].text,
+      "New active session question",
+    );
   } finally {
     globals.restore();
   }

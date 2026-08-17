@@ -112,6 +112,62 @@ test("selectCompareCandidates bounds and deduplicates recommended papers", () =>
   );
 });
 
+test("selectCompareCandidates prefers verified main and excludes novelty radar", () => {
+  const selected = selectCompareCandidates([
+    {
+      papers: [
+        {
+          title: "Recent preprint",
+          authors: [],
+          relevanceScore: 1,
+          publicationClass: "preprint_only",
+        },
+        {
+          title: "Verified main",
+          authors: [],
+          relevanceScore: 0.7,
+          publicationClass: "verified_main",
+        },
+        {
+          title: "Workshop",
+          authors: [],
+          relevanceScore: 0.9,
+          publicationClass: "verified_workshop",
+        },
+      ],
+    },
+  ]);
+  assert.deepEqual(
+    selected.map((paper) => paper.title),
+    ["Verified main"],
+  );
+});
+
+test("selectCompareCandidates falls back to published track-unknown peers", () => {
+  const selected = selectCompareCandidates([
+    {
+      papers: [
+        {
+          title: "Published unknown-track peer",
+          authors: ["A. Author"],
+          relevanceScore: 0.8,
+          publicationClass: "published_track_unknown",
+        },
+        {
+          title: "Recent preprint",
+          authors: ["B. Author"],
+          relevanceScore: 0.9,
+          publicationClass: "preprint_only",
+        },
+      ],
+    },
+  ]);
+  assert.deepEqual(
+    selected.map((paper) => paper.title),
+    ["Published unknown-track peer"],
+  );
+});
+
 test("buildCompareSelectionFromRecommendations converts related-paper groups into bounded compare inputs", () => {
   const selection = buildCompareSelectionFromRecommendations({
     currentPaper: {
@@ -131,12 +187,24 @@ test("buildCompareSelectionFromRecommendations converts related-paper groups int
             abstract: "Compare abstract.",
             relevanceScore: 0.9,
             reason: "Recommended follow-up",
+            publicationClass: "verified_main",
+            evidenceConfidence: "high",
+            publicationEvidence: [
+              {
+                type: "official_proceedings",
+                sourceName: "Official proceedings",
+                url: "https://proceedings.example/paper-b",
+                supports: ["identity", "published", "main_track"],
+                checkedAt: "2026-08-14T00:00:00.000Z",
+              },
+            ],
           },
           {
             title: "Paper C",
             authors: ["Barbara Liskov"],
             year: 2024,
             relevanceScore: 0.8,
+            publicationClass: "verified_main",
           },
         ],
       },
@@ -152,6 +220,15 @@ test("buildCompareSelectionFromRecommendations converts related-paper groups int
       year: 2025,
       abstract: "Compare abstract.",
       reason: "Recommended follow-up",
+      publicationClass: "verified_main",
+      evidenceConfidence: "high",
+      publicationEvidence: [
+        {
+          sourceName: "Official proceedings",
+          supports: ["identity", "published", "main_track"],
+          url: "https://proceedings.example/paper-b",
+        },
+      ],
     },
   ]);
   assert.deepEqual(selection.droppedTitles, ["Paper C"]);
@@ -174,12 +251,24 @@ test("buildPaperCompareRequestFromRecommendations packages a compare prompt from
             year: 2025,
             relevanceScore: 0.9,
             reason: "Recommended follow-up",
+            publicationClass: "verified_main",
+            evidenceConfidence: "high",
+            publicationEvidence: [
+              {
+                type: "official_proceedings",
+                sourceName: "Official proceedings",
+                url: "https://proceedings.example/paper-b",
+                supports: ["identity", "published", "main_track"],
+                checkedAt: "2026-08-14T00:00:00.000Z",
+              },
+            ],
           },
           {
             title: "Paper C",
             authors: ["Barbara Liskov"],
             year: 2024,
             relevanceScore: 0.8,
+            publicationClass: "verified_main",
           },
         ],
       },
@@ -200,6 +289,63 @@ test("buildPaperCompareRequestFromRecommendations packages a compare prompt from
     request.prompt,
     /do not invent extra papers or missing details/i,
   );
+});
+
+test("pre-gate Compare excludes public-review URLs from prompts and provenance", () => {
+  const forum = "https://openreview.net/forum?id=paper-b";
+  const request = buildPaperCompareRequestFromRecommendations({
+    currentPaper: { title: "Current Paper" },
+    includeReviewURLs: false,
+    groups: [
+      {
+        category: "Verified main-conference papers",
+        papers: [
+          {
+            title: "Paper B",
+            authors: ["Grace Hopper"],
+            year: 2025,
+            relevanceScore: 0.9,
+            publicationClass: "verified_main",
+            reviewURL: forum,
+            publicationEvidence: [
+              {
+                type: "official_decision",
+                sourceName: "openreview",
+                url: forum,
+                supports: ["identity", "accepted", "main_track"],
+                checkedAt: "2026-08-14T00:00:00.000Z",
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  });
+  assert.doesNotMatch(request.prompt, /openreview\.net/);
+  const result = parsePaperCompareResponse(
+    JSON.stringify({
+      overview: "Bound compare.",
+      papers: [
+        {
+          title: "Current Paper",
+          relationship: "Anchor",
+          strengths: ["A"],
+          tradeoffs: ["B"],
+        },
+        {
+          title: "Paper B",
+          relationship: "Peer",
+          strengths: ["C"],
+          tradeoffs: ["D"],
+        },
+      ],
+      synthesis: ["S"],
+      recommendations: ["R"],
+    }),
+    request.selection,
+  );
+  const card = buildPaperCompareCard(result, request.selection);
+  assert.deepEqual(card.provenance?.[0].evidenceURLs, []);
 });
 
 test("getPaperCompareEntryState disables compare when current paper metadata is missing", () => {
@@ -477,6 +623,17 @@ test("compare pipeline builds a compare request and shapes the parsed response i
             abstract: "Compare abstract.",
             relevanceScore: 0.9,
             reason: "Recommended follow-up",
+            publicationClass: "verified_main",
+            evidenceConfidence: "high",
+            publicationEvidence: [
+              {
+                type: "official_proceedings",
+                sourceName: "Official proceedings",
+                url: "https://proceedings.example/paper-b",
+                supports: ["identity", "published", "main_track"],
+                checkedAt: "2026-08-14T00:00:00.000Z",
+              },
+            ],
           },
           {
             title: "Paper C",
@@ -484,6 +641,7 @@ test("compare pipeline builds a compare request and shapes the parsed response i
             year: 2024,
             relevanceScore: 0.8,
             reason: "Alternative baseline",
+            publicationClass: "verified_main",
           },
         ],
       },
@@ -524,7 +682,7 @@ test("compare pipeline builds a compare request and shapes the parsed response i
     }),
   );
 
-  const card = buildPaperCompareCard(result);
+  const card = buildPaperCompareCard(result, request.selection);
 
   assert.equal(request.selection.comparePapers.length, 2);
   assert.match(request.prompt, /Comparison set:/);
@@ -537,6 +695,8 @@ test("compare pipeline builds a compare request and shapes the parsed response i
     /Current Paper: Fast in-pane baseline/,
   );
   assert.equal(card.sections[2].heading, "Recommended next reading");
+  assert.equal(card.provenance?.[0].publicationClass, "verified_main");
+  assert.match(card.provenance?.[0].evidenceURLs[0] || "", /^https:\/\//);
 });
 
 test("buildPaperCompareCardFromResponse converts raw compare JSON straight into a compare card", () => {
@@ -677,6 +837,39 @@ test("parsePaperCompareResponse rejects compare output without synthesis", () =>
         }),
       ),
     /synthesis or recommendations/i,
+  );
+});
+
+test("parsePaperCompareResponse rejects invented or incomplete selected identities", () => {
+  const selection = buildCompareSelection({
+    currentPaper: { title: "Current Paper" },
+    comparePapers: [{ title: "Verified Peer" }],
+  });
+  assert.throws(
+    () =>
+      parsePaperCompareResponse(
+        JSON.stringify({
+          overview: "Injected compare.",
+          papers: [
+            {
+              title: "Current Paper",
+              relationship: "Anchor",
+              strengths: ["A"],
+              tradeoffs: ["B"],
+            },
+            {
+              title: "Attacker Paper",
+              relationship: "Invented",
+              strengths: ["C"],
+              tradeoffs: ["D"],
+            },
+          ],
+          synthesis: ["S"],
+          recommendations: ["R"],
+        }),
+        selection,
+      ),
+    /exact selected paper set/i,
   );
 });
 

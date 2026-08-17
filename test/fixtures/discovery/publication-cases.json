@@ -1,0 +1,100 @@
+{
+  "positive": [
+    {
+      "title": "Neural Learning Case",
+      "venue": "NeurIPS",
+      "field": "AI/ML",
+      "track": "Main Conference Poster",
+      "url": "https://proceedings.neurips.cc/paper/2026/hash/a.html"
+    },
+    {
+      "title": "Machine Learning Oral Case",
+      "venue": "ICML",
+      "field": "AI/ML",
+      "track": "Main Conference Oral",
+      "url": "https://proceedings.mlr.press/v300/oral.html"
+    },
+    {
+      "title": "Representation Learning Poster Case",
+      "venue": "ICLR",
+      "field": "AI/ML",
+      "track": "Poster",
+      "url": "https://openreview.net/forum?id=iclr-case"
+    },
+    {
+      "title": "Language Processing Case",
+      "venue": "ACL",
+      "field": "NLP",
+      "track": "Main Conference Long Paper",
+      "url": "https://aclanthology.org/2026.acl-long.1"
+    },
+    {
+      "title": "Vision Case",
+      "venue": "CVPR",
+      "field": "Vision",
+      "track": "Main Conference",
+      "url": "https://openaccess.thecvf.com/content/CVPR2026/html/a.html"
+    },
+    {
+      "title": "Architecture ISCA Case",
+      "venue": "ISCA",
+      "field": "Computer Architecture",
+      "track": "Main Program",
+      "url": "https://dl.acm.org/doi/10.1145/isca"
+    },
+    {
+      "title": "Architecture MICRO Case",
+      "venue": "MICRO",
+      "field": "Computer Architecture",
+      "track": "Main Program",
+      "url": "https://ieeexplore.ieee.org/document/micro"
+    },
+    {
+      "title": "Architecture HPCA Case",
+      "venue": "HPCA",
+      "field": "Computer Architecture",
+      "track": "Main Program",
+      "url": "https://ieeexplore.ieee.org/document/hpca"
+    },
+    {
+      "title": "Architecture ASPLOS Case",
+      "venue": "ASPLOS",
+      "field": "Computer Systems",
+      "track": "Main Program",
+      "url": "https://dl.acm.org/doi/10.1145/asplos"
+    },
+    {
+      "title": "Security Case",
+      "venue": "USENIX Security",
+      "field": "Security",
+      "track": "Technical Sessions",
+      "url": "https://www.usenix.org/conference/usenixsecurity26/presentation/a"
+    },
+    {
+      "title": "Unseen Field Case",
+      "venue": "New Archival Venue",
+      "field": "Unrelated Field",
+      "track": "Main Research Program",
+      "url": "https://new-venue.example.org/2026/papers/a"
+    }
+  ],
+  "negative": [
+    { "title": "ACL Findings Case", "class": "verified_findings" },
+    { "title": "ACL Workshop Case", "class": "verified_workshop" },
+    { "title": "CVPR Workshop Case", "class": "verified_workshop" },
+    { "title": "Demo Case", "class": "verified_demo" },
+    { "title": "Industry Case", "class": "verified_industry" },
+    { "title": "Shared Task Case", "class": "verified_shared_task" },
+    {
+      "title": "Tutorial Abstract Case",
+      "class": "verified_tutorial_or_abstract"
+    },
+    { "title": "Recent Preprint Case", "class": "preprint_only" },
+    { "title": "Withdrawn Submission Case", "class": "rejected_or_withdrawn" },
+    {
+      "title": "False Title Match",
+      "class": "verified_main",
+      "observedTitle": "A Different Paper"
+    }
+  ]
+}

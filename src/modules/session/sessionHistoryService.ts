@@ -14,17 +14,21 @@ import { sanitizeAssistantText } from "../message/assistantOutput";
 import type { MessageRecord } from "../message/types";
 import { resolveSessionHistoryPrefs } from "./historyPrefs";
 
+declare const addon: { data: { currentSessionId?: string } } | undefined;
+
 export interface SessionHistoryServiceOptions {
   repository?: SessionHistoryRepository;
   now?: () => Date;
 }
 
 function getAddonData() {
-  return (
+  const bundledData = typeof addon !== "undefined" ? addon?.data : undefined;
+  const globalData = (
     globalThis as typeof globalThis & {
       addon?: { data: { currentSessionId?: string } };
     }
   ).addon?.data;
+  return bundledData || globalData;
 }
 
 function trimSessionTitle(title: string) {

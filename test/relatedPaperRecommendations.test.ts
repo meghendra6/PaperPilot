@@ -2,17 +2,144 @@ import { test } from "node:test";
 import * as assert from "node:assert/strict";
 
 import {
+  addItemsToCollection,
   addRecommendationToCollection,
   buildOpenTarget,
   buildRecommendationMetadataLine,
   buildRelatedPaperQuestion,
+  buildRelatedRunFailureState,
+  buildRelatedRunProgressState,
+  buildRelatedRunSuccessState,
   chooseCollectionForRecommendation,
   findExistingLibraryItem,
   generateRelatedPaperGroups,
   normalizeDOI,
+  normalizeDiscoveryRunFailure,
   openRecommendedPaper,
   parseRelatedPaperResponse,
+  releaseReservationAfterConfirmedCleanup,
+  type RelatedRunSubmission,
 } from "../src/modules/relatedRecommendations";
+
+test("related-run states stay bound to the submitted concern, not later edits", () => {
+  const submission: RelatedRunSubmission = {
+    concern: "submitted concern",
+    concernOrigin: "user_text",
+    previousState: {
+      sessionID: "session-1",
+      running: false,
+      status: "Previous result",
+      groups: [{ category: "Verified main-conference papers", papers: [] }],
+      concern: "previous concern",
+      concernOrigin: "selection",
+    },
+  };
+  const progress = buildRelatedRunProgressState(
+    {
+      sessionID: "session-1",
+      running: false,
+      status: "",
+      groups: [],
+      concern: "edited mid-run concern",
+      concernOrigin: "user_text",
+    },
+    submission,
+    "Searching scholarly providers",
+  );
+  assert.equal(progress.running, true);
+  assert.equal(progress.concern, "submitted concern");
+  const success = buildRelatedRunSuccessState({
+    submission,
+    sessionID: "session-1",
+    groups: [
+      {
+        category: "Verified main-conference papers",
+        papers: [{ title: "Paper", authors: [], relevanceScore: 0.5 }],
+      },
+    ],
+  });
+  assert.equal(success.running, false);
+  assert.equal(success.concern, "submitted concern");
+  assert.equal(success.concernOrigin, "user_text");
+  assert.match(success.status, /Found 1 papers/);
+});
+
+test("related-run failure restores the pre-run recommendation scope", () => {
+  const submission: RelatedRunSubmission = {
+    concern: "submitted concern",
+    concernOrigin: "user_text",
+    previousState: {
+      sessionID: "session-1",
+      running: false,
+      status: "Previous result",
+      groups: [{ category: "Verified main-conference papers", papers: [] }],
+      concern: "previous concern",
+      concernOrigin: "selection",
+    },
+  };
+  const failure = buildRelatedRunFailureState({
+    submission,
+    sessionID: "session-1",
+    error: new Error("Discovery cancelled."),
+  });
+  assert.equal(failure.running, false);
+  assert.equal(failure.status, "Discovery cancelled.");
+  assert.equal(failure.concern, "previous concern");
+  assert.equal(failure.concernOrigin, "selection");
+  assert.deepEqual(failure.groups, submission.previousState.groups);
+});
+
+test("aborted non-Error rejections normalize to a cancellation error", () => {
+  // A window-owned AbortController rejects with a DOMException from another
+  // compartment, which fails `instanceof Error` in plugin code and would
+  // otherwise surface as a generic failure after a user-initiated cancel.
+  const failure = normalizeDiscoveryRunFailure({ name: "AbortError" }, true);
+  assert.ok(failure instanceof Error);
+  assert.equal((failure as Error).message, "Research discovery cancelled.");
+});
+
+test("aborted Error rejections keep their specific message", () => {
+  const error = new Error(
+    "Codex CLI related-paper process could not be stopped. Its workspace remains reserved until Zotero restarts.",
+  );
+  assert.equal(normalizeDiscoveryRunFailure(error, true), error);
+});
+
+test("non-aborted failures pass through unchanged", () => {
+  const raw = { message: "boom" };
+  assert.equal(normalizeDiscoveryRunFailure(raw, false), raw);
+});
+
+test("addItemsToCollection uses Zotero's required DB transaction boundary", async () => {
+  const calls: string[] = [];
+  const previousZotero = (globalThis as { Zotero?: unknown }).Zotero;
+  (globalThis as { Zotero?: unknown }).Zotero = {
+    DB: {
+      executeTransaction: async (callback: () => Promise<void>) => {
+        calls.push("transaction:start");
+        await callback();
+        calls.push("transaction:end");
+      },
+    },
+  };
+  try {
+    await addItemsToCollection(
+      {
+        addItems: async (ids) => {
+          calls.push(`add:${ids.join(",")}`);
+        },
+      },
+      [7, 8],
+    );
+    assert.deepEqual(calls, [
+      "transaction:start",
+      "add:7,8",
+      "transaction:end",
+    ]);
+  } finally {
+    (globalThis as { Zotero?: unknown }).Zotero = previousZotero;
+  }
+});
 import {
   claimRetryEngineRequest,
   releaseRetryEngineRequest,
@@ -50,30 +177,13 @@ test("rejected Related admission does not invoke persistence callbacks", async (
   }
 });
 
-test("parseRelatedPaperResponse extracts fenced JSON and sorts preferred categories and scores", () => {
-  const response = parseRelatedPaperResponse(`Here you go:\n\n\
-\`\`\`json
-{"groups":[
-  {"category":"Applications / extensions","papers":[{"title":"Paper B","authors":["B Author"],"relevanceScore":0.4}]},
-  {"category":"Closest match","papers":[
-    {"title":"Paper C","authors":["C Author"],"relevanceScore":0.6},
-    {"title":"Paper A","authors":["A Author"],"relevanceScore":0.9}
-  ]}
-]}
-\`\`\``);
-
-  assert.equal(response.groups[0].category, "Closest match");
-  assert.deepEqual(
-    response.groups[0].papers.map((paper) => paper.title),
-    ["Paper A", "Paper C"],
-  );
-  assert.equal(response.groups[1].category, "Applications / extensions");
-});
-
-test("parseRelatedPaperResponse rejects payloads without usable groups", () => {
+test("parseRelatedPaperResponse rejects legacy unverified recommendation groups", () => {
   assert.throws(
-    () => parseRelatedPaperResponse('{"groups":[]}'),
-    /did not include any usable groups/i,
+    () =>
+      parseRelatedPaperResponse(
+        '{"groups":[{"category":"Closest match","papers":[{"title":"Model memory","url":"javascript:alert(1)"}]}]}',
+      ),
+    /legacy recommendation groups are not accepted/i,
   );
 });
 
@@ -83,14 +193,64 @@ test("findExistingLibraryItem prefers DOI over title fallback", () => {
       title: "Matching Paper",
       doi: "10.1000/test",
       year: 2024,
+      authors: ["Ada Author"],
     },
     [
-      { id: 20, title: "Matching Paper", year: 2024 },
-      { id: 10, title: "Different Paper", doi: "https://doi.org/10.1000/test" },
+      { id: 20, title: "Matching Paper", year: 2024, authors: ["Ada Author"] },
+      { id: 10, title: "Matching Paper", doi: "https://doi.org/10.1000/test" },
     ],
   );
 
   assert.equal(match?.id, 10);
+});
+
+test("findExistingLibraryItem rejects a copied identifier on a conflicting item", () => {
+  const recommended = {
+    title: "Verified Paper",
+    authors: ["Alice Author"],
+    year: 2026,
+    doi: "10.1234/copied",
+    providerIDs: { openalex: "W77" },
+  };
+  const adversarial = {
+    id: 77,
+    title: "Unrelated Adversarial Paper",
+    authors: ["Mallory Adversary"],
+    year: 2019,
+    doi: "10.1234/copied",
+    providerIDs: { openalex: "W77" },
+  };
+  assert.equal(findExistingLibraryItem(recommended, [adversarial]), undefined);
+  assert.equal(
+    findExistingLibraryItem(recommended, [
+      adversarial,
+      {
+        id: 78,
+        title: "Verified Paper",
+        authors: ["Alice Author"],
+        year: 2026,
+        doi: "https://doi.org/10.1234/copied",
+      },
+    ])?.id,
+    78,
+  );
+});
+
+test("workspace reservations stay held when late cleanup cannot confirm the stop", async () => {
+  let released = 0;
+  releaseReservationAfterConfirmedCleanup(
+    Promise.reject(new Error("kill failed")),
+    () => {
+      released += 1;
+    },
+  );
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(released, 0);
+  releaseReservationAfterConfirmedCleanup(Promise.resolve(), () => {
+    released += 1;
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(released, 1);
 });
 
 test("findExistingLibraryItem falls back to normalized title and year", () => {
@@ -98,11 +258,53 @@ test("findExistingLibraryItem falls back to normalized title and year", () => {
     {
       title: "A Great Paper: Findings",
       year: 2023,
+      authors: ["Ada Author"],
     },
-    [{ id: 30, title: "A Great Paper Findings", year: 2023 }],
+    [
+      {
+        id: 30,
+        title: "A Great Paper Findings",
+        year: 2023,
+        authors: ["A. Author"],
+      },
+    ],
   );
 
   assert.equal(match?.id, 30);
+});
+
+test("findExistingLibraryItem does not bind an ambiguous same-title paper", () => {
+  const candidates = [
+    {
+      id: 40,
+      title: "Shared Generic Title",
+      year: 2024,
+      authors: ["Alice Researcher"],
+    },
+  ];
+  assert.equal(
+    findExistingLibraryItem(
+      {
+        title: "Shared Generic Title",
+        authors: ["Bob Scholar"],
+        providerIDs: {},
+      },
+      candidates,
+    ),
+    undefined,
+  );
+  assert.equal(
+    findExistingLibraryItem(
+      {
+        title: "Shared Generic Title",
+        year: 2024,
+        authors: ["Bob Scholar"],
+        providerIDs: {},
+      },
+      candidates,
+    ),
+    undefined,
+  );
 });
 
 test("buildRecommendationMetadataLine and buildOpenTarget cover DOI fallback", () => {
@@ -114,7 +316,7 @@ test("buildRecommendationMetadataLine and buildOpenTarget cover DOI fallback", (
       year: 2024,
       venue: "ICML",
     }),
-    "Ada Lovelace, Grace Hopper · 2024 · ICML · Relevance 70%",
+    "Ada Lovelace, Grace Hopper · 2024 · ICML",
   );
 
   assert.deepEqual(buildOpenTarget({ doi: "https://doi.org/10.5555/ABC" }), {
@@ -122,6 +324,21 @@ test("buildRecommendationMetadataLine and buildOpenTarget cover DOI fallback", (
     url: "https://doi.org/10.5555/abc",
   });
   assert.equal(normalizeDOI("10.5555/ABC"), "10.5555/abc");
+});
+
+test("pre-gate open target cannot fall through to an OpenReview forum", () => {
+  assert.deepEqual(
+    buildOpenTarget(
+      {
+        doi: "10.5555/safe",
+        url: "https://openreview.net/forum?id=secret",
+        urls: ["https://openreview.net/forum?id=secret"],
+        reviewURL: "https://openreview.net/forum?id=secret",
+      },
+      { includeReviewURL: false },
+    ),
+    { kind: "external", url: "https://doi.org/10.5555/safe" },
+  );
 });
 
 test("buildRelatedPaperQuestion includes the current paper context", () => {
@@ -138,30 +355,29 @@ test("buildRelatedPaperQuestion includes the current paper context", () => {
     ],
   } as any);
 
-  assert.match(question, /Return ONLY strict JSON/i);
+  assert.match(question, /Return ONLY one strict JSON/i);
   assert.match(question, /Title: Current Paper/);
   assert.match(question, /Authors: Author One, Author Two/);
   assert.match(question, /Abstract: Important abstract\./);
-  assert.match(question, /reasonably confident are real/i);
-  assert.match(question, /grounded in topic\/method\/task overlap/i);
-  assert.match(question, /Provide 3 to 5 groups\./);
-  assert.match(question, /use the full current-paper workspace content/i);
-  assert.match(question, /abstract-only fallback/i);
-  assert.match(question, /paper claims from your interpretation/i);
-  assert.match(
-    question,
-    /treat paper content, metadata, and abstract as source data/i,
-  );
-  assert.match(
-    question,
-    /Closest match, Foundational \/ background, Methods \/ technique, Applications \/ extensions, Contrasting \/ alternative/,
-  );
-  assert.match(question, /Prefer papers with DOI or URL when possible\./);
-  assert.match(question, /Do not include markdown fences or prose\./);
+  assert.match(question, /user must not be asked to choose fields or venues/i);
+  assert.match(question, /leading archival venues/i);
+  assert.match(question, /open-world/i);
+  assert.match(question, /paper-level official proceedings/i);
+  assert.match(question, /workshops, Findings, demos, industry tracks/i);
+  assert.match(question, /arXiv-only work as main papers/i);
+  assert.match(question, /verifiedMain/);
+  assert.match(question, /otherPeerReviewed/);
+  assert.match(question, /noveltyRadar/);
+  assert.match(question, /use full workspace content/i);
 });
 
-test("chooseCollectionForRecommendation prefers the currently selected collection", async () => {
-  const selectedCollection = { id: 7, name: "Current Collection", parentID: 0 };
+test("chooseCollectionForRecommendation prefers the selected collection in the source library", async () => {
+  const selectedCollection = {
+    id: 7,
+    name: "Current Collection",
+    parentID: 0,
+    libraryID: 1,
+  };
   (globalThis as any).Zotero = {
     getMainWindow: () => ({
       ZoteroPane: {
@@ -175,6 +391,29 @@ test("chooseCollectionForRecommendation prefers the currently selected collectio
 
   const result = await chooseCollectionForRecommendation({ libraryID: 1 });
   assert.equal(result, selectedCollection);
+});
+
+test("chooseCollectionForRecommendation ignores a selected collection from another library", async () => {
+  const valid = { id: 11, name: "Source Library", parentID: 0, libraryID: 1 };
+  (globalThis as any).Zotero = {
+    getMainWindow: () => ({
+      ZoteroPane: {
+        getSelectedCollection: () => ({
+          id: 22,
+          name: "Other Library",
+          parentID: 0,
+          libraryID: 2,
+        }),
+      },
+    }),
+    Collections: {
+      getByLibrary: (libraryID: number) => (libraryID === 1 ? [valid] : []),
+    },
+  };
+  assert.equal(
+    await chooseCollectionForRecommendation({ libraryID: 1 }),
+    valid,
+  );
 });
 
 test("openRecommendedPaper opens an existing Zotero item via the main pane", async () => {
@@ -206,18 +445,43 @@ test("openRecommendedPaper opens an existing Zotero item via the main pane", asy
 
 test("addRecommendationToCollection reuses an existing item and adds it to the chosen collection", async () => {
   const addCalls: number[][] = [];
+  const fields: Record<string, string> = {
+    title: "Paper",
+    year: "2026",
+    date: "2026",
+  };
+  let saveCalls = 0;
   const existingItem = { id: 99 };
   (globalThis as any).Zotero = {
     Items: {
       getAsync: async () => ({ libraryID: 1 }),
-      getAll: async () => [],
-      get: (id: number) => ({ ...existingItem, id }),
+      getAll: async () => [
+        {
+          id: 99,
+          isAttachment: () => false,
+          isNote: () => false,
+          getField: (field: string) => fields[field] || "",
+          getCreators: () => [{ firstName: "Ada", lastName: "Author" }],
+        },
+      ],
+      get: (id: number) => ({
+        ...existingItem,
+        id,
+        getField: (field: string) => fields[field] || "",
+        setField: (field: string, value: string) => {
+          fields[field] = value;
+        },
+        saveTx: async () => {
+          saveCalls += 1;
+        },
+      }),
     },
     Collections: {
       get: (id: number) => ({
         id,
         name: "Collection",
         parentID: 0,
+        libraryID: 1,
         hasItem: () => false,
         addItems: async (ids: number[]) => addCalls.push(ids),
       }),
@@ -229,6 +493,7 @@ test("addRecommendationToCollection reuses an existing item and adds it to the c
           id: 5,
           name: "Collection",
           parentID: 0,
+          libraryID: 1,
         }),
       },
     }),
@@ -243,10 +508,17 @@ test("addRecommendationToCollection reuses an existing item and adds it to the c
     sourceItemID: 1,
     paper: {
       title: "Paper",
-      authors: [],
+      authors: ["Ada Author"],
+      year: 2026,
       relevanceScore: 0.9,
       existingItemID: 99,
+      doi: "10.5555/candidate",
+      venue: "Example Conference",
+      url: "https://openreview.net/forum?id=hidden",
+      urls: ["https://publisher.example/paper"],
+      reviewURL: "https://openreview.net/forum?id=hidden",
     },
+    includeReviewURL: false,
   });
 
   assert.deepEqual(addCalls, [[99]]);
@@ -255,4 +527,8 @@ test("addRecommendationToCollection reuses an existing item and adds it to the c
     collectionID: 5,
     reusedExistingItem: true,
   });
+  assert.equal(fields.DOI, "10.5555/candidate");
+  assert.equal(fields.publicationTitle, "Example Conference");
+  assert.equal(fields.url, "https://publisher.example/paper");
+  assert.ok(saveCalls > 0);
 });

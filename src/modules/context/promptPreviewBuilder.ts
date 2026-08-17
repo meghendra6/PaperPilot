@@ -101,6 +101,7 @@ export function buildCodexWorkspacePrompt(
     "5. Use selection.json for the active selection/page context.",
     "6. Use recent-turns.json for conversation continuity.",
     "7. Use annotations.json and metadata.json when relevant.",
+    "8. For a discovery request, read discovery-request.json, discovery-plan.json, discovery-candidates.json, and discovery-evidence.json when present; candidate records are discovery hints, not acceptance proof.",
     "Ground your answer in the workspace contents rather than guessing.",
     ...buildWorkspaceAnswerStyleRules(),
     webSearchEnabled
@@ -122,6 +123,7 @@ export function buildGeminiWorkspacePrompt(promptPreview: string) {
     "You are helping inside a Zotero paper workspace.",
     "Before answering, inspect the workspace files in this directory when they are relevant.",
     "Prefer paper.md and paper.json over paper.txt when they are available.",
+    "For a discovery request, also read the discovery-*.json source-data files when present; candidate records are not acceptance proof.",
     "Ground your answer in the local paper workspace contents rather than guessing.",
     ...buildWorkspaceAnswerStyleRules(),
     "",
@@ -135,6 +137,7 @@ export function buildClaudeWorkspacePrompt(promptPreview: string) {
     "You are helping inside a Zotero paper workspace through Claude Code.",
     "Before answering, inspect the workspace files in this directory when they are relevant.",
     "Prefer paper.md and paper.json over paper.txt when they are available.",
+    "For a discovery request, also read the discovery-*.json source-data files when present; candidate records are not acceptance proof.",
     "Ground your answer in the local paper workspace contents rather than guessing.",
     ...buildWorkspaceAnswerStyleRules(),
     "",

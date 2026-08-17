@@ -8,6 +8,7 @@ import {
   getWorkspaceEngineLabel,
   isWorkspaceRunReservedForItem,
   releaseWorkspaceRunReservation,
+  startWorkspaceTextRun,
 } from "../src/modules/ai/workspaceRun";
 import {
   claimChatEngineRequest,
@@ -122,5 +123,62 @@ test("workspace reservations block direct runs and pending controller preparatio
     releaseChatEngineRequest(44, chatToken);
   } finally {
     (globalThis as { addon?: unknown }).addon = previousAddon;
+  }
+});
+
+test("workspace preparation cancellation returns promptly and owns late cleanup", async () => {
+  const previousAddon = (globalThis as { addon?: unknown }).addon;
+  const previousZotero = (globalThis as { Zotero?: unknown }).Zotero;
+  (globalThis as { addon?: unknown }).addon = {
+    data: {
+      pendingEngineCompletions: new Map(),
+      codexRunStates: new Map(),
+      codexRunPollers: new Map(),
+      claudeRunStates: new Map(),
+      claudeRunPollers: new Map(),
+      geminiRunStates: new Map(),
+      geminiRunPollers: new Map(),
+    },
+  };
+  (globalThis as { Zotero?: unknown }).Zotero = {
+    Prefs: { get: () => false },
+  };
+  try {
+    const token = claimWorkspaceRunReservation("codex_cli", 91)!;
+    const controller = new AbortController();
+    let resolvePreparation!: (value: any) => void;
+    const preparation = new Promise<any>((resolve) => {
+      resolvePreparation = resolve;
+    });
+    let deferredCleanup: Promise<void> | undefined;
+    const started = startWorkspaceTextRun({
+      mode: "codex_cli",
+      itemID: 91,
+      reservationItemID: 91,
+      reservationToken: token,
+      title: "Paper",
+      sessionId: "session",
+      question: "question",
+      signal: controller.signal,
+      deadline: Date.now() + 60_000,
+      prepareRun: () => preparation,
+      onDeferredCleanup: (cleanup) => {
+        deferredCleanup = cleanup;
+      },
+    });
+    controller.abort();
+    await assert.rejects(started, /cancelled/i);
+    assert.ok(deferredCleanup);
+    resolvePreparation({
+      ok: false,
+      workspacePath: "/tmp/test",
+      promptPreview: "",
+      error: "late failure",
+    });
+    await deferredCleanup;
+    releaseWorkspaceRunReservation(91, token);
+  } finally {
+    (globalThis as { addon?: unknown }).addon = previousAddon;
+    (globalThis as { Zotero?: unknown }).Zotero = previousZotero;
   }
 });

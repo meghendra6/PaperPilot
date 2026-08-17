@@ -7,6 +7,7 @@ Related notes:
 
 - [`prompt-contracts.md`](./prompt-contracts.md) — required output shapes per prompt surface
 - [`manual-qa.md`](./manual-qa.md) — real-Zotero runtime checklist
+- [`agent-led-research-discovery-and-critical-read-spec.md`](./agent-led-research-discovery-and-critical-read-spec.md) — implemented verified-discovery and seven-step critical-reading specification
 - [`../AGENTS.md`](../AGENTS.md) — working agreements and verification expectations
 
 ## Runtime shape
@@ -37,10 +38,10 @@ paper-scoped**. Preserve that when adding features: leaking state across papers
 is the most common regression in this codebase.
 
 The pane itself uses a bounded flex column. `ui/paneHeader.ts` owns the compact
-engine/model header and its settings popover, `ui/collapsibleSection.ts` owns
-the accessible Workbench, Related papers, and Past sessions disclosures, and
-`ui/chatComposerSizing.ts` preserves textarea auto-sizing without changing the
-pane height. Disclosure state is serialized in the internal
+engine/model header and its settings popover, while `ui/collapsibleSection.ts`
+owns the accessible Workbench, Find verified prior work, Critical Read, and Past
+sessions surfaces. `ui/chatComposerSizing.ts` preserves textarea auto-sizing
+without changing the pane height. Disclosure state is serialized in the internal
 `paneSectionState` preference through the pure helpers in
 `ui/paneSectionState.ts`. The chat transcript takes the remaining space and
 scrolls independently from expanded section bodies.
@@ -65,7 +66,8 @@ scrolls independently from expanded section bodies.
 | `workspaceRun.ts`       | mode-dispatching helpers: start a run, read progress, extract text       |
 
 `workspaceRun.ts` is the shared entry point used by non-chat workflows (research
-brief, paper tools, compare, auto-highlight, mastery). It dynamically imports
+brief, paper tools, compare, verified discovery, Critical Read, auto-highlight,
+mastery). It dynamically imports
 the engine runner so the three engine modules stay independently loadable.
 
 Each engine then has a parallel module with the same five files:
@@ -158,7 +160,7 @@ polled**:
    parent finalizer cannot overwrite a chained child. Cancellation during
    workspace preparation keeps a per-item barrier until the old runner settles
    and finishes cleanup, preventing a retry from sharing or deleting its stable
-   workspace. Direct Auto Highlight and Related Papers runs use the same
+   workspace. Direct Auto Highlight, verified-discovery, and Critical Read runs use the same
    item-scoped reservation boundary, so controller and direct workspace runs
    cannot overlap either. Pending controller completion, direct reservations,
    and Retry claims also block session replacement until their owner settles;
@@ -169,7 +171,7 @@ polled**:
    callback only after that chat admission succeeds; rejected admission invokes
    no completion callback. Session
    Open/New/Delete acquires its own item token before the first cleanup await and
-   keeps it until the session mutation and pane rerender complete. Related Papers
+   keeps it until the session mutation and pane rerender complete. Verified discovery
    invokes its state/persistence callback before releasing the direct
    reservation, and a rejected reservation invokes no workflow persistence
    callback.
@@ -185,7 +187,7 @@ only from parsed stdout; a non-zero exit without parsed stdout becomes a generic
 workflow error instead of exposing stderr. `ui/runProgressCard.ts` renders the
 same progress, cancel, retry, settings, and login-help surface for every engine.
 Only normal chat turns enter `addon.data.lastEngineRequests`; silent Workbench
-and Paper Mastery runs continue to use their own workflow buttons.
+Paper Mastery, and Critical Read runs continue to use their own workflow buttons.
 
 Per-engine file names inside the workspace:
 
@@ -203,22 +205,59 @@ returns plain text, so both are read directly.
 
 `context/workspaceArtifacts.ts` builds the payload; the runner writes the files.
 
-| File                | Written by     | Contents                                                            |
-| ------------------- | -------------- | ------------------------------------------------------------------- |
-| `paper.md`          | all engines    | structured Markdown, or full text if extraction fell back           |
-| `paper.json`        | all engines    | structured elements + `extractionMethod` + `extractionNotes`        |
-| `paper.txt`         | all engines    | compatibility snapshot: metadata header plus text                   |
-| `metadata.json`     | all engines    | title, authors, year, item/attachment key, abstract                 |
-| `selection.json`    | all engines    | `ContextPayload`: selection, page, retrieved chunks, prompt preview |
-| `recent-turns.json` | all engines    | last 3 turns for follow-up continuity                               |
-| `annotations.json`  | all engines    | annotation ids tied to this request                                 |
-| `CONTEXT_INDEX.md`  | **Codex only** | reading-order file map                                              |
-| `figures/`          | **Codex only** | empty directory for image assets                                    |
+| File                        | Written by     | Contents                                                            |
+| --------------------------- | -------------- | ------------------------------------------------------------------- |
+| `paper.md`                  | all engines    | structured Markdown, or full text if extraction fell back           |
+| `paper.json`                | all engines    | structured elements + `extractionMethod` + `extractionNotes`        |
+| `paper.txt`                 | all engines    | compatibility snapshot: metadata header plus text                   |
+| `metadata.json`             | all engines    | title, authors, year, item/attachment key, abstract                 |
+| `selection.json`            | all engines    | `ContextPayload`: selection, page, retrieved chunks, prompt preview |
+| `recent-turns.json`         | all engines    | last 3 turns for follow-up continuity                               |
+| `annotations.json`          | all engines    | annotation ids tied to this request                                 |
+| `CONTEXT_INDEX.md`          | all engines    | reading-order file map                                              |
+| `discovery-request.json`    | discovery runs | normalized research concern and current-paper context               |
+| `discovery-plan.json`       | discovery runs | agent-owned field, venue, and query planning scaffold               |
+| `discovery-candidates.json` | discovery runs | deterministic scholarly-provider candidates                         |
+| `discovery-evidence.json`   | discovery runs | official-evidence collection scaffold                               |
+| `figures/`                  | Codex only     | empty directory for image assets                                    |
 
-Only the Codex prompt instructs the model to read `CONTEXT_INDEX.md`, which is
-why the other two engines do not write it. If you add an artifact, add it to the
-engine's runner _and_ to the prompt that tells the model to read it — otherwise
-it is dead weight in the workspace.
+All three engine prompts instruct the agent to read `CONTEXT_INDEX.md`. Discovery
+runs additionally stage the four `discovery-*.json` files for a reproducible
+candidate-discovery and publication-verification protocol. The agent owns field
+and venue judgment; these files standardize inputs and evidence boundaries rather
+than imposing a closed conference list. If you add an artifact, add it to every
+applicable runner _and_ to the prompt that tells the model to read it.
+
+`discovery/providers/` is the read-only network boundary. Semantic Scholar,
+OpenAlex, DBLP, and Crossref receive only bounded query strings and bibliographic
+identifiers; they never receive full PDF text, annotations, recent turns, local
+paths, or unrelated Zotero metadata. Official-evidence inspection accepts public
+HTTPS URLs only, resolves the host through Zotero, rejects private,
+link-local, metadata, and special-purpose addresses (including IPv4 embedded
+through mapped, NAT64, 6to4, and Teredo IPv6), disables automatic
+redirects, and repeats URL, DNS, and connected-remote address checks at every
+redirect hop. It reads at most 200 KB of HTML/JSON and cancels PDF bodies.
+Timeouts and cancellation remain active through body consumption, and one
+absolute discovery deadline covers provider search, the agent run, and live
+evidence recheck. Raw pages and review text are not persisted.
+
+The fetched page is authoritative only as inspected source data: Paper Pilot
+reconstructs title, venue, track, decision, and review availability from that
+page instead of retaining the agent's claimed `supports` fields. OpenReview is
+the exception: forum prose is writable by any user, so decision, track, and
+review availability come from the official OpenReview API notes (API v2 with a
+legacy v1 fallback), fetched for the forum id of the final inspected URL, and
+an official decision or track binds only to the API-reported venue surface.
+Candidate identity requires DOI or compatible title/year/author evidence, and
+venue identity must agree across the plan, paper metadata, assessment, and
+inspected page. Open-world hosts qualify only when venue-owned structural
+program or proceedings authority is established. Public-review links stay
+hidden until this live reconstruction succeeds.
+
+Discovery admission uses one observed capability snapshot for the whole run.
+Codex binds its configured web-search state at admission; Claude Code and Gemini
+fail closed for verified discovery until Paper Pilot can observe a usable web
+capability instead of assuming one from the executable alone.
 
 `extractionMethod` is `opendataloader-pdf` when Java 11+ ran the bundled JAR, and
 `zotero-attachment-text` on fallback. Several prompts key their confidence
@@ -230,15 +269,17 @@ Prompt construction and response parsing live next to the workflow they serve.
 `context/promptPreviewBuilder.ts` holds the shared workspace preamble and the
 common answer-style rules used by all three engines.
 
-| Workflow         | Module                            | Output                                       |
-| ---------------- | --------------------------------- | -------------------------------------------- |
-| Chat / workspace | `context/promptPreviewBuilder.ts` | free text                                    |
-| Research brief   | `researchBrief.ts`                | strict JSON                                  |
-| Paper tools      | `paperTools.ts`                   | strict JSON                                  |
-| Paper compare    | `paperCompare.ts`                 | strict JSON                                  |
-| Related papers   | `relatedRecommendations.ts`       | strict JSON                                  |
-| Auto-highlight   | `autoHighlight/prompt.ts`         | strict JSON                                  |
-| Paper Mastery    | `comprehensionCheck/prompt.ts`    | strict JSON per round, Markdown final report |
+| Workflow           | Module                                             | Output                                       |
+| ------------------ | -------------------------------------------------- | -------------------------------------------- |
+| Chat / workspace   | `context/promptPreviewBuilder.ts`                  | free text                                    |
+| Research brief     | `researchBrief.ts`                                 | strict JSON                                  |
+| Paper tools        | `paperTools.ts`                                    | strict JSON                                  |
+| Paper compare      | `paperCompare.ts`                                  | strict JSON                                  |
+| Verified discovery | `discovery/prompt.ts`, `relatedRecommendations.ts` | strict JSON in three evidence lanes          |
+| Review insight     | `discovery/prompt.ts`                              | strict JSON from public review content       |
+| Critical Read      | `criticalRead/prompt.ts`                           | strict JSON per step, Markdown final report  |
+| Auto-highlight     | `autoHighlight/prompt.ts`                          | strict JSON                                  |
+| Paper Mastery      | `comprehensionCheck/prompt.ts`                     | strict JSON per round, Markdown final report |
 
 Every shape is specified in [`prompt-contracts.md`](./prompt-contracts.md).
 Parsers are deliberately tolerant — they strip markdown fences and are
@@ -258,6 +299,18 @@ Two layers, easy to confuse:
 workflows pass `suppressChatMessages`, but sessions saved before that existed
 still contain the JSON, so the filter detects it heuristically at replay time.
 It ignores fenced code blocks so legitimate JSON in chat stays visible.
+
+Snapshots also retain the inferred discovery scope, optional user concern,
+three result lanes, evidence links, and Critical Read step/report state. A live
+Critical Read run is serialized as resumable, non-running state so reopening
+Zotero never starts a second model process implicitly. Public review text is not
+stored; only generated insight summaries and their public source links may be
+saved. Current live-verifier provenance permits reconstructed publication
+evidence to survive a restart; legacy or model-authored claims without that
+marker reopen for verification. The marker is generation-specific, so verifier
+hardening invalidates older reconstructed evidence. Critical Read step outputs are parsed again on
+migration, and reports are rebuilt from that validated state rather than shown
+from serialized Markdown.
 
 Paper Mastery state includes its completed Markdown report, so a custom-section
 refresh can hydrate both an awaiting question and a completed session without

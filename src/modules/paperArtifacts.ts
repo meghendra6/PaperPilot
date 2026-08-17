@@ -29,6 +29,12 @@ export interface PaperArtifactCard {
   summary: string;
   sections: PaperArtifactSection[];
   searchQueries?: ResearchBriefQuery[];
+  provenance?: Array<{
+    title: string;
+    publicationClass?: string;
+    evidenceConfidence?: string;
+    evidenceURLs: string[];
+  }>;
   sourceLabel: string;
   updatedAt: string;
 }

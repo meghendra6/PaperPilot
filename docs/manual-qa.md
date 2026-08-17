@@ -12,7 +12,7 @@ Use this checklist inside real Zotero 7, 8, and 9 runtimes before claiming readi
 - [ ] Open a PDF attachment in Zotero Reader
 - [ ] Confirm AI pane is visible in the reader/item pane area
 - [ ] Confirm mode/status/session cards render without errors
-- [ ] Trigger `Recommend related papers` and confirm the pane expands enough to show multiple recommendation rows immediately
+- [ ] Trigger `Find verified prior work` and confirm the primary lane expands enough to show multiple recommendation rows immediately
 - [ ] Confirm tall recommendation lists scroll inside the recommendation section without breaking chat history or the input area
 - [ ] If paper-tool controls are present, confirm they do not crowd or overlap the existing mode/session controls
 - [ ] If structured brief cards are present, confirm they remain readable without pushing chat input off-screen
@@ -30,13 +30,13 @@ Use this checklist inside real Zotero 7, 8, and 9 runtimes before claiming readi
 ### Reader pane redesign — Phase B layout and density
 
 - [ ] Confirm the always-visible chrome is one integrated engine/model header, three disclosure headers, optional compact run status, chat history, and the composer
-- [ ] Confirm Workbench starts expanded while Related papers and Past sessions start collapsed on a fresh profile
+- [ ] Confirm Workbench starts expanded while Find verified prior work and Past sessions start collapsed on a fresh profile
 - [ ] Toggle all three disclosures with mouse, Enter, and Space; restart Zotero and confirm their state persists
 - [ ] Complete a workbench or related-papers action while its section is collapsed and confirm only its summary/update dot changes—the section must not open itself
 - [ ] Open the engine/model popover, switch each engine, save a model/effort selection, and confirm the existing preferences update
 - [ ] While a provider run is active, attempt to switch providers and confirm the switch is blocked without clearing the active poller; after completion, switching works normally
-- [ ] During workspace preparation, Retry persistence, a direct Auto Highlight/Related run, and terminal cleanup, attempt New session and saved-session Open/Delete; confirm session replacement is blocked and no old workflow result appears in a new session
-- [ ] Delay the session-transition cleanup await, then try chat, Retry, Auto Highlight, and Related Papers; confirm the transition token blocks every new admission until Open/New/Delete and rerender finish
+- [ ] During workspace preparation, Retry persistence, a direct Auto Highlight/discovery run, and terminal cleanup, attempt New session and saved-session Open/Delete; confirm session replacement is blocked and no old workflow result appears in a new session
+- [ ] Delay the session-transition cleanup await, then try chat, Retry, Auto Highlight, and Find verified prior work; confirm the transition token blocks every new admission until Open/New/Delete and rerender finish
 - [ ] Delay normal chat reader-context/user-turn persistence, then try New/Open/Delete and a direct workflow; confirm the chat admission token blocks them until the controller owns the run
 - [ ] While New/Open/Delete owns the session-transition token, click Workbench, Compare, initial/submit Mastery, and End Mastery/final-report actions; confirm none enters a running state or persists an old-session completion callback
 - [ ] Complete one Paper Mastery evaluation that generates a follow-up question and one that generates the final report; confirm both nested runs start after the parent cleanup instead of reporting an active-run conflict
@@ -56,7 +56,7 @@ Use this checklist inside real Zotero 7, 8, and 9 runtimes before claiming readi
 - [ ] Start a run on paper A, open paper B, and confirm B never shows A's progress, cancel, failure, or Retry state; return to A and confirm its state remains connected
 - [ ] Cancel a running Codex, Claude, and Gemini request from the same card; confirm the process stops, silent workflows unlock, and no later poll overwrites `Cancelled`
 - [ ] Cancel each engine while it still says `Preparing workspace`, immediately try to start or Retry another request, and confirm the replacement is blocked until the old preparation/cleanup settles; confirm the replacement workspace is not deleted
-- [ ] While a chat run is preparing or a cancelled preparation is settling, try Auto Highlight and Related Papers; then reverse the order and try chat while either direct workflow is running. Confirm every overlapping request is blocked per paper
+- [ ] While a chat run is preparing or a cancelled preparation is settling, try Auto Highlight and verified discovery; then reverse the order and try chat while either direct workflow is running. Confirm every overlapping request is blocked per paper
 - [ ] For a CLI wrapper that starts child processes and ignores `TERM`, cancel the run and confirm the recorded process and its descendants are no longer alive after the bounded `KILL` escalation
 - [ ] Force the process-stop executor to fail; confirm chat keeps the active pid/Cancel ownership, direct workflows keep their item reservation, no workspace cleanup/replacement starts, and the UI reports that termination was not confirmed
 - [ ] Cancel during workspace preparation, then make the late process's first stop fail; confirm the same run returns to Running with Cancel, and a second Cancel can terminate and settle it without restarting Zotero
@@ -66,13 +66,13 @@ Use this checklist inside real Zotero 7, 8, and 9 runtimes before claiming readi
 - [ ] Force Codex assistant-turn persistence to fail after process completion; confirm pending ownership settles but the terminal Codex state contains no pid and session cleanup signals nothing
 - [ ] Fail one normal chat request for each engine, click Retry, and confirm the same question runs through the original engine; confirm Workbench/Mastery failures do not replace this retry target
 - [ ] Double-click Retry and confirm only one user turn/run is created; switch to another saved session and confirm the old failure card does not replay its request into the new session
-- [ ] While Retry persistence is delayed, start Auto Highlight/Related Papers and reverse the order; confirm the second claim is rejected before another user turn or direct workflow side effect is stored
-- [ ] Click Related Papers while Retry or a session transition owns the item; confirm rejection does not clear existing groups or persist a failure into either session
+- [ ] While Retry persistence is delayed, start Auto Highlight/verified discovery and reverse the order; confirm the second claim is rejected before another user turn or direct workflow side effect is stored
+- [ ] Click Find verified prior work while Retry or a session transition owns the item; confirm rejection does not clear existing lanes or persist a failure into either session
 - [ ] Set the Claude/Gemini executable path to a missing binary and confirm the card says the executable was not found, offers `Open settings`, and opens the fixed Paper Pilot preference pane
 - [ ] Set the Codex path to a missing binary: when another healthy Codex candidate exists, confirm the existing resolver recovers to it; in an environment/test seam with no healthy candidate, confirm the same executable-missing card and settings action
 - [ ] Test logged-out Codex and Claude states; confirm the card classifies authentication, offers `Login help`, and keeps raw CLI output under the collapsed `Raw logs` disclosure
 - [ ] Use a successful CLI wrapper that prints `answer` to stdout and a unique local-path marker to stderr; confirm only `answer` reaches live/restored chat and the marker remains diagnostic-only
-- [ ] Make Auto Highlight and Related Papers exit non-zero with only a unique local-path marker on stderr; confirm both surfaces show a generic failure and never render the marker
+- [ ] Make Auto Highlight and verified discovery exit non-zero with only a unique local-path marker on stderr; confirm both surfaces show a generic failure and never render the marker
 - [ ] Force workspace artifact writing to throw after the per-paper directory is created; with automatic cleanup enabled, confirm the partial stable workspace is removed before a replacement can start
 - [ ] Exercise a non-writable workspace and the timeout lifecycle test seam; confirm they become `workspace_error` and `timeout`, not guessed login/executable failures
 - [ ] Complete a Paper Mastery turn that immediately starts a follow-up; confirm the child stays `Preparing`/`Running`, retains its PID/Cancel action, and the parent does not replace it with `Completed`
@@ -163,13 +163,285 @@ Use this checklist inside real Zotero 7, 8, and 9 runtimes before claiming readi
 - [ ] Switch between Gemini CLI, Claude Code, and Codex CLI and confirm previous threads do not mix
 - [ ] Open a second paper and confirm context/session state does not leak from the first
 
-## 9. Related papers / auto-highlight regression checks
+## 9. Verified discovery / Critical Read / auto-highlight checks
 
-- [ ] Trigger `Recommend related papers` after using workbench paper tools and confirm recommendation rendering still works
-- [ ] Open a recommended paper and confirm the current-paper pane state remains stable
-- [ ] Use `Add to collection` on a recommendation and confirm no workbench UI state is corrupted afterward
-- [ ] Run `Highlight key passages` after generating a research brief and confirm highlight workflow still completes
-- [ ] Confirm auto-highlight and research-brief/paper-tool outputs can coexist without making the pane unusable
+### Delivery runtime record — 2026-08-13
+
+The final delivery candidate was loaded as a temporary add-on in Zotero 9.0.6
+using the repository's isolated `.scaffold` profile and the existing QA PDF.
+Structured Firefox RDP inspection confirmed:
+
+- one Paper Pilot pane loaded without a visible runtime error;
+- `Find verified prior work`, its optional concern field, three-lane save action,
+  and `Critical Read` were present;
+- starting Critical Read opened Step 1, kept `Run step 1` disabled before reader
+  input, and displayed the truthful `not visually inspected` degraded-extraction
+  notice;
+- Codex discovery with web search disabled stopped before recommendations with
+  the documented official-evidence requirement;
+- authenticated Codex discovery with web search enabled progressed through
+  structured provider retrieval into a real `codex --search exec` run and wrote
+  `CONTEXT_INDEX.md` plus all four `discovery-*.json` artifacts;
+- clicking Cancel changed the item-scoped state to cancelled and left no Codex
+  discovery process running;
+- a second authenticated Codex run completed end to end for the exact paper
+  `Adaptive Insertion Policies for High Performance Caching`: the model output
+  was parsed, Paper Pilot fetched the ISCA 2007 official program over a fresh
+  public-address-checked connection, reconstructed `identity`, `accepted`, and
+  `main_track` support from the inspected page instead of trusting model claims,
+  and rendered the paper alone in the verified-main lane; and
+- an exclusive production XPI build from the same source tree passed archive
+  integrity checks and included the bundled OpenDataLoader JAR.
+
+The broad compatibility matrix below remains a release/manual-regression
+checklist. Zotero 7/8, Windows, a logged-out Claude account, and successful live
+discovery through Claude Code and Gemini CLI were not available in this delivery
+environment; their pure contracts and failure paths are covered by the automated
+suite, but they are not represented here as real-runtime passes.
+
+### Final hardening runtime record — 2026-08-14
+
+The hardened candidate was exercised again in Zotero 9.0.6 with the same
+standalone QA PDF. An authenticated Codex web-search response was captured from
+the real discovery prompt, then replayed only to make the subsequent seven-step
+workflow deterministic while testing Zotero state transitions. The live
+official-source verifier still ran on the captured candidates: the raw response
+parsed into 7 primary, 5 other-peer-reviewed, and 4 novelty candidates, while
+the network-bound verification pass correctly failed closed to 0 primary, 0
+other, and 4 novelty candidates when fresh official evidence could not be
+retrieved.
+
+The same run additionally confirmed:
+
+- all seven Critical Read steps completed in order, Step 4 revision preserved
+  unrelated completed work while invalidating and regenerating the final report,
+  and public-review content stayed hidden before the Step 4-6 reader-first gate;
+- after the gate, a marked review fixture appeared only in a separate Reviewer
+  perspective with its public source URL, including in a saved standalone note;
+- Discovery, Critical Read, and Compare notes saved for a standalone attachment
+  without an invalid attachment parent;
+- the saved session file contained all seven completed steps, survived a Zotero
+  restart, reopened through Past sessions, passed live-evidence migration, rebuilt
+  the final report, and immediately re-rendered Related papers and Critical Read;
+- Compare selected one eligible peer, completed through the local CLI runner,
+  parsed its strict JSON response, and rendered the compact snapshots, synthesis,
+  and next-reading sections; and
+- both a collection-linked reusable Compare artifact and a recommended-paper
+  Zotero item were added to an actual collection. This exposed and fixed Zotero
+  9's requirement that `Collection.addItems()` run inside a DB transaction.
+
+The two-paper visual switch was not performed because the user asked to keep only
+the supplied QA PDF open. Item/session isolation, stale-action rejection, and
+pane-reconstruction cancellation remain covered by the automated state-machine
+tests. The Zotero 7/8, cross-engine success, and operating-system matrix remains
+manual release QA.
+
+### Final verifier-v2 runtime record — 2026-08-14
+
+The final hardened source tree was exercised in Zotero 9.0.6, and its production
+bundle was built separately, without opening another PDF or reader window. The
+only reader tab remained `Paper Pilot QA Fixture`. Two authenticated Codex
+discovery runs used the real provider, workspace, CLI, parser, and live-network
+verification path.
+
+The first run intentionally supplied only the cache-policy research concern.
+The agent selected ISCA, HPCA, MICRO, and SBAC-PAD without a user venue picker,
+but supplied no independently sufficient main-track source. Verifier generation
+2 therefore failed closed to 0 primary, 2 other-peer-reviewed, and 0 novelty
+papers, while retaining explicit limitations instead of trusting model-authored
+publication claims.
+
+The second run requested the same research area and named one known paper whose
+official status should be independently checked. The agent again selected the
+venue plan and returned 1 primary, 2 other-peer-reviewed, and 0 novelty papers.
+`Adaptive Insertion Policies for High Performance Caching` was retained as
+`verified_main` with high evidence confidence only after the live verifier bound
+its title, authors, and 2007 edition to the official ISCA main-program entry at
+`https://iscaconf.org/isca2007/program.html`. A separate ACM proceedings page
+corroborated identity and publication. The reconstructed ISCA evidence recorded
+`identity`, `accepted`, and `main_track`; the ACM evidence recorded `identity`
+and `published`. Unusable PDF and non-paper-level sources remained limitations
+and did not create a primary-lane record.
+
+The Zotero-native provider pass also exercised the window-owned
+`AbortController` compatibility path and tolerant XHR header parsing that are
+not represented by Node globals. The run finished as `Found 3 papers across
+verified evidence lanes`, with verifier generation 2 and no additional reader
+tab. Automatic generated-workspace cleanup was restored after evidence capture.
+
+### Challenge-gate and Critical Read runtime record — 2026-08-18
+
+The candidate was exercised in the user's default-profile Zotero 9.0.6 on
+macOS, launched with the remote debugger enabled and driven over the Firefox
+remote debugging protocol. Only the already-open standalone attachment
+`LLM_Serving_Tutorial_Survey_IEEE_Style_v5` was used; no new PDF or reader tab
+was opened. Replacing the `.xpi` file on disk did not reload the plugin —
+Zotero kept serving the cached previous bundle until the XPI was reinstalled
+through `AddonManager`, which is now the documented install path for QA. The
+tested bundle was SHA-256
+`2bd1a71da9668489347cbab1b83e2f5c5ebc7dd5fc8ea30571dc8465c9407369`, built from
+source state `1715cc0`.
+
+Three defects were found in this runtime and fixed with unit regressions
+before the record below was completed:
+
+- `202fb97`: OpenReview redirects anonymous forum page loads to a challenge
+  interstitial with no forum id, so the registrar notes API was never
+  consulted and every OpenReview-hosted verification failed. The claimed forum
+  id now drives the fixed-host notes lookup and identity binds to the
+  registrar submission record (title, authors, venue/venueid edition year).
+- `eeba0ec`: cancelling during provider/verification fetches surfaced the
+  generic failure message because the window-compartment `DOMException` fails
+  `instanceof Error` in plugin code; aborted non-Error rejections now
+  normalize to a cancellation message.
+- `1715cc0`: restoring a session dropped empty lanes, losing the explicit
+  "no main-track paper was verified" statement; restored groups now keep all
+  three lanes.
+
+Observed live, using the real authenticated Codex CLI with web search:
+
+- A full discovery run returned 6 papers, all fail-closed into
+  `published_track_unknown` in the second lane with live PMLR/ACM/NeurIPS
+  official evidence, a Semantic Scholar 429 recorded as an honest partial
+  limitation, and the named ICLR paper excluded with per-URL limitations
+  because its official pages did not independently verify it.
+- A refresh whose response contained no usable papers failed with a clear
+  parse message while the previous successful result and its concern were
+  restored intact.
+- Every official-evidence request observed during verification carried the
+  anonymous flag; a deterministic replay of a captured response through a
+  stub CLI drove 12 OpenReview candidates through the live verifier, which
+  attempted the notes API for each after the challenge fix.
+- OpenReview currently challenge-gates the `/notes` API itself (HTTP 403
+  `ChallengeRequiredError`, Cloudflare Turnstile) for anonymous clients, so an
+  OpenReview-verified primary-lane paper and a verified `reviewURL` could not
+  be produced end to end in this environment; the fail-closed exclusion and
+  limitations were verified instead.
+- Cancelling a fresh discovery during preparation returned the button to its
+  idle state, left no Codex process, and allowed an immediate restart.
+- All seven Critical Read steps completed in order through real Codex runs.
+  Steps 1, 2, 4, 5, and 7 kept their run buttons disabled until reader input
+  existed. Step 3 ran the three-lane discovery and verified six
+  `verified_main` papers with high confidence from live `usenix.org` official
+  proceedings pages (OSDI '22/'24, FAST '25/'26 — venues absent from any
+  built-in shortcut), with the one unconfirmed publisher page conservatively
+  downgraded and recorded in limitations.
+- All typed step outputs rendered in the completed-step details: scan
+  observations, research question with reader comparison, method checks,
+  evidence conclusion, author comparison, paper-claim/agent-inference
+  provenance, final synthesis, alternatives, and the discovery lane summary.
+- Revising Step 4 opened a real confirmation dialog. Cancel preserved all
+  state; accept reopened Step 4 with its reader input preserved, kept Steps
+  5-6 complete, invalidated Step 7 and the report ("Only dependent outputs
+  were invalidated"), and after rerunning Steps 4 and 7 the report was
+  regenerated and saved to a note carrying the reader-input, paper-claim,
+  agent-inference, and external-evidence separations. `Start Paper Mastery`
+  remained available after completion.
+- With Critical Read active below the Step 4-6 gate, review content injected
+  into the live state was completely absent from the persisted session
+  snapshot on disk while the live state stayed untouched, and recommendation
+  rows showed no review link or insight.
+- The saved discovery note for the standalone attachment kept the concern,
+  three lanes, publication classes, and official evidence URLs without any
+  raw public-review text.
+- Saved sessions reopened across a full add-on reload with the discovery
+  result, limitations, and concern restored, and (after `1715cc0`) all three
+  lanes present including the empty primary lane.
+- Compare enabled at `Compare (3)`, selected exactly the top three
+  verified-main peers, completed through the real CLI, and rendered the
+  compact snapshots, synthesis, and next-reading sections under the bounded
+  provenance label.
+
+Not performed in this environment and still owed to release QA: Zotero 7/8,
+Windows/Linux, Claude Code and Gemini CLI engine passes, the two-paper visual
+switch (single supplied PDF), an end-to-end OpenReview-verified primary-lane
+paper with `Review insight` (blocked by OpenReview's Turnstile gating of the
+notes API), and OpenDataLoader-backed extraction (its bundled-asset resolution
+failure predates this branch; the honest `zotero-attachment-text` fallback and
+extraction notes were verified instead).
+
+Addendum: the round-9 merge-gate review of the record above found that the
+first challenge-fallback implementation flattened registrar identity into one
+text surface, letting venue words satisfy the author match, letting title or
+forum-id digits satisfy the claimed year, and leaving a spelled-ordinal alias
+in the legacy parser initials path. Commit `aac4018` binds registrar identity
+to structured fields (submission title, author list with the page-path match
+threshold, and the venue/venueid/invitation edition surface for the year) and
+excludes spelled ordinals from the legacy initials, with regression tests for
+all three reproductions. The corrected build (XPI SHA-256
+`91e01f5e8e454983a3a4e176137ac3efcc3db8d0b89dd6276f737eacbe8b916f`) was
+reinstalled into the same running Zotero and the captured-response replay was
+re-run: the challenge fallback still reaches the notes API and fails closed
+under the Turnstile gating with the same clear failure status and no state
+corruption.
+
+The round-10 follow-up review found two residual issues: a duplicated claimed
+surname could count twice against a single registrar author, and the finite
+ordinal word list ended at fifty, letting "The Sixtieth ..." forms mint false
+initials aliases. Commit `5f43819` matches registrar authors as a multiset
+and replaces the list with pattern-based spelled-ordinal detection, with
+regression tests for both reproductions. That build (XPI SHA-256
+`92957415862017d8915f6c5c182ae1d909ae0b3924d952b917d70c05612beb59`) was
+reinstalled into the same running Zotero and the replay smoke-check repeated
+with the same fail-closed outcome.
+
+The round-11 follow-up found two further author/ordinal edge cases: dropping
+sub-three-character surname keys lowered the registrar match threshold, and
+generational suffixes ("III") acted as shared surnames, while composite
+ordinals ("The One Hundredth ...") still minted a false initials alias.
+Commit `5c6dbae` compares registrar surnames structurally (suffix-stripped
+exact equality, short surnames significant, threshold from the claimed author
+count) and extends spelled-ordinal detection to composite cardinal parts,
+with regression tests for all reproductions. That build (XPI SHA-256
+`c2304f58f68f0003a16aa95c4fed0760eff9cd7594526f32092679d265ea38fa`) was
+reinstalled into the same running Zotero with the replay smoke-check repeated
+and the same fail-closed outcome.
+
+The round-12 follow-up found that surname keys were still lossy (apostrophes
+and diacritics split tokens, suffixes past IV counted as surnames) and that
+treating lone cardinals as edition words erased meaningful venue names such
+as "One Health". Commit `a23caae` compares author names field-by-field
+(whitespace-split tokens keep punctuation and diacritics whole, suffixes
+through VIII strip, given names must not contradict) and strips spelled
+numbers as sequences that must end in an ordinal form. That build (XPI
+SHA-256 `f1b1ef06acf08409677fb479dc65ba27f5e6b8a7cb73ce2b16aa251502c29266`)
+was reinstalled into the same running Zotero with the replay smoke-check
+repeated and the same fail-closed outcome.
+
+The round-13 follow-up found three precision issues in the new mechanisms: a
+terminator anywhere in a number run erased the cardinals after it ("First One
+Health"), an "and" connector split compound ordinals ("One Hundred and
+First") and rejected genuine claims, and greedy author consumption made a
+valid pairing depend on registrar ordering. Commit `8d1484b` ends ordinal
+runs at their terminator with "and" connectors kept inside the run, and
+computes registrar author matches as a maximum bipartite assignment, with
+regression tests in both directions. That build (XPI SHA-256
+`6efdff977e02adcb621de8426123728d9051e567ef5f09fd17a2045941cc2f7e`) was
+reinstalled into the same running Zotero with the replay smoke-check repeated
+and the same fail-closed outcome.
+
+- [ ] Run `Find verified prior work` with no concern and confirm the agent infers fields, adjacent fields, venues, and query families without asking the user to choose a conference
+- [ ] Enter an optional research concern, then run discovery from the main section, selected-PDF `Find prior work` action, a limitation card, and a follow-up card; confirm each source is carried into the saved scope
+- [ ] In AI, computer architecture, and a third field, confirm an appropriate leading venue absent from any built-in source shortcut can still be selected and justified
+- [ ] Confirm progress advances through understanding the question, selecting fields/venues, searching, publication verification, relevance/novelty analysis, and result preparation
+- [ ] Confirm results render in three distinct lanes: Verified main-conference papers, Other peer-reviewed work, and Frontier / novelty radar
+- [ ] Confirm the primary lane starts expanded, other lanes start collapsed, an empty primary lane says no main-track paper was verified, and `Show more` never exceeds the 12/6/6 caps
+- [ ] Check an ACL/CVPR/NeurIPS-style official proceeding, an ACM/IEEE architecture proceeding, and an unseen venue; confirm primary rows show an official paper-level evidence link, observed main track, and high evidence confidence
+- [ ] Feed a workshop, Findings, demo, industry, shared task, tutorial/abstract, track-unknown record, arXiv-only paper, and rejected/withdrawn submission; confirm none enters the primary lane
+- [ ] Confirm a preprint and accepted version of the same paper merge, duplicates are removed, and the row never shows a fabricated relevance percentage
+- [ ] Disconnect one scholarly provider or official source; confirm partial limitations are visible and a failed refresh leaves the previous successful result in place
+- [ ] Open official evidence and public reviews; request `Review insight` and confirm strengths, concerns, priorities, disagreement, response/decision context, and limitations are separated without claiming private review access
+- [ ] Save discovery to a child note and add a paper to a collection; confirm the optional concern, three lanes, publication class, official evidence URL, and search context survive while raw public-review text does not
+- [ ] Confirm Compare chooses at most three verified-main peers; when that lane is empty it falls back to other peer-reviewed work and never silently chooses novelty-radar items
+- [ ] Start Critical Read and complete all seven ordered steps; confirm only one step is active and Steps 1, 2, 4, 5, and 7 require reader input before analysis
+- [ ] Confirm Step 1 shows abstract/caption/table orientation and says `not visually inspected` when only extracted text is available
+- [ ] Confirm Step 3 runs the same three-lane verified discovery and Step 4 checks assumptions, data, controls, baselines, metrics, statistics, reproducibility, and validity threats
+- [ ] Confirm Step 5 captures an independent results-based conclusion before Step 6 reveals and compares the authors' conclusion; public review insight must not leak into either step
+- [ ] Revise Step 4 after completing later steps; confirm replacement requires confirmation, its final synthesis is invalidated, and unrelated Steps 5-7 inputs/outputs remain intact
+- [ ] Complete Step 7 with alternatives and discriminating evidence/experiments, save the final child note, and confirm reader input, paper claims, agent inference, and external discovery evidence are visibly separated
+- [ ] Reopen the session and restart Zotero during an incomplete Critical Read; confirm state resumes without silently starting another model run
+- [ ] Handoff from the completed Critical Read to Paper Mastery and confirm the active paper/session remains scoped correctly
+- [ ] Run `Highlight key passages` after discovery and Critical Read; confirm all surfaces coexist without making the pane unusable
 
 ## 10. Compare / reusable artifact checks
 
@@ -180,9 +452,13 @@ Use this checklist inside real Zotero 7, 8, and 9 runtimes before claiming readi
 - [ ] Compare surface avoids wide tables or layouts that crowd the existing workbench/recommendation/chat areas
 - [ ] `Save for collection` preserves reusable artifact content with traceable source paper context
 
-## 11. Future-phase checks (run only when implemented)
+## 11. Cross-engine discovery checks
 
-- [ ] Any workspace/discovery surface does not regress reader-pane usability or per-paper session isolation
+- [ ] Repeat discovery and Critical Read smoke checks with Codex CLI, Claude Code, and Gemini CLI
+- [ ] Inspect each generated workspace and confirm `CONTEXT_INDEX.md` plus all four `discovery-*.json` files exist for discovery runs
+- [ ] Disable agent web search where the engine supports it; confirm discovery stops before recommendations because candidate providers alone cannot locate official evidence for an unseen venue
+- [ ] Confirm no engine downloads an official PDF body merely to verify publication status
+- [ ] Confirm every discovery/Critical Read surface remains paper-scoped across two open papers
 
 ## 12. Regression checks
 

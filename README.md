@@ -4,7 +4,7 @@
 
 **Paper Pilot turns the Zotero 7-9 PDF reader into an AI-assisted paper workbench.**
 
-Paper Pilot is an AI reading workbench for the Zotero 7-9 PDF reader. It adds a paper-scoped chat pane, structured paper tools, related-paper discovery, and local CLI-based AI execution directly inside Zotero.
+Paper Pilot is an AI reading workbench for the Zotero 7-9 PDF reader. It adds a paper-scoped chat pane, structured paper tools, agent-led verified research discovery, and local CLI-based AI execution directly inside Zotero.
 
 ![Zotero 7-9](https://img.shields.io/badge/Zotero-7--9-cc2936) ![Node 20+](https://img.shields.io/badge/Node-20%2B-339933) ![Java 11+](https://img.shields.io/badge/Java-11%2B-007396) ![License](https://img.shields.io/badge/License-AGPL--3.0--or--later-blue) ![Engines](https://img.shields.io/badge/Engines-Codex%20CLI%20%7C%20Claude%20Code%20%7C%20Gemini%20CLI-6f42c1)
 
@@ -14,10 +14,11 @@ Paper Pilot is an AI reading workbench for the Zotero 7-9 PDF reader. It adds a 
 - Three local engine modes: **Codex CLI**, **Claude Code**, and **Gemini CLI**
 - Structured paper workbench for brief, compare, contributions, limitations, and follow-ups
 - Structured PDF workspace extraction via **OpenDataLoader PDF**
-- Related-paper discovery with open/add-to-collection flows
+- Zero-configuration verified prior-work discovery with official publication evidence and three evidence lanes
+- **Critical Read** — a reader-first, seven-step paper evaluation workflow with a final report
 - Auto-highlight plus persisted paper-scoped session history
 - **Paper Mastery** — multi-round Socratic comprehension check with a final Markdown learning report
-- Automated local verification is in place; full Zotero runtime QA is still pending
+- Automated verification and a focused Zotero 9 discovery/Critical Read runtime smoke are recorded; the broader Zotero 7-9 and cross-engine matrix remains manual QA
 
 ## Screenshots and demo
 
@@ -27,7 +28,8 @@ Recommended visuals to add next:
 
 - the Zotero reader pane with the AI sidebar visible
 - a structured **Research brief** card
-- grouped **Related papers** recommendations
+- three-lane **Verified prior work** results
+- the seven-step **Critical Read** workflow
 - the **Compare** workflow and saved artifact flow
 
 If you want to document the UI visually, a good future convention is `docs/images/` plus short linked captions in this section.
@@ -84,14 +86,19 @@ The reader pane includes structured paper workflows for the active paper:
 
 These workflows are designed to produce compact, reader-pane-safe outputs rather than long generic chat responses.
 
-### 4. Related paper discovery
+### 4. Agent-led verified research discovery
 
-Paper Pilot can generate grouped related-paper recommendations and help you:
+Choose **Find verified prior work** and optionally describe a research concern. The active agent infers the relevant fields, adjacent fields, leading venues, and query families; the user never has to maintain a conference list. Results are separated into:
 
-- inspect nearby papers by category
-- open recommended papers
-- add recommended papers to a Zotero collection
-- use recommended papers as bounded input for comparison workflows
+- **Verified main-conference papers** — high-confidence, paper-level official evidence for an observed main track at a leading venue
+- **Other peer-reviewed work** — journals, workshops, Findings, other tracks, or published records whose main-track status is not established
+- **Frontier / novelty radar** — recent preprints and submissions useful for checking current direction or possible idea overlap
+
+Paper Pilot searches standardized scholarly sources, stages reproducible discovery artifacts for the local agent, and live-checks qualifying official evidence. The venue model is open-world: ACL, EMNLP, CVPR, NeurIPS, ICLR, ISCA, MICRO, HPCA, ASPLOS, USENIX venues, and relevant venues in other fields are judged from evidence rather than selected from a fixed allowlist. You can open official evidence or public reviews, request a review insight, add a paper to a collection with its evidence metadata, and save the complete three-lane result to a Zotero note.
+
+### Critical Read
+
+**Critical Read** guides the reader through seven ordered steps: scan the abstract/figures/tables, identify the research question, investigate prior work, evaluate methodology, form an independent results-based conclusion, compare it with the authors' conclusion, and test alternative explanations. Reader input is required before agent analysis at the independent-judgment steps. Revising an earlier step invalidates dependent later work, and the final report keeps reader observations, paper claims, agent inference, and external discovery evidence visibly separate.
 
 ### 5. Auto-highlight workflow
 
@@ -121,7 +128,7 @@ Artifacts written for every engine:
 - `metadata.json`
 - `annotations.json`
 
-Codex CLI mode additionally writes `CONTEXT_INDEX.md` (a reading-order file map) and a `figures/` directory, because only the Codex prompt directs the engine to read that index.
+All engines additionally write `CONTEXT_INDEX.md` (a reading-order file map). Discovery runs stage `discovery-request.json`, `discovery-plan.json`, `discovery-candidates.json`, and `discovery-evidence.json`; Codex CLI also creates a `figures/` directory.
 
 `paper.md` is the structured Markdown view, `paper.json` carries structured PDF elements plus extraction metadata, and `paper.txt` remains as the compatibility/plain-text fallback. When Java is unavailable, Paper Pilot records the fallback in `metadata.json`.
 
@@ -135,7 +142,8 @@ When Java 11+ is available, `paper.md` and `paper.json` come from the bundled Op
 | Reader chat       | Paper-scoped AI chat inside Zotero Reader                                                                    |
 | Engines           | Codex CLI, Claude Code, and Gemini CLI                                                                       |
 | Paper workbench   | Research brief, compare, contributions, limitations, follow-ups                                              |
-| Discovery         | Grouped related-paper recommendations                                                                        |
+| Discovery         | Agent-inferred fields/venues, official publication verification, three evidence lanes, public review insight |
+| Critical reading  | Seven reader-first steps, dependency invalidation, source-aware final report                                 |
 | Persistence       | Save latest output to note, save workbench artifacts for collections                                         |
 | Context grounding | Workspace artifacts, OpenDataLoader-backed structured PDF context, retrieval context, recent-turn continuity |
 | Highlighting      | Auto-highlight workflow for key passages                                                                     |
@@ -187,7 +195,9 @@ Several reader-pane workflows expect structured outputs instead of free-form cha
 Current prompt surfaces include:
 
 - **Research brief**
-- **Related paper recommendations**
+- **Agent-led verified research discovery**
+- **Public review insight**
+- **Critical Read**
 - **Paper tools**
 - **Paper compare**
 - **Auto-highlight**
@@ -332,7 +342,9 @@ Key source areas:
 - `src/modules/autoHighlight/` — highlight extraction workflow
 - `src/modules/paperTools.ts` — structured contribution/limitation/follow-up prompts
 - `src/modules/researchBrief.ts` — compact per-paper brief generation
-- `src/modules/relatedRecommendations.ts` — grouped related-paper recommendations
+- `src/modules/discovery/` — agent-led search planning, provider retrieval, evidence verification, parsing, and ranking
+- `src/modules/relatedRecommendations.ts` — verified-discovery workflow and Zotero collection integration
+- `src/modules/criticalRead/` — seven-step reader-first analysis and report workflow
 - `src/modules/paperCompare.ts` — bounded multi-paper comparison flow
 
 ## Verification
@@ -360,7 +372,7 @@ Manual runtime verification is still required in Zotero itself. Use [`docs/manua
 ## Known limitations
 
 - The project is not yet claiming full production readiness.
-- Real Zotero runtime QA is still an explicit remaining step.
+- Focused Zotero 9 runtime QA is recorded in `docs/manual-qa.md`; the broader compatibility and cross-engine matrix remains manual QA.
 
 ## Roadmap
 

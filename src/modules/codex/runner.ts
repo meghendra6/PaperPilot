@@ -68,6 +68,7 @@ export async function startCodexRunForQuestion(params: {
   useResume: boolean;
   resumeSessionId?: string;
   imagePath?: string;
+  webSearchEnabledOverride?: boolean;
 }): Promise<StartedCodexRun | FailedCodexRun> {
   const executablePath = await resolveCodexExecutablePath(
     String(getPref("codexExecutablePath") || ""),
@@ -82,7 +83,8 @@ export async function startCodexRunForQuestion(params: {
   const workspaceRoot = String(
     getPref("codexWorkspaceRoot") || "/tmp/zotero-paper-ai",
   );
-  const webSearchEnabled = Boolean(getPref("codexEnableWebSearch"));
+  const webSearchEnabled =
+    params.webSearchEnabledOverride ?? Boolean(getPref("codexEnableWebSearch"));
   const sandbox = String(getPref("codexSandboxMode") || "read-only") as
     | "read-only"
     | "workspace-write"
@@ -181,6 +183,7 @@ export async function startCodexRunForQuestion(params: {
       text: message.text,
       createdAt: message.createdAt,
     })),
+    requestText: params.question,
   });
 
   const promptPath = `${workspacePath}/prompt.txt`;
@@ -197,6 +200,10 @@ export async function startCodexRunForQuestion(params: {
   const selectionPath = `${workspacePath}/selection.json`;
   const recentTurnsPath = `${workspacePath}/recent-turns.json`;
   const figuresDir = `${workspacePath}/figures`;
+  const discoveryRequestPath = `${workspacePath}/discovery-request.json`;
+  const discoveryPlanPath = `${workspacePath}/discovery-plan.json`;
+  const discoveryCandidatesPath = `${workspacePath}/discovery-candidates.json`;
+  const discoveryEvidencePath = `${workspacePath}/discovery-evidence.json`;
   const codexPrompt = buildCodexWorkspacePrompt(
     payload.promptPreview,
     webSearchEnabled,
@@ -239,6 +246,28 @@ export async function startCodexRunForQuestion(params: {
     JSON.stringify(artifacts.recentTurns, null, 2),
     "utf-8",
   );
+  if (artifacts.discoveryArtifacts) {
+    await Zotero.File.putContentsAsync(
+      discoveryRequestPath,
+      JSON.stringify(artifacts.discoveryArtifacts.request, null, 2),
+      "utf-8",
+    );
+    await Zotero.File.putContentsAsync(
+      discoveryPlanPath,
+      JSON.stringify(artifacts.discoveryArtifacts.plan, null, 2),
+      "utf-8",
+    );
+    await Zotero.File.putContentsAsync(
+      discoveryCandidatesPath,
+      JSON.stringify(artifacts.discoveryArtifacts.candidates, null, 2),
+      "utf-8",
+    );
+    await Zotero.File.putContentsAsync(
+      discoveryEvidencePath,
+      JSON.stringify(artifacts.discoveryArtifacts.evidence, null, 2),
+      "utf-8",
+    );
+  }
 
   const command = params.useResume
     ? buildCodexResumeCommand(
