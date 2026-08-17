@@ -7,13 +7,85 @@ import {
   buildOpenTarget,
   buildRecommendationMetadataLine,
   buildRelatedPaperQuestion,
+  buildRelatedRunFailureState,
+  buildRelatedRunProgressState,
+  buildRelatedRunSuccessState,
   chooseCollectionForRecommendation,
   findExistingLibraryItem,
   generateRelatedPaperGroups,
   normalizeDOI,
   openRecommendedPaper,
   parseRelatedPaperResponse,
+  type RelatedRunSubmission,
 } from "../src/modules/relatedRecommendations";
+
+test("related-run states stay bound to the submitted concern, not later edits", () => {
+  const submission: RelatedRunSubmission = {
+    concern: "submitted concern",
+    concernOrigin: "user_text",
+    previousState: {
+      sessionID: "session-1",
+      running: false,
+      status: "Previous result",
+      groups: [{ category: "Verified main-conference papers", papers: [] }],
+      concern: "previous concern",
+      concernOrigin: "selection",
+    },
+  };
+  const progress = buildRelatedRunProgressState(
+    {
+      sessionID: "session-1",
+      running: false,
+      status: "",
+      groups: [],
+      concern: "edited mid-run concern",
+      concernOrigin: "user_text",
+    },
+    submission,
+    "Searching scholarly providers",
+  );
+  assert.equal(progress.running, true);
+  assert.equal(progress.concern, "submitted concern");
+  const success = buildRelatedRunSuccessState({
+    submission,
+    sessionID: "session-1",
+    groups: [
+      {
+        category: "Verified main-conference papers",
+        papers: [{ title: "Paper", authors: [], relevanceScore: 0.5 }],
+      },
+    ],
+  });
+  assert.equal(success.running, false);
+  assert.equal(success.concern, "submitted concern");
+  assert.equal(success.concernOrigin, "user_text");
+  assert.match(success.status, /Found 1 papers/);
+});
+
+test("related-run failure restores the pre-run recommendation scope", () => {
+  const submission: RelatedRunSubmission = {
+    concern: "submitted concern",
+    concernOrigin: "user_text",
+    previousState: {
+      sessionID: "session-1",
+      running: false,
+      status: "Previous result",
+      groups: [{ category: "Verified main-conference papers", papers: [] }],
+      concern: "previous concern",
+      concernOrigin: "selection",
+    },
+  };
+  const failure = buildRelatedRunFailureState({
+    submission,
+    sessionID: "session-1",
+    error: new Error("Discovery cancelled."),
+  });
+  assert.equal(failure.running, false);
+  assert.equal(failure.status, "Discovery cancelled.");
+  assert.equal(failure.concern, "previous concern");
+  assert.equal(failure.concernOrigin, "selection");
+  assert.deepEqual(failure.groups, submission.previousState.groups);
+});
 
 test("addItemsToCollection uses Zotero's required DB transaction boundary", async () => {
   const calls: string[] = [];
@@ -227,8 +299,13 @@ test("buildRelatedPaperQuestion includes the current paper context", () => {
   assert.match(question, /use full workspace content/i);
 });
 
-test("chooseCollectionForRecommendation prefers the currently selected collection", async () => {
-  const selectedCollection = { id: 7, name: "Current Collection", parentID: 0 };
+test("chooseCollectionForRecommendation prefers the selected collection in the source library", async () => {
+  const selectedCollection = {
+    id: 7,
+    name: "Current Collection",
+    parentID: 0,
+    libraryID: 1,
+  };
   (globalThis as any).Zotero = {
     getMainWindow: () => ({
       ZoteroPane: {
@@ -242,6 +319,29 @@ test("chooseCollectionForRecommendation prefers the currently selected collectio
 
   const result = await chooseCollectionForRecommendation({ libraryID: 1 });
   assert.equal(result, selectedCollection);
+});
+
+test("chooseCollectionForRecommendation ignores a selected collection from another library", async () => {
+  const valid = { id: 11, name: "Source Library", parentID: 0, libraryID: 1 };
+  (globalThis as any).Zotero = {
+    getMainWindow: () => ({
+      ZoteroPane: {
+        getSelectedCollection: () => ({
+          id: 22,
+          name: "Other Library",
+          parentID: 0,
+          libraryID: 2,
+        }),
+      },
+    }),
+    Collections: {
+      getByLibrary: (libraryID: number) => (libraryID === 1 ? [valid] : []),
+    },
+  };
+  assert.equal(
+    await chooseCollectionForRecommendation({ libraryID: 1 }),
+    valid,
+  );
 });
 
 test("openRecommendedPaper opens an existing Zotero item via the main pane", async () => {
@@ -309,6 +409,7 @@ test("addRecommendationToCollection reuses an existing item and adds it to the c
         id,
         name: "Collection",
         parentID: 0,
+        libraryID: 1,
         hasItem: () => false,
         addItems: async (ids: number[]) => addCalls.push(ids),
       }),
@@ -320,6 +421,7 @@ test("addRecommendationToCollection reuses an existing item and adds it to the c
           id: 5,
           name: "Collection",
           parentID: 0,
+          libraryID: 1,
         }),
       },
     }),

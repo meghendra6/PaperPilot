@@ -51,6 +51,9 @@ import { shouldEnableAutoHighlight } from "./autoHighlight/status";
 import { runAutoHighlightWorkflow } from "./autoHighlight/workflow";
 import {
   addRecommendationToCollection,
+  buildRelatedRunFailureState,
+  buildRelatedRunProgressState,
+  buildRelatedRunSuccessState,
   generateRelatedPaperGroups,
   generatePublicReviewInsight,
   openRecommendedPaper,
@@ -1865,28 +1868,33 @@ export function registerPaperPilotPaneSection() {
             relatedRecommendButton.ownerDocument,
           );
           relatedDiscoveryAbortControllers.set(item.id, abortController);
+          const submission = {
+            concern: relatedConcern.value.trim(),
+            concernOrigin: relatedConcernOrigin,
+            previousState: getRelatedRecommendationState(item.id),
+          };
           let reservationOwned = false;
           try {
             await generateRelatedPaperGroups({
               itemID: item.id,
               itemTitle: item.getField("title"),
-              concern: relatedConcern.value.trim()
+              concern: submission.concern
                 ? {
-                    text: relatedConcern.value.trim(),
-                    origin: relatedConcernOrigin,
+                    text: submission.concern,
+                    origin: submission.concernOrigin,
                   }
                 : undefined,
               signal: abortController.signal,
               onReserved: () => {
                 reservationOwned = true;
-                const state = getRelatedRecommendationState(item.id);
-                addon.data.relatedRecommendationStates?.set(item.id, {
-                  ...state,
-                  running: true,
-                  status: "Understanding the research question",
-                  concern: relatedConcern.value.trim(),
-                  concernOrigin: relatedConcernOrigin,
-                });
+                addon.data.relatedRecommendationStates?.set(
+                  item.id,
+                  buildRelatedRunProgressState(
+                    getRelatedRecommendationState(item.id),
+                    submission,
+                    "Understanding the research question",
+                  ),
+                );
                 renderRelatedRecommendationState(
                   relatedRecommendButton,
                   relatedStatus,
@@ -1898,14 +1906,14 @@ export function registerPaperPilotPaneSection() {
                 );
               },
               onStatus: (status) => {
-                const state = getRelatedRecommendationState(item.id);
-                addon.data.relatedRecommendationStates?.set(item.id, {
-                  ...state,
-                  running: true,
-                  status,
-                  concern: relatedConcern.value.trim(),
-                  concernOrigin: relatedConcernOrigin,
-                });
+                addon.data.relatedRecommendationStates?.set(
+                  item.id,
+                  buildRelatedRunProgressState(
+                    getRelatedRecommendationState(item.id),
+                    submission,
+                    status,
+                  ),
+                );
                 renderRelatedRecommendationState(
                   relatedRecommendButton,
                   relatedStatus,
@@ -1917,34 +1925,29 @@ export function registerPaperPilotPaneSection() {
                 );
               },
               onSuccess: async (result) => {
-                addon.data.relatedRecommendationStates?.set(item.id, {
-                  sessionID: sessionStore.get(item.id)?.sessionId,
-                  running: false,
-                  status: `Found ${result.groups.reduce((count, group) => count + group.papers.length, 0)} papers across verified evidence lanes`,
-                  groups: result.groups,
-                  discovery: result.discovery,
-                  concern: relatedConcern.value.trim(),
-                  concernOrigin: relatedConcernOrigin,
-                });
+                addon.data.relatedRecommendationStates?.set(
+                  item.id,
+                  buildRelatedRunSuccessState({
+                    submission,
+                    sessionID: sessionStore.get(item.id)?.sessionId,
+                    groups: result.groups,
+                    discovery: result.discovery,
+                  }),
+                );
                 await sessionHistoryService.persistActiveSession({
                   itemID: item.id,
                   paperTitle: String(item.getField("title") || ""),
                 });
               },
               onFailure: async (error) => {
-                const previous = getRelatedRecommendationState(item.id);
-                addon.data.relatedRecommendationStates?.set(item.id, {
-                  sessionID: sessionStore.get(item.id)?.sessionId,
-                  running: false,
-                  status:
-                    error instanceof Error
-                      ? error.message
-                      : "Related paper recommendation failed.",
-                  groups: previous.groups,
-                  discovery: previous.discovery,
-                  concern: relatedConcern.value.trim(),
-                  concernOrigin: relatedConcernOrigin,
-                });
+                addon.data.relatedRecommendationStates?.set(
+                  item.id,
+                  buildRelatedRunFailureState({
+                    submission,
+                    sessionID: sessionStore.get(item.id)?.sessionId,
+                    error,
+                  }),
+                );
                 await sessionHistoryService.persistActiveSession({
                   itemID: item.id,
                   paperTitle: String(item.getField("title") || ""),
@@ -4166,6 +4169,9 @@ async function runPaperCompareRequest(params: {
         abstract: params.item.getField("abstractNote") || undefined,
       },
       groups,
+      includeReviewURLs: canViewPublicReviewInsights(
+        addon.data.criticalReadStates?.get(params.item.id),
+      ),
       responseLanguage: normalizeResponseLanguage(getPref("responseLanguage")),
     });
   } catch (error) {
@@ -4274,7 +4280,7 @@ async function runPaperCompareRequest(params: {
         } else {
           try {
             const card = buildPaperCompareCard(
-              parsePaperCompareResponse(assistantText),
+              parsePaperCompareResponse(assistantText, request.selection),
               request.selection,
             );
             const cards = [

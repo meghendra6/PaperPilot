@@ -14,6 +14,7 @@ import {
   canViewPublicReviewInsights,
   completeCriticalReadStep,
   attachPublicReviewInsightToCriticalRead,
+  getCriticalReadStep,
   markCriticalReadStepRunning,
   reviseCriticalReadStep,
   startCriticalRead,
@@ -95,6 +96,24 @@ test("revising evidence-bearing steps always invalidates the final synthesis", (
     assert.equal(revised.steps[6].output, undefined, `Step ${stepID}`);
     assert.equal(revised.reportMarkdown, undefined, `Step ${stepID}`);
   }
+});
+
+test("revising the author comparison invalidates the final synthesis", () => {
+  let state = buildInitialCriticalReadState();
+  state = {
+    ...state,
+    phase: "complete",
+    currentStep: 7,
+    steps: state.steps.map((step) => ({
+      ...step,
+      status: "complete" as const,
+      output: step.id === 7 ? ({ summary: "old final" } as never) : step.output,
+    })),
+  };
+  const revised = reviseCriticalReadStep(state, 6);
+  assert.equal(getCriticalReadStep(revised, 6)?.status, "ready");
+  assert.equal(getCriticalReadStep(revised, 7)?.status, "locked");
+  assert.equal(getCriticalReadStep(revised, 7)?.output, undefined);
 });
 
 test("Critical Read parser accepts fenced JSON and requires a summary", () => {

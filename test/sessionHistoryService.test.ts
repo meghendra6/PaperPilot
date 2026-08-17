@@ -602,18 +602,7 @@ test("SessionHistoryService opens a saved snapshot into the in-memory stores", a
         };
       }
     ).addon?.data?.relatedRecommendationStates?.get(504);
-    assert.equal(
-      restoredRecommendations?.groups[0].papers[0].publicationClass,
-      "unverified",
-    );
-    assert.deepEqual(
-      restoredRecommendations?.groups[0].papers[0].publicationEvidence,
-      [],
-    );
-    assert.equal(
-      restoredRecommendations?.groups[0].papers[0].url,
-      "https://proceedings.example.org/persistent",
-    );
+    assert.deepEqual(restoredRecommendations?.groups, []);
     const restoredCriticalRead = (
       globalThis as {
         addon?: {
@@ -947,6 +936,47 @@ test("snapshot migration retains current live evidence and rebuilds a reviewer-a
   } finally {
     globals.restore();
     sessionStore.reset(506);
+  }
+});
+
+test("snapshot migration rebuilds recommendation lane labels from trusted discovery", async () => {
+  const { globals, repository, service } = createService({
+    saveDocumentSessions: true,
+    privacyStoreLocalHistory: true,
+    privacySavePromptsOnly: false,
+    privacySaveResponses: true,
+  });
+  try {
+    const snapshot = buildSavedSnapshot(507);
+    const rawPaper = (snapshot.relatedRecommendations as any).groups[0]
+      .papers[0];
+    snapshot.relatedRecommendations = {
+      running: false,
+      status: "stale",
+      groups: [
+        {
+          category: "Verified main-conference papers",
+          papers: [{ ...rawPaper, publicationClass: "preprint_only" }],
+        },
+      ],
+    };
+    await repository.saveSessionSnapshot({
+      paperItemID: 507,
+      paperTitle: "Saved paper",
+      snapshot,
+    });
+    await service.openSavedSession({
+      itemID: 507,
+      sessionId: snapshot.sessionId,
+    });
+    assert.deepEqual(
+      (globalThis as any).addon.data.relatedRecommendationStates.get(507)
+        .groups,
+      [],
+    );
+  } finally {
+    globals.restore();
+    sessionStore.reset(507);
   }
 });
 

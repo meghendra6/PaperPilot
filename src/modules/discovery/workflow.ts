@@ -31,10 +31,12 @@ function escapeRegExp(value: string) {
 
 function containsNormalized(haystack: string, needle: string) {
   const normalizedNeedle = normalizeDiscoveryTitle(needle);
-  return (
-    normalizedNeedle.length > 0 &&
-    normalizeDiscoveryTitle(haystack).includes(normalizedNeedle)
-  );
+  if (!normalizedNeedle) return false;
+  const normalizedHaystack = normalizeDiscoveryTitle(haystack);
+  return new RegExp(
+    `(?:^| )${escapeRegExp(normalizedNeedle).replace(/ /g, " +")}(?: |$)`,
+    "u",
+  ).test(normalizedHaystack);
 }
 
 function titleVariants(title: string) {
@@ -47,7 +49,7 @@ function titleVariants(title: string) {
     )
     .filter(
       (value, index, values) =>
-        value.length >= 8 && values.indexOf(value) === index,
+        value.length >= 3 && values.indexOf(value) === index,
     );
 }
 
@@ -57,7 +59,10 @@ function pageMatchesPaperTitle(page: string, title: string) {
     .replace(/[^\p{L}\p{N}]+/gu, " ")
     .trim();
   return titleVariants(title).some((variant) =>
-    normalizedPage.includes(variant),
+    new RegExp(
+      `(?:^| )${escapeRegExp(variant).replace(/ /g, " +")}(?: |$)`,
+      "u",
+    ).test(normalizedPage),
   );
 }
 
@@ -106,6 +111,79 @@ function hasGenericSourceAuthority(
   return Boolean(
     venueObserved && authorityValidated && structuralPath && structuralHeader,
   );
+}
+
+const SHARED_SECOND_LEVEL_LABELS = new Set([
+  "ac",
+  "co",
+  "com",
+  "edu",
+  "gov",
+  "net",
+  "or",
+  "org",
+]);
+
+function registrableDomainLabel(hostname: string) {
+  const labels = hostname.toLowerCase().split(".").filter(Boolean);
+  if (labels.length < 2) return labels[0] || "";
+  const secondLevel = labels[labels.length - 2];
+  const usesSharedSecondLevel =
+    labels.length >= 3 &&
+    secondLevel.length <= 3 &&
+    SHARED_SECOND_LEVEL_LABELS.has(secondLevel);
+  return usesSharedSecondLevel ? labels[labels.length - 3] : secondLevel;
+}
+
+function hasVenueNamedDomainAuthority(
+  inspection: Awaited<ReturnType<typeof inspectOfficialEvidenceURL>>,
+  paper: DiscoveryResult["verifiedMain"][number],
+) {
+  const venueName =
+    paper.venueName || paper.leadingVenueAssessment.venueName || "";
+  const meaningfulWords = normalizeDiscoveryTitle(venueName)
+    .split(" ")
+    .filter(
+      (word) =>
+        word.length >= 3 &&
+        ![
+          "the",
+          "and",
+          "international",
+          "annual",
+          "conference",
+          "symposium",
+          "workshop",
+          "proceedings",
+        ].includes(word),
+    );
+  // Subdomain and path labels are attacker-choosable on shared hosts, so only
+  // the registered domain label itself may prove venue ownership, and it must
+  // equal the venue identity instead of merely containing it.
+  const ownerLabel = registrableDomainLabel(inspection.hostname).replace(
+    /[^a-z0-9]/g,
+    "",
+  );
+  const ownerLabelWithoutYear = ownerLabel.replace(/[0-9]+/g, "");
+  const joinedName = meaningfulWords.join("");
+  const nameBound =
+    meaningfulWords.length >= 2 &&
+    (ownerLabel === joinedName || ownerLabelWithoutYear === joinedName);
+  const acronym = (
+    paper.venueAcronym ||
+    paper.leadingVenueAssessment.venueAcronym ||
+    ""
+  )
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
+  const acronymBound =
+    acronym.length >= 3 &&
+    (ownerLabel === acronym || ownerLabelWithoutYear === acronym);
+  const titleNamesVenue = containsNormalized(
+    inspection.pageTitle || "",
+    venueName,
+  );
+  return titleNamesVenue && (nameBound || acronymBound);
 }
 
 function inferEvidenceType(
@@ -260,6 +338,43 @@ function inferDecision(page: string) {
   return undefined;
 }
 
+function inferStructuredOpenReviewStatus(page: string) {
+  const decisionMatch = page.match(
+    /\b(?:official decision|decision|recommendation)\s*[:—-]\s*(accept(?:ed|ance)?|reject(?:ed|ion)?|withdrawn?)\b/i,
+  );
+  const venueMatch = page.match(
+    /\b(?:venue|presentation type|track)\s*[:—-]\s*([^|\n]{1,100})/i,
+  );
+  const decisionValue = decisionMatch?.[1] || "";
+  const venueValue = venueMatch?.[1]?.trim() || "";
+  const explicitDecisionTrack = page.match(
+    /\b(?:official decision|decision)\s*[:—-]\s*(?:accept(?:ed|ance)?)[^|\n]{0,80}\b(oral|poster|spotlight|main(?: conference| track)?)\b/i,
+  )?.[1];
+  const rejected = /reject|withdraw/i.test(decisionValue);
+  const accepted = /accept/i.test(decisionValue);
+  const nonMain = NON_MAIN_TRACKS.find(([pattern]) => pattern.test(venueValue));
+  const main =
+    accepted &&
+    !nonMain &&
+    /\b(?:main(?: conference| track)?|oral|poster|spotlight|accept(?:ed|ance)?)\b/i.test(
+      venueValue,
+    );
+  return {
+    decision: rejected
+      ? { label: "Rejected or withdrawn", accepted: false }
+      : accepted
+        ? { label: "Accepted", accepted: true }
+        : undefined,
+    track: nonMain
+      ? { label: nonMain[1], main: false }
+      : main
+        ? { label: venueValue, main: true }
+        : accepted && explicitDecisionTrack
+          ? { label: explicitDecisionTrack, main: true }
+          : undefined,
+  };
+}
+
 function authorIdentityKeys(authors: string[]) {
   return authors
     .map((author) => {
@@ -283,14 +398,27 @@ function paperIdentityContext(
     const match = matches[matchIndex];
     const index = match.index ?? -1;
     if (index < 0) continue;
-    const nextTitleIndex = matches[matchIndex + 1]?.index ?? page.length;
+    const nextMatchIndex = matches[matchIndex + 1]?.index ?? page.length;
+    const nextTitleIndex =
+      nextMatchIndex - index > match[0].length + 80
+        ? nextMatchIndex
+        : page.length;
     const context = page.slice(
       Math.max(0, index - 120),
       Math.min(nextTitleIndex, index + match[0].length + 600),
     );
     const normalizedContext = normalizeDiscoveryTitle(context);
     const normalizedRaw = context.toLowerCase();
-    if (paper.doi && normalizedRaw.includes(paper.doi.toLowerCase())) {
+    const normalizedDOI = paper.doi
+      ? paper.doi.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+      : undefined;
+    if (
+      normalizedDOI &&
+      new RegExp(
+        `(?:doi\\s*[:/]\\s*|doi\\.org/)${normalizedDOI}(?=$|[\\s<>"'])`,
+        "i",
+      ).test(normalizedRaw)
+    ) {
       return { context, index };
     }
     if (!paper.year) {
@@ -321,6 +449,17 @@ export function reconstructOfficialEvidence(
   const page = [inspection.pageTitle, inspection.searchableText]
     .filter(Boolean)
     .join(" ");
+  const primaryTitleSurface =
+    inspection.sourceFamily !== "generic-official-web" &&
+    !["openreview", "isca"].includes(inspection.sourceFamily)
+      ? inspection.pageTitle || ""
+      : page;
+  if (
+    primaryTitleSurface &&
+    !pageMatchesPaperTitle(primaryTitleSurface, paper.title)
+  ) {
+    return undefined;
+  }
   const identity = paperIdentityContext(
     `${page} ${inspection.url}`,
     paper,
@@ -352,16 +491,26 @@ export function reconstructOfficialEvidence(
     return undefined;
   }
   const context = identity.context;
-  const resolvedTrack = inferEntryBoundTrack({
-    page,
-    entryContext: context,
-    titleIndex: identity.index,
-    title: paper.title,
-    url: inspection.url,
-    type,
-    sourceFamily: inspection.sourceFamily,
-  });
-  const decision = inferDecision(context);
+  const openReviewStatus =
+    inspection.sourceFamily === "openreview"
+      ? inferStructuredOpenReviewStatus(context)
+      : undefined;
+  const resolvedTrack = openReviewStatus
+    ? openReviewStatus.track
+    : inferEntryBoundTrack({
+        page,
+        entryContext: context,
+        titleIndex: identity.index,
+        title: paper.title,
+        url: inspection.url,
+        type,
+        sourceFamily: inspection.sourceFamily,
+      });
+  const decision =
+    openReviewStatus?.decision ||
+    (inspection.sourceFamily === "openreview"
+      ? undefined
+      : inferDecision(context));
   const supports: PublicationEvidence["supports"] = ["identity"];
   if (
     decision?.accepted ||
@@ -382,7 +531,8 @@ export function reconstructOfficialEvidence(
   if (resolvedTrack?.main) supports.push("main_track");
   if (
     inspection.sourceFamily === "openreview" &&
-    /\b(review|forum|meta-review|decision)\b/i.test(page)
+    new URL(inspection.url).pathname === "/forum" &&
+    Boolean(new URL(inspection.url).searchParams.get("id"))
   ) {
     supports.push("reviews_available");
   }
@@ -438,6 +588,7 @@ async function inspectWithRetry(
 export async function verifyDiscoveryEvidenceLive(params: {
   discovery: DiscoveryResult;
   providerCandidates?: DiscoveryProviderCandidate[];
+  limitations?: string[];
   fetch?: DiscoveryFetch;
   signal?: AbortSignal;
   deadline?: number;
@@ -511,7 +662,8 @@ export async function verifyDiscoveryEvidenceLive(params: {
           ? reconstructOfficialEvidence(paper, inspection, {
               authorityValidated:
                 inspection.sourceFamily !== "generic-official-web" ||
-                authorityHostnames.has(inspection.hostname),
+                authorityHostnames.has(inspection.hostname) ||
+                hasVenueNamedDomainAuthority(inspection, paper),
             })
           : undefined;
         if (!evidence) {
@@ -524,6 +676,9 @@ export async function verifyDiscoveryEvidenceLive(params: {
     const verifiedReviewURL = reconstructed.find((entry) =>
       entry.supports.includes("reviews_available"),
     )?.url;
+    const boundProviderURLs = providerCandidate
+      ? providerCandidate.urls.filter((url) => paper.urls.includes(url))
+      : [];
     const providerEvidence: PublicationEvidence[] = providerCandidate
       ? providerCandidate.urls.slice(0, 1).map((url) => ({
           type: "scholarly_index" as const,
@@ -543,10 +698,20 @@ export async function verifyDiscoveryEvidenceLive(params: {
         isNovelty && providerCandidate
           ? { [providerCandidate.provider]: providerCandidate.providerID }
           : paper.providerIDs,
+      urls: [
+        ...new Set([
+          ...reconstructed.map((entry) => entry.url),
+          ...boundProviderURLs,
+        ]),
+      ],
       publicationEvidence: isNovelty
-        ? providerEvidence.length
-          ? providerEvidence
-          : reconstructed
+        ? paper.publicationClass === "under_review_or_submission"
+          ? [...reconstructed, ...providerEvidence]
+          : boundProviderURLs.length
+            ? providerEvidence.filter((entry) =>
+                boundProviderURLs.includes(entry.url),
+              )
+            : []
         : reconstructed.length
           ? reconstructed
           : [],
@@ -563,13 +728,16 @@ export async function verifyDiscoveryEvidenceLive(params: {
     otherPeerReviewed: [],
     noveltyRadar: [],
     limitations: [
-      ...params.discovery.limitations,
-      ...(failures.length
-        ? [
-            "Publication status could not be verified for one or more official sources during live recheck.",
-            ...failures.slice(0, 8),
-          ]
-        : []),
+      ...new Set([
+        ...params.discovery.limitations,
+        ...(params.limitations || []),
+        ...(failures.length
+          ? [
+              "Publication status could not be verified for one or more official sources during live recheck.",
+              ...failures.slice(0, 8),
+            ]
+          : []),
+      ]),
     ],
   };
   return parseDiscoveryResult(JSON.stringify(verifiedPayload), {

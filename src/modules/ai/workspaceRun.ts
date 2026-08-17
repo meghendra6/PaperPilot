@@ -11,6 +11,7 @@ import {
   isReaderLifecycleClaimActive,
   releaseDirectWorkspaceRun,
 } from "./runLifecycle";
+import { stopDetachedRunProcess } from "./runCompletion";
 
 export interface WorkspaceRunResult {
   ok: true;
@@ -98,6 +99,10 @@ export async function startWorkspaceTextRun(params: {
   sessionId: string;
   question: string;
   requiredDiscoveryCapabilities?: import("../discovery/types").DiscoveryCapabilities;
+  signal?: AbortSignal;
+  deadline?: number;
+  onDeferredCleanup?: (cleanup: Promise<void>) => void;
+  prepareRun?: () => Promise<WorkspaceRunResult | FailedWorkspaceRun>;
 }): Promise<WorkspaceRunResult | FailedWorkspaceRun> {
   if (
     !isDirectWorkspaceRunClaimCurrent(
@@ -110,7 +115,16 @@ export async function startWorkspaceTextRun(params: {
     );
   }
 
-  try {
+  const interruptionMessage = () =>
+    params.signal?.aborted
+      ? "Workspace run preparation cancelled."
+      : "Workspace run preparation timed out.";
+  if (params.signal?.aborted) throw new Error(interruptionMessage());
+  if (params.deadline !== undefined && Date.now() >= params.deadline) {
+    throw new Error(interruptionMessage());
+  }
+
+  const prepare = async () => {
     let result: WorkspaceRunResult | FailedWorkspaceRun;
     if (params.mode === "claude_code") {
       const { startClaudeRunForQuestion } = await import("../claude/runner");
@@ -151,12 +165,69 @@ export async function startWorkspaceTextRun(params: {
     }
 
     return result;
+  };
+  const preparation = (params.prepareRun || prepare)();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let abortListener: (() => void) | undefined;
+  const interrupted = new Promise<never>((_resolve, reject) => {
+    const rejectInterrupted = () => reject(new Error(interruptionMessage()));
+    if (params.signal) {
+      abortListener = rejectInterrupted;
+      params.signal.addEventListener("abort", abortListener, { once: true });
+    }
+    if (params.deadline !== undefined) {
+      timer = setTimeout(
+        rejectInterrupted,
+        Math.max(0, params.deadline - Date.now()),
+      );
+    }
+  });
+
+  try {
+    return await (params.signal || params.deadline !== undefined
+      ? Promise.race([preparation, interrupted])
+      : preparation);
   } catch (error) {
-    await cleanupPaperWorkspaceForItemIfEnabled({
-      itemID: params.itemID,
-      title: params.title,
-    });
+    const wasInterrupted =
+      params.signal?.aborted ||
+      (params.deadline !== undefined && Date.now() >= params.deadline);
+    if (wasInterrupted) {
+      const deferredCleanup = preparation.then(
+        async (result) => {
+          if (result.ok) {
+            await stopDetachedRunProcess(result.processId, {
+              requireProcessId: true,
+            });
+          }
+          await cleanupPaperWorkspaceForItemIfEnabled({
+            itemID: params.itemID,
+            title: params.title,
+          });
+        },
+        async () => {
+          await cleanupPaperWorkspaceForItemIfEnabled({
+            itemID: params.itemID,
+            title: params.title,
+          });
+        },
+      );
+      if (params.onDeferredCleanup) {
+        params.onDeferredCleanup(deferredCleanup);
+      } else {
+        await deferredCleanup;
+      }
+    } else {
+      await cleanupPaperWorkspaceForItemIfEnabled({
+        itemID: params.itemID,
+        title: params.title,
+      });
+    }
     throw error;
+  } finally {
+    if (timer) clearTimeout(timer);
+    if (params.signal && abortListener) {
+      params.signal.removeEventListener("abort", abortListener);
+    }
   }
 }
 

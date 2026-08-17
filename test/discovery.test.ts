@@ -9,7 +9,10 @@ import {
 } from "../src/modules/discovery/parser";
 import { buildDiscoveryQuestion } from "../src/modules/discovery/prompt";
 import { inferDiscoveryIntent } from "../src/modules/discovery/prompt";
-import { areLikelySamePaper } from "../src/modules/discovery/normalize";
+import {
+  areLikelySamePaper,
+  deduplicateDiscoveredPapers,
+} from "../src/modules/discovery/normalize";
 import {
   reconstructOfficialEvidence,
   verifyDiscoveryEvidenceLive,
@@ -406,10 +409,10 @@ test("ambiguous same-metadata rows remain separately addressable", () => {
       }),
     ]),
   );
-  assert.equal(parsed.verifiedMain.length, 2);
+  assert.equal(parsed.verifiedMain.length, 1);
   assert.equal(
-    new Set(parsed.verifiedMain.map((entry) => entry.candidateID)).size,
-    2,
+    parsed.excluded.some((entry) => entry.reason === "duplicate"),
+    true,
   );
 });
 
@@ -515,7 +518,7 @@ test("live evidence verification requires the official page to match the paper",
     discovery,
     fetch: (async () =>
       new Response(
-        "<title>Example Conference Main Conference</title><main>accepted — Verified Paper — A. Author — 2026 — reviews</main>",
+        "<title>Example Conference</title><main>Verified Paper — A. Author — 2026 — venue: Main Conference — official decision: Accepted</main>",
         { status: 200, headers: { "content-type": "text/html" } },
       )) as typeof fetch,
   });
@@ -534,6 +537,151 @@ test("live evidence verification requires the official page to match the paper",
   );
 });
 
+test("OpenReview reviewer prose cannot impersonate an official decision", async () => {
+  const officialURL = "https://openreview.net/forum?id=review-prose";
+  const discovery = parseDiscoveryResult(
+    result([
+      paper({
+        urls: [officialURL],
+        publicationEvidence: [
+          {
+            type: "official_decision",
+            sourceName: "OpenReview",
+            url: officialURL,
+            supports: ["identity", "accepted"],
+          },
+        ],
+        publicationClass: "under_review_or_submission",
+      }),
+    ]),
+  );
+  const verified = await verifyDiscoveryEvidenceLive({
+    discovery,
+    fetch: (async () =>
+      new Response(
+        "<title>Verified Paper</title><main>Verified Paper — A. Author — 2026 — Example Conference. Reviewer: I accept this paper because the main contribution is strong.</main>",
+        { status: 200, headers: { "content-type": "text/html" } },
+      )) as typeof fetch,
+  });
+  assert.equal(verified.verifiedMain.length, 0);
+  assert.equal(verified.noveltyRadar.length, 1);
+});
+
+test("live submission evidence preserves an identity-bound OpenReview forum", async () => {
+  const forum = "https://openreview.net/forum?id=active-submission";
+  const submission = paper({
+    publicationClass: "under_review_or_submission",
+    urls: [forum],
+    publicationEvidence: [
+      {
+        type: "official_decision",
+        sourceName: "OpenReview",
+        url: forum,
+        supports: ["identity", "reviews_available"],
+      },
+    ],
+  });
+  const discovery = parseDiscoveryResult(result([submission]));
+  const verified = await verifyDiscoveryEvidenceLive({
+    discovery,
+    providerCandidates: [
+      {
+        provider: "openalex",
+        providerID: "W1",
+        title: "Verified Paper",
+        authors: ["A. Author"],
+        year: 2026,
+        urls: ["https://openalex.org/W1"],
+      },
+    ],
+    fetch: (async () =>
+      new Response(
+        "<title>Verified Paper</title><main>Verified Paper — A. Author — 2026 — Example Conference — forum reviews</main>",
+        { status: 200, headers: { "content-type": "text/html" } },
+      )) as typeof fetch,
+  });
+  assert.equal(verified.noveltyRadar.length, 1);
+  assert.ok(
+    verified.noveltyRadar[0].publicationEvidence.some(
+      (entry) => entry.type === "official_decision" && entry.url === forum,
+    ),
+  );
+});
+
+test("a provider match cannot validate an unrelated repository URL", async () => {
+  const preprint = paper({
+    publicationClass: "preprint_only",
+    urls: ["https://arxiv.org/abs/9999.99999"],
+    publicationEvidence: [],
+  });
+  const discovery = parseDiscoveryResult(result([preprint]));
+  await assert.rejects(
+    verifyDiscoveryEvidenceLive({
+      discovery,
+      providerCandidates: [
+        {
+          provider: "openalex",
+          providerID: "W1",
+          title: "Verified Paper",
+          authors: ["A. Author"],
+          year: 2026,
+          urls: ["https://openalex.org/W1"],
+        },
+      ],
+    }),
+    /usable papers/i,
+  );
+});
+
+test("malformed DOI text cannot bypass author and year identity", () => {
+  assert.throws(
+    () =>
+      parseDiscoveryResult(
+        result([paper({ doi: "iclr", authors: [], urls: [] })]),
+      ),
+    /usable papers/i,
+  );
+});
+
+test("dedup follows DOI, trusted stable identity, and compatible title years", () => {
+  const base = parseDiscoveryResult(result([paper()])).verifiedMain[0];
+  const merged = deduplicateDiscoveredPapers([
+    { ...base, candidateID: "agent-a", year: 2025 },
+    { ...base, candidateID: "agent-b", year: 2026 },
+  ]);
+  assert.equal(merged.papers.length, 1);
+  assert.equal(
+    areLikelySamePaper(
+      { ...base, providerIDs: { openalex: "W1" } },
+      { ...base, title: "Different metadata", providerIDs: { openalex: "W1" } },
+      { trustProviderIDs: true },
+    ),
+    false,
+  );
+});
+
+test("a copied DOI cannot merge materially conflicting paper identities", () => {
+  assert.equal(
+    areLikelySamePaper(
+      {
+        title: "Real Paper",
+        authors: ["Alice Author"],
+        year: 2026,
+        doi: "10.1234/shared",
+        providerIDs: {},
+      },
+      {
+        title: "Completely Different",
+        authors: ["Bob Other"],
+        year: 1999,
+        doi: "10.1234/shared",
+        providerIDs: {},
+      },
+    ),
+    false,
+  );
+});
+
 test("live verification reconstructs track and rejection instead of trusting agent evidence", async () => {
   const discovery = parseDiscoveryResult(result([paper()]));
   await assert.rejects(
@@ -546,6 +694,101 @@ test("live verification reconstructs track and rejection instead of trusting age
         )) as typeof fetch,
     }),
     /did not include any usable papers/,
+  );
+});
+
+test("live verification discards unbound agent landing URLs", async () => {
+  const official = "https://proceedings.mlr.press/v300/verified.html";
+  const discovery = parseDiscoveryResult(
+    result([
+      paper({
+        urls: [official, "https://attacker.example/phish"],
+        providerIDs: {},
+        publicationEvidence: [
+          {
+            type: "official_proceedings",
+            sourceName: "PMLR",
+            url: official,
+            observedTitle: "Verified Paper",
+            observedVenue: "Example Conference",
+            observedTrack: "Poster",
+            supports: ["identity", "published", "main_track"],
+          },
+        ],
+      }),
+    ]),
+  );
+  const verified = await verifyDiscoveryEvidenceLive({
+    discovery,
+    fetch: (async () =>
+      new Response(
+        "<title>Verified Paper</title><main>Verified Paper — A. Author — 2026 — Example Conference — Poster</main>",
+        { status: 200, headers: { "content-type": "text/html" } },
+      )) as typeof fetch,
+  });
+  assert.deepEqual(verified.verifiedMain[0].urls, [official]);
+});
+
+test("provider partial-failure limitations survive live verification", async () => {
+  const official = "https://proceedings.mlr.press/v300/verified.html";
+  const discovery = parseDiscoveryResult(
+    result([
+      paper({
+        urls: [official],
+        providerIDs: {},
+        publicationEvidence: [
+          {
+            type: "official_proceedings",
+            sourceName: "PMLR",
+            url: official,
+            observedTitle: "Verified Paper",
+            observedVenue: "Example Conference",
+            observedTrack: "Poster",
+            supports: ["identity", "published", "main_track"],
+          },
+        ],
+      }),
+    ]),
+  );
+  const verified = await verifyDiscoveryEvidenceLive({
+    discovery,
+    limitations: [
+      "Live scholarly provider openalex failed: request timed out.",
+      "Live scholarly provider openalex failed: request timed out.",
+    ],
+    fetch: (async () =>
+      new Response(
+        "<title>Verified Paper</title><main>Verified Paper — A. Author — 2026 — Example Conference — Poster</main>",
+        { status: 200, headers: { "content-type": "text/html" } },
+      )) as typeof fetch,
+  });
+  assert.equal(verified.verifiedMain.length, 1);
+  assert.equal(
+    verified.limitations.filter((entry) => /openalex failed/i.test(entry))
+      .length,
+    1,
+  );
+});
+
+test("a citation on an unrelated proceedings page cannot become the primary record", () => {
+  const candidate = paper({
+    title: "Verified Machine Paper With Long Title",
+    authors: ["Alice Author"],
+  }) as Parameters<typeof reconstructOfficialEvidence>[0];
+  assert.equal(
+    reconstructOfficialEvidence(candidate, {
+      url: "https://proceedings.mlr.press/v999/unrelated.html",
+      hostname: "proceedings.mlr.press",
+      sourceFamily: "pmlr",
+      pageTitle: "Completely Different Paper — Example Conference 2026",
+      searchableText:
+        "Completely Different Paper — Bob Other — 2026. References: Verified Machine Paper With Long Title — Alice Author — 2026 — poster.",
+      linkedHostnames: [],
+      contentType: "text/html",
+      checkedAt: "2026-08-14T00:00:00.000Z",
+      bodyInspected: true,
+    }),
+    undefined,
   );
 });
 
@@ -698,7 +941,7 @@ test("public review links remain hidden until a live official-page recheck", asy
     discovery,
     fetch: (async () =>
       new Response(
-        "<title>Verified Paper</title><main>Verified Paper — A. Author — 2026 — Example Conference — Main Conference — accepted — reviews and meta-review</main>",
+        "<title>Verified Paper</title><main>Verified Paper — A. Author — 2026 — Example Conference — venue: Main Conference — official decision: Accepted</main>",
         { status: 200, headers: { "content-type": "text/html" } },
       )) as typeof fetch,
   });
@@ -743,7 +986,7 @@ test("live verification ignores an agent review URL that the official page redir
         });
       }
       return new Response(
-        "<title>Verified Paper</title><main>Verified Paper — A. Author — 2026 — Example Conference — Main Conference — accepted — reviews and meta-review</main>",
+        "<title>Verified Paper</title><main>Verified Paper — A. Author — 2026 — Example Conference — venue: Main Conference — official decision: Accepted</main>",
         { status: 200, headers: { "content-type": "text/html" } },
       );
     }) as typeof fetch,
@@ -786,6 +1029,59 @@ test("live verification binds authors and year to the matching title entry", () 
     { authorityValidated: true },
   );
   assert.equal(reconstructed, undefined);
+});
+
+test("short venue acronyms require token boundaries", () => {
+  const candidate = paper({
+    title: "A Machine Study",
+    venueName: "Conference on Human Factors in Computing Systems",
+    venueAcronym: "CHI",
+    leadingVenueAssessment: {
+      venueName: "Conference on Human Factors in Computing Systems",
+      venueAcronym: "CHI",
+      fields: ["HCI"],
+      judgment: "leading",
+      confidence: "high",
+      basis: "Selective archival HCI venue.",
+    },
+  }) as Parameters<typeof reconstructOfficialEvidence>[0];
+  assert.equal(
+    reconstructOfficialEvidence(candidate, {
+      url: "https://proceedings.mlr.press/v300/machine.html",
+      hostname: "proceedings.mlr.press",
+      sourceFamily: "pmlr",
+      pageTitle: "Different Venue Proceedings",
+      searchableText: "A Machine Study — A. Author — 2026 — Poster",
+      linkedHostnames: [],
+      contentType: "text/html",
+      checkedAt: "2026-08-14T00:00:00.000Z",
+      bodyInspected: true,
+    }),
+    undefined,
+  );
+});
+
+test("short paper titles verify only with exact token and identity corroboration", () => {
+  const candidate = paper({
+    title: "DINO",
+    authors: ["Alice Author"],
+    doi: "10.1234/dino",
+    urls: ["https://proceedings.mlr.press/v300/dino.html"],
+  }) as Parameters<typeof reconstructOfficialEvidence>[0];
+  const evidence = reconstructOfficialEvidence(candidate, {
+    url: "https://proceedings.mlr.press/v300/dino.html",
+    hostname: "proceedings.mlr.press",
+    sourceFamily: "pmlr",
+    pageTitle: "DINO",
+    searchableText:
+      "DINO — Alice Author — 2026 — DOI: 10.1234/dino — Example Conference — Poster",
+    linkedHostnames: [],
+    contentType: "text/html",
+    checkedAt: "2026-08-14T00:00:00.000Z",
+    bodyInspected: true,
+  });
+  assert.ok(evidence?.supports.includes("identity"));
+  assert.ok(evidence?.supports.includes("main_track"));
 });
 
 test("generic official pages require venue-owned structural authority", async () => {
@@ -860,6 +1156,93 @@ test("generic official pages require venue-owned structural authority", async ()
     }),
     /did not include any usable papers/,
   );
+});
+
+test("an unseen venue can verify through an independently bound official domain", async () => {
+  const url = "https://new-archival-venue.org/program/paper-7";
+  const unseen = paper({
+    venueName: "New Archival Venue",
+    venueAcronym: "NAV",
+    providerIDs: {},
+    urls: [url],
+    publicationEvidence: [
+      {
+        type: "official_program",
+        sourceName: "Venue program",
+        url,
+        observedTitle: "Verified Paper",
+        observedVenue: "New Archival Venue",
+        observedTrack: "Main Conference",
+        observedDecision: "Listed in official program",
+        supports: ["identity", "accepted", "main_track"],
+      },
+    ],
+    leadingVenueAssessment: {
+      venueName: "New Archival Venue",
+      venueAcronym: "NAV",
+      fields: ["emerging field"],
+      judgment: "leading",
+      confidence: "high",
+      basis: "Selective archival venue with field-specific evidence.",
+    },
+  });
+  const verified = await verifyDiscoveryEvidenceLive({
+    discovery: parseDiscoveryResult(result([unseen])),
+    fetch: (async () =>
+      new Response(
+        "<title>New Archival Venue 2026 Program</title><main>Verified Paper — A. Author — 2026 — New Archival Venue — Track: Main Conference — accepted</main>",
+        { status: 200, headers: { "content-type": "text/html" } },
+      )) as typeof fetch,
+  });
+  assert.equal(verified.verifiedMain.length, 1);
+});
+
+test("a venue-named subdomain on another registered domain earns no authority", async () => {
+  for (const hostname of [
+    "new-archival-venue.shared-platform.org",
+    "nav.shared-platform.org",
+    "nav-fake.org",
+  ]) {
+    const url = `https://${hostname}/program/paper-7`;
+    const unseen = paper({
+      venueName: "New Archival Venue",
+      venueAcronym: "NAV",
+      providerIDs: {},
+      urls: [url],
+      publicationEvidence: [
+        {
+          type: "official_program",
+          sourceName: "Venue program",
+          url,
+          observedTitle: "Verified Paper",
+          observedVenue: "New Archival Venue",
+          observedTrack: "Main Conference",
+          observedDecision: "Listed in official program",
+          supports: ["identity", "accepted", "main_track"],
+        },
+      ],
+      leadingVenueAssessment: {
+        venueName: "New Archival Venue",
+        venueAcronym: "NAV",
+        fields: ["emerging field"],
+        judgment: "leading",
+        confidence: "high",
+        basis: "Selective archival venue with field-specific evidence.",
+      },
+    });
+    await assert.rejects(
+      verifyDiscoveryEvidenceLive({
+        discovery: parseDiscoveryResult(result([unseen])),
+        fetch: (async () =>
+          new Response(
+            "<title>New Archival Venue 2026 Program</title><main>Verified Paper — A. Author — 2026 — New Archival Venue — Track: Main Conference — accepted</main>",
+            { status: 200, headers: { "content-type": "text/html" } },
+          )) as typeof fetch,
+      }),
+      /usable papers/i,
+      hostname,
+    );
+  }
 });
 
 test("a far workshop scope cannot inherit a page-global main-program label", async () => {
@@ -954,7 +1337,9 @@ test("known official oral and poster decisions require a non-workshop scope", as
       discovery,
       fetch: (async () =>
         new Response(
-          `<title>Verified Paper</title><main>Verified Paper — A. Author — 2026 — Example Conference — accepted ${label}</main>`,
+          url.includes("openreview")
+            ? `<title>Verified Paper</title><main>Verified Paper — A. Author — 2026 — Example Conference — venue: ${label} — official decision: Accepted</main>`
+            : `<title>Verified Paper</title><main>Verified Paper — A. Author — 2026 — Example Conference — accepted ${label}</main>`,
           { status: 200, headers: { "content-type": "text/html" } },
         )) as typeof fetch,
     });
@@ -964,7 +1349,9 @@ test("known official oral and poster decisions require a non-workshop scope", as
       discovery,
       fetch: (async () =>
         new Response(
-          `<title>Verified Paper</title><main>Workshop poster — Example Conference — accepted ${label} — Verified Paper — A. Author — 2026</main>`,
+          url.includes("openreview")
+            ? `<title>Verified Paper</title><main>Verified Paper — A. Author — 2026 — Example Conference — venue: Workshop poster — official decision: Accepted</main>`
+            : `<title>Verified Paper</title><main>Workshop poster — Example Conference — accepted ${label} — Verified Paper — A. Author — 2026</main>`,
           { status: 200, headers: { "content-type": "text/html" } },
         )) as typeof fetch,
     });
@@ -1387,16 +1774,16 @@ test("cross-field publication fixtures fail closed for non-main classes", () => 
 test("versioned raw agent capture is scored against independent cross-field gold", () => {
   const evaluation = JSON.parse(
     readFileSync(
-      join(__dirname, "fixtures", "discovery", "evaluation-v2.json"),
+      join(__dirname, "fixtures", "discovery", "evaluation-v3.json"),
       "utf8",
     ),
   ) as {
     version: number;
     capture: {
-      provider: string;
       model: string;
+      webSearch: boolean;
       sessionID: string;
-      capturedAt: string;
+      inputDisclosure: string;
       rawOutput: string;
     };
     goldCases: Array<{
@@ -1404,11 +1791,19 @@ test("versioned raw agent capture is scored against independent cross-field gold
       concern: string;
       primaryFieldTerms: string[];
       adjacentFieldTerms: string[];
-      acceptedLeadingVenues: string[];
-      mainTitle: string;
-      mainVenue: string;
-      negativeTitle: string;
-      negativeClass: string;
+      venueUniverse: Array<{
+        venueName: string;
+        aliases: string[];
+        expected: "leading" | "not_leading";
+      }>;
+      mainPaper: {
+        verifiedTitle: string;
+        verifiedClass: string;
+        verifiedVenueAcronym: string;
+        officialEvidenceURLs: string[];
+      };
+      temptingNegative: { verifiedClass: string };
+      acceptedNoveltyRelationships: string[];
     }>;
   };
   const capture = JSON.parse(evaluation.capture.rawOutput) as {
@@ -1418,134 +1813,161 @@ test("versioned raw agent capture is scored against independent cross-field gold
       adjacentFields: string[];
       venues: Array<{
         venueName: string;
-        fields: string[];
         judgment: string;
         confidence: string;
-        basis: string;
       }>;
+      mainPaper: {
+        title: string;
+        venueAcronym: string;
+        publicationClass: string;
+        officialEvidenceURL: string;
+      };
+      temptingNegative: { title: string; publicationClass: string };
+      noveltyRelationship: string;
     }>;
   };
-  assert.equal(evaluation.version, 2);
+  assert.equal(evaluation.version, 3);
+  assert.equal(evaluation.capture.webSearch, true);
   assert.match(evaluation.capture.sessionID, /^[0-9a-f-]{20,}$/);
+  assert.match(evaluation.capture.inputDisclosure, /no venue expectations/i);
   assert.equal(capture.cases.length, 3);
   assert.equal(evaluation.goldCases.length, 3);
+  assert.deepEqual(
+    capture.cases.map((entry) => entry.id),
+    evaluation.goldCases.map((entry) => entry.id),
+  );
 
-  const parsedCases = capture.cases.map((prediction, caseIndex) => {
-    const gold = evaluation.goldCases.find(
-      (entry) => entry.id === prediction.id,
-    );
-    assert.ok(gold, `missing independent gold for ${prediction.id}`);
-    const queries = ["problem", "method", "evaluation"].map((family) => ({
-      query: `${gold.concern} ${family}`,
-      family,
-      rationale: `${family} coverage`,
-    }));
-    const main = paper({
-      candidateID: `evaluation-main-${caseIndex}`,
-      title: gold.mainTitle,
-      venueName: gold.mainVenue,
-      urls: [`https://proceedings.example.org/evaluation-${caseIndex}`],
-      publicationEvidence: [
-        {
-          type: "official_proceedings",
-          sourceName: "Reviewer-confirmed official evidence",
-          url: `https://proceedings.example.org/evaluation-${caseIndex}`,
-          observedTitle: gold.mainTitle,
-          observedVenue: gold.mainVenue,
-          observedTrack: "Main Conference",
-          supports: ["identity", "published", "main_track"],
-        },
-      ],
-      leadingVenueAssessment: prediction.venues.find(
-        (venue) => venue.venueName === gold.mainVenue,
-      ),
-      noveltyRelationship: "same_problem_different_method",
-    });
-    const negative = paper({
-      candidateID: `evaluation-negative-${caseIndex}`,
-      title: gold.negativeTitle,
-      urls: ["https://arxiv.org/abs/2601.00001"],
-      providerIDs: { arxiv: `2601.${caseIndex}` },
-      publicationClass: gold.negativeClass,
-      publicationEvidence:
-        gold.negativeClass === "preprint_only"
-          ? [
-              {
-                type: "scholarly_index",
-                sourceName: "Live scholarly provider: arxiv",
-                url: "https://arxiv.org/abs/2601.00001",
-                observedTitle: gold.negativeTitle,
-                supports: ["identity"],
-              },
-            ]
-          : [],
-      venueName: prediction.venues[0].venueName,
-      leadingVenueAssessment: prediction.venues[0],
-    });
-    return {
-      gold,
-      prediction,
-      parsed: parseDiscoveryResult(
-        JSON.stringify({
-          schemaVersion: 1,
-          plan: {
-            concernSummary: gold.concern,
-            primaryField: prediction.primaryField,
-            adjacentFields: prediction.adjacentFields,
-            venues: prediction.venues,
-            queries,
-            scopeSummary:
-              "Raw captured prediction scored against independent reviewer gold.",
-          },
-          verifiedMain: [main],
-          otherPeerReviewed: [],
-          noveltyRadar: [negative],
-          excluded: [],
-          limitations: [],
-          completedAt: evaluation.capture.capturedAt,
-        }),
-      ),
-    };
-  });
+  const normalizeTerm = (value: string) =>
+    value
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, " ")
+      .trim();
+  const predictsLeading = (venue: { judgment: string; confidence: string }) =>
+    venue.judgment === "leading" ||
+    (venue.judgment === "plausibly_leading" && venue.confidence === "high");
+  const scoreVenueAgreement = (leadingByCase: Map<string, Set<string>>) => {
+    let agreements = 0;
+    let universeSize = 0;
+    for (const gold of evaluation.goldCases) {
+      const predicted = leadingByCase.get(gold.id) || new Set<string>();
+      for (const venue of gold.venueUniverse) {
+        universeSize += 1;
+        const predictedLeading = venue.aliases.some((alias) =>
+          predicted.has(normalizeTerm(alias)),
+        );
+        if (predictedLeading === (venue.expected === "leading")) {
+          agreements += 1;
+        }
+      }
+    }
+    return agreements / universeSize;
+  };
 
+  const observedLeading = new Map(
+    capture.cases.map((entry) => [
+      entry.id,
+      new Set(
+        entry.venues
+          .filter(predictsLeading)
+          .map((venue) => normalizeTerm(venue.venueName)),
+      ),
+    ]),
+  );
+  const venueAgreement = scoreVenueAgreement(observedLeading);
   assert.ok(
-    parsedCases.every(
-      ({ gold, prediction, parsed }) =>
-        parsed.plan.primaryField.length > 3 &&
-        parsed.plan.adjacentFields.length >= 3 &&
-        parsed.verifiedMain.length === 1 &&
-        parsed.verifiedMain[0].title === gold.mainTitle &&
-        parsed.verifiedMain[0].publicationEvidence.some((evidence) =>
-          evidence.supports.includes("main_track"),
-        ) &&
-        !parsed.verifiedMain.some(
-          (candidate) => candidate.title === gold.negativeTitle,
+    venueAgreement >= 0.9,
+    `reviewed leading-venue agreement ${venueAgreement} must be >= 0.9`,
+  );
+  // The pinned capture under-rates ASPLOS, so the scorer must record that
+  // false negative instead of quietly reaching a perfect score.
+  assert.equal(
+    observedLeading.get("architecture-memory")?.has("asplos"),
+    false,
+  );
+  assert.ok(Math.abs(venueAgreement - 14 / 15) < 1e-9);
+  const allLeading = new Map(
+    evaluation.goldCases.map((gold) => [
+      gold.id,
+      new Set(
+        gold.venueUniverse.flatMap((venue) =>
+          venue.aliases.map((alias) => normalizeTerm(alias)),
         ),
-    ),
+      ),
+    ]),
   );
-  const expected = evaluation.goldCases.flatMap(
-    (entry) => entry.acceptedLeadingVenues,
-  );
-  const observedByCase = parsedCases.map(({ gold, parsed }) => ({
-    expected: gold.acceptedLeadingVenues,
-    observed: parsed.plan.venues
-      .filter(
-        (venue) =>
-          venue.judgment === "leading" ||
-          (venue.judgment === "plausibly_leading" &&
-            venue.confidence === "high"),
-      )
-      .map((venue) => venue.venueName),
-  }));
-  const matches = observedByCase.reduce(
-    (count, result) =>
-      count +
-      result.expected.filter((venue) => result.observed.includes(venue)).length,
-    0,
-  );
-  const agreement = matches / expected.length;
   assert.ok(
-    agreement >= 0.9,
-    `reviewed leading-venue agreement ${agreement} must be >= 0.9`,
+    scoreVenueAgreement(allLeading) < 0.9,
+    "predicting every reviewed venue as leading must fail the agreement gate",
   );
+
+  for (const [index, gold] of evaluation.goldCases.entries()) {
+    const prediction = capture.cases[index];
+    const primaryField = normalizeTerm(prediction.primaryField);
+    assert.ok(
+      gold.primaryFieldTerms.some((term) =>
+        primaryField.includes(normalizeTerm(term)),
+      ),
+      `${gold.id}: primary field "${prediction.primaryField}" missed the reviewed terms`,
+    );
+    const adjacentFields = prediction.adjacentFields.map(normalizeTerm);
+    const adjacentOverlap = gold.adjacentFieldTerms.filter((term) =>
+      adjacentFields.some(
+        (field) =>
+          field.includes(normalizeTerm(term)) ||
+          normalizeTerm(term).includes(field),
+      ),
+    );
+    assert.ok(
+      adjacentFields.length >= 3 && adjacentOverlap.length >= 2,
+      `${gold.id}: adjacent fields missed the reviewed terms`,
+    );
+    const mainPaper = prediction.mainPaper;
+    assert.equal(
+      normalizeTerm(mainPaper.title),
+      normalizeTerm(gold.mainPaper.verifiedTitle),
+      `${gold.id}: main paper title diverged from the verified record`,
+    );
+    assert.equal(mainPaper.publicationClass, gold.mainPaper.verifiedClass);
+    assert.equal(
+      normalizeTerm(mainPaper.venueAcronym),
+      normalizeTerm(gold.mainPaper.verifiedVenueAcronym),
+    );
+    assert.ok(
+      gold.mainPaper.officialEvidenceURLs.includes(
+        mainPaper.officialEvidenceURL,
+      ),
+      `${gold.id}: evidence URL ${mainPaper.officialEvidenceURL} is not a verified official record`,
+    );
+    assert.ok(
+      gold.venueUniverse.some(
+        (venue) =>
+          venue.expected === "leading" &&
+          venue.aliases.includes(normalizeTerm(mainPaper.venueAcronym)),
+      ),
+      `${gold.id}: main paper venue is not a reviewed leading venue`,
+    );
+    assert.notEqual(
+      prediction.temptingNegative.publicationClass,
+      "verified_main",
+      `${gold.id}: a tempting negative must never claim the primary lane`,
+    );
+    assert.ok(
+      gold.acceptedNoveltyRelationships.includes(
+        prediction.noveltyRelationship,
+      ),
+      `${gold.id}: novelty relationship ${prediction.noveltyRelationship} not in the reviewed set`,
+    );
+  }
+
+  // Negative classes are scored directly against independently verified gold.
+  // Two gold labels contradict the raw prediction (KOSMOS-1 is a NeurIPS 2023
+  // main-conference paper and "Together or Alone" is a PoPETs journal
+  // publication), so the pinned match count proves the gold labels were not
+  // copied from the capture.
+  const negativeClassMatches = evaluation.goldCases.filter(
+    (gold, index) =>
+      capture.cases[index].temptingNegative.publicationClass ===
+      gold.temptingNegative.verifiedClass,
+  ).length;
+  assert.equal(negativeClassMatches, 1);
 });

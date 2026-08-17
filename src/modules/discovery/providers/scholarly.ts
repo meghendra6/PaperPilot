@@ -1,4 +1,8 @@
-import { normalizeHttpURL, normalizeWhitespace } from "../normalize";
+import {
+  normalizeDiscoveryDOI,
+  normalizeHttpURL,
+  normalizeWhitespace,
+} from "../normalize";
 import type { DiscoveryProviderCandidate } from "../types";
 import type { CandidateSearchProvider, DiscoveryFetch } from "./types";
 
@@ -72,7 +76,7 @@ export const semanticScholarProvider: CandidateSearchProvider = {
             typeof record.abstract === "string" ? record.abstract : undefined,
           doi:
             typeof record.externalIds?.DOI === "string"
-              ? record.externalIds.DOI
+              ? normalizeDiscoveryDOI(record.externalIds.DOI)
               : undefined,
           venueName:
             typeof record.venue === "string" ? record.venue : undefined,
@@ -121,7 +125,10 @@ export const openAlexProvider: CandidateSearchProvider = {
               typeof record.publication_year === "number"
                 ? record.publication_year
                 : undefined,
-            doi: typeof record.doi === "string" ? record.doi : undefined,
+            doi:
+              typeof record.doi === "string"
+                ? normalizeDiscoveryDOI(record.doi)
+                : undefined,
             venueName:
               typeof record.primary_location?.source?.display_name === "string"
                 ? record.primary_location.source.display_name
@@ -224,7 +231,7 @@ export const crossrefProvider: CandidateSearchProvider = {
               Array.isArray(dateParts) && typeof dateParts[0] === "number"
                 ? dateParts[0]
                 : undefined,
-            doi: String(record.DOI),
+            doi: normalizeDiscoveryDOI(String(record.DOI)),
             venueName: Array.isArray(record["container-title"])
               ? record["container-title"][0]
               : undefined,

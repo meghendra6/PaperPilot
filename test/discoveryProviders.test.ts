@@ -154,6 +154,83 @@ test("official evidence inspection refuses private redirects and does not consum
   assert.equal(cancelled, true);
 });
 
+test("Zotero transport aborts a PDF at response headers without reading its body", async () => {
+  const previousZotero = (globalThis as { Zotero?: unknown }).Zotero;
+  const previousComponents = (globalThis as { Components?: unknown })
+    .Components;
+  let aborted = false;
+  let responseTextRead = false;
+  const listeners = new Map<string, Array<() => void>>();
+  // Gecko clears readyState, status, and response headers after abort(); the
+  // mock mirrors that so header snapshots taken after abort would fail.
+  const xhr = {
+    readyState: 2,
+    status: 200,
+    statusText: "OK",
+    channel: {
+      loadFlags: 0,
+      QueryInterface: () => ({ remoteAddress: "8.8.8.8" }),
+    },
+    get responseText() {
+      responseTextRead = true;
+      throw new Error("PDF body must not be read");
+    },
+    getResponseHeader: (name: string) =>
+      !aborted && name.toLowerCase() === "content-type"
+        ? "application/pdf"
+        : null,
+    getAllResponseHeaders: () =>
+      aborted ? "" : "content-type: application/pdf\r\n",
+    addEventListener: (name: string, listener: () => void) => {
+      listeners.set(name, [...(listeners.get(name) || []), listener]);
+    },
+    abort: () => {
+      aborted = true;
+      xhr.readyState = 0;
+      xhr.status = 0;
+      xhr.statusText = "";
+    },
+  };
+  (globalThis as { Components?: unknown }).Components = {
+    interfaces: {
+      nsIHttpChannelInternal: {},
+      nsIRequest: {
+        LOAD_BYPASS_CACHE: 1,
+        INHIBIT_CACHING: 2,
+        LOAD_FRESH_CONNECTION: 4,
+      },
+    },
+  };
+  (globalThis as { Zotero?: unknown }).Zotero = {
+    HTTP: {
+      request: (_method: string, _url: string, options: any) => {
+        assert.equal(options.anon, true);
+        options.cancellerReceiver(() => xhr.abort());
+        options.requestObserver(xhr);
+        for (const listener of listeners.get("readystatechange") || []) {
+          listener();
+        }
+        return aborted
+          ? Promise.reject(new Error("aborted"))
+          : Promise.resolve(xhr);
+      },
+    },
+  };
+  try {
+    const inspected = await inspectOfficialEvidenceURL({
+      url: "https://venue.example.org/paper.pdf",
+      resolveHost: async () => ["8.8.8.8"],
+    });
+    assert.equal(aborted, true);
+    assert.equal(responseTextRead, false);
+    assert.equal(inspected.bodyInspected, false);
+    assert.equal(inspected.contentType, "application/pdf");
+  } finally {
+    (globalThis as { Zotero?: unknown }).Zotero = previousZotero;
+    (globalThis as { Components?: unknown }).Components = previousComponents;
+  }
+});
+
 test("official evidence rejects private DNS answers and mapped private IPv6", async () => {
   for (const address of [
     "::ffff:127.0.0.1",
@@ -378,4 +455,19 @@ test("external evidence URLs reject embedded credentials", () => {
     "https://api-user:super-secret@isca-conference.org/program";
   assert.equal(isPlausibleOfficialEvidenceURL(credentialURL), false);
   assert.equal(classifyOfficialEvidenceURL(credentialURL), undefined);
+});
+
+test("external evidence URLs reject secret-bearing query parameters", () => {
+  assert.equal(
+    isPlausibleOfficialEvidenceURL(
+      "https://venue.example.org/program?token=supersecret",
+    ),
+    false,
+  );
+  assert.equal(
+    isPlausibleOfficialEvidenceURL(
+      "https://openreview.net/forum?id=public-paper-id",
+    ),
+    true,
+  );
 });

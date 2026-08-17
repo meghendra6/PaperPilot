@@ -13,9 +13,12 @@ export function normalizeDiscoveryTitle(value: string) {
 }
 
 export function normalizeDiscoveryDOI(value: string) {
-  return normalizeWhitespace(value)
+  const normalized = normalizeWhitespace(value)
     .replace(/^https?:\/\/(dx\.)?doi\.org\//i, "")
     .toLowerCase();
+  return /^10\.\d{4,9}\/[-._;()/:a-z0-9]+$/i.test(normalized)
+    ? normalized
+    : undefined;
 }
 
 export function normalizeHttpURL(value: string) {
@@ -25,6 +28,12 @@ export function normalizeHttpURL(value: string) {
       return undefined;
     }
     if (url.username || url.password) return undefined;
+    const secretParameter = [...url.searchParams.keys()].some((key) =>
+      /^(?:access_?token|auth|authorization|code|credential|key|api_?key|secret|signature|sig|token)$/i.test(
+        key,
+      ),
+    );
+    if (secretParameter) return undefined;
     url.hash = "";
     return url.href;
   } catch {
@@ -36,7 +45,8 @@ export function canonicalDiscoveryPaperID(
   paper: Pick<DiscoveredPaper, "title" | "authors" | "year" | "doi">,
   disambiguator = "",
 ) {
-  if (paper.doi) return `doi:${normalizeDiscoveryDOI(paper.doi)}`;
+  const doi = paper.doi ? normalizeDiscoveryDOI(paper.doi) : undefined;
+  if (doi) return `doi:${doi}`;
   const author = paper.authors
     .map(authorKey)
     .filter(Boolean)
@@ -67,6 +77,22 @@ function hasAuthorOverlap(left: string[], right: string[]) {
   return right.some((author) => leftAuthors.has(authorKey(author)));
 }
 
+function hasSharedProviderID(
+  left: Pick<DiscoveredPaper, "providerIDs">,
+  right: Pick<DiscoveredPaper, "providerIDs">,
+) {
+  return Object.entries(left.providerIDs).some(
+    ([provider, id]) => Boolean(id) && right.providerIDs[provider] === id,
+  );
+}
+
+function normalizeVersionTitle(value: string) {
+  return normalizeDiscoveryTitle(value).replace(
+    /(?: preprint| extended version| conference version| journal version)$/u,
+    "",
+  );
+}
+
 export function areLikelySamePaper(
   left: Pick<
     DiscoveredPaper,
@@ -76,20 +102,43 @@ export function areLikelySamePaper(
     DiscoveredPaper,
     "title" | "authors" | "year" | "doi" | "providerIDs"
   >,
+  options: { trustProviderIDs?: boolean } = {},
 ) {
-  if (left.doi && right.doi) {
-    return normalizeDiscoveryDOI(left.doi) === normalizeDiscoveryDOI(right.doi);
+  const titleMatches =
+    normalizeVersionTitle(left.title) === normalizeVersionTitle(right.title);
+  const yearsConflict =
+    Boolean(left.year && right.year) && Math.abs(left.year! - right.year!) > 1;
+  const authorsConflict =
+    left.authors.length > 0 &&
+    right.authors.length > 0 &&
+    !hasAuthorOverlap(left.authors, right.authors);
+  const materiallyConflicts = !titleMatches || yearsConflict || authorsConflict;
+  const leftDOI = left.doi ? normalizeDiscoveryDOI(left.doi) : undefined;
+  const rightDOI = right.doi ? normalizeDiscoveryDOI(right.doi) : undefined;
+  if (leftDOI && rightDOI) {
+    return leftDOI === rightDOI && !materiallyConflicts;
   }
 
-  if (
-    normalizeDiscoveryTitle(left.title) !== normalizeDiscoveryTitle(right.title)
-  ) {
-    return false;
+  if (options.trustProviderIDs && hasSharedProviderID(left, right)) {
+    return !materiallyConflicts;
   }
 
-  if (!left.year || !right.year || left.year !== right.year) return false;
-  if (!left.authors.length || !right.authors.length) return false;
-  return hasAuthorOverlap(left.authors, right.authors);
+  if (!titleMatches) return false;
+
+  if (!left.year || !right.year) return false;
+  if (left.year === right.year) {
+    return (
+      !left.authors.length ||
+      !right.authors.length ||
+      hasAuthorOverlap(left.authors, right.authors)
+    );
+  }
+  return (
+    Math.abs(left.year - right.year) <= 1 &&
+    left.authors.length > 0 &&
+    right.authors.length > 0 &&
+    hasAuthorOverlap(left.authors, right.authors)
+  );
 }
 
 export function deduplicateDiscoveredPapers(papers: DiscoveredPaper[]) {
@@ -166,10 +215,8 @@ export function deduplicateDiscoveredPapers(papers: DiscoveredPaper[]) {
   };
 
   for (const paper of papers) {
-    const existingIndex = unique.findIndex(
-      (candidate) =>
-        candidate.candidateID === paper.candidateID &&
-        areLikelySamePaper(candidate, paper),
+    const existingIndex = unique.findIndex((candidate) =>
+      areLikelySamePaper(candidate, paper),
     );
     if (existingIndex >= 0) {
       duplicateTitles.push(paper.title);
@@ -198,6 +245,7 @@ export function deduplicateProviderCandidates(
           providerIDs: { [entry.provider]: entry.providerID },
         },
         candidateShape,
+        { trustProviderIDs: true },
       ),
     );
     if (existingIndex >= 0) {

@@ -27,6 +27,7 @@ import type {
   PublicReviewInsight,
   RelationshipStrength,
   ResearchConcern,
+  ResearchConcernOrigin,
 } from "./discovery/types";
 import { normalizeResponseLanguage } from "./translation/responseLanguage";
 import { getPref } from "../utils/prefs";
@@ -83,6 +84,78 @@ export interface RecommendationGroup {
 export interface RelatedPaperResponse {
   groups: RecommendationGroup[];
   discovery?: DiscoveryResult;
+}
+
+export interface RelatedRecommendationPaneState {
+  sessionID?: string;
+  running: boolean;
+  status: string;
+  groups: RecommendationGroup[];
+  discovery?: DiscoveryResult;
+  concern?: string;
+  concernOrigin?: ResearchConcernOrigin;
+  reviewInsightRunningCandidateID?: string;
+}
+
+export interface RelatedRunSubmission {
+  concern: string;
+  concernOrigin: ResearchConcernOrigin;
+  previousState: RelatedRecommendationPaneState;
+}
+
+export function buildRelatedRunProgressState(
+  current: RelatedRecommendationPaneState,
+  submission: RelatedRunSubmission,
+  status: string,
+): RelatedRecommendationPaneState {
+  return {
+    ...current,
+    running: true,
+    status,
+    concern: submission.concern,
+    concernOrigin: submission.concernOrigin,
+  };
+}
+
+export function buildRelatedRunSuccessState(params: {
+  submission: RelatedRunSubmission;
+  sessionID?: string;
+  groups: RecommendationGroup[];
+  discovery?: DiscoveryResult;
+}): RelatedRecommendationPaneState {
+  const paperCount = params.groups.reduce(
+    (count, group) => count + group.papers.length,
+    0,
+  );
+  return {
+    sessionID: params.sessionID,
+    running: false,
+    status: `Found ${paperCount} papers across verified evidence lanes`,
+    groups: params.groups,
+    discovery: params.discovery,
+    concern: params.submission.concern,
+    concernOrigin: params.submission.concernOrigin,
+  };
+}
+
+export function buildRelatedRunFailureState(params: {
+  submission: RelatedRunSubmission;
+  sessionID?: string;
+  error: unknown;
+}): RelatedRecommendationPaneState {
+  const previous = params.submission.previousState;
+  return {
+    sessionID: params.sessionID,
+    running: false,
+    status:
+      params.error instanceof Error
+        ? params.error.message
+        : "Related paper recommendation failed.",
+    groups: previous.groups,
+    discovery: previous.discovery,
+    concern: previous.concern,
+    concernOrigin: previous.concernOrigin,
+  };
 }
 
 export interface LibraryItemCandidate {
@@ -657,6 +730,16 @@ export async function generateRelatedPaperGroups(params: {
       title: params.itemTitle,
       sessionId: session.sessionId,
       requiredDiscoveryCapabilities: assertCapabilitiesUnchanged(),
+      signal: params.signal,
+      deadline,
+      onDeferredCleanup: (cleanup) => {
+        releaseReservation = false;
+        void cleanup
+          .catch(() => undefined)
+          .finally(() =>
+            releaseWorkspaceRunReservation(params.itemID, reservationToken),
+          );
+      },
       question: `${buildRelatedPaperQuestion(
         item,
         params.concern,
@@ -711,6 +794,7 @@ export async function generateRelatedPaperGroups(params: {
             const discovery = await verifyDiscoveryEvidenceLive({
               discovery: parsed.discovery,
               providerCandidates: providerResult.candidates,
+              limitations: providerResult.limitations,
               signal: params.signal,
               deadline,
             });
@@ -822,6 +906,16 @@ export async function generatePublicReviewInsight(params: {
         }
         return current;
       })(),
+      signal: params.signal,
+      deadline,
+      onDeferredCleanup: (cleanup) => {
+        releaseReservation = false;
+        void cleanup
+          .catch(() => undefined)
+          .finally(() =>
+            releaseWorkspaceRunReservation(params.itemID, reservationToken),
+          );
+      },
       question: buildPublicReviewInsightQuestion({
         title: params.paper.title,
         venue: params.paper.venue,
@@ -933,7 +1027,10 @@ export async function chooseCollectionForRecommendation(sourceItem: any) {
   const selectedCollection = resolveCollectionReference(
     pane?.getSelectedCollection?.(),
   );
-  if (selectedCollection) {
+  if (
+    selectedCollection &&
+    selectedCollection.libraryID === sourceItem.libraryID
+  ) {
     return selectedCollection;
   }
 

@@ -1,0 +1,242 @@
+{
+  "version": 3,
+  "capture": {
+    "provider": "codex-cli",
+    "cliVersion": "0.147.0",
+    "model": "gpt-5.6-luna",
+    "reasoningEffort": "low",
+    "webSearch": true,
+    "sandbox": "read-only",
+    "workdir": "/tmp",
+    "capturedAt": "2026-08-17T18:27:00+09:00",
+    "sessionID": "01a00f0d-6671-70e0-baff-0ba3cc34f7c4",
+    "promptSHA256": "2929a9ef16a12e3cab23ab9d79020c464b81cc192d58d46044ad23400a804611",
+    "execution": "Ephemeral read-only Codex CLI run outside the repository with the web-search tool enabled, matching the discovery feature's required web-search capability.",
+    "inputDisclosure": "The capture prompt supplied only the three benchmark concerns, the required JSON output shape, and the discovery class/relationship vocabularies. No venue expectations, paper identities, or gold labels were disclosed, and the raw output below is stored verbatim.",
+    "rawOutput": "{\"cases\":[{\"id\":\"ai-multimodal\",\"primaryField\":\"robust multimodal representation learning\",\"adjacentFields\":[\"computer vision\",\"natural language processing\",\"self-supervised learning\",\"domain generalization\"],\"venues\":[{\"venueName\":\"NeurIPS\",\"fields\":[\"machine learning\",\"representation learning\"],\"judgment\":\"leading\",\"confidence\":\"high\",\"basis\":\"NeurIPS is a leading archival venue for general-purpose multimodal and robust representation learning.\"},{\"venueName\":\"ICML\",\"fields\":[\"machine learning\",\"multimodal learning\"],\"judgment\":\"leading\",\"confidence\":\"high\",\"basis\":\"ICML regularly publishes influential multimodal representation and robustness work.\"},{\"venueName\":\"CVPR\",\"fields\":[\"computer vision\",\"vision-language learning\"],\"judgment\":\"leading\",\"confidence\":\"high\",\"basis\":\"CVPR is a leading venue for visual and vision-language representation learning.\"},{\"venueName\":\"ACL\",\"fields\":[\"natural language processing\",\"vision-language learning\"],\"judgment\":\"plausibly_leading\",\"confidence\":\"medium\",\"basis\":\"ACL is leading for language-centered multimodal work but is less central for broadly robust visual representations.\"},{\"venueName\":\"ICLR\",\"fields\":[\"deep learning\",\"representation learning\"],\"judgment\":\"leading\",\"confidence\":\"high\",\"basis\":\"ICLR is a leading archival venue for self-supervised, multimodal, and robustness-oriented deep learning.\"}],\"mainPaper\":{\"title\":\"Learning Transferable Visual Models From Natural Language Supervision\",\"authors\":[\"Alec Radford\",\"Jong Wook Kim\",\"Chris Hallacy\",\"Aditya Ramesh\",\"Gabriel Goh\",\"Sandhini Agarwal\",\"Girish Sastry\",\"Amanda Askell\",\"Pamela Mishkin\",\"Jack Clark\",\"Gretchen Krueger\",\"Ilya Sutskever\"],\"year\":2021,\"venueName\":\"International Conference on Machine Learning\",\"venueAcronym\":\"ICML\",\"publicationClass\":\"verified_main\",\"officialEvidenceURL\":\"https://proceedings.mlr.press/v139/radford21a.html\",\"evidenceBasis\":\"The official PMLR proceedings record identifies the paper, authors, year, and publication in the main ICML 2021 proceedings.\"},\"temptingNegative\":{\"title\":\"KOSMOS-1: Multimodal Large Language Model\",\"publicationClass\":\"preprint_only\",\"reason\":\"It is a highly relevant multimodal representation and reasoning paper commonly cited as a published milestone, but its widely available record is an arXiv preprint rather than a verified main-conference paper.\"},\"noveltyRelationship\":\"same_problem_different_method\"},{\"id\":\"architecture-memory\",\"primaryField\":\"computer architecture for memory hierarchies and data-intensive processors\",\"adjacentFields\":[\"processing-in-memory\",\"computer systems\",\"memory systems\",\"energy-efficient architecture\"],\"venues\":[{\"venueName\":\"ISCA\",\"fields\":[\"computer architecture\",\"memory systems\"],\"judgment\":\"leading\",\"confidence\":\"high\",\"basis\":\"ISCA is a premier archival venue for processor, memory hierarchy, and processing-in-memory architecture.\"},{\"venueName\":\"MICRO\",\"fields\":[\"processor architecture\",\"memory systems\"],\"judgment\":\"leading\",\"confidence\":\"high\",\"basis\":\"MICRO is a premier venue for detailed processor and memory-system designs.\"},{\"venueName\":\"HPCA\",\"fields\":[\"high-performance architecture\",\"memory hierarchy\"],\"judgment\":\"leading\",\"confidence\":\"high\",\"basis\":\"HPCA is a leading archival venue for high-performance processors and memory hierarchies.\"},{\"venueName\":\"ASPLOS\",\"fields\":[\"computer architecture\",\"systems\"],\"judgment\":\"plausibly_leading\",\"confidence\":\"medium\",\"basis\":\"ASPLOS is highly influential for architecture-system co-design but is somewhat broader than a memory-hierarchy-focused target.\"},{\"venueName\":\"IEEE Micro\",\"fields\":[\"computer architecture\",\"architecture surveys\"],\"judgment\":\"plausibly_leading\",\"confidence\":\"medium\",\"basis\":\"IEEE Micro is respected and influential for architecture articles but is a journal-style magazine venue rather than the primary main-conference target.\"}],\"mainPaper\":{\"title\":\"The Energy Efficiency of IRAM Architectures\",\"authors\":[\"Richard Fromm\",\"Stylianos Perissakis\",\"Neal Cardwell\",\"Christoforos Kozyrakis\",\"Bruce McGaughy\",\"David Patterson\",\"Thomas Anderson\",\"Katherine Yelick\"],\"year\":1997,\"venueName\":\"International Symposium on Computer Architecture\",\"venueAcronym\":\"ISCA\",\"publicationClass\":\"verified_main\",\"officialEvidenceURL\":\"https://dl.acm.org/doi/10.1145/264107.264214\",\"evidenceBasis\":\"The official ACM Digital Library DOI record identifies this paper as part of the ISCA 1997 proceedings.\"},\"temptingNegative\":{\"title\":\"Evaluation of Existing Architectures in IRAM Systems\",\"publicationClass\":\"verified_workshop\",\"reason\":\"The paper concerns IRAM and memory-system architecture but was published in the Workshop on Mixing Logic and DRAM associated with ISCA rather than the ISCA main program.\"},\"noveltyRelationship\":\"same_problem_different_method\"},{\"id\":\"hci-privacy\",\"primaryField\":\"usable privacy controls in collaborative and social software\",\"adjacentFields\":[\"human-computer interaction\",\"privacy and security\",\"computer-supported cooperative work\",\"social computing\",\"usable security\"],\"venues\":[{\"venueName\":\"CHI\",\"fields\":[\"human-computer interaction\",\"privacy and security\",\"collaborative systems\"],\"judgment\":\"leading\",\"confidence\":\"high\",\"basis\":\"CHI is the leading archival HCI venue for usable privacy controls and collaborative interaction design.\"},{\"venueName\":\"CSCW\",\"fields\":[\"computer-supported cooperative work\",\"collaborative software\"],\"judgment\":\"leading\",\"confidence\":\"high\",\"basis\":\"CSCW is a leading venue for privacy, disclosure, and control mechanisms in collaborative systems.\"},{\"venueName\":\"SOUPS\",\"fields\":[\"usable privacy\",\"usable security\"],\"judgment\":\"leading\",\"confidence\":\"high\",\"basis\":\"SOUPS is a leading specialized venue for usable privacy and security controls.\"},{\"venueName\":\"UIST\",\"fields\":[\"interactive systems\",\"interface design\"],\"judgment\":\"plausibly_leading\",\"confidence\":\"medium\",\"basis\":\"UIST can be an excellent target for novel privacy-control interfaces but is less consistently centered on privacy research.\"},{\"venueName\":\"IEEE Symposium on Security and Privacy\",\"fields\":[\"privacy\",\"computer security\"],\"judgment\":\"plausibly_leading\",\"confidence\":\"medium\",\"basis\":\"IEEE S&P is leading for technical privacy mechanisms but is not always the best venue for usability-centered collaborative controls.\"}],\"mainPaper\":{\"title\":\"A Field Trial of Privacy Nudges for Facebook\",\"authors\":[\"Yang Wang\",\"Pedro Giovanni Leon\",\"Alessandro Acquisti\",\"Lorrie Faith Cranor\",\"Alain Forget\",\"Norman Sadeh\"],\"year\":2014,\"venueName\":\"ACM Conference on Human Factors in Computing Systems\",\"venueAcronym\":\"CHI\",\"publicationClass\":\"verified_main\",\"officialEvidenceURL\":\"https://doi.org/10.1145/2556288.2557413\",\"evidenceBasis\":\"The official ACM DOI record identifies the exact paper as published in the main CHI 2014 proceedings.\"},\"temptingNegative\":{\"title\":\"Together or Alone: The Price of Privacy in Collaborative Learning\",\"publicationClass\":\"preprint_only\",\"reason\":\"It directly studies privacy tradeoffs in collaboration but is presented as an arXiv preprint rather than a verified archival main-conference publication.\"},\"noveltyRelationship\":\"same_problem_different_method\"}]}"
+  },
+  "scoringRules": {
+    "leadingPrediction": "A venue counts as predicted-leading when judgment is 'leading', or judgment is 'plausibly_leading' with confidence 'high'. Universe venues absent from the prediction count as predicted-not-leading.",
+    "venueAgreement": "(TP + TN) / universe size across all cases; false positives on expected-not-leading venues lower the score, so predicting every venue as leading cannot reach the gate."
+  },
+  "goldCases": [
+    {
+      "id": "ai-multimodal",
+      "concern": "robust multimodal representation learning",
+      "primaryFieldTerms": [
+        "multimodal",
+        "representation learning",
+        "machine learning"
+      ],
+      "adjacentFieldTerms": [
+        "computer vision",
+        "natural language processing",
+        "self-supervised learning",
+        "representation learning",
+        "domain generalization"
+      ],
+      "venueUniverse": [
+        {
+          "venueName": "NeurIPS",
+          "aliases": ["neurips", "neural information processing systems"],
+          "expected": "leading"
+        },
+        {
+          "venueName": "ICML",
+          "aliases": ["icml", "international conference on machine learning"],
+          "expected": "leading"
+        },
+        {
+          "venueName": "ICLR",
+          "aliases": [
+            "iclr",
+            "international conference on learning representations"
+          ],
+          "expected": "leading"
+        },
+        {
+          "venueName": "CVPR",
+          "aliases": [
+            "cvpr",
+            "conference on computer vision and pattern recognition"
+          ],
+          "expected": "leading"
+        },
+        {
+          "venueName": "ACL",
+          "aliases": [
+            "acl",
+            "association for computational linguistics",
+            "annual meeting of the association for computational linguistics"
+          ],
+          "expected": "not_leading",
+          "basis": "Reviewed expectation: ACL leads language-centered work but is not a default leading venue for broadly robust multimodal representation learning."
+        }
+      ],
+      "mainPaper": {
+        "verifiedTitle": "Learning Transferable Visual Models From Natural Language Supervision",
+        "verifiedClass": "verified_main",
+        "verifiedVenueAcronym": "ICML",
+        "officialEvidenceURLs": [
+          "https://proceedings.mlr.press/v139/radford21a.html"
+        ],
+        "verificationBasis": "PMLR volume 139 record (pp. 8748-8763) confirms the ICML 2021 main-proceedings publication; checked 2026-08-17."
+      },
+      "temptingNegative": {
+        "verifiedClass": "verified_main",
+        "verificationBasis": "The predicted title 'KOSMOS-1: Multimodal Large Language Model' is a colloquial alias of 'Language Is Not All You Need: Aligning Perception with Language Models', which was accepted to the NeurIPS 2023 main conference track (proceedings.neurips.cc); checked 2026-08-17. The raw prediction's 'preprint_only' claim is therefore a scored miss."
+      },
+      "acceptedNoveltyRelationships": [
+        "same_problem_different_method",
+        "extends_or_generalizes"
+      ]
+    },
+    {
+      "id": "architecture-memory",
+      "concern": "memory hierarchy design for data-intensive processors",
+      "primaryFieldTerms": ["computer architecture", "memory"],
+      "adjacentFieldTerms": [
+        "memory systems",
+        "computer systems",
+        "processing-in-memory",
+        "data-intensive computing",
+        "energy-efficient architecture"
+      ],
+      "venueUniverse": [
+        {
+          "venueName": "ISCA",
+          "aliases": [
+            "isca",
+            "international symposium on computer architecture"
+          ],
+          "expected": "leading"
+        },
+        {
+          "venueName": "MICRO",
+          "aliases": ["micro", "international symposium on microarchitecture"],
+          "expected": "leading"
+        },
+        {
+          "venueName": "HPCA",
+          "aliases": [
+            "hpca",
+            "international symposium on high-performance computer architecture"
+          ],
+          "expected": "leading"
+        },
+        {
+          "venueName": "ASPLOS",
+          "aliases": [
+            "asplos",
+            "architectural support for programming languages and operating systems"
+          ],
+          "expected": "leading"
+        },
+        {
+          "venueName": "DAC",
+          "aliases": ["dac", "design automation conference"],
+          "expected": "not_leading",
+          "basis": "Reviewed expectation: DAC is a design-automation venue, not a leading main-conference target for memory-hierarchy architecture research."
+        }
+      ],
+      "mainPaper": {
+        "verifiedTitle": "The Energy Efficiency of IRAM Architectures",
+        "verifiedClass": "verified_main",
+        "verifiedVenueAcronym": "ISCA",
+        "officialEvidenceURLs": [
+          "https://dl.acm.org/doi/10.1145/264107.264214",
+          "https://doi.org/10.1145/264107.264214"
+        ],
+        "verificationBasis": "Crossref record for 10.1145/264107.264214 confirms publication in the Proceedings of the 24th International Symposium on Computer Architecture (1997); checked 2026-08-17."
+      },
+      "temptingNegative": {
+        "verifiedClass": "verified_workshop",
+        "verificationBasis": "'Evaluation of Existing Architectures in IRAM Systems' (Bowman, Cardwell, Kozyrakis, Romer, Wang) appeared at the ISCA'97 Workshop on Mixing Logic and DRAM, not the ISCA main program; checked 2026-08-17."
+      },
+      "acceptedNoveltyRelationships": [
+        "same_problem_different_method",
+        "same_method_different_setting",
+        "background_or_foundational"
+      ]
+    },
+    {
+      "id": "hci-privacy",
+      "concern": "usable privacy controls in collaborative software",
+      "primaryFieldTerms": ["usable privacy", "privacy"],
+      "adjacentFieldTerms": [
+        "human-computer interaction",
+        "social computing",
+        "usable security",
+        "computer-supported cooperative work",
+        "privacy and security"
+      ],
+      "venueUniverse": [
+        {
+          "venueName": "CHI",
+          "aliases": [
+            "chi",
+            "conference on human factors in computing systems",
+            "acm conference on human factors in computing systems"
+          ],
+          "expected": "leading"
+        },
+        {
+          "venueName": "CSCW",
+          "aliases": [
+            "cscw",
+            "computer-supported cooperative work",
+            "acm conference on computer-supported cooperative work and social computing"
+          ],
+          "expected": "leading"
+        },
+        {
+          "venueName": "SOUPS",
+          "aliases": ["soups", "symposium on usable privacy and security"],
+          "expected": "leading"
+        },
+        {
+          "venueName": "PETS",
+          "aliases": [
+            "pets",
+            "privacy enhancing technologies symposium",
+            "popets"
+          ],
+          "expected": "not_leading",
+          "basis": "Reviewed expectation: PETS leads privacy-technology research but is not the default leading venue for collaboration-centered usable privacy controls."
+        },
+        {
+          "venueName": "UIST",
+          "aliases": [
+            "uist",
+            "symposium on user interface software and technology"
+          ],
+          "expected": "not_leading",
+          "basis": "Reviewed expectation: UIST leads interaction-technique work but is not a default leading venue for usable-privacy studies."
+        }
+      ],
+      "mainPaper": {
+        "verifiedTitle": "A Field Trial of Privacy Nudges for Facebook",
+        "verifiedClass": "verified_main",
+        "verifiedVenueAcronym": "CHI",
+        "officialEvidenceURLs": [
+          "https://doi.org/10.1145/2556288.2557413",
+          "https://dl.acm.org/doi/10.1145/2556288.2557413"
+        ],
+        "verificationBasis": "Crossref record for 10.1145/2556288.2557413 confirms publication in the Proceedings of the SIGCHI Conference on Human Factors in Computing Systems (2014); checked 2026-08-17."
+      },
+      "temptingNegative": {
+        "verifiedClass": "verified_journal",
+        "verificationBasis": "'Together or Alone: The Price of Privacy in Collaborative Learning' was published in Proceedings on Privacy Enhancing Technologies 2019(2), a peer-reviewed journal-style venue (DOI 10.2478/popets-2019-0019), so the raw prediction's 'preprint_only' claim is a scored miss; checked 2026-08-17."
+      },
+      "acceptedNoveltyRelationships": [
+        "same_problem_different_method",
+        "no_material_collision"
+      ]
+    }
+  ],
+  "knownPredictionErrors": [
+    "ai-multimodal temptingNegative: KOSMOS-1 is actually a NeurIPS 2023 main-conference paper, so its 'preprint_only' class is a scored miss and the gold label contradicts the prediction.",
+    "architecture-memory venues: ASPLOS was judged 'plausibly_leading' with medium confidence, which scores as a false negative against the reviewed leading expectation.",
+    "hci-privacy temptingNegative: 'Together or Alone' is a PoPETs 2019 journal-style publication, so its 'preprint_only' class is a scored miss and the gold label contradicts the prediction."
+  ]
+}

@@ -358,6 +358,7 @@ function parseReviewInsight(
     ? normalizeHttpURL(expectedReviewURL)
     : undefined;
   if (expected && !sourceURLs.includes(expected)) return undefined;
+  const boundSourceURLs = expected ? [expected] : sourceURLs;
   const valuedStrengths = boundedReviewList(value.valuedStrengths);
   const concerns = boundedReviewList(value.concerns);
   const reviewerPriorities = boundedReviewList(value.reviewerPriorities);
@@ -397,7 +398,7 @@ function parseReviewInsight(
     .join(" ").length;
   if (!total || total > MAX_REVIEW_TOTAL_CHARS) return undefined;
   return {
-    sourceURLs,
+    sourceURLs: boundSourceURLs,
     valuedStrengths,
     concerns,
     reviewerPriorities,

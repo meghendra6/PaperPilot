@@ -113,6 +113,27 @@ export function renderCriticalReadSection(params: {
       synthesis.textContent = step.output.summary;
       details.appendChild(synthesis);
       appendList(doc, details, step.output.items);
+      if (step.output.scanObservations) {
+        appendList(doc, details, [
+          `Abstract signal: ${step.output.scanObservations.abstractSignal}`,
+          ...step.output.scanObservations.figureTableSignals.map(
+            (value) => `Figure/table signal: ${value}`,
+          ),
+          ...step.output.scanObservations.openQuestions.map(
+            (value) => `Open question: ${value}`,
+          ),
+        ]);
+      }
+      if (step.output.researchQuestion) {
+        const question = step.output.researchQuestion;
+        appendList(doc, details, [
+          `Research question: ${question.question}`,
+          `Problem: ${question.problem}`,
+          `Setting: ${question.setting}`,
+          `Claimed gap: ${question.claimedGap}`,
+          `Reader-agent comparison: ${question.readerComparison}`,
+        ]);
+      }
       appendList(
         doc,
         details,
@@ -121,6 +142,35 @@ export function renderCriticalReadSection(params: {
             `${check.area} — ${check.status}: ${check.finding}${check.sourceLocator ? ` (${check.sourceLocator})` : ""}`,
         ),
       );
+      if (step.output.evidenceConclusion) {
+        const conclusion = step.output.evidenceConclusion;
+        appendList(doc, details, [
+          ...conclusion.supports.map((value) => `Evidence supports: ${value}`),
+          ...conclusion.doesNotSupport.map(
+            (value) => `Evidence does not support: ${value}`,
+          ),
+          `Strongest result: ${conclusion.strongestResult}`,
+          `Weakest result: ${conclusion.weakestResult}`,
+          `Reader-agent confidence: ${conclusion.confidence}`,
+        ]);
+      }
+      if (step.output.authorComparison) {
+        const comparison = step.output.authorComparison;
+        appendList(doc, details, [
+          `Author conclusion: ${comparison.authorConclusionStatus}${comparison.unavailableReason ? ` — ${comparison.unavailableReason}` : ""}`,
+          ...comparison.agreements.map((value) => `Agreement: ${value}`),
+          ...comparison.readerOmissions.map(
+            (value) => `Reader omission: ${value}`,
+          ),
+          ...comparison.strongerAuthorClaims.map(
+            (value) => `Stronger author claim: ${value}`,
+          ),
+          ...comparison.authorCaveats.map((value) => `Author caveat: ${value}`),
+          ...comparison.interpretiveDifferences.map(
+            (value) => `Interpretive difference: ${value}`,
+          ),
+        ]);
+      }
       if (step.output.methodComparison) {
         appendList(doc, details, [
           ...step.output.methodComparison.agreements.map(
@@ -142,6 +192,13 @@ export function renderCriticalReadSection(params: {
             `${entry.source === "paper_claim" ? "Paper claim" : "Agent inference"}: ${entry.text}${entry.sourceLocator ? ` (${entry.sourceLocator})` : ""}`,
         ),
       );
+      if (step.output.finalSynthesis) {
+        appendList(doc, details, [
+          `Strongest supported claim: ${step.output.finalSynthesis.strongestSupportedClaim}`,
+          `Key residual uncertainty: ${step.output.finalSynthesis.keyResidualUncertainty}`,
+          `Next reading or experiment: ${step.output.finalSynthesis.nextReadingOrExperiment}`,
+        ]);
+      }
       appendList(
         doc,
         details,

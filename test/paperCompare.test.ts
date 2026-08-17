@@ -291,6 +291,63 @@ test("buildPaperCompareRequestFromRecommendations packages a compare prompt from
   );
 });
 
+test("pre-gate Compare excludes public-review URLs from prompts and provenance", () => {
+  const forum = "https://openreview.net/forum?id=paper-b";
+  const request = buildPaperCompareRequestFromRecommendations({
+    currentPaper: { title: "Current Paper" },
+    includeReviewURLs: false,
+    groups: [
+      {
+        category: "Verified main-conference papers",
+        papers: [
+          {
+            title: "Paper B",
+            authors: ["Grace Hopper"],
+            year: 2025,
+            relevanceScore: 0.9,
+            publicationClass: "verified_main",
+            reviewURL: forum,
+            publicationEvidence: [
+              {
+                type: "official_decision",
+                sourceName: "openreview",
+                url: forum,
+                supports: ["identity", "accepted", "main_track"],
+                checkedAt: "2026-08-14T00:00:00.000Z",
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  });
+  assert.doesNotMatch(request.prompt, /openreview\.net/);
+  const result = parsePaperCompareResponse(
+    JSON.stringify({
+      overview: "Bound compare.",
+      papers: [
+        {
+          title: "Current Paper",
+          relationship: "Anchor",
+          strengths: ["A"],
+          tradeoffs: ["B"],
+        },
+        {
+          title: "Paper B",
+          relationship: "Peer",
+          strengths: ["C"],
+          tradeoffs: ["D"],
+        },
+      ],
+      synthesis: ["S"],
+      recommendations: ["R"],
+    }),
+    request.selection,
+  );
+  const card = buildPaperCompareCard(result, request.selection);
+  assert.deepEqual(card.provenance?.[0].evidenceURLs, []);
+});
+
 test("getPaperCompareEntryState disables compare when current paper metadata is missing", () => {
   assert.deepEqual(
     getPaperCompareEntryState({
@@ -780,6 +837,39 @@ test("parsePaperCompareResponse rejects compare output without synthesis", () =>
         }),
       ),
     /synthesis or recommendations/i,
+  );
+});
+
+test("parsePaperCompareResponse rejects invented or incomplete selected identities", () => {
+  const selection = buildCompareSelection({
+    currentPaper: { title: "Current Paper" },
+    comparePapers: [{ title: "Verified Peer" }],
+  });
+  assert.throws(
+    () =>
+      parsePaperCompareResponse(
+        JSON.stringify({
+          overview: "Injected compare.",
+          papers: [
+            {
+              title: "Current Paper",
+              relationship: "Anchor",
+              strengths: ["A"],
+              tradeoffs: ["B"],
+            },
+            {
+              title: "Attacker Paper",
+              relationship: "Invented",
+              strengths: ["C"],
+              tradeoffs: ["D"],
+            },
+          ],
+          synthesis: ["S"],
+          recommendations: ["R"],
+        }),
+        selection,
+      ),
+    /exact selected paper set/i,
   );
 });
 

@@ -412,12 +412,20 @@ async function secureZoteroRequest(
   let cancel: (() => void) | undefined;
   let observedRemoteAddress: string | undefined;
   let boundaryError: Error | undefined;
+  let observedRequest: XMLHttpRequest | undefined;
+  let responseIsPDF = false;
+  // Gecko resets status to 0 and drops response headers once abort() runs, so
+  // the PDF short-circuit must snapshot them before aborting the transfer.
+  let pdfResponseSnapshot:
+    | { status: number; statusText: string; headers: Headers }
+    | undefined;
   const abort = () => cancel?.();
   signal?.addEventListener("abort", abort, { once: true });
   try {
     if (signal?.aborted)
       throw new Error("Official evidence request cancelled.");
     const request = Zotero.HTTP.request("GET", url, {
+      anon: true,
       headers: {
         Accept: "text/html,application/json",
         Connection: "close",
@@ -432,6 +440,7 @@ async function secureZoteroRequest(
         if (signal?.aborted) value();
       },
       requestObserver: (request: XMLHttpRequest) => {
+        observedRequest = request;
         // A cached response has no observable peer address. Force a new
         // connection so the address checked below is the address that served
         // this evidence body, closing the DNS-rebinding gap.
@@ -461,6 +470,22 @@ async function secureZoteroRequest(
               "Official evidence connection used a non-public address.",
             );
             request.abort();
+            return;
+          }
+          if (
+            request.readyState >= 2 &&
+            request
+              .getResponseHeader("content-type")
+              ?.toLowerCase()
+              .includes("application/pdf")
+          ) {
+            responseIsPDF = true;
+            pdfResponseSnapshot = {
+              status: request.status,
+              statusText: request.statusText || "",
+              headers: headersFromXHR(request),
+            };
+            request.abort();
           }
         };
         request.addEventListener("readystatechange", inspectConnection);
@@ -476,6 +501,7 @@ async function secureZoteroRequest(
       },
     }).catch((error: unknown) => {
       if (boundaryError) throw boundaryError;
+      if (responseIsPDF && observedRequest) return observedRequest;
       if (signal?.aborted) {
         throw new Error("Official evidence request cancelled.");
       }
@@ -509,11 +535,15 @@ async function secureZoteroRequest(
         "Official evidence connection used a non-public address.",
       );
     }
-    const response = new Response(xhr.responseText || "", {
-      status: xhr.status,
-      statusText: xhr.statusText || "",
-      headers: headersFromXHR(xhr as XMLHttpRequest),
-    }) as ResponseWithConnection;
+    const response = (
+      responseIsPDF && pdfResponseSnapshot
+        ? new Response(null, pdfResponseSnapshot)
+        : new Response(xhr.responseText || "", {
+            status: xhr.status,
+            statusText: xhr.statusText || "",
+            headers: headersFromXHR(xhr as XMLHttpRequest),
+          })
+    ) as ResponseWithConnection;
     response.remoteAddress = finalRemoteAddress;
     return response;
   } finally {

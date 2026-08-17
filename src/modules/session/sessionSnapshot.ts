@@ -107,109 +107,142 @@ function migrateRecommendationState(value: unknown) {
         ...discovery.noveltyRadar,
       ]
     : [];
-  const groups = value.groups.flatMap((group) => {
-    if (!isPlainObject(group) || !Array.isArray(group.papers)) return [];
-    return [
-      {
-        category:
-          typeof group.category === "string" ? group.category : "Related work",
-        papers: group.papers.flatMap((paper) => {
-          if (!isPlainObject(paper)) return [];
-          const authors = Array.isArray(paper.authors)
-            ? paper.authors.filter(
-                (entry): entry is string => typeof entry === "string",
-              )
-            : [];
-          const providerIDs = isPlainObject(paper.providerIDs)
-            ? Object.fromEntries(
-                Object.entries(paper.providerIDs).filter(
-                  (entry): entry is [string, string] =>
-                    typeof entry[1] === "string",
-                ),
-              )
-            : {};
-          const matching = allowed.filter(
-            (candidate) =>
-              typeof paper.title === "string" &&
-              areLikelySamePaper(candidate, {
-                title: paper.title,
-                authors,
-                year: typeof paper.year === "number" ? paper.year : undefined,
-                doi: typeof paper.doi === "string" ? paper.doi : undefined,
-                providerIDs,
-              }),
-          );
-          const valid = matching.length === 1 ? matching[0] : undefined;
-          if (valid) {
-            return [
-              {
-                ...cloneValue(paper),
-                candidateID: valid.candidateID,
-                existingItemID: undefined,
-                publicationClass: valid.publicationClass,
-                publicationEvidence: cloneValue(valid.publicationEvidence),
-                evidenceConfidence: valid.evidenceConfidence,
-                reviewURL: valid.reviewURL,
-                reviewInsight: valid.reviewInsight,
-                url:
-                  typeof paper.url === "string"
-                    ? normalizeHttpURL(paper.url)
-                    : undefined,
-                urls: Array.isArray(paper.urls)
-                  ? paper.urls
-                      .map((url) =>
-                        typeof url === "string"
-                          ? normalizeHttpURL(url)
-                          : undefined,
-                      )
-                      .filter(Boolean)
-                  : undefined,
-              },
-            ];
-          }
-          const safeURL =
-            typeof paper.url === "string"
-              ? normalizeHttpURL(paper.url)
-              : undefined;
-          const safeURLs = Array.isArray(paper.urls)
-            ? paper.urls
-                .map((url) =>
-                  typeof url === "string" ? normalizeHttpURL(url) : undefined,
-                )
-                .filter((url): url is string => Boolean(url))
-            : [];
-          if (!safeURL && !safeURLs.length && typeof paper.doi !== "string") {
-            return [];
-          }
+  const migratedPapers: Record<string, unknown>[] = value.groups.flatMap(
+    (group) => {
+      if (!isPlainObject(group) || !Array.isArray(group.papers)) return [];
+      return group.papers.flatMap((paper) => {
+        if (!isPlainObject(paper)) return [];
+        const authors = Array.isArray(paper.authors)
+          ? paper.authors.filter(
+              (entry): entry is string => typeof entry === "string",
+            )
+          : [];
+        const providerIDs = isPlainObject(paper.providerIDs)
+          ? Object.fromEntries(
+              Object.entries(paper.providerIDs).filter(
+                (entry): entry is [string, string] =>
+                  typeof entry[1] === "string",
+              ),
+            )
+          : {};
+        const matching = allowed.filter(
+          (candidate) =>
+            typeof paper.title === "string" &&
+            areLikelySamePaper(candidate, {
+              title: paper.title,
+              authors,
+              year: typeof paper.year === "number" ? paper.year : undefined,
+              doi: typeof paper.doi === "string" ? paper.doi : undefined,
+              providerIDs,
+            }),
+        );
+        const valid = matching.length === 1 ? matching[0] : undefined;
+        if (valid) {
           return [
             {
               ...cloneValue(paper),
-              candidateID: canonicalDiscoveryPaperID({
-                title: String(paper.title || ""),
-                authors,
-                year: typeof paper.year === "number" ? paper.year : undefined,
-                doi: typeof paper.doi === "string" ? paper.doi : undefined,
-              }),
+              candidateID: valid.candidateID,
               existingItemID: undefined,
-              url: safeURL,
-              urls: safeURLs,
-              publicationClass: "unverified" as const,
-              publicationEvidence: [],
-              evidenceConfidence: "none" as const,
-              reviewURL: undefined,
-              reviewInsight: undefined,
+              publicationClass: valid.publicationClass,
+              publicationEvidence: cloneValue(valid.publicationEvidence),
+              evidenceConfidence: valid.evidenceConfidence,
+              reviewURL: valid.reviewURL,
+              reviewInsight: valid.reviewInsight,
+              url:
+                typeof paper.url === "string"
+                  ? normalizeHttpURL(paper.url)
+                  : undefined,
+              urls: Array.isArray(paper.urls)
+                ? paper.urls
+                    .map((url) =>
+                      typeof url === "string"
+                        ? normalizeHttpURL(url)
+                        : undefined,
+                    )
+                    .filter(Boolean)
+                : undefined,
             },
           ];
-        }),
-      },
-    ];
+        }
+        const safeURL =
+          typeof paper.url === "string"
+            ? normalizeHttpURL(paper.url)
+            : undefined;
+        const safeURLs = Array.isArray(paper.urls)
+          ? paper.urls
+              .map((url) =>
+                typeof url === "string" ? normalizeHttpURL(url) : undefined,
+              )
+              .filter((url): url is string => Boolean(url))
+          : [];
+        if (!safeURL && !safeURLs.length && typeof paper.doi !== "string") {
+          return [];
+        }
+        return [
+          {
+            ...cloneValue(paper),
+            candidateID: canonicalDiscoveryPaperID({
+              title: String(paper.title || ""),
+              authors,
+              year: typeof paper.year === "number" ? paper.year : undefined,
+              doi: typeof paper.doi === "string" ? paper.doi : undefined,
+            }),
+            existingItemID: undefined,
+            url: safeURL,
+            urls: safeURLs,
+            publicationClass: "unverified" as const,
+            publicationEvidence: [],
+            evidenceConfidence: "none" as const,
+            reviewURL: undefined,
+            reviewInsight: undefined,
+          },
+        ];
+      });
+    },
+  );
+  const byLane = discovery
+    ? [
+        {
+          category: "Verified main-conference papers",
+          lane: discovery.verifiedMain,
+        },
+        {
+          category: "Other peer-reviewed work",
+          lane: discovery.otherPeerReviewed,
+        },
+        { category: "Frontier / novelty radar", lane: discovery.noveltyRadar },
+      ]
+    : [];
+  const groups = byLane.flatMap(({ category, lane }) => {
+    const papers = lane.flatMap((candidate) => {
+      const matching = migratedPapers.filter(
+        (paper) =>
+          isPlainObject(paper) &&
+          typeof paper.title === "string" &&
+          areLikelySamePaper(candidate, {
+            title: paper.title,
+            authors: Array.isArray(paper.authors)
+              ? paper.authors.filter(
+                  (entry): entry is string => typeof entry === "string",
+                )
+              : [],
+            year: typeof paper.year === "number" ? paper.year : undefined,
+            doi: typeof paper.doi === "string" ? paper.doi : undefined,
+            providerIDs: isPlainObject(paper.providerIDs)
+              ? (paper.providerIDs as Record<string, string>)
+              : {},
+          }),
+      );
+      return matching.length === 1 ? matching : [];
+    });
+    return papers.length ? [{ category, papers }] : [];
   });
   return {
     ...cloneValue(value),
     running: false,
     status: typeof value.status === "string" ? value.status : "",
     groups,
-    ...(discovery ? { discovery } : {}),
+    discovery,
     reviewInsightRunningCandidateID: undefined,
   };
 }

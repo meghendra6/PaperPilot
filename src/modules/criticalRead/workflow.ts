@@ -248,6 +248,11 @@ export function reviseCriticalReadStep(
   } else if (stepID === 5) {
     invalidated.set(6, "Step 5 changed the independent conclusion.");
     invalidated.set(7, "Step 5 changed evidence used by the final synthesis.");
+  } else if (stepID === 6) {
+    invalidated.set(
+      7,
+      "Step 6 changed the author comparison used by the final synthesis.",
+    );
   }
   return {
     ...state,
