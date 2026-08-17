@@ -391,6 +391,7 @@ const VENUE_CONTEXT_WORDS = new Set([
   "a",
   "an",
   "and",
+  "accept",
   "accepted",
   "acceptance",
   "at",
@@ -405,34 +406,59 @@ const VENUE_CONTEXT_WORDS = new Set([
   "oral",
   "poster",
   "ready",
+  "reject",
+  "rejected",
   "spotlight",
   "submitted",
   "the",
   "to",
   "track",
+  "withdrawn",
 ]);
 
-function significantVenueWords(text: string) {
+const VENUE_STOPWORDS = new Set([
+  "a",
+  "an",
+  "and",
+  "at",
+  "for",
+  "in",
+  "of",
+  "on",
+  "the",
+  "to",
+]);
+
+function normalizedVenueWords(text: string) {
   return normalizeDiscoveryTitle(text)
     .replace(/\b(?:19|20)\d{2}\b/g, " ")
     .replace(/\b\d+(?:st|nd|rd|th)\b/g, " ")
     .split(" ")
-    .filter(
-      (word) =>
-        word.length >= 3 &&
-        !/^\d+$/.test(word) &&
-        !GENERIC_VENUE_WORDS.has(word) &&
-        !VENUE_CONTEXT_WORDS.has(word),
-    );
+    .filter(Boolean);
 }
 
-// Official-surface venue keys are stricter than the parser's alias keys:
-// multi-word names keep their venue-type word so "Example Conference" can
-// never bind to an "Example Symposium" decision, while initials keep the
-// word "conference" (after dropping edition years and ordinals) so a full
-// name like "International Conference on Learning Representations 2026"
-// still yields "iclr" for acronym-style OpenReview ids.
-function officialVenueKeys(venue: {
+function significantVenueWords(text: string) {
+  return normalizedVenueWords(text).filter(
+    (word) =>
+      word.length >= 3 &&
+      !/^\d+$/.test(word) &&
+      !GENERIC_VENUE_WORDS.has(word) &&
+      !VENUE_CONTEXT_WORDS.has(word),
+  );
+}
+
+function genericVenueTypeWords(text: string) {
+  return new Set(
+    normalizedVenueWords(text).filter((word) => GENERIC_VENUE_WORDS.has(word)),
+  );
+}
+
+// Acronym-style keys a claimed venue may legitimately present: an explicit
+// acronym, a parenthetical acronym, a distinctive single-word name, the
+// compact join of a multi-word name, and initials derived over the full name
+// including the venue-type word (so "International Conference on Learning
+// Representations" yields "iclr").
+function claimAcronymKeys(venue: {
   venueName?: string;
   venueAcronym?: string;
 }) {
@@ -444,56 +470,88 @@ function officialVenueKeys(venue: {
         keys.add(parenthetical[1].toLowerCase());
       }
     }
-    const withoutEdition = normalizeDiscoveryTitle(value)
-      .replace(/\b(?:19|20)\d{2}\b/g, " ")
-      .replace(/\b\d+(?:st|nd|rd|th)\b/g, " ")
-      .replace(/\s+/g, " ")
-      .trim();
-    const words = withoutEdition.split(" ").filter(Boolean);
-    if (words.length >= 2) {
-      keys.add(withoutEdition);
-      keys.add(words.join(""));
-    } else if (
-      withoutEdition.length >= 3 &&
-      !GENERIC_VENUE_WORDS.has(withoutEdition)
-    ) {
-      keys.add(withoutEdition);
+    const words = normalizedVenueWords(value);
+    if (words.length === 1 && significantVenueWords(value).length === 1) {
+      keys.add(words[0]);
     }
-    const initials = words
-      .filter(
-        (word) => !["a", "an", "and", "for", "of", "on", "the"].includes(word),
-      )
-      .map((word) => word[0])
-      .join("");
-    if (initials.length >= 3) keys.add(initials);
+    if (words.length >= 2) {
+      const meaningful = words.filter((word) => !VENUE_STOPWORDS.has(word));
+      const compact = meaningful.join("");
+      if (compact.length >= 6) keys.add(compact);
+      const initials = meaningful.map((word) => word[0]).join("");
+      if (initials.length >= 3) keys.add(initials);
+    }
   }
   return keys;
 }
 
+// Venue agreement is meaning-level, not substring-level. The official
+// submission venue field is the human-readable name; venueid and invitation
+// ids are registrar-controlled tokens. A claim binds when (1) its venue-type
+// word does not contradict the official field, (2) the distinctive words of
+// both names cover each other, or (3) an acronym-style claim key equals a
+// registrar-controlled official token — but two distinctive multi-word names
+// that fail mutual coverage are different venues and can never be bridged by
+// shared initials.
 function officialVenueMatches(
   paper: DiscoveryResult["verifiedMain"][number],
   status: OpenReviewOfficialStatus,
 ) {
-  // Derived initials can collide across different full names ("Learning
-  // Research" vs "Learning Representations" both yield "iclr"), so when the
-  // official venue field spells out a distinctive multi-word name, the claim
-  // must match that field text itself; invitation ids alone may corroborate
-  // only when the field is absent or non-distinctive.
-  const surface =
-    significantVenueWords(status.officialVenueFieldText).length >= 2
-      ? status.officialVenueFieldText
-      : status.officialVenueText;
+  const fieldWords = new Set(
+    normalizedVenueWords(status.officialVenueFieldText),
+  );
+  const officialSignificant = significantVenueWords(
+    status.officialVenueFieldText,
+  );
+  const officialTypes = genericVenueTypeWords(status.officialVenueFieldText);
+  const officialTokens = new Set(
+    normalizedVenueWords(status.officialVenueText).filter(
+      (word) =>
+        word.length >= 3 &&
+        !/^\d+$/.test(word) &&
+        !GENERIC_VENUE_WORDS.has(word) &&
+        !VENUE_CONTEXT_WORDS.has(word),
+    ),
+  );
+  const valueAgrees = (value: string) => {
+    const words = new Set(normalizedVenueWords(value));
+    const significant = [...new Set(significantVenueWords(value))];
+    return (
+      significant.length > 0 &&
+      officialSignificant.length > 0 &&
+      officialSignificant.every((word) => words.has(word)) &&
+      significant.every((word) => fieldWords.has(word))
+    );
+  };
+  const valueContradicts = (value: string) =>
+    [...new Set(significantVenueWords(value))].length >= 2 &&
+    officialSignificant.length >= 2 &&
+    !valueAgrees(value);
   return [
     { venueName: paper.venueName, venueAcronym: paper.venueAcronym },
     {
       venueName: paper.leadingVenueAssessment.venueName,
       venueAcronym: paper.leadingVenueAssessment.venueAcronym,
     },
-  ].some((venue) =>
-    [...officialVenueKeys(venue)].some(
-      (key) => key.length >= 3 && containsNormalized(surface, key),
-    ),
-  );
+  ].some((venue) => {
+    if (!venue.venueName && !venue.venueAcronym) return false;
+    const claimTypes = genericVenueTypeWords(venue.venueName || "");
+    if (
+      claimTypes.size &&
+      officialTypes.size &&
+      [...claimTypes].every((word) => !officialTypes.has(word))
+    ) {
+      return false;
+    }
+    const values = [venue.venueName, venue.venueAcronym].filter(
+      (value): value is string => Boolean(value),
+    );
+    if (values.some(valueAgrees)) return true;
+    // A distinctive multi-word claimed name that fails mutual coverage names
+    // a different venue; an acronym cannot rescue a contradicted name.
+    if (values.some(valueContradicts)) return false;
+    return [...claimAcronymKeys(venue)].some((key) => officialTokens.has(key));
+  });
 }
 
 function noteInvitations(note: unknown): string[] {
@@ -551,12 +609,12 @@ export function deriveOpenReviewOfficialStatus(
   const submission = forumNotes.find(
     (note) => (note as Record<string, unknown>).id === forumID,
   );
-  const venueText = [
-    noteContentValue(submission, "venue"),
-    noteContentValue(submission, "venueid"),
-  ]
-    .filter(Boolean)
-    .join(" ");
+  // The venue field is the human-readable name and drives name agreement;
+  // venueid is a registrar-controlled identifier and belongs to the token
+  // surface alongside invitation ids.
+  const venueFieldText = noteContentValue(submission, "venue") || "";
+  const venueIDText = noteContentValue(submission, "venueid") || "";
+  const venueText = [venueFieldText, venueIDText].filter(Boolean).join(" ");
   const rejected =
     /reject|withdraw/i.test(decisionText) || /withdraw/i.test(venueText);
   const accepted = !rejected && /accept/i.test(decisionText);
@@ -587,10 +645,11 @@ export function deriveOpenReviewOfficialStatus(
       ),
     ),
     // Legacy API v1 submissions often carry the venue only in the invitation
-    // id (for example "ICLR.cc/2017/conference/-/submission"), so invitations
-    // join the official venue surface.
+    // id (for example "ICLR.cc/2017/conference/-/submission"), so venueid and
+    // invitations join the official token surface.
     officialVenueText: [
-      venueText,
+      venueFieldText,
+      venueIDText,
       decisionText,
       ...noteInvitations(submission),
       ...noteInvitations(decisionNote),
@@ -598,7 +657,7 @@ export function deriveOpenReviewOfficialStatus(
       .filter(Boolean)
       .join(" ")
       .trim(),
-    officialVenueFieldText: venueText,
+    officialVenueFieldText: venueFieldText,
   };
 }
 

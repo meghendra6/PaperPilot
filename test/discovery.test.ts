@@ -107,6 +107,7 @@ function openReviewNotes(params: {
   forumID: string;
   decision?: string;
   venue?: string;
+  venueID?: string;
   invitationPrefix?: string;
   officialReview?: boolean;
   extraNotes?: unknown[];
@@ -117,7 +118,10 @@ function openReviewNotes(params: {
       id: params.forumID,
       forum: params.forumID,
       invitation: `${prefix}/-/Submission`,
-      content: params.venue ? { venue: params.venue } : {},
+      content: {
+        ...(params.venue ? { venue: params.venue } : {}),
+        ...(params.venueID ? { venueid: params.venueID } : {}),
+      },
     },
     ...(params.decision
       ? [
@@ -148,6 +152,7 @@ function openReviewFetch(params: {
   page: string;
   decision?: string;
   venue?: string;
+  venueID?: string;
   invitationPrefix?: string;
   officialReview?: boolean;
   extraNotes?: unknown[];
@@ -882,6 +887,145 @@ test("shared initials cannot bind a claim across different full venue names", as
     }),
     /did not include any usable papers/,
   );
+});
+
+test("a generic multi-word claim cannot bind a distinctive official venue", async () => {
+  const officialURL = "https://openreview.net/forum?id=generic-phrase";
+  const discovery = parseDiscoveryResult(
+    result([
+      paper({
+        venueName: "International Conference",
+        venueAcronym: undefined,
+        urls: [officialURL],
+        publicationEvidence: [
+          {
+            type: "official_decision",
+            sourceName: "OpenReview",
+            url: officialURL,
+            observedTitle: "Verified Paper",
+            observedVenue: "International Conference",
+            observedTrack: "Poster",
+            observedDecision: "Accepted",
+            supports: ["identity", "accepted", "main_track"],
+          },
+        ],
+        leadingVenueAssessment: {
+          venueName: "International Conference",
+          fields: ["example field"],
+          judgment: "leading",
+          confidence: "high",
+          basis: "Field-specific archival venue assessment.",
+        },
+      }),
+    ]),
+  );
+  await assert.rejects(
+    verifyDiscoveryEvidenceLive({
+      discovery,
+      fetch: openReviewFetch({
+        forumID: "generic-phrase",
+        page: "<title>Verified Paper</title><main>Verified Paper — A. Author — 2026 — International Conference</main>",
+        decision: "Accept (Poster)",
+        venue:
+          "International Conference on Learning Representations 2026 Poster",
+        invitationPrefix: "ICLR.cc/2026/Conference",
+      }),
+    }),
+    /did not include any usable papers/,
+  );
+});
+
+test("a venueid cannot bridge initials across different full venue names", async () => {
+  const officialURL = "https://openreview.net/forum?id=venueid-collision";
+  const claimedName = "International Conference on Learning Research";
+  const discovery = parseDiscoveryResult(
+    result([
+      paper({
+        venueName: claimedName,
+        venueAcronym: undefined,
+        urls: [officialURL],
+        publicationEvidence: [
+          {
+            type: "official_decision",
+            sourceName: "OpenReview",
+            url: officialURL,
+            observedTitle: "Verified Paper",
+            observedVenue: claimedName,
+            observedTrack: "Poster",
+            observedDecision: "Accepted",
+            supports: ["identity", "accepted", "main_track"],
+          },
+        ],
+        leadingVenueAssessment: {
+          venueName: claimedName,
+          fields: ["example field"],
+          judgment: "leading",
+          confidence: "high",
+          basis: "Field-specific archival venue assessment.",
+        },
+      }),
+    ]),
+  );
+  await assert.rejects(
+    verifyDiscoveryEvidenceLive({
+      discovery,
+      fetch: openReviewFetch({
+        forumID: "venueid-collision",
+        page: `<title>Verified Paper</title><main>Verified Paper — A. Author — 2026 — ${claimedName}</main>`,
+        decision: "Accept (Poster)",
+        venue:
+          "International Conference on Learning Representations 2026 Poster",
+        venueID: "ICLR.cc/2026/Conference",
+        invitationPrefix: "ICLR.cc/2026/Conference",
+      }),
+    }),
+    /did not include any usable papers/,
+  );
+});
+
+test("an acronym claim binds a spelled-out official venue through registrar ids", async () => {
+  const officialURL = "https://openreview.net/forum?id=acronym-claim";
+  const discovery = parseDiscoveryResult(
+    result([
+      paper({
+        venueName: "ICLR",
+        venueAcronym: "ICLR",
+        urls: [officialURL],
+        publicationEvidence: [
+          {
+            type: "official_decision",
+            sourceName: "OpenReview",
+            url: officialURL,
+            observedTitle: "Verified Paper",
+            observedVenue: "ICLR",
+            observedTrack: "Poster",
+            observedDecision: "Accepted",
+            supports: ["identity", "accepted", "main_track"],
+          },
+        ],
+        leadingVenueAssessment: {
+          venueName: "ICLR",
+          venueAcronym: "ICLR",
+          fields: ["example field"],
+          judgment: "leading",
+          confidence: "high",
+          basis: "Field-specific archival venue assessment.",
+        },
+      }),
+    ]),
+  );
+  const verified = await verifyDiscoveryEvidenceLive({
+    discovery,
+    fetch: openReviewFetch({
+      forumID: "acronym-claim",
+      page: "<title>Verified Paper</title><main>Verified Paper — A. Author — 2026 — ICLR</main>",
+      decision: "Accept (Poster)",
+      venue: "International Conference on Learning Representations 2026 Poster",
+      venueID: "ICLR.cc/2026/Conference",
+      invitationPrefix: "ICLR.cc/2026/Conference",
+    }),
+  });
+  assert.equal(verified.verifiedMain.length, 1);
 });
 
 test("an acronym-style official venue field accepts the full-name claim", async () => {
