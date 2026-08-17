@@ -397,6 +397,17 @@ with regression tests for all reproductions. That build (XPI SHA-256
 reinstalled into the same running Zotero with the replay smoke-check repeated
 and the same fail-closed outcome.
 
+The round-12 follow-up found that surname keys were still lossy (apostrophes
+and diacritics split tokens, suffixes past IV counted as surnames) and that
+treating lone cardinals as edition words erased meaningful venue names such
+as "One Health". Commit `a23caae` compares author names field-by-field
+(whitespace-split tokens keep punctuation and diacritics whole, suffixes
+through VIII strip, given names must not contradict) and strips spelled
+numbers as sequences that must end in an ordinal form. That build (XPI
+SHA-256 `f1b1ef06acf08409677fb479dc65ba27f5e6b8a7cb73ce2b16aa251502c29266`)
+was reinstalled into the same running Zotero with the replay smoke-check
+repeated and the same fail-closed outcome.
+
 - [ ] Run `Find verified prior work` with no concern and confirm the agent infers fields, adjacent fields, venues, and query families without asking the user to choose a conference
 - [ ] Enter an optional research concern, then run discovery from the main section, selected-PDF `Find prior work` action, a limitation card, and a follow-up card; confirm each source is carried into the saved scope
 - [ ] In AI, computer architecture, and a third field, confirm an appropriate leading venue absent from any built-in source shortcut can still be selected and justified
