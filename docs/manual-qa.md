@@ -360,6 +360,21 @@ notes API), and OpenDataLoader-backed extraction (its bundled-asset resolution
 failure predates this branch; the honest `zotero-attachment-text` fallback and
 extraction notes were verified instead).
 
+Addendum: the round-9 merge-gate review of the record above found that the
+first challenge-fallback implementation flattened registrar identity into one
+text surface, letting venue words satisfy the author match, letting title or
+forum-id digits satisfy the claimed year, and leaving a spelled-ordinal alias
+in the legacy parser initials path. Commit `aac4018` binds registrar identity
+to structured fields (submission title, author list with the page-path match
+threshold, and the venue/venueid/invitation edition surface for the year) and
+excludes spelled ordinals from the legacy initials, with regression tests for
+all three reproductions. The corrected build (XPI SHA-256
+`91e01f5e8e454983a3a4e176137ac3efcc3db8d0b89dd6276f737eacbe8b916f`) was
+reinstalled into the same running Zotero and the captured-response replay was
+re-run: the challenge fallback still reaches the notes API and fails closed
+under the Turnstile gating with the same clear failure status and no state
+corruption.
+
 - [ ] Run `Find verified prior work` with no concern and confirm the agent infers fields, adjacent fields, venues, and query families without asking the user to choose a conference
 - [ ] Enter an optional research concern, then run discovery from the main section, selected-PDF `Find prior work` action, a limitation card, and a follow-up card; confirm each source is carried into the saved scope
 - [ ] In AI, computer architecture, and a third field, confirm an appropriate leading venue absent from any built-in source shortcut can still be selected and justified
