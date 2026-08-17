@@ -5,7 +5,7 @@ import {
   normalizeDiscoveryTitle,
   normalizeHttpURL,
   normalizeWhitespace,
-  isSpelledOrdinalWord,
+  stripSpelledOrdinalSequences,
 } from "./normalize";
 import type {
   AgentSearchPlan,
@@ -150,30 +150,32 @@ function venueAliasKeys(venue: { venueName?: string; venueAcronym?: string }) {
     if (withoutEdition) keys.add(withoutEdition);
     const compact = withoutEdition.replace(/[^a-z0-9]+/g, "");
     if (compact.length >= 3) keys.add(compact);
-    const initials = withoutEdition
-      .split(" ")
-      .filter(
-        (word) =>
-          word &&
-          !["a", "an", "and", "for", "of", "on", "the"].includes(word) &&
-          !isSpelledOrdinalWord(word),
-      )
+    const initials = stripSpelledOrdinalSequences(
+      withoutEdition
+        .split(" ")
+        .filter(
+          (word) =>
+            word &&
+            !["a", "an", "and", "for", "of", "on", "the"].includes(word),
+        ),
+    )
       .map((word) => word[0])
       .join("");
     if (initials.length >= 3) keys.add(initials);
     // OpenReview-style acronyms abbreviate the full name including the
     // venue-type word ("International Conference on Learning Representations"
     // is ICLR), so initials computed over the un-stripped name join the keys.
-    const fullInitials = normalized
-      .replace(/\b(?:19|20)\d{2}\b/g, " ")
-      .replace(/\b\d+(?:st|nd|rd|th)\b/g, " ")
-      .split(" ")
-      .filter(
-        (word) =>
-          word &&
-          !["a", "an", "and", "for", "of", "on", "the"].includes(word) &&
-          !isSpelledOrdinalWord(word),
-      )
+    const fullInitials = stripSpelledOrdinalSequences(
+      normalized
+        .replace(/\b(?:19|20)\d{2}\b/g, " ")
+        .replace(/\b\d+(?:st|nd|rd|th)\b/g, " ")
+        .split(" ")
+        .filter(
+          (word) =>
+            word &&
+            !["a", "an", "and", "for", "of", "on", "the"].includes(word),
+        ),
+    )
       .map((word) => word[0])
       .join("");
     if (fullInitials.length >= 3) keys.add(fullInitials);

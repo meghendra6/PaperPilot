@@ -55,25 +55,57 @@ export function isSecretQueryParameterName(key: string) {
   return lower.split(/[-_.]/).some((word) => SECRET_PARAMETER_WORDS.has(word));
 }
 
-// Spelled edition ordinals are open-ended ("The Sixtieth ...", "Sixty-First"),
-// so membership is pattern-based rather than a finite word list. Hyphenated
-// composites are normalized to separate words before this check, so the tens
-// cardinals ("sixty" in "sixty first") are covered too.
-const SPELLED_ORDINAL_PATTERNS = [
+// Spelled edition ordinals are open-ended ("The Sixtieth ...", "Sixty-First",
+// "The One Hundredth ..."), so detection is pattern-based and sequence-aware:
+// a run of spelled number words is an edition marker only when it ends in an
+// ordinal form. A lone cardinal ("One" in "One Health") is a meaningful name
+// word and stays distinctive.
+const SPELLED_ORDINAL_TERMINATORS = [
   /^(?:first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|eleventh|twelfth)$/,
   /^(?:thir|four|fif|six|seven|eigh|nine)teenth$/,
   /^(?:twen|thir|for|fif|six|seven|eigh|nine)tieth$/,
-  /^(?:twen|thir|for|fif|six|seven|eigh|nine)ty$/,
-  // Composite ordinals spell their cardinal parts ("One Hundredth",
-  // "Twenty One Hundred and First"), so small cardinals count as edition
-  // words too.
+  /^(?:hundred|thousand)th$/,
+];
+const SPELLED_CARDINAL_PARTS = [
   /^(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)$/,
   /^(?:thir|four|fif|six|seven|eigh|nine)teen$/,
-  /^(?:hundred|thousand)(?:th)?$/,
+  /^(?:twen|thir|for|fif|six|seven|eigh|nine)ty$/,
+  /^(?:hundred|thousand)$/,
 ];
 
-export function isSpelledOrdinalWord(word: string) {
-  return SPELLED_ORDINAL_PATTERNS.some((pattern) => pattern.test(word));
+function isSpelledOrdinalTerminator(word: string) {
+  return SPELLED_ORDINAL_TERMINATORS.some((pattern) => pattern.test(word));
+}
+
+function isSpelledCardinalPart(word: string) {
+  return SPELLED_CARDINAL_PARTS.some((pattern) => pattern.test(word));
+}
+
+// Removes maximal runs of spelled number words that end in an ordinal form
+// ("one hundredth", "sixty first", "twelfth") while keeping number words that
+// are part of the venue's actual name ("One Health").
+export function stripSpelledOrdinalSequences(words: string[]): string[] {
+  const kept: string[] = [];
+  let run: string[] = [];
+  let runHasTerminator = false;
+  const flush = () => {
+    if (!runHasTerminator) kept.push(...run);
+    run = [];
+    runHasTerminator = false;
+  };
+  for (const word of words) {
+    if (isSpelledOrdinalTerminator(word)) {
+      run.push(word);
+      runHasTerminator = true;
+    } else if (isSpelledCardinalPart(word)) {
+      run.push(word);
+    } else {
+      flush();
+      kept.push(word);
+    }
+  }
+  flush();
+  return kept;
 }
 
 export function normalizeHttpURL(value: string) {

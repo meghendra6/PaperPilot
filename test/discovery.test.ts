@@ -921,6 +921,131 @@ test("short and suffixed surnames cannot ride a single shared surname", async ()
   assert.equal(suffixOk.verifiedMain.length, 1);
 });
 
+test("registrar surnames respect punctuation, diacritics, and late suffixes", async () => {
+  const officialURL = "https://openreview.net/forum?id=challenge-names";
+  const claim = (candidateID: string, authors: string[]) =>
+    paper({
+      candidateID,
+      authors,
+      urls: [officialURL],
+      publicationEvidence: [
+        {
+          type: "official_decision",
+          sourceName: "OpenReview",
+          url: officialURL,
+          observedTitle: "Verified Paper",
+          observedVenue: "Example Conference",
+          observedTrack: "Main Conference",
+          observedDecision: "Accepted",
+          supports: ["identity", "accepted", "main_track"],
+        },
+      ],
+    });
+  const fetchWithAuthors = (authors: string[]) =>
+    openReviewChallengeFetch({
+      forumID: "challenge-names",
+      title: "Verified Paper",
+      authors,
+      decision: "Accept (Oral)",
+      venue: "Example Conference Main Conference",
+      venueID: "Example.cc/2026/Conference",
+    });
+  // "Connor" is not "O'Connor", and the given names conflict.
+  await assert.rejects(
+    verifyDiscoveryEvidenceLive({
+      discovery: parseDiscoveryResult(
+        result([claim("name-apostrophe", ["Alice Connor"])]),
+      ),
+      fetch: fetchWithAuthors(["Bob O'Connor"]),
+    }),
+    /did not include any usable papers/,
+  );
+  // Identical diacritic names must verify.
+  const diacritics = await verifyDiscoveryEvidenceLive({
+    discovery: parseDiscoveryResult(
+      result([claim("name-diacritics", ["José García", "Alice Smith"])]),
+    ),
+    fetch: fetchWithAuthors(["José García", "Alice Smith"]),
+  });
+  assert.equal(diacritics.verifiedMain.length, 1);
+  // Suffixes beyond IV are not surnames.
+  await assert.rejects(
+    verifyDiscoveryEvidenceLive({
+      discovery: parseDiscoveryResult(
+        result([claim("name-vi", ["Alice Smith VI", "Bob Jones VI"])]),
+      ),
+      fetch: fetchWithAuthors(["Mallory Brown VI", "Carol White VI"]),
+    }),
+    /did not include any usable papers/,
+  );
+  const suffixV = await verifyDiscoveryEvidenceLive({
+    discovery: parseDiscoveryResult(
+      result([claim("name-v", ["Alice Smith V"])]),
+    ),
+    fetch: fetchWithAuthors(["Alice Smith V"]),
+  });
+  assert.equal(suffixV.verifiedMain.length, 1);
+});
+
+test("cardinal venue words outside edition ordinals stay distinctive", async () => {
+  const officialURL = "https://openreview.net/forum?id=one-health";
+  const claim = (candidateID: string, venueName: string) =>
+    paper({
+      candidateID,
+      venueName,
+      venueAcronym: undefined,
+      track: undefined,
+      urls: [officialURL],
+      publicationEvidence: [
+        {
+          type: "official_decision",
+          sourceName: "OpenReview",
+          url: officialURL,
+          observedTitle: "Verified Paper",
+          observedVenue: venueName,
+          observedTrack: "Main Conference",
+          observedDecision: "Accepted",
+          supports: ["identity", "accepted", "main_track"],
+        },
+      ],
+      leadingVenueAssessment: {
+        venueName,
+        fields: ["example field"],
+        judgment: "leading",
+        confidence: "high",
+        basis: "Field-specific archival venue assessment.",
+      },
+    });
+  const oneHealthFetch = openReviewChallengeFetch({
+    forumID: "one-health",
+    title: "Verified Paper",
+    authors: ["A. Author"],
+    decision: "Accept (Oral)",
+    venue: "International One Health Conference Main Conference",
+    venueID: "OneHealth.org/2026/Conference",
+  });
+  // "International Health Conference" is a different venue: "One" is a
+  // meaningful name word here, not an edition ordinal.
+  await assert.rejects(
+    verifyDiscoveryEvidenceLive({
+      discovery: parseDiscoveryResult(
+        result([claim("one-health-wrong", "International Health Conference")]),
+      ),
+      fetch: oneHealthFetch,
+    }),
+    /did not include any usable papers/,
+  );
+  const genuine = await verifyDiscoveryEvidenceLive({
+    discovery: parseDiscoveryResult(
+      result([
+        claim("one-health-right", "International One Health Conference"),
+      ]),
+    ),
+    fetch: oneHealthFetch,
+  });
+  assert.equal(genuine.verifiedMain.length, 1);
+});
+
 test("composite spelled ordinals cannot mint fake venue aliases", () => {
   const officialURL = "https://openreview.net/forum?id=ordinal-hundredth";
   const assessment = {

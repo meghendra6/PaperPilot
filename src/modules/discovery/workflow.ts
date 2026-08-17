@@ -2,7 +2,7 @@ import { parseDiscoveryResult } from "./parser";
 import {
   areLikelySamePaper,
   normalizeDiscoveryTitle,
-  isSpelledOrdinalWord,
+  stripSpelledOrdinalSequences,
 } from "./normalize";
 import {
   classifyOfficialEvidenceURL,
@@ -476,11 +476,10 @@ function normalizedVenueWords(text: string) {
 }
 
 function significantVenueWords(text: string) {
-  return normalizedVenueWords(text).filter(
+  return stripSpelledOrdinalSequences(normalizedVenueWords(text)).filter(
     (word) =>
       word.length >= 3 &&
       !/^\d+$/.test(word) &&
-      !isSpelledOrdinalWord(word) &&
       !GENERIC_VENUE_WORDS.has(word) &&
       !VENUE_CONTEXT_WORDS.has(word),
   );
@@ -493,8 +492,9 @@ function venueTypeWords(text: string) {
 }
 
 function venueNameInitials(value: string) {
-  return normalizedVenueWords(value)
-    .filter((word) => !VENUE_STOPWORDS.has(word) && !isSpelledOrdinalWord(word))
+  return stripSpelledOrdinalSequences(
+    normalizedVenueWords(value).filter((word) => !VENUE_STOPWORDS.has(word)),
+  )
     .map((word) => word[0])
     .join("");
 }
@@ -521,8 +521,8 @@ function claimAcronymKeys(venue: {
       keys.add(words[0]);
     }
     if (words.length >= 2) {
-      const meaningful = words.filter(
-        (word) => !VENUE_STOPWORDS.has(word) && !isSpelledOrdinalWord(word),
+      const meaningful = stripSpelledOrdinalSequences(
+        words.filter((word) => !VENUE_STOPWORDS.has(word)),
       );
       const compact = meaningful.join("");
       if (compact.length >= 6) keys.add(compact);
@@ -841,20 +841,51 @@ export type EvidenceInspection = Awaited<
   registrarIdentity?: RegistrarIdentityRecord;
 };
 
-const GENERATIONAL_NAME_SUFFIXES = new Set(["jr", "sr", "ii", "iii", "iv"]);
+const GENERATIONAL_NAME_SUFFIXES = new Set([
+  "jr",
+  "sr",
+  "ii",
+  "iii",
+  "iv",
+  "v",
+  "vi",
+  "vii",
+  "viii",
+]);
 
-// Registrar author fields are structured, so surnames compare by exact
-// equality (short surnames such as "Li" stay significant) after stripping
-// generational suffixes that are not surnames.
-function registrarSurnameKey(author: string) {
-  const tokens = normalizeDiscoveryTitle(author).split(" ").filter(Boolean);
+// Registrar author fields are structured, so names compare field-by-field.
+// Tokens split on whitespace before normalization, so intra-name punctuation
+// ("O'Connor") and diacritics ("García") keep each token whole, and short
+// surnames such as "Li" stay significant.
+function normalizedAuthorTokens(author: string) {
+  return author
+    .split(/\s+/)
+    .map((token) =>
+      token
+        .normalize("NFKD")
+        .replace(/\p{M}+/gu, "")
+        .toLowerCase()
+        .replace(/[^\p{L}\p{N}]+/gu, ""),
+    )
+    .filter(Boolean);
+}
+
+function registrarAuthorIdentity(author: string) {
+  const tokens = normalizedAuthorTokens(author);
   while (
     tokens.length > 1 &&
     GENERATIONAL_NAME_SUFFIXES.has(tokens[tokens.length - 1])
   ) {
     tokens.pop();
   }
-  return tokens.at(-1) || "";
+  return { surname: tokens.at(-1) || "", given: tokens.slice(0, -1) };
+}
+
+// Given names must not contradict: an initial may stand for a full name, and
+// a missing given name matches anything, but "Alice" is not "Bob".
+function givenNamesCompatible(left: string[], right: string[]) {
+  if (!left.length || !right.length) return true;
+  return left[0].startsWith(right[0]) || right[0].startsWith(left[0]);
 }
 
 function registrarIdentityConfirms(
@@ -862,26 +893,29 @@ function registrarIdentityConfirms(
   registrar: RegistrarIdentityRecord,
 ) {
   if (!pageMatchesPaperTitle(registrar.title, paper.title)) return false;
-  const claimedKeys = paper.authors
-    .map(registrarSurnameKey)
-    .filter((key) => key.length >= 2);
-  // Each claimed surname consumes one registrar author entry, so a duplicated
+  const claimedIdentities = paper.authors
+    .map(registrarAuthorIdentity)
+    .filter((identity) => identity.surname);
+  const registrarIdentities = registrar.authors
+    .map(registrarAuthorIdentity)
+    .filter((identity) => identity.surname)
+    .map((identity) => ({ ...identity, consumed: false }));
+  if (!claimedIdentities.length || !registrarIdentities.length) return false;
+  // Each claimed author consumes one registrar author entry, so a duplicated
   // claimed surname cannot count twice against a single registrar author
   // while two genuine same-surname authors still match. The threshold uses
   // the claimed author count, so unusable names cannot lower the bar.
-  const registrarKeyCounts = new Map<string, number>();
-  for (const author of registrar.authors) {
-    const key = registrarSurnameKey(author);
-    if (!key) continue;
-    registrarKeyCounts.set(key, (registrarKeyCounts.get(key) || 0) + 1);
-  }
   const requiredMatches = Math.min(2, paper.authors.length);
-  if (!claimedKeys.length || !registrarKeyCounts.size) return false;
   let observedMatches = 0;
-  for (const key of claimedKeys) {
-    const remaining = registrarKeyCounts.get(key) || 0;
-    if (remaining > 0) {
-      registrarKeyCounts.set(key, remaining - 1);
+  for (const claimed of claimedIdentities) {
+    const match = registrarIdentities.find(
+      (candidate) =>
+        !candidate.consumed &&
+        candidate.surname === claimed.surname &&
+        givenNamesCompatible(claimed.given, candidate.given),
+    );
+    if (match) {
+      match.consumed = true;
       observedMatches += 1;
     }
   }
