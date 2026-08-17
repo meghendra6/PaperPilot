@@ -238,7 +238,9 @@ function migrateRecommendationState(value: unknown) {
       );
       return matching.length === 1 ? matching : [];
     });
-    return papers.length ? [{ category, papers }] : [];
+    // Empty lanes stay present: the empty primary lane is how the UI states
+    // that no paper met the verified main-conference criteria after restore.
+    return [{ category, papers }];
   });
   return {
     ...cloneValue(value),

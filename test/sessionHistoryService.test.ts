@@ -1069,6 +1069,125 @@ test("snapshot migration rebuilds recommendation lane labels from trusted discov
   }
 });
 
+test("snapshot migration keeps empty verified lanes so lane messaging survives restore", async () => {
+  const { globals, repository, service } = createService({
+    saveDocumentSessions: true,
+    privacyStoreLocalHistory: true,
+    privacySavePromptsOnly: false,
+    privacySaveResponses: true,
+  });
+  try {
+    const venue = {
+      venueName: "Example Journal",
+      fields: ["example field"],
+      judgment: "leading",
+      confidence: "high",
+      basis: "Field-specific archival venue assessment.",
+    };
+    const paperEvidence = [
+      {
+        type: "scholarly_index",
+        sourceName: "Index",
+        url: "https://journal.example.org/published-peer",
+        observedTitle: "Published Peer",
+        checkedAt: "2026-08-18T00:00:00.000Z",
+        supports: ["identity", "published"],
+      },
+    ];
+    const snapshot = buildSavedSnapshot(509);
+    snapshot.relatedRecommendations = {
+      running: false,
+      status: "Found 1 papers across verified evidence lanes",
+      groups: [
+        {
+          category: "Other peer-reviewed work",
+          papers: [
+            {
+              candidateID: "published-peer",
+              title: "Published Peer",
+              authors: ["A. Researcher"],
+              year: 2025,
+              relevanceScore: 0.8,
+              url: "https://journal.example.org/published-peer",
+              publicationClass: "verified_journal",
+              evidenceConfidence: "high",
+              publicationEvidence: paperEvidence,
+            },
+          ],
+        },
+      ],
+      discovery: {
+        schemaVersion: 1,
+        liveVerification: {
+          verifierVersion: 2,
+          verifiedAt: "2026-08-18T00:00:00.000Z",
+        },
+        plan: {
+          concernSummary: "Concern",
+          primaryField: "Example field",
+          adjacentFields: ["Adjacent field"],
+          venues: [venue],
+          queries: [
+            { query: "q1", family: "problem", rationale: "direct" },
+            { query: "q2", family: "method", rationale: "mechanism" },
+            { query: "q3", family: "evaluation", rationale: "results" },
+          ],
+          scopeSummary: "Broad search followed by verification.",
+        },
+        verifiedMain: [],
+        otherPeerReviewed: [
+          {
+            candidateID: "published-peer",
+            title: "Published Peer",
+            authors: ["A. Researcher"],
+            year: 2025,
+            urls: ["https://journal.example.org/published-peer"],
+            providerIDs: { index: "published-peer" },
+            venueName: "Example Journal",
+            publicationClass: "verified_journal",
+            publicationEvidence: paperEvidence,
+            evidenceConfidence: "high",
+            leadingVenueAssessment: venue,
+            relationship: "direct",
+            relevanceReason: "Direct relevance.",
+          },
+        ],
+        noveltyRadar: [],
+        excluded: [],
+        limitations: [],
+        parseWarnings: [],
+        completedAt: "2026-08-18T00:00:00.000Z",
+      },
+    } as never;
+    await repository.saveSessionSnapshot({
+      paperItemID: 509,
+      paperTitle: "Saved paper",
+      snapshot,
+    });
+    await service.openSavedSession({
+      itemID: 509,
+      sessionId: snapshot.sessionId,
+    });
+    const groups = (
+      globalThis as any
+    ).addon.data.relatedRecommendationStates.get(509).groups;
+    assert.deepEqual(
+      groups.map((group: { category: string; papers: unknown[] }) => ({
+        category: group.category,
+        count: group.papers.length,
+      })),
+      [
+        { category: "Verified main-conference papers", count: 0 },
+        { category: "Other peer-reviewed work", count: 1 },
+        { category: "Frontier / novelty radar", count: 0 },
+      ],
+    );
+  } finally {
+    globals.restore();
+    sessionStore.reset(509);
+  }
+});
+
 test("SessionHistoryService.persistAssistantTurn with suppressMessage skips chat persistence on the active session", async () => {
   const { globals, repository, service } = createService({
     saveDocumentSessions: true,
