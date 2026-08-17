@@ -111,6 +111,8 @@ function openReviewNotes(params: {
   invitationPrefix?: string;
   officialReview?: boolean;
   extraNotes?: unknown[];
+  title?: string;
+  authors?: string[];
 }) {
   const prefix = params.invitationPrefix || "Example.cc/2026/Conference";
   return [
@@ -121,6 +123,8 @@ function openReviewNotes(params: {
       content: {
         ...(params.venue ? { venue: params.venue } : {}),
         ...(params.venueID ? { venueid: params.venueID } : {}),
+        ...(params.title ? { title: params.title } : {}),
+        ...(params.authors ? { authors: params.authors } : {}),
       },
     },
     ...(params.decision
@@ -167,6 +171,47 @@ function openReviewFetch(params: {
     return new Response(params.page, {
       status: 200,
       headers: { "content-type": "text/html" },
+    });
+  }) as typeof fetch;
+}
+
+// Models OpenReview's anti-bot gate: anonymous page loads of /forum redirect
+// to a /challenge interstitial while the notes API keeps answering normally.
+function openReviewChallengeFetch(params: {
+  forumID: string;
+  title?: string;
+  authors?: string[];
+  decision?: string;
+  venue?: string;
+  venueID?: string;
+  invitationPrefix?: string;
+  officialReview?: boolean;
+  notesStatus?: number;
+}) {
+  return (async (input: unknown) => {
+    const url = String(input);
+    if (url.includes("openreview.net/notes?forum=")) {
+      if (params.notesStatus && params.notesStatus !== 200) {
+        return new Response("unavailable", { status: params.notesStatus });
+      }
+      return new Response(JSON.stringify({ notes: openReviewNotes(params) }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }
+    if (url.includes("/challenge")) {
+      return new Response(
+        "<title>Just a moment…</title><main>Verifying you are human. openreview.net needs to review the security of your connection.</main>",
+        { status: 200, headers: { "content-type": "text/html" } },
+      );
+    }
+    return new Response("", {
+      status: 302,
+      headers: {
+        location: `https://openreview.net/challenge?redirect=${encodeURIComponent(
+          `/forum?id=${params.forumID}`,
+        )}`,
+      },
     });
   }) as typeof fetch;
 }
@@ -601,6 +646,125 @@ test("live evidence verification requires the official page to match the paper",
         page: "<title>A different work</title>",
         decision: "Accept (Oral)",
         venue: "Example Conference Main Conference",
+      }),
+    }),
+    /did not include any usable papers/,
+  );
+});
+
+test("OpenReview challenge interstitial verifies through the registrar notes API", async () => {
+  const officialURL = "https://openreview.net/forum?id=challenge-paper";
+  const discovery = parseDiscoveryResult(
+    result([
+      paper({
+        urls: [officialURL],
+        publicationEvidence: [
+          {
+            type: "official_decision",
+            sourceName: "OpenReview",
+            url: officialURL,
+            observedTitle: "Verified Paper",
+            observedVenue: "Example Conference",
+            observedTrack: "Main Conference",
+            observedDecision: "Accepted",
+            supports: ["identity", "accepted", "main_track"],
+          },
+        ],
+      }),
+    ]),
+  );
+  const verified = await verifyDiscoveryEvidenceLive({
+    discovery,
+    fetch: openReviewChallengeFetch({
+      forumID: "challenge-paper",
+      title: "Verified Paper",
+      authors: ["A. Author"],
+      decision: "Accept (Oral)",
+      venue: "Example Conference Main Conference",
+      venueID: "Example.cc/2026/Conference",
+    }),
+  });
+  assert.equal(verified.verifiedMain.length, 1);
+  assert.ok(
+    verified.verifiedMain[0].publicationEvidence.some(
+      (entry) =>
+        entry.url === officialURL &&
+        entry.supports.includes("identity") &&
+        entry.supports.includes("accepted") &&
+        entry.supports.includes("main_track"),
+    ),
+  );
+});
+
+test("OpenReview challenge fallback still requires registrar identity to match", async () => {
+  const officialURL = "https://openreview.net/forum?id=challenge-mismatch";
+  const discovery = parseDiscoveryResult(
+    result([
+      paper({
+        urls: [officialURL],
+        publicationEvidence: [
+          {
+            type: "official_decision",
+            sourceName: "OpenReview",
+            url: officialURL,
+            observedTitle: "Verified Paper",
+            observedVenue: "Example Conference",
+            observedTrack: "Main Conference",
+            observedDecision: "Accepted",
+            supports: ["identity", "accepted", "main_track"],
+          },
+        ],
+      }),
+    ]),
+  );
+  await assert.rejects(
+    verifyDiscoveryEvidenceLive({
+      discovery,
+      fetch: openReviewChallengeFetch({
+        forumID: "challenge-mismatch",
+        title: "A Different Work Entirely",
+        authors: ["B. Other"],
+        decision: "Accept (Oral)",
+        venue: "Example Conference Main Conference",
+        venueID: "Example.cc/2026/Conference",
+      }),
+    }),
+    /did not include any usable papers/,
+  );
+});
+
+test("OpenReview challenge fallback fails closed when the notes API is unavailable", async () => {
+  const officialURL = "https://openreview.net/forum?id=challenge-outage";
+  const discovery = parseDiscoveryResult(
+    result([
+      paper({
+        urls: [officialURL],
+        publicationEvidence: [
+          {
+            type: "official_decision",
+            sourceName: "OpenReview",
+            url: officialURL,
+            observedTitle: "Verified Paper",
+            observedVenue: "Example Conference",
+            observedTrack: "Main Conference",
+            observedDecision: "Accepted",
+            supports: ["identity", "accepted", "main_track"],
+          },
+        ],
+      }),
+    ]),
+  );
+  await assert.rejects(
+    verifyDiscoveryEvidenceLive({
+      discovery,
+      fetch: openReviewChallengeFetch({
+        forumID: "challenge-outage",
+        title: "Verified Paper",
+        authors: ["A. Author"],
+        decision: "Accept (Oral)",
+        venue: "Example Conference Main Conference",
+        venueID: "Example.cc/2026/Conference",
+        notesStatus: 503,
       }),
     }),
     /did not include any usable papers/,

@@ -352,6 +352,8 @@ export interface OpenReviewOfficialStatus {
   reviewsAvailable: boolean;
   officialVenueText: string;
   officialVenueFieldText: string;
+  submissionTitle?: string;
+  submissionAuthors: string[];
 }
 
 function openReviewForumID(url: string) {
@@ -647,6 +649,20 @@ function noteInvitations(note: unknown): string[] {
   ];
 }
 
+function noteContentList(note: unknown, key: string): string[] {
+  if (!note || typeof note !== "object") return [];
+  const content = (note as Record<string, unknown>).content;
+  if (!content || typeof content !== "object") return [];
+  let raw = (content as Record<string, unknown>)[key];
+  if (raw && typeof raw === "object" && "value" in raw) {
+    raw = (raw as Record<string, unknown>).value;
+  }
+  if (typeof raw === "string") return [raw];
+  return Array.isArray(raw)
+    ? raw.filter((value): value is string => typeof value === "string")
+    : [];
+}
+
 function noteContentValue(note: unknown, key: string) {
   if (!note || typeof note !== "object") return undefined;
   const content = (note as Record<string, unknown>).content;
@@ -724,6 +740,8 @@ export function deriveOpenReviewOfficialStatus(
         /\/-\/official_review$/i.test(invitation),
       ),
     ),
+    submissionTitle: noteContentValue(submission, "title"),
+    submissionAuthors: noteContentList(submission, "authors"),
     // Legacy API v1 submissions often carry the venue only in the invitation
     // id (for example "ICLR.cc/2017/conference/-/submission"), so venueid and
     // invitations join the official token surface.
@@ -1020,21 +1038,52 @@ export async function verifyDiscoveryEvidenceLive(params: {
     // The status forum id must come from the inspected final URL so a
     // redirecting claimed URL cannot pair another forum's page with its own
     // decision record.
-    const forumID = openReviewForumID(evidenceInspections.get(url)!.url);
+    const inspection = evidenceInspections.get(url)!;
+    let forumID = openReviewForumID(inspection.url);
+    let identityFromRegistrar = false;
+    if (
+      !forumID &&
+      classifyOfficialEvidenceURL(inspection.url)?.id === "openreview"
+    ) {
+      // OpenReview gates anonymous page loads behind a challenge/login
+      // interstitial that carries no forum id. The fixed-host notes API is
+      // still the registrar authority for the claimed forum id, and identity
+      // must then come from the registrar submission record instead of the
+      // interstitial page: a claim naming someone else's forum still fails
+      // the title/author match below.
+      forumID = openReviewForumID(url);
+      identityFromRegistrar = Boolean(forumID);
+    }
     if (!forumID) continue;
     try {
-      openReviewStatuses.set(
-        url,
-        deriveOpenReviewOfficialStatus(
-          await fetchOpenReviewForumNotes({
-            forumID,
-            fetch: params.fetch,
-            signal: params.signal,
-            deadline,
-          }),
+      const status = deriveOpenReviewOfficialStatus(
+        await fetchOpenReviewForumNotes({
           forumID,
-        ),
+          fetch: params.fetch,
+          signal: params.signal,
+          deadline,
+        }),
+        forumID,
       );
+      openReviewStatuses.set(url, status);
+      if (identityFromRegistrar && status.submissionTitle) {
+        // officialVenueText keeps the registrar venue/venueid/invitation ids,
+        // whose edition year must corroborate the claimed year exactly like a
+        // rendered proceedings page would.
+        const registrarSurface = [
+          status.submissionTitle,
+          status.submissionAuthors.join(", "),
+          status.officialVenueText,
+        ]
+          .filter(Boolean)
+          .join(" — ");
+        evidenceInspections.set(url, {
+          ...inspection,
+          url: `https://openreview.net/forum?id=${forumID}`,
+          pageTitle: status.submissionTitle,
+          searchableText: registrarSurface,
+        });
+      }
     } catch (error) {
       if (params.signal?.aborted) throw error;
       failures.push(
