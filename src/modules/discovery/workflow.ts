@@ -416,6 +416,56 @@ const VENUE_CONTEXT_WORDS = new Set([
   "withdrawn",
 ]);
 
+// Words that name the kind of venue. A disagreement here (conference vs
+// symposium) always means a different venue, regardless of shared modifiers
+// such as "international".
+const VENUE_TYPE_WORDS = new Set([
+  "bulletin",
+  "colloquium",
+  "conference",
+  "congress",
+  "forum",
+  "journal",
+  "letters",
+  "magazine",
+  "meeting",
+  "seminar",
+  "summit",
+  "symposium",
+  "transactions",
+  "workshop",
+]);
+
+const VENUE_ORDINAL_WORDS = new Set([
+  "first",
+  "second",
+  "third",
+  "fourth",
+  "fifth",
+  "sixth",
+  "seventh",
+  "eighth",
+  "ninth",
+  "tenth",
+  "eleventh",
+  "twelfth",
+  "thirteenth",
+  "fourteenth",
+  "fifteenth",
+  "sixteenth",
+  "seventeenth",
+  "eighteenth",
+  "nineteenth",
+  "twentieth",
+  "twenty",
+  "thirtieth",
+  "thirty",
+  "fortieth",
+  "forty",
+  "fiftieth",
+  "fifty",
+]);
+
 const VENUE_STOPWORDS = new Set([
   "a",
   "an",
@@ -430,7 +480,10 @@ const VENUE_STOPWORDS = new Set([
 ]);
 
 function normalizedVenueWords(text: string) {
-  return normalizeDiscoveryTitle(text)
+  return normalizeDiscoveryTitle(
+    // Parenthetical acronyms are handled as acronym keys, not name words.
+    text.replace(/\([^)]*\)/g, " "),
+  )
     .replace(/\b(?:19|20)\d{2}\b/g, " ")
     .replace(/\b\d+(?:st|nd|rd|th)\b/g, " ")
     .split(" ")
@@ -442,15 +495,23 @@ function significantVenueWords(text: string) {
     (word) =>
       word.length >= 3 &&
       !/^\d+$/.test(word) &&
+      !VENUE_ORDINAL_WORDS.has(word) &&
       !GENERIC_VENUE_WORDS.has(word) &&
       !VENUE_CONTEXT_WORDS.has(word),
   );
 }
 
-function genericVenueTypeWords(text: string) {
+function venueTypeWords(text: string) {
   return new Set(
-    normalizedVenueWords(text).filter((word) => GENERIC_VENUE_WORDS.has(word)),
+    normalizedVenueWords(text).filter((word) => VENUE_TYPE_WORDS.has(word)),
   );
+}
+
+function venueNameInitials(value: string) {
+  return normalizedVenueWords(value)
+    .filter((word) => !VENUE_STOPWORDS.has(word))
+    .map((word) => word[0])
+    .join("");
 }
 
 // Acronym-style keys a claimed venue may legitimately present: an explicit
@@ -493,17 +554,17 @@ function claimAcronymKeys(venue: {
 // registrar-controlled official token — but two distinctive multi-word names
 // that fail mutual coverage are different venues and can never be bridged by
 // shared initials.
-function officialVenueMatches(
+function officialVenueAgreement(
   paper: DiscoveryResult["verifiedMain"][number],
   status: OpenReviewOfficialStatus,
-) {
+): "name" | "acronym" | undefined {
   const fieldWords = new Set(
     normalizedVenueWords(status.officialVenueFieldText),
   );
   const officialSignificant = significantVenueWords(
     status.officialVenueFieldText,
   );
-  const officialTypes = genericVenueTypeWords(status.officialVenueFieldText);
+  const officialTypes = venueTypeWords(status.officialVenueFieldText);
   const officialTokens = new Set(
     normalizedVenueWords(status.officialVenueText).filter(
       (word) =>
@@ -523,35 +584,48 @@ function officialVenueMatches(
       significant.every((word) => fieldWords.has(word))
     );
   };
-  const valueContradicts = (value: string) =>
-    [...new Set(significantVenueWords(value))].length >= 2 &&
-    officialSignificant.length >= 2 &&
-    !valueAgrees(value);
-  return [
+  // An unverifiable multi-word claimed name poisons the whole claim when the
+  // official field spells out a different distinctive name, or when the
+  // claimed name's own initials do not correspond to any registrar-controlled
+  // token — an acronym can never rescue such a name.
+  const valueContradicts = (value: string) => {
+    if ([...new Set(significantVenueWords(value))].length < 2) return false;
+    if (valueAgrees(value)) return false;
+    if (officialSignificant.length >= 2) return true;
+    const initials = venueNameInitials(value);
+    return initials.length < 3 || !officialTokens.has(initials);
+  };
+  for (const venue of [
     { venueName: paper.venueName, venueAcronym: paper.venueAcronym },
     {
       venueName: paper.leadingVenueAssessment.venueName,
       venueAcronym: paper.leadingVenueAssessment.venueAcronym,
     },
-  ].some((venue) => {
-    if (!venue.venueName && !venue.venueAcronym) return false;
-    const claimTypes = genericVenueTypeWords(venue.venueName || "");
+  ]) {
+    if (!venue.venueName && !venue.venueAcronym) continue;
+    const claimTypes = venueTypeWords(venue.venueName || "");
     if (
       claimTypes.size &&
       officialTypes.size &&
       [...claimTypes].every((word) => !officialTypes.has(word))
     ) {
-      return false;
+      continue;
     }
     const values = [venue.venueName, venue.venueAcronym].filter(
       (value): value is string => Boolean(value),
     );
-    if (values.some(valueAgrees)) return true;
-    // A distinctive multi-word claimed name that fails mutual coverage names
-    // a different venue; an acronym cannot rescue a contradicted name.
-    if (values.some(valueContradicts)) return false;
-    return [...claimAcronymKeys(venue)].some((key) => officialTokens.has(key));
-  });
+    if (values.some(valueContradicts)) continue;
+    const agreedValue = values.find(valueAgrees);
+    if (agreedValue) {
+      return [...new Set(significantVenueWords(agreedValue))].length >= 2
+        ? "name"
+        : "acronym";
+    }
+    if ([...claimAcronymKeys(venue)].some((key) => officialTokens.has(key))) {
+      return "acronym";
+    }
+  }
+  return undefined;
 }
 
 function noteInvitations(note: unknown): string[] {
@@ -772,16 +846,24 @@ export function reconstructOfficialEvidence(
   // A venue-bearing claim must be corroborated on the inspected paper page.
   // When an official OpenReview decision or track is in play, only the
   // official API venue surface may corroborate it: forum prose is writable by
-  // any user and cannot vouch for the venue behind an acceptance. The surface
-  // is matched with the parser's venue-alias rules so full names still bind
-  // to acronym-style OpenReview ids.
+  // any user and cannot vouch for the venue behind an acceptance. When only
+  // the acronym could be verified, the evidence records the verified acronym
+  // rather than endorsing an unverified full-name expansion.
+  const venueAgreement = statusClaims
+    ? officialVenueAgreement(paper, statusClaims)
+    : undefined;
   const venue = statusClaims
-    ? officialVenueMatches(paper, statusClaims)
+    ? venueAgreement === "name"
       ? paper.leadingVenueAssessment.venueName ||
         paper.leadingVenueAssessment.venueAcronym ||
         paper.venueName ||
         paper.venueAcronym
-      : undefined
+      : venueAgreement === "acronym"
+        ? paper.venueAcronym ||
+          paper.leadingVenueAssessment.venueAcronym ||
+          paper.leadingVenueAssessment.venueName ||
+          paper.venueName
+        : undefined
     : observedVenue(paper, page);
   if ((paper.venueName || paper.venueAcronym) && !venue) return undefined;
   const type = inferEvidenceType(inspection);

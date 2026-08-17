@@ -983,6 +983,175 @@ test("a venueid cannot bridge initials across different full venue names", async
   );
 });
 
+function openReviewVenueClaimPaper(params: {
+  url: string;
+  venueName: string;
+  venueAcronym?: string;
+}) {
+  return paper({
+    venueName: params.venueName,
+    venueAcronym: params.venueAcronym,
+    urls: [params.url],
+    publicationEvidence: [
+      {
+        type: "official_decision",
+        sourceName: "OpenReview",
+        url: params.url,
+        observedTitle: "Verified Paper",
+        observedVenue: params.venueName,
+        observedTrack: "Poster",
+        observedDecision: "Accepted",
+        supports: ["identity", "accepted", "main_track"],
+      },
+    ],
+    leadingVenueAssessment: {
+      venueName: params.venueName,
+      ...(params.venueAcronym ? { venueAcronym: params.venueAcronym } : {}),
+      fields: ["example field"],
+      judgment: "leading",
+      confidence: "high",
+      basis: "Field-specific archival venue assessment.",
+    },
+  });
+}
+
+test("a shared modifier cannot override a venue-type disagreement", async () => {
+  const officialURL = "https://openreview.net/forum?id=type-conflict";
+  const discovery = parseDiscoveryResult(
+    result([
+      openReviewVenueClaimPaper({
+        url: officialURL,
+        venueName: "International Symposium on Learning Representations",
+      }),
+    ]),
+  );
+  await assert.rejects(
+    verifyDiscoveryEvidenceLive({
+      discovery,
+      fetch: openReviewFetch({
+        forumID: "type-conflict",
+        page: "<title>Verified Paper</title><main>Verified Paper — A. Author — 2026 — International Symposium on Learning Representations</main>",
+        decision: "Accept (Poster)",
+        venue:
+          "International Conference on Learning Representations 2026 Poster",
+        venueID: "ICLR.cc/2026/Conference",
+        invitationPrefix: "ICLR.cc/2026/Conference",
+      }),
+    }),
+    /did not include any usable papers/,
+  );
+});
+
+test("an initials-inconsistent claimed name cannot be rescued by an acronym", async () => {
+  const officialURL = "https://openreview.net/forum?id=unrelated-name";
+  const discovery = parseDiscoveryResult(
+    result([
+      openReviewVenueClaimPaper({
+        url: officialURL,
+        venueName: "Quantum Biology Conference",
+        venueAcronym: "ICLR",
+      }),
+    ]),
+  );
+  await assert.rejects(
+    verifyDiscoveryEvidenceLive({
+      discovery,
+      fetch: openReviewFetch({
+        forumID: "unrelated-name",
+        page: "<title>Verified Paper</title><main>Verified Paper — A. Author — 2026 — Quantum Biology Conference</main>",
+        decision: "Accept (Poster)",
+        venue: "ICLR 2026 Poster",
+        venueID: "ICLR.cc/2026/Conference",
+        invitationPrefix: "ICLR.cc/2026/Conference",
+      }),
+    }),
+    /did not include any usable papers/,
+  );
+});
+
+test("an unverified same-initials expansion is recorded as the verified acronym", async () => {
+  const officialURL = "https://openreview.net/forum?id=unverified-expansion";
+  const discovery = parseDiscoveryResult(
+    result([
+      openReviewVenueClaimPaper({
+        url: officialURL,
+        venueName: "International Conference on Learning Research",
+        venueAcronym: "ICLR",
+      }),
+    ]),
+  );
+  const verified = await verifyDiscoveryEvidenceLive({
+    discovery,
+    fetch: openReviewFetch({
+      forumID: "unverified-expansion",
+      page: "<title>Verified Paper</title><main>Verified Paper — A. Author — 2026 — International Conference on Learning Research</main>",
+      decision: "Accept (Poster)",
+      venue: "ICLR 2026 Poster",
+      venueID: "ICLR.cc/2026/Conference",
+      invitationPrefix: "ICLR.cc/2026/Conference",
+    }),
+  });
+  // The claimed expansion cannot be verified against an acronym-style field,
+  // so the evidence endorses only the registrar-verified acronym.
+  assert.equal(verified.verifiedMain.length, 1);
+  assert.equal(
+    verified.verifiedMain[0].publicationEvidence[0].observedVenue,
+    "ICLR",
+  );
+});
+
+test("a parenthetical acronym does not poison full-name agreement", async () => {
+  const officialURL = "https://openreview.net/forum?id=parenthetical";
+  const discovery = parseDiscoveryResult(
+    result([
+      openReviewVenueClaimPaper({
+        url: officialURL,
+        venueName:
+          "International Conference on Learning Representations (ICLR)",
+        venueAcronym: "ICLR",
+      }),
+    ]),
+  );
+  const verified = await verifyDiscoveryEvidenceLive({
+    discovery,
+    fetch: openReviewFetch({
+      forumID: "parenthetical",
+      page: "<title>Verified Paper</title><main>Verified Paper — A. Author — 2026 — International Conference on Learning Representations (ICLR)</main>",
+      decision: "Accept (Poster)",
+      venue: "International Conference on Learning Representations 2026 Poster",
+      venueID: "ICLR.cc/2026/Conference",
+      invitationPrefix: "ICLR.cc/2026/Conference",
+    }),
+  });
+  assert.equal(verified.verifiedMain.length, 1);
+});
+
+test("spelled edition ordinals do not block official venue agreement", async () => {
+  const officialURL = "https://openreview.net/forum?id=spelled-ordinal";
+  const fullName = "International Conference on Learning Representations";
+  const discovery = parseDiscoveryResult(
+    result([
+      openReviewVenueClaimPaper({
+        url: officialURL,
+        venueName: fullName,
+      }),
+    ]),
+  );
+  const verified = await verifyDiscoveryEvidenceLive({
+    discovery,
+    fetch: openReviewFetch({
+      forumID: "spelled-ordinal",
+      page: `<title>Verified Paper</title><main>Verified Paper — A. Author — 2026 — ${fullName}</main>`,
+      decision: "Accept (Poster)",
+      venue:
+        "The Twelfth International Conference on Learning Representations 2026 Poster",
+      venueID: "ICLR.cc/2026/Conference",
+      invitationPrefix: "ICLR.cc/2026/Conference",
+    }),
+  });
+  assert.equal(verified.verifiedMain.length, 1);
+});
+
 test("an acronym claim binds a spelled-out official venue through registrar ids", async () => {
   const officialURL = "https://openreview.net/forum?id=acronym-claim";
   const discovery = parseDiscoveryResult(
