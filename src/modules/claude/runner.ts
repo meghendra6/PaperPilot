@@ -1,4 +1,5 @@
 import { getPref, setPref } from "../../utils/prefs";
+import { getZoteroProfilePath } from "../../utils/zoteroProfile";
 import { normalizeClaudeModel } from "../codex/modelOptions";
 import { shellEscape } from "../codex/shell";
 import {
@@ -38,9 +39,7 @@ interface FailedClaudeRun {
 }
 
 function buildClaudeShellEnvironment() {
-  const profilePath =
-    (globalThis as { Zotero?: any }).Zotero?.getProfileDirectory?.()?.path ||
-    "";
+  const profilePath = getZoteroProfilePath();
   const userHome = profilePath.includes("/Library/")
     ? profilePath.split("/Library/")[0]
     : "";

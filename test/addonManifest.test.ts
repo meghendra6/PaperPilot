@@ -18,30 +18,10 @@ function readAddonManifest(): ZoteroManifest {
   ) as ZoteroManifest;
 }
 
-function matchesZoteroVersion(range: string, version: string): boolean {
-  if (range === "*") {
-    return true;
-  }
-
-  const wildcardMatch = range.match(/^(\d+)\.\*$/);
-  if (wildcardMatch) {
-    return version.startsWith(`${wildcardMatch[1]}.`);
-  }
-
-  return range === version;
-}
-
-test("addon manifest declares compatibility with Zotero 9.0.3", () => {
+test("addon manifest declares compatibility with Zotero 7 through 10", () => {
   const manifest = readAddonManifest();
   const zotero = manifest.applications?.zotero;
 
   assert.equal(zotero?.strict_min_version, "7.0");
-  assert.equal(
-    matchesZoteroVersion(zotero?.strict_max_version ?? "", "9.0.3"),
-    true,
-  );
-  assert.equal(
-    matchesZoteroVersion(zotero?.strict_max_version ?? "", "10.0.0"),
-    false,
-  );
+  assert.equal(zotero?.strict_max_version, "10.0.*");
 });

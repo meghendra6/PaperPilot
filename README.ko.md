@@ -1,12 +1,12 @@
-# Paper Pilot for Zotero 7-9
+# Paper Pilot for Zotero 7-10
 
 > Languages: [English](./README.md) | [한국어](./README.ko.md) | [简体中文](./README.zh-CN.md) | [繁體中文](./README.zh-TW.md)
 
-**Paper Pilot는 Zotero 7-9 PDF 리더를 AI 기반 논문 워크벤치로 바꿔줍니다.**
+**Paper Pilot는 Zotero 7-10 PDF 리더를 AI 기반 논문 워크벤치로 바꿔줍니다.**
 
-Paper Pilot는 Zotero 7-9 PDF 리더를 위한 AI 읽기 워크벤치입니다. Zotero 안에서 논문별 채팅 패널, 구조화된 논문 도구, 에이전트 주도 검증형 선행연구 탐색, 로컬 CLI 기반 AI 실행 기능을 제공합니다.
+Paper Pilot는 Zotero 7-10 PDF 리더를 위한 AI 읽기 워크벤치입니다. Zotero 안에서 논문별 채팅 패널, 구조화된 논문 도구, 에이전트 주도 검증형 선행연구 탐색, 로컬 CLI 기반 AI 실행 기능을 제공합니다.
 
-![Zotero 7-9](https://img.shields.io/badge/Zotero-7--9-cc2936) ![Node 20+](https://img.shields.io/badge/Node-20%2B-339933) ![Java 11+](https://img.shields.io/badge/Java-11%2B-007396) ![License](https://img.shields.io/badge/License-AGPL--3.0--or--later-blue) ![Engines](https://img.shields.io/badge/Engines-Codex%20CLI%20%7C%20Claude%20Code%20%7C%20Gemini%20CLI-6f42c1)
+![Zotero 7-10](https://img.shields.io/badge/Zotero-7--10-cc2936) ![Node 20+](https://img.shields.io/badge/Node-20%2B-339933) ![Java 11+](https://img.shields.io/badge/Java-11%2B-007396) ![License](https://img.shields.io/badge/License-AGPL--3.0--or--later-blue) ![Engines](https://img.shields.io/badge/Engines-Codex%20CLI%20%7C%20Claude%20Code%20%7C%20Gemini%20CLI-6f42c1)
 
 ## 한눈에 보기
 
@@ -17,7 +17,7 @@ Paper Pilot는 Zotero 7-9 PDF 리더를 위한 AI 읽기 워크벤치입니다. 
 - **Critical Read** — 독자 판단을 우선하는 7단계 비판적 논문 읽기와 최종 리포트
 - auto-highlight 및 저장되는 논문 단위 세션 기록 지원
 - **Paper Mastery** — 다회차 소크라테스식 이해도 점검 후 Markdown 학습 리포트 생성
-- 자동 검증과 Zotero 9 탐색/Critical Read 런타임 스모크를 기록했으며, 더 넓은 Zotero 7-9·크로스엔진 매트릭스는 수동 QA로 유지
+- 자동 검증과 Zotero 9·10 런타임 스모크를 기록했으며, 더 넓은 Zotero 7-10·크로스엔진 매트릭스는 수동 QA로 유지
 
 ## 스크린샷과 데모
 
@@ -45,7 +45,7 @@ Paper Pilot는 현재 활발히 개발 중입니다.
 
 아직 완전한 프로덕션 준비 상태라고 보기 전에 필요한 부분:
 
-- 실제 Zotero 7-9 런타임에서의 엔드투엔드 수동 QA
+- 실제 Zotero 7-10 런타임에서의 엔드투엔드 수동 QA
 - 실제 사용자 환경 전반에 대한 설치/환경 검증 확대
 
 현재 런타임 체크리스트는 [`docs/manual-qa.md`](./docs/manual-qa.md)를 참고하세요.
@@ -215,7 +215,7 @@ Gemini 모드는 더 가벼운 로컬 CLI 경로입니다. 현재 코드베이�
 
 ## 요구 사항
 
-- **Zotero 7, 8, 9**
+- **Zotero 7, 8, 9, 10**
 - 개발용 **Node.js 20+**
 - 의존성/빌드용 **npm**
 - OpenDataLoader PDF 추출을 위한 런타임 **Java 11+**
@@ -372,7 +372,7 @@ npm run build
 ## 알려진 제한 사항
 
 - 아직 완전한 프로덕션 준비 상태를 주장하지 않습니다.
-- Zotero 9 집중 런타임 QA는 `docs/manual-qa.md`에 기록했으며, 더 넓은 호환성·크로스엔진 매트릭스는 수동 QA로 남아 있습니다.
+- Zotero 9·10 집중 런타임 QA는 `docs/manual-qa.md`에 기록했으며, 더 넓은 호환성·크로스엔진 매트릭스는 수동 QA로 남아 있습니다.
 
 ## 로드맵
 

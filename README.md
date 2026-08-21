@@ -1,12 +1,12 @@
-# Paper Pilot for Zotero 7-9
+# Paper Pilot for Zotero 7-10
 
 > Languages: [English](./README.md) | [한국어](./README.ko.md) | [简体中文](./README.zh-CN.md) | [繁體中文](./README.zh-TW.md)
 
-**Paper Pilot turns the Zotero 7-9 PDF reader into an AI-assisted paper workbench.**
+**Paper Pilot turns the Zotero 7-10 PDF reader into an AI-assisted paper workbench.**
 
-Paper Pilot is an AI reading workbench for the Zotero 7-9 PDF reader. It adds a paper-scoped chat pane, structured paper tools, agent-led verified research discovery, and local CLI-based AI execution directly inside Zotero.
+Paper Pilot is an AI reading workbench for the Zotero 7-10 PDF reader. It adds a paper-scoped chat pane, structured paper tools, agent-led verified research discovery, and local CLI-based AI execution directly inside Zotero.
 
-![Zotero 7-9](https://img.shields.io/badge/Zotero-7--9-cc2936) ![Node 20+](https://img.shields.io/badge/Node-20%2B-339933) ![Java 11+](https://img.shields.io/badge/Java-11%2B-007396) ![License](https://img.shields.io/badge/License-AGPL--3.0--or--later-blue) ![Engines](https://img.shields.io/badge/Engines-Codex%20CLI%20%7C%20Claude%20Code%20%7C%20Gemini%20CLI-6f42c1)
+![Zotero 7-10](https://img.shields.io/badge/Zotero-7--10-cc2936) ![Node 20+](https://img.shields.io/badge/Node-20%2B-339933) ![Java 11+](https://img.shields.io/badge/Java-11%2B-007396) ![License](https://img.shields.io/badge/License-AGPL--3.0--or--later-blue) ![Engines](https://img.shields.io/badge/Engines-Codex%20CLI%20%7C%20Claude%20Code%20%7C%20Gemini%20CLI-6f42c1)
 
 ## At a glance
 
@@ -18,7 +18,7 @@ Paper Pilot is an AI reading workbench for the Zotero 7-9 PDF reader. It adds a 
 - **Critical Read** — a reader-first, seven-step paper evaluation workflow with a final report
 - Auto-highlight plus persisted paper-scoped session history
 - **Paper Mastery** — multi-round Socratic comprehension check with a final Markdown learning report
-- Automated verification and a focused Zotero 9 discovery/Critical Read runtime smoke are recorded; the broader Zotero 7-9 and cross-engine matrix remains manual QA
+- Automated verification and focused Zotero 9 and 10 runtime smokes are recorded; the broader Zotero 7-10 and cross-engine matrix remains manual QA
 
 ## Screenshots and demo
 
@@ -46,7 +46,7 @@ What is already in place:
 
 What is still required before calling it fully production-ready:
 
-- end-to-end manual QA inside real Zotero 7-9 runtimes
+- end-to-end manual QA inside real Zotero 7-10 runtimes
 - broader install and environment validation across real user setups
 
 See [`docs/manual-qa.md`](./docs/manual-qa.md) for the current runtime checklist.
@@ -215,7 +215,7 @@ See [`docs/prompt-contracts.md`](./docs/prompt-contracts.md) for the exact outpu
 
 ## Requirements
 
-- **Zotero 7, 8, or 9**
+- **Zotero 7, 8, 9, or 10**
 - **Node.js 20+** for development
 - **npm** for dependency and build workflows
 - **Java 11+** at runtime for OpenDataLoader PDF extraction
@@ -372,7 +372,7 @@ Manual runtime verification is still required in Zotero itself. Use [`docs/manua
 ## Known limitations
 
 - The project is not yet claiming full production readiness.
-- Focused Zotero 9 runtime QA is recorded in `docs/manual-qa.md`; the broader compatibility and cross-engine matrix remains manual QA.
+- Focused Zotero 9 and 10 runtime QA is recorded in `docs/manual-qa.md`; the broader compatibility and cross-engine matrix remains manual QA.
 
 ## Roadmap
 

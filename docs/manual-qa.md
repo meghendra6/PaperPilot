@@ -1,6 +1,6 @@
 # Manual QA Checklist
 
-Use this checklist inside real Zotero 7, 8, and 9 runtimes before claiming readiness.
+Use this checklist inside real Zotero 7, 8, 9, and 10 runtimes before claiming readiness.
 
 ## 0. Environment prerequisites
 
@@ -164,6 +164,26 @@ Use this checklist inside real Zotero 7, 8, and 9 runtimes before claiming readi
 - [ ] Open a second paper and confirm context/session state does not leak from the first
 
 ## 9. Verified discovery / Critical Read / auto-highlight checks
+
+### Zotero 10 compatibility runtime record — 2026-08-21
+
+The production XPI from the Zotero 10 compatibility candidate was loaded as a
+temporary add-on in installed Zotero 10.0 with a fresh, isolated `.scaffold`
+profile and data directory. Structured Firefox RDP inspection confirmed:
+
+- Paper Pilot reached its active add-on lifecycle state and registered the
+  reader section;
+- opening the repository's test PDF produced a reader-scoped Paper Pilot pane
+  with the engine header, three disclosure sections, and chat composer, without
+  visible Paper Pilot error text;
+- Zotero 10 exposed `getSelectedCollections()` while the removed
+  `getSelectedCollection()` call threw its documented migration error; and
+- with the removed singular API still throwing, `Save for collection` created
+  a Zotero note and linked it to the only available collection through the new
+  plural-selection compatibility path.
+
+This is a focused Zotero 10 compatibility smoke, not a complete rerun of the
+full engine, discovery, Critical Read, operating-system, or Zotero 7-9 matrix.
 
 ### Delivery runtime record — 2026-08-13
 

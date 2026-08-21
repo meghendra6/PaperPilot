@@ -371,7 +371,7 @@ test("buildRelatedPaperQuestion includes the current paper context", () => {
   assert.match(question, /use full workspace content/i);
 });
 
-test("chooseCollectionForRecommendation prefers the selected collection in the source library", async () => {
+test("chooseCollectionForRecommendation uses the Zotero 10 plural collection getter", async () => {
   const selectedCollection = {
     id: 7,
     name: "Current Collection",
@@ -381,7 +381,10 @@ test("chooseCollectionForRecommendation prefers the selected collection in the s
   (globalThis as any).Zotero = {
     getMainWindow: () => ({
       ZoteroPane: {
-        getSelectedCollection: () => selectedCollection,
+        getSelectedCollections: () => [selectedCollection],
+        getSelectedCollection: () => {
+          throw new Error("Zotero 10 singular getter must not be called");
+        },
       },
     }),
     Collections: {
@@ -391,6 +394,45 @@ test("chooseCollectionForRecommendation prefers the selected collection in the s
 
   const result = await chooseCollectionForRecommendation({ libraryID: 1 });
   assert.equal(result, selectedCollection);
+});
+
+test("chooseCollectionForRecommendation prompts instead of choosing arbitrarily from a Zotero 10 multi-selection", async () => {
+  const first = { id: 7, name: "First", parentID: 0, libraryID: 1 };
+  const second = { id: 8, name: "Second", parentID: 0, libraryID: 1 };
+  (globalThis as any).Zotero = {
+    getMainWindow: () => ({
+      ZoteroPane: {
+        getSelectedCollections: () => [first, second],
+      },
+    }),
+    Collections: {
+      getByLibrary: () => [first, second],
+    },
+  };
+  (globalThis as any).Services = {
+    prompt: {
+      select: (
+        _parent: unknown,
+        _title: string,
+        _message: string,
+        _count: number,
+        _labels: string[],
+        selected: { value: number },
+      ) => {
+        selected.value = 1;
+        return true;
+      },
+    },
+  };
+
+  try {
+    assert.equal(
+      await chooseCollectionForRecommendation({ libraryID: 1 }),
+      second,
+    );
+  } finally {
+    delete (globalThis as any).Services;
+  }
 });
 
 test("chooseCollectionForRecommendation ignores a selected collection from another library", async () => {

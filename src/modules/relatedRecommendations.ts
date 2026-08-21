@@ -603,6 +603,20 @@ function getMainWindowPane() {
   return mainWindow?.ZoteroPane;
 }
 
+function getSelectedCollectionsFromPane(pane: any) {
+  if (typeof pane?.getSelectedCollections === "function") {
+    const collections = pane.getSelectedCollections();
+    return Array.isArray(collections) ? collections : [];
+  }
+
+  if (typeof pane?.getSelectedCollection === "function") {
+    const collection = pane.getSelectedCollection();
+    return collection ? [collection] : [];
+  }
+
+  return [];
+}
+
 function resolveCollectionReference(collection: any) {
   if (!collection) {
     return undefined;
@@ -1071,9 +1085,11 @@ function buildCollectionOptionLabel(collection: any) {
 
 export async function chooseCollectionForRecommendation(sourceItem: any) {
   const pane = getMainWindowPane();
-  const selectedCollection = resolveCollectionReference(
-    pane?.getSelectedCollection?.(),
-  );
+  const selectedCollections = getSelectedCollectionsFromPane(pane)
+    .map(resolveCollectionReference)
+    .filter(Boolean);
+  const selectedCollection =
+    selectedCollections.length === 1 ? selectedCollections[0] : undefined;
   if (
     selectedCollection &&
     selectedCollection.libraryID === sourceItem.libraryID

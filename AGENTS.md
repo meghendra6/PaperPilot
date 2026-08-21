@@ -5,7 +5,7 @@ It is the source of truth; [`CLAUDE.md`](./CLAUDE.md) points here rather than du
 
 ## Project intent
 
-Paper Pilot is a Zotero 7-9 plugin that turns the PDF reader into an AI-assisted paper workbench. The repo mixes reader-pane UI code, local CLI provider integration, paper-context/workspace generation, and structured prompt/parsing logic.
+Paper Pilot is a Zotero 7-10 plugin that turns the PDF reader into an AI-assisted paper workbench. The repo mixes reader-pane UI code, local CLI provider integration, paper-context/workspace generation, and structured prompt/parsing logic.
 
 There is no server and no network model client: every AI run shells out to a local CLI (Codex CLI, Claude Code, or Gemini CLI) that the user already installed and authenticated.
 
@@ -52,7 +52,7 @@ Local-only, not tracked: `.github/` except `workflows/` and `FUNDING.yml`, `docs
 - `npx eslint <paths>` / `npx prettier --check <paths>`: preferred read-only lint/style checks on touched files
 - Avoid `npm run lint` as a default verification step because it runs write/fix operations across the repo
 
-Development baseline: Node 20+, npm, Zotero 7-9, Java 11+ for OpenDataLoader extraction at runtime, and at least one local CLI if you want to exercise a real engine path.
+Development baseline: Node 20+, npm, Zotero 7-10, Java 11+ for OpenDataLoader extraction at runtime, and at least one local CLI if you want to exercise a real engine path.
 
 ## Working principles
 

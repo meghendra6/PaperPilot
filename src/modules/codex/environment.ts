@@ -1,15 +1,11 @@
+import { getZoteroProfilePath } from "../../utils/zoteroProfile";
+
 function getProfilePath(profilePath?: string) {
   if (profilePath) {
     return profilePath;
   }
 
-  return (
-    (
-      globalThis as {
-        Zotero?: { getProfileDirectory?: () => { path?: string } | undefined };
-      }
-    ).Zotero?.getProfileDirectory?.()?.path || ""
-  );
+  return getZoteroProfilePath();
 }
 
 export function resolveCodexUserHome(profilePath?: string) {
