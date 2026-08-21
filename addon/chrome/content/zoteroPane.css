@@ -673,6 +673,28 @@
   flex-direction: column;
 }
 
+.pp-chat-help {
+  width: 100%;
+  padding: 10px 12px;
+  box-sizing: border-box;
+  border: 1px solid var(--pp-border-light);
+  border-radius: var(--pp-radius-md);
+  background: var(--pp-bg-secondary);
+  color: var(--pp-text-secondary);
+}
+
+.pp-chat-help__title {
+  margin-bottom: 4px;
+  color: var(--pp-text-primary);
+  font-size: var(--pp-font-size-base);
+  font-weight: 600;
+}
+
+.pp-chat-help__body {
+  font-size: var(--pp-font-size-sm);
+  line-height: 1.45;
+}
+
 /* ============================================================
    10. Chat message bubbles
    ============================================================ */

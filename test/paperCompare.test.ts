@@ -519,7 +519,7 @@ test("getPaperCompareWorkflowState tells users to recommend related papers first
   assert.deepEqual(state, {
     enabled: false,
     helperText:
-      "Step 1 of 2: Run Recommend related papers. Step 2 of 2: Compare unlocks after at least one peer is ready.",
+      "Step 1: Open Related papers, then Find verified prior work. Step 2: Compare when a peer is ready.",
     tone: "muted",
     candidateCount: 0,
   });

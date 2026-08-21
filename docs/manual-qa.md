@@ -42,6 +42,10 @@ Use this checklist inside real Zotero 7, 8, 9, and 10 runtimes before claiming r
 - [ ] Complete one Paper Mastery evaluation that generates a follow-up question and one that generates the final report; confirm both nested runs start after the parent cleanup instead of reporting an active-run conflict
 - [ ] Cancel a running Codex-backed Workbench or Paper Mastery request; confirm its workflow leaves the running/evaluating state, remains cancelled after the next poll interval, and can be started again
 - [ ] Confirm the engine/model popover closes on outside click and Escape; Escape returns focus to its trigger
+- [ ] Open the engine/model popover with Enter or Space and confirm focus moves into the dialog; the next Tab reaches the first visible setting instead of New session
+- [ ] On a fresh session, confirm the `Start with this paper` guidance is visually distinct from assistant messages and disappears after the first admitted question
+- [ ] Confirm the unavailable Compare helper names the visible `Related papers` and `Find verified prior work` controls exactly
+- [ ] With a screen reader, confirm new conversation entries, Compare availability changes, and the visible `Thinking…` state are announced without repeating the elapsed timer
 - [ ] Fill the pane with chat, recommendation, session, and mastery content; confirm chat keeps at least 120px and each expanded section scrolls internally without pushing the composer away
 - [ ] Type one and many lines in the composer; confirm it grows from 72px to at most 180px, then scrolls internally
 - [ ] Confirm the removed drag handle has no visible target or pointer behavior and the Send button submits the same way as Enter

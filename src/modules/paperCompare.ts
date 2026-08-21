@@ -532,7 +532,7 @@ export function getPaperCompareWorkflowState(params: {
       helperText:
         entryState.reason ===
         "Need at least one recommended peer before compare can run."
-          ? "Step 1 of 2: Run Recommend related papers. Step 2 of 2: Compare unlocks after at least one peer is ready."
+          ? "Step 1: Open Related papers, then Find verified prior work. Step 2: Compare when a peer is ready."
           : entryState.reason,
       tone: "muted",
       candidateCount: entryState.candidateCount,
