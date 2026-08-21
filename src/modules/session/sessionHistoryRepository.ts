@@ -6,6 +6,7 @@ import {
   type SessionHistoryRepositoryOptions,
   type SessionHistorySnapshot,
 } from "./historyTypes";
+import { getZoteroProfilePath } from "../../utils/zoteroProfile";
 
 declare const Zotero: any;
 declare const IOUtils: any;
@@ -218,8 +219,7 @@ function createDefaultFileOps(): SessionHistoryFileOps {
 }
 
 function resolveDefaultRootDir() {
-  const zotero = getGlobalZotero();
-  const profilePath = zotero?.getProfileDirectory?.()?.path || "";
+  const profilePath = getZoteroProfilePath(getGlobalZotero());
   if (profilePath) {
     return joinPath(profilePath, "paperpilot", "session-history");
   }

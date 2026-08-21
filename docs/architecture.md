@@ -12,7 +12,7 @@ Related notes:
 
 ## Runtime shape
 
-Paper Pilot is a Zotero 7-9 bootstrapped add-on. There is no server and no
+Paper Pilot is a Zotero 7-10 bootstrapped add-on. There is no server and no
 network client for model calls: every AI run shells out to a **local CLI**
 already installed and authenticated on the user's machine.
 

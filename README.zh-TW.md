@@ -1,12 +1,12 @@
-# Paper Pilot for Zotero 7-9
+# Paper Pilot for Zotero 7-10
 
 > Languages: [English](./README.md) | [한국어](./README.ko.md) | [简体中文](./README.zh-CN.md) | [繁體中文](./README.zh-TW.md)
 
-**Paper Pilot 可將 Zotero 7-9 PDF 閱讀器變成 AI 驅動的論文工作台。**
+**Paper Pilot 可將 Zotero 7-10 PDF 閱讀器變成 AI 驅動的論文工作台。**
 
-Paper Pilot 是一個面向 Zotero 7-9 PDF 閱讀器的 AI 閱讀工作台。它直接在 Zotero 中提供以論文為範圍的聊天面板、結構化論文工具、由代理主導並驗證出版狀態的先行研究探索，以及基於本地 CLI 的 AI 執行能力。
+Paper Pilot 是一個面向 Zotero 7-10 PDF 閱讀器的 AI 閱讀工作台。它直接在 Zotero 中提供以論文為範圍的聊天面板、結構化論文工具、由代理主導並驗證出版狀態的先行研究探索，以及基於本地 CLI 的 AI 執行能力。
 
-![Zotero 7-9](https://img.shields.io/badge/Zotero-7--9-cc2936) ![Node 20+](https://img.shields.io/badge/Node-20%2B-339933) ![Java 11+](https://img.shields.io/badge/Java-11%2B-007396) ![License](https://img.shields.io/badge/License-AGPL--3.0--or--later-blue) ![Engines](https://img.shields.io/badge/Engines-Codex%20CLI%20%7C%20Claude%20Code%20%7C%20Gemini%20CLI-6f42c1)
+![Zotero 7-10](https://img.shields.io/badge/Zotero-7--10-cc2936) ![Node 20+](https://img.shields.io/badge/Node-20%2B-339933) ![Java 11+](https://img.shields.io/badge/Java-11%2B-007396) ![License](https://img.shields.io/badge/License-AGPL--3.0--or--later-blue) ![Engines](https://img.shields.io/badge/Engines-Codex%20CLI%20%7C%20Claude%20Code%20%7C%20Gemini%20CLI-6f42c1)
 
 目前外掛支援三種引擎模式：
 
@@ -23,7 +23,7 @@ Paper Pilot 是一個面向 Zotero 7-9 PDF 閱讀器的 AI 閱讀工作台。它
 - **Critical Read** — 讀者先判斷的七步批判性閱讀流程與最終報告
 - 支援 auto-highlight 與可持久化的論文級會話歷史
 - **Paper Mastery** — 多輪蘇格拉底式理解度檢查，並產出 Markdown 學習報告
-- 已記錄自動化驗證及 Zotero 9 探索／Critical Read 執行時冒煙測試；更廣泛的 Zotero 7-9 與跨引擎矩陣仍屬手動 QA
+- 已記錄自動化驗證及 Zotero 9、10 執行時冒煙測試；更廣泛的 Zotero 7-10 與跨引擎矩陣仍屬手動 QA
 
 ## 截圖與示範
 
@@ -51,7 +51,7 @@ Paper Pilot 仍在積極開發中。
 
 在可被視為完全可用於正式環境之前，仍需要：
 
-- 在真實 Zotero 7-9 執行環境中完成端對端手動 QA
+- 在真實 Zotero 7-10 執行環境中完成端對端手動 QA
 - 在更多真實使用者環境中驗證安裝與執行情況
 
 目前的執行時檢查清單請見 [`docs/manual-qa.md`](./docs/manual-qa.md)。
@@ -217,7 +217,7 @@ Gemini 模式是較輕量的本地 CLI 路徑。當前程式碼庫已包含：
 
 ## 環境需求
 
-- **Zotero 7、8 或 9**
+- **Zotero 7、8、9 或 10**
 - 開發用 **Node.js 20+**
 - 用於依賴與建置的 **npm**
 - 執行時 **Java 11+**（用於 OpenDataLoader 結構化 PDF 擷取）
@@ -374,7 +374,7 @@ npm run build
 ## 已知限制
 
 - 專案目前尚未宣稱完全達到正式可用狀態。
-- 已在 `docs/manual-qa.md` 記錄聚焦的 Zotero 9 執行時 QA；更廣泛的相容性與跨引擎矩陣仍屬手動 QA。
+- 已在 `docs/manual-qa.md` 記錄聚焦的 Zotero 9、10 執行時 QA；更廣泛的相容性與跨引擎矩陣仍屬手動 QA。
 
 ## 路線圖
 

@@ -2,7 +2,7 @@
 
 Status: Implemented; exact delivery evidence is recorded in the delivery PR
 Last updated: 2026-08-13
-Target: Paper Pilot for Zotero 7-9
+Target: Paper Pilot for Zotero 7-10
 
 ## 1. Summary
 

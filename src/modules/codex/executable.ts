@@ -1,4 +1,5 @@
 import { getPref, setPref } from "../../utils/prefs";
+import { getZoteroProfilePath } from "../../utils/zoteroProfile";
 import type {
   CandidateSource,
   CodexExecutableProbe,
@@ -91,7 +92,7 @@ async function collectNvmCandidates(userHome: string) {
 }
 
 async function collectCodexExecutableCandidates(configuredPath?: string) {
-  const profilePath = Zotero.getProfileDirectory()?.path || "";
+  const profilePath = getZoteroProfilePath();
   const userHome = profilePath.includes("/Library/")
     ? profilePath.split("/Library/")[0]
     : "";

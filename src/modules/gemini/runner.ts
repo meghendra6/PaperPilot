@@ -1,4 +1,5 @@
 import { getPref, setPref } from "../../utils/prefs";
+import { getZoteroProfilePath } from "../../utils/zoteroProfile";
 import { normalizeGeminiModel } from "../codex/modelOptions";
 import { normalizeResponseLanguage } from "../translation/responseLanguage";
 import { getCurrentReaderContext } from "../context/readerContext";
@@ -38,9 +39,7 @@ interface FailedGeminiRun {
 }
 
 function buildGeminiShellEnvironment() {
-  const profilePath =
-    (globalThis as { Zotero?: any }).Zotero?.getProfileDirectory?.()?.path ||
-    "";
+  const profilePath = getZoteroProfilePath();
   const userHome = profilePath.includes("/Library/")
     ? profilePath.split("/Library/")[0]
     : "";

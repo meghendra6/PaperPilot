@@ -1,5 +1,6 @@
 import { buildCodexCommandEnvironment } from "../codex/environment";
 import { shellEscape } from "../codex/shell";
+import { getZoteroProfilePath } from "../../utils/zoteroProfile";
 
 declare const Zotero: any;
 declare const IOUtils: any;
@@ -117,7 +118,7 @@ async function pathExists(path: string) {
 }
 
 async function fetchBundledJarToProfile(rootUri: string) {
-  const profilePath = Zotero.getProfileDirectory?.()?.path || "";
+  const profilePath = getZoteroProfilePath();
   if (!profilePath) {
     throw new Error("Could not resolve the Zotero profile directory.");
   }
