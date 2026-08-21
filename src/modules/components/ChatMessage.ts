@@ -1,4 +1,8 @@
 import { sanitizeAssistantText } from "../message/assistantOutput";
+import {
+  notifyChatTranscriptAppend,
+  prepareChatTranscriptAppend,
+} from "../ui/chatTranscriptWindow";
 import { renderMarkdownFragment } from "./markdownRenderer";
 
 function resolveDocument(node: { ownerDocument?: Document | null }): Document {
@@ -34,6 +38,7 @@ export function addMessage(
 ) {
   if (!container) return null;
 
+  prepareChatTranscriptAppend(container);
   const doc = resolveDocument(container);
   const messageDiv = doc.createElement("div");
   messageDiv.className = `pp-message pp-message--${sender}`;
@@ -77,6 +82,7 @@ export function addMessage(
   wrapperDiv.appendChild(messageDiv);
 
   container.appendChild(wrapperDiv);
+  notifyChatTranscriptAppend(container, wrapperDiv);
   container.scrollTop = container.scrollHeight;
   return messageDiv;
 }
