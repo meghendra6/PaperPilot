@@ -703,8 +703,27 @@
 .pp-message-wrapper {
   width: 100%;
   display: flex;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 96px;
   user-select: text;
   -webkit-user-select: text;
+}
+
+.pp-chat-window-control {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 30px;
+  padding: 2px 4px;
+  color: var(--pp-text-muted);
+  font-size: var(--pp-font-size-xs);
+  text-align: center;
+}
+
+.pp-chat-window-control .pp-btn {
+  min-height: 26px;
+  padding: 3px 8px;
 }
 
 .pp-message-wrapper--user {

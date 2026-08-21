@@ -51,6 +51,9 @@ Use this checklist inside real Zotero 7, 8, 9, and 10 runtimes before claiming r
 - [ ] Drag the Workbench/chat boundary in both directions; confirm one area grows while the other remains usable, then use Up/Down, Home/End, and Enter on the focused separator
 - [ ] Drag the bottom Paper Pilot handle beyond the old 960px pane cap, then double-click it to restore the responsive default height
 - [ ] Narrow the Zotero item pane below 420px; confirm assistant messages use the available width and recommendation/session actions stack without horizontal clipping
+- [ ] Open or generate a session with more than 48 visible chat messages; confirm only 48 message wrappers are mounted, the earlier-message control reports the suspended count, and the saved-session message count is unchanged
+- [ ] Scroll to the top and bottom boundaries of a long chat; confirm the window advances in both directions without a visible jump, then use the earlier/newer buttons with keyboard focus
+- [ ] While viewing an older chat window, send a new question; confirm the pane returns to the latest window, the new turn remains visible, and older turns stay recoverable by scrolling up
 - [ ] Type one and many lines in the composer; confirm it grows from 72px to at most 180px, then scrolls internally
 - [ ] Confirm every resize handle has a visible hover/focus state, remains keyboard reachable, and does not change the Send button's click/Enter behavior
 - [ ] Switch away from and back to the paper (or refresh the custom section) and confirm exactly one header and three disclosure triggers remain, with no duplicate listeners or console errors
@@ -200,6 +203,29 @@ inspection plus operating-system mouse input confirmed:
 This is a focused Zotero 10 reader-layout and model-picker smoke, not a complete
 rerun of every engine, discovery, Critical Read, operating-system, or Zotero
 7-9 scenario.
+
+### Long-session windowing runtime record — 2026-08-21
+
+The development candidate was loaded in the same isolated Zotero 10.0 setup
+with a synthetic, on-disk 100-message session. Structured Firefox RDP
+inspection confirmed:
+
+- Past sessions and both the index and snapshot files retained the full
+  100-message count, while opening the session mounted exactly 48 message
+  wrappers for records 52–99 and reported 52 suspended messages;
+- reaching the upper boundary shifted the mounted window to records 36–83,
+  exposed both earlier/newer controls, and preserved a nonzero scroll anchor;
+- reaching the lower boundary restored records 52–99, with 48 wrappers still
+  mounted;
+- activating the earlier control moved keyboard focus to the replacement
+  earlier control after the window shift; and
+- mounted message wrappers computed `content-visibility: auto` with a 96px
+  intrinsic fallback.
+
+The runtime fixture did not invoke an external model. The focused automated
+test covers returning from an older window to the latest range before a live
+append; full Codex, Claude, and Gemini send/complete checks remain in the manual
+matrix above.
 
 ### Zotero 10 compatibility runtime record — 2026-08-21
 

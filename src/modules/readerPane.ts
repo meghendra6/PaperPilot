@@ -141,6 +141,10 @@ import {
   installChatComposerAutosize,
 } from "./ui/chatComposerSizing";
 import {
+  disposeChatTranscriptWindow,
+  renderChatTranscriptWindow,
+} from "./ui/chatTranscriptWindow";
+import {
   createPaneHeader,
   renderCodexOptionsRow,
   renderModeHeader,
@@ -443,6 +447,9 @@ export function registerPaperPilotPaneSection() {
       const input = body.querySelector("#chat-input") as HTMLTextAreaElement;
       const sendButton = body.querySelector("#chat-send") as HTMLButtonElement;
       const chatMessages = body.querySelector("#chat-messages") as HTMLElement;
+      if (chatMessages) {
+        cleanupTasks.push(() => disposeChatTranscriptWindow(chatMessages));
+      }
       const draftCard = body.querySelector("#paper-pilot-draft") as HTMLElement;
       const streamingIndicator = body.querySelector(
         "#chat-streaming-indicator",
@@ -4001,22 +4008,31 @@ function renderMessageHistory(
   sessionId: string,
   placeholderResponse: string,
 ) {
-  const messages = messageStore
-    .list(sessionId)
-    .filter((message) => !isLikelySilentToolMessage(message));
+  const getMessages = () =>
+    messageStore
+      .list(sessionId)
+      .filter((message) => !isLikelySilentToolMessage(message));
+  const messages = getMessages();
 
   if (!messages.length) {
+    disposeChatTranscriptWindow(chatMessages);
     renderHelpState(chatMessages, placeholderResponse);
     return;
   }
 
-  for (const message of messages) {
-    addMessage(
-      chatMessages,
-      message.status === "error" ? `Error: ${message.text}` : message.text,
-      message.role === "assistant" ? "ai" : "user",
-    );
-  }
+  renderChatTranscriptWindow({
+    container: chatMessages,
+    getItems: getMessages,
+    getKey: (message) => message.id,
+    renderItem: (message) => {
+      const messageElement = addMessage(
+        chatMessages,
+        message.status === "error" ? `Error: ${message.text}` : message.text,
+        message.role === "assistant" ? "ai" : "user",
+      );
+      return messageElement?.parentElement || null;
+    },
+  });
 }
 
 function renderStreamingIndicator(

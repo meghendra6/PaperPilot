@@ -44,7 +44,12 @@ sessions surfaces. `ui/chatComposerSizing.ts` preserves textarea auto-sizing
 without changing the pane height. Disclosure state is serialized in the internal
 `paneSectionState` preference through the pure helpers in
 `ui/paneSectionState.ts`. The chat transcript takes the remaining space and
-scrolls independently from expanded section bodies.
+scrolls independently from expanded section bodies. `ui/chatTranscriptWindow.ts`
+keeps a sliding 48-message DOM window, shifts it in 16-message steps near the
+scroll boundaries, and restores suspended messages from the in-memory session
+record when needed. The full transcript remains available to session
+persistence and engine resume logic; only expensive rendered Markdown nodes are
+detached.
 
 ## Engine abstraction
 
@@ -294,6 +299,10 @@ Two layers, easy to confuse:
   (`SESSION_HISTORY_STORAGE_VERSION`), per-paper session index plus snapshots.
   `sessionHistoryService.ts` is the API the controllers call;
   `sessionSnapshot.ts` captures and reapplies pane state when a session reopens.
+
+The message store and on-disk snapshot remain authoritative even when the chat
+view suspends older entries. Windowing is presentation-only: it must not trim
+records, change the three-turn engine context policy, or alter snapshot counts.
 
 `silentTurnFilter.ts` hides assistant turns that are raw tool JSON. Structured
 workflows pass `suppressChatMessages`, but sessions saved before that existed
