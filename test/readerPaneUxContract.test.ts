@@ -39,3 +39,31 @@ test("engine settings move focus into the dialog when opened", () => {
   assert.match(paneHeaderSource, /popover\.tabIndex = -1/);
   assert.match(paneHeaderSource, /if \(open\) \{[\s\S]*?popover\.focus\(\)/);
 });
+
+test("model picker selection is not preempted by document mousedown", () => {
+  assert.match(
+    paneHeaderSource,
+    /doc\.addEventListener\("click", onDocumentClick\)/,
+  );
+  assert.doesNotMatch(
+    paneHeaderSource,
+    /doc\.addEventListener\("mousedown",[^\n]*onDocument/,
+  );
+});
+
+test("reader pane exposes adjustable workspace, section, and overall heights", () => {
+  assert.match(readerPaneSource, /label: "Resize Workbench and chat areas"/);
+  assert.match(readerPaneSource, /label: "Resize Paper Pilot pane"/);
+  assert.match(
+    readerPaneSource,
+    /initialBodyHeight: paneLayout\.sectionBodyHeights\.workbench/,
+  );
+  assert.match(
+    readerPaneSource,
+    /initialBodyHeight: paneLayout\.sectionBodyHeights\.related/,
+  );
+  assert.match(
+    readerPaneSource,
+    /initialBodyHeight: paneLayout\.sectionBodyHeights\.sessions/,
+  );
+});

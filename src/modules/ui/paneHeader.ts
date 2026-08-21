@@ -17,6 +17,10 @@ import {
   normalizeGeminiModelList,
   parseAllowedModels,
 } from "../codex/modelOptions";
+import {
+  isNativeSelectInteraction,
+  shouldDismissPopover,
+} from "./popoverDismissal";
 
 export interface PaneHeaderHandle {
   root: HTMLElement;
@@ -227,9 +231,22 @@ export function createPaneHeader(params: {
     }
   };
   const onTrigger = () => setOpen(popover.hidden);
-  const onDocumentMouseDown = (event: MouseEvent) => {
-    const target = event.target as Node | null;
-    if (!popover.hidden && target && !root.contains(target)) {
+  // Zotero's native select popup retargets its final click to `main-window`.
+  // Preserve only that next click when the interaction began in the picker.
+  let preserveNextNativeSelectClick = false;
+  const onDocumentPointerDown = (event: PointerEvent) => {
+    if (popover.hidden) return;
+    preserveNextNativeSelectClick = isNativeSelectInteraction(
+      modelInput,
+      event,
+    );
+  };
+  const onDocumentClick = (event: MouseEvent) => {
+    if (popover.hidden) return;
+    const preservePopover =
+      preserveNextNativeSelectClick && doc.activeElement === modelInput;
+    preserveNextNativeSelectClick = false;
+    if (!preservePopover && shouldDismissPopover(root, event)) {
       setOpen(false);
     }
   };
@@ -240,7 +257,8 @@ export function createPaneHeader(params: {
     }
   };
   trigger.addEventListener("click", onTrigger);
-  doc.addEventListener("mousedown", onDocumentMouseDown, true);
+  doc.addEventListener("pointerdown", onDocumentPointerDown, true);
+  doc.addEventListener("click", onDocumentClick);
   doc.addEventListener("keydown", onDocumentKeyDown, true);
   let disposed = false;
 
@@ -274,7 +292,8 @@ export function createPaneHeader(params: {
       if (disposed) return;
       disposed = true;
       trigger.removeEventListener("click", onTrigger);
-      doc.removeEventListener("mousedown", onDocumentMouseDown, true);
+      doc.removeEventListener("pointerdown", onDocumentPointerDown, true);
+      doc.removeEventListener("click", onDocumentClick);
       doc.removeEventListener("keydown", onDocumentKeyDown, true);
     },
   };

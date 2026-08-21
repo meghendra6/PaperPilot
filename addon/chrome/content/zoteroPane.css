@@ -166,13 +166,15 @@
 #paper-pilot-container {
   display: flex;
   flex-direction: column;
-  height: 720px;
-  height: clamp(480px, calc(100vh - 180px), 960px);
+  height: 800px;
+  height: clamp(560px, calc(100vh - 96px), 1400px);
   min-height: 0;
   width: 100%;
   max-width: 100%;
   overflow: hidden;
   box-sizing: border-box;
+  container-name: paper-pilot;
+  container-type: inline-size;
   font-family: inherit;
   color: var(--pp-text-primary);
 }
@@ -412,7 +414,7 @@
   position: static;
   min-width: 0;
   max-width: 100%;
-  max-height: 320px;
+  max-height: none;
   overflow-y: auto;
   padding: 0;
 }
@@ -665,7 +667,7 @@
    ============================================================ */
 #chat-messages {
   flex: 1 1 auto;
-  min-height: 120px;
+  min-height: 180px;
   min-width: 0;
   overflow-y: auto;
   margin: 6px 0;
@@ -726,14 +728,14 @@
 }
 
 .pp-message--user {
-  max-width: 70%;
+  max-width: 88%;
   background-color: var(--pp-bg-primary);
   margin-left: auto;
   white-space: pre-wrap;
 }
 
 .pp-message--ai {
-  max-width: 90%;
+  max-width: 100%;
   margin-right: auto;
   background-color: var(--pp-bg-secondary);
   border: 1px solid var(--pp-border-light);
@@ -1407,16 +1409,17 @@
 #paper-pilot-section-stack {
   display: flex;
   flex-direction: column;
-  flex: 0 1 auto;
-  min-height: 102px;
-  max-height: 42%;
-  overflow: hidden;
+  flex: 0 1 clamp(240px, 44%, 560px);
+  min-height: 132px;
+  max-height: none;
+  overflow-x: hidden;
+  overflow-y: auto;
   padding: 4px 0;
 }
 
 .pp-collapsible-section {
   display: flex;
-  flex: 0 1 auto;
+  flex: 0 0 auto;
   flex-direction: column;
   min-height: 30px;
   overflow: hidden;
@@ -1480,14 +1483,111 @@
 }
 
 .pp-collapsible-section__body {
-  flex: 1 1 auto;
-  min-height: 0;
-  max-height: clamp(96px, 22vh, 240px);
+  flex: 0 0 clamp(128px, 26vh, 420px);
+  height: clamp(128px, 26vh, 420px);
+  min-height: 96px;
+  max-height: none;
   overflow-y: auto;
   overflow-x: hidden;
   padding: 6px;
   box-sizing: border-box;
   min-width: 0;
+}
+
+.pp-resize-handle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 12px;
+  width: 100%;
+  min-width: 0;
+  min-height: 12px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: row-resize;
+  touch-action: none;
+  box-sizing: border-box;
+}
+
+.pp-resize-handle::before {
+  content: "";
+  width: 36px;
+  height: 3px;
+  border-radius: var(--pp-radius-pill);
+  background: var(--pp-border-medium);
+  transition:
+    width 0.15s ease,
+    background-color 0.15s ease;
+}
+
+.pp-resize-handle:hover::before,
+.pp-resize-handle:focus-visible::before,
+.pp-resize-handle--active::before {
+  width: 52px;
+  background: var(--pp-accent);
+}
+
+.pp-resize-handle:focus-visible {
+  outline: var(--pp-focus-width) solid var(--pp-focus-color);
+  outline-offset: calc(-1 * var(--pp-focus-width));
+}
+
+.pp-collapsible-section:not(.pp-collapsible-section--expanded)
+  .pp-resize-handle--section {
+  display: none;
+}
+
+.pp-resize-handle--section {
+  margin-top: -2px;
+}
+
+.pp-resize-handle--workspace {
+  margin: 1px 0;
+}
+
+.pp-resize-handle--pane {
+  margin-top: 4px;
+}
+
+@container paper-pilot (max-width: 420px) {
+  .pp-message--user,
+  .pp-message--ai {
+    max-width: 100%;
+  }
+
+  .pp-recommendation-row,
+  .pp-session-history__item {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .pp-recommendation-row__actions,
+  .pp-session-history__row-actions {
+    width: 100%;
+  }
+
+  .pp-recommendation-row__actions .pp-btn,
+  .pp-session-history__row-actions .pp-btn {
+    flex: 1 1 auto;
+  }
+
+  .pp-session-history__rename-input {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .pp-model-row {
+    align-items: stretch;
+  }
+
+  .pp-model-row label {
+    flex: 0 0 100%;
+  }
+
+  .pp-model-row select {
+    flex: 1 1 180px;
+  }
 }
 
 /* ============================================================
