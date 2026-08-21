@@ -5,6 +5,7 @@ import {
   serializePaneSectionState,
   type PaneSectionID,
 } from "./paneSectionState";
+import { createVerticalResizeHandle } from "./paneResize";
 
 export interface CollapsibleSectionHandle {
   root: HTMLElement;
@@ -21,6 +22,9 @@ export function createCollapsibleSection(params: {
   id: PaneSectionID;
   title: string;
   defaultExpanded: boolean;
+  initialBodyHeight?: number;
+  getMaxBodyHeight?(): number;
+  onBodyHeightChange?(height: number | undefined): void;
 }): CollapsibleSectionHandle {
   const persisted = parsePaneSectionState(getPref("paneSectionState"), {
     ...DEFAULT_PANE_SECTION_STATE,
@@ -59,9 +63,20 @@ export function createCollapsibleSection(params: {
   body.id = `paper-pilot-${params.id}-body`;
   body.className = "pp-collapsible-section__body";
 
+  const resizeHandle = createVerticalResizeHandle({
+    doc: params.doc,
+    target: body,
+    label: `Resize ${params.title}`,
+    minHeight: 96,
+    getMaxHeight: params.getMaxBodyHeight ?? (() => 1200),
+    initialHeight: params.initialBodyHeight,
+    onHeightChange: params.onBodyHeightChange,
+  });
+  resizeHandle.root.classList.add("pp-resize-handle--section");
+
   trigger.setAttribute("aria-controls", body.id);
   trigger.append(chevron, title, summary, updated);
-  root.append(trigger, body);
+  root.append(trigger, body, resizeHandle.root);
 
   const render = () => {
     trigger.setAttribute("aria-expanded", String(expanded));
@@ -105,6 +120,7 @@ export function createCollapsibleSection(params: {
       if (disposed) return;
       disposed = true;
       trigger.removeEventListener("click", onToggle);
+      resizeHandle.dispose();
     },
   };
 }

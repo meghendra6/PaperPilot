@@ -33,7 +33,7 @@ Use this checklist inside real Zotero 7, 8, 9, and 10 runtimes before claiming r
 - [ ] Confirm Workbench starts expanded while Find verified prior work and Past sessions start collapsed on a fresh profile
 - [ ] Toggle all three disclosures with mouse, Enter, and Space; restart Zotero and confirm their state persists
 - [ ] Complete a workbench or related-papers action while its section is collapsed and confirm only its summary/update dot changes—the section must not open itself
-- [ ] Open the engine/model popover, switch each engine, save a model/effort selection, and confirm the existing preferences update
+- [ ] Open the engine/model popover, switch each engine, click a model/effort option with the mouse, save it, and confirm the picker stays open long enough to persist the existing preference; repeat with keyboard selection
 - [ ] While a provider run is active, attempt to switch providers and confirm the switch is blocked without clearing the active poller; after completion, switching works normally
 - [ ] During workspace preparation, Retry persistence, a direct Auto Highlight/discovery run, and terminal cleanup, attempt New session and saved-session Open/Delete; confirm session replacement is blocked and no old workflow result appears in a new session
 - [ ] Delay the session-transition cleanup await, then try chat, Retry, Auto Highlight, and Find verified prior work; confirm the transition token blocks every new admission until Open/New/Delete and rerender finish
@@ -46,9 +46,13 @@ Use this checklist inside real Zotero 7, 8, 9, and 10 runtimes before claiming r
 - [ ] On a fresh session, confirm the `Start with this paper` guidance is visually distinct from assistant messages and disappears after the first admitted question
 - [ ] Confirm the unavailable Compare helper names the visible `Related papers` and `Find verified prior work` controls exactly
 - [ ] With a screen reader, confirm new conversation entries, Compare availability changes, and the visible `Thinking…` state are announced without repeating the elapsed timer
-- [ ] Fill the pane with chat, recommendation, session, and mastery content; confirm chat keeps at least 120px and each expanded section scrolls internally without pushing the composer away
+- [ ] Fill the pane with chat, recommendation, session, and mastery content; confirm chat keeps at least 180px and each expanded section scrolls internally without pushing the composer away
+- [ ] Drag the Workbench, Related papers, and Past sessions resize handles independently; confirm every expanded body can grow beyond the old 240px cap and still scroll when its content is taller
+- [ ] Drag the Workbench/chat boundary in both directions; confirm one area grows while the other remains usable, then use Up/Down, Home/End, and Enter on the focused separator
+- [ ] Drag the bottom Paper Pilot handle beyond the old 960px pane cap, then double-click it to restore the responsive default height
+- [ ] Narrow the Zotero item pane below 420px; confirm assistant messages use the available width and recommendation/session actions stack without horizontal clipping
 - [ ] Type one and many lines in the composer; confirm it grows from 72px to at most 180px, then scrolls internally
-- [ ] Confirm the removed drag handle has no visible target or pointer behavior and the Send button submits the same way as Enter
+- [ ] Confirm every resize handle has a visible hover/focus state, remains keyboard reachable, and does not change the Send button's click/Enter behavior
 - [ ] Switch away from and back to the paper (or refresh the custom section) and confirm exactly one header and three disclosure triggers remain, with no duplicate listeners or console errors
 - [ ] Start a run on paper A, switch to paper B and back to A before completion, and confirm A still shows `Running` until the final persisted answer replaces it in the rebuilt pane
 - [ ] Refresh the custom section with Paper Mastery awaiting an answer and after completion; confirm the current question, score, and final report rehydrate without starting a second run
@@ -168,6 +172,34 @@ Use this checklist inside real Zotero 7, 8, 9, and 10 runtimes before claiming r
 - [ ] Open a second paper and confirm context/session state does not leak from the first
 
 ## 9. Verified discovery / Critical Read / auto-highlight checks
+
+### Resizable reader layout runtime record — 2026-08-21
+
+The development candidate was loaded as a temporary add-on in installed Zotero
+10.0 with an isolated profile and data directory. Structured Firefox RDP
+inspection plus operating-system mouse input confirmed:
+
+- the responsive pane rendered at 560 x 987px in the isolated reader; the
+  default Workbench body was about 282px (above the former 240px cap) and chat
+  retained about 385px (above its 180px minimum);
+- the Workbench, Related papers, and Past sessions separators each accepted a
+  focused ArrowDown resize to 306px, with their `aria-valuenow` values matching
+  the rendered height after attachment;
+- moving the Workbench/chat separator from about 434px to 410px increased chat
+  from about 385px to 409px, while the bottom separator increased the full pane
+  from 987px to 1011px and Enter restored the responsive default;
+- at a forced 380px container width, messages used a 100% maximum width,
+  recommendation rows stacked vertically, and the model row wrapped;
+- a real mouse click opened Zotero's native model menu, selected
+  `GPT-5.6-Sol (low)`, and left the Paper Pilot popover open; clicking Save
+  persisted both model and effort and updated the header, after which the
+  isolated preference was restored to `GPT-5.6-Sol (medium)`; and
+- a click in the model select or native `ContentSelectDropdownPopup` preserved
+  the popover, while a normal click outside the header dismissed it.
+
+This is a focused Zotero 10 reader-layout and model-picker smoke, not a complete
+rerun of every engine, discovery, Critical Read, operating-system, or Zotero
+7-9 scenario.
 
 ### Zotero 10 compatibility runtime record — 2026-08-21
 

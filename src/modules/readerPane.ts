@@ -134,6 +134,8 @@ import {
   buildInitialMasteryState,
 } from "./comprehensionCheck/status";
 import { createCollapsibleSection } from "./ui/collapsibleSection";
+import type { PaneSectionID } from "./ui/paneSectionState";
+import { createVerticalResizeHandle } from "./ui/paneResize";
 import {
   CHAT_INPUT_MIN_HEIGHT,
   installChatComposerAutosize,
@@ -170,6 +172,14 @@ const runProgressCardByContainer = new WeakMap<
   RunProgressCardHandle
 >();
 const activeRunProgressCards = new Set<RunProgressCardHandle>();
+
+interface ReaderPaneLayoutState {
+  paneHeight?: number;
+  sectionStackHeight?: number;
+  sectionBodyHeights: Partial<Record<PaneSectionID, number>>;
+}
+
+const paneLayoutByBody = new WeakMap<HTMLElement, ReaderPaneLayoutState>();
 
 export function disposeReaderPaneRunProgressCards(): void {
   for (const card of activeRunProgressCards) card.dispose();
@@ -297,6 +307,38 @@ export function registerPaperPilotPaneSection() {
         paneTemplateByBody.set(body, body.cloneNode(true) as HTMLElement);
       }
 
+      const paneLayout = paneLayoutByBody.get(body) || {
+        sectionBodyHeights: {},
+      };
+      paneLayoutByBody.set(body, paneLayout);
+      const paneContainer = body.querySelector(
+        "#paper-pilot-container",
+      ) as HTMLElement;
+      const sectionStack = body.querySelector(
+        "#paper-pilot-section-stack",
+      ) as HTMLElement;
+      const getPaneHeight = () =>
+        paneContainer.getBoundingClientRect().height || 720;
+      const getSectionBodyMaxHeight = () =>
+        Math.max(360, getPaneHeight() - 180);
+      const paneResize = createVerticalResizeHandle({
+        doc: body.ownerDocument,
+        target: paneContainer,
+        label: "Resize Paper Pilot pane",
+        minHeight: 560,
+        getMaxHeight: () =>
+          Math.max(
+            1200,
+            (body.ownerDocument.defaultView?.innerHeight || 800) * 2,
+          ),
+        initialHeight: paneLayout.paneHeight,
+        onHeightChange: (height) => {
+          paneLayout.paneHeight = height;
+        },
+      });
+      paneResize.root.id = "paper-pilot-pane-resize";
+      paneResize.root.classList.add("pp-resize-handle--pane");
+
       const headerMount = body.querySelector(
         "#paper-pilot-header-mount",
       ) as HTMLElement;
@@ -320,28 +362,62 @@ export function registerPaperPilotPaneSection() {
         id: "workbench",
         title: "Workbench",
         defaultExpanded: true,
+        initialBodyHeight: paneLayout.sectionBodyHeights.workbench,
+        getMaxBodyHeight: getSectionBodyMaxHeight,
+        onBodyHeightChange: (height) => {
+          paneLayout.sectionBodyHeights.workbench = height;
+        },
       });
       const relatedSection = createCollapsibleSection({
         doc: body.ownerDocument,
         id: "related",
         title: "Related papers",
         defaultExpanded: false,
+        initialBodyHeight: paneLayout.sectionBodyHeights.related,
+        getMaxBodyHeight: getSectionBodyMaxHeight,
+        onBodyHeightChange: (height) => {
+          paneLayout.sectionBodyHeights.related = height;
+        },
       });
       const sessionsSection = createCollapsibleSection({
         doc: body.ownerDocument,
         id: "sessions",
         title: "Past sessions",
         defaultExpanded: false,
+        initialBodyHeight: paneLayout.sectionBodyHeights.sessions,
+        getMaxBodyHeight: getSectionBodyMaxHeight,
+        onBodyHeightChange: (height) => {
+          paneLayout.sectionBodyHeights.sessions = height;
+        },
       });
       mountSection("#paper-pilot-workbench-mount", workbenchSection);
       mountSection("#paper-pilot-related-mount", relatedSection);
       mountSection("#paper-pilot-sessions-mount", sessionsSection);
+
+      const workspaceResize = createVerticalResizeHandle({
+        doc: body.ownerDocument,
+        target: sectionStack,
+        label: "Resize Workbench and chat areas",
+        minHeight: 132,
+        getMaxHeight: () => Math.max(240, getPaneHeight() - 280),
+        initialHeight: paneLayout.sectionStackHeight,
+        onHeightChange: (height) => {
+          paneLayout.sectionStackHeight = height;
+        },
+      });
+      workspaceResize.root.id = "paper-pilot-workspace-resize";
+      workspaceResize.root.classList.add("pp-resize-handle--workspace");
+      sectionStack.after(workspaceResize.root);
+
+      paneContainer.append(paneResize.root);
 
       const cleanupTasks: Array<() => void> = [
         () => paneHeader.dispose(),
         () => workbenchSection.dispose(),
         () => relatedSection.dispose(),
         () => sessionsSection.dispose(),
+        () => workspaceResize.dispose(),
+        () => paneResize.dispose(),
       ];
       let disposed = false;
       const isCurrentRender = () => !disposed;
@@ -3052,6 +3128,7 @@ export function registerPaperPilotPaneSection() {
       paneCleanupByBody.get(body)?.();
       paneCleanupByBody.delete(body);
       paneTemplateByBody.delete(body);
+      paneLayoutByBody.delete(body);
     },
   });
 
