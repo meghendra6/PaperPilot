@@ -31,9 +31,9 @@ test("provider registry reports only observed readiness", () => {
     { mode: claude.mode, status: claude.status, label: claude.label },
     { mode: "claude_code", status: "idle", label: "Claude Code" },
   );
-  assert.match(gemini.placeholderResponse, /Gemini CLI mode is selected/i);
-  assert.match(claude.placeholderResponse, /Claude Code mode is selected/i);
-  assert.match(codex.placeholderResponse, /Codex CLI mode is selected/i);
+  assert.match(gemini.placeholderResponse, /Open the Gemini header/i);
+  assert.match(claude.placeholderResponse, /Open the Claude header/i);
+  assert.match(codex.placeholderResponse, /Open the Codex header/i);
   assert.equal(codex.discoveryCapabilities.agentWebSearch, false);
   assert.equal(claude.discoveryCapabilities.agentWebSearch, false);
   assert.equal(gemini.discoveryCapabilities.agentWebSearch, false);

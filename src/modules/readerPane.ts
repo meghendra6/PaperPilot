@@ -237,7 +237,7 @@ export function registerPaperPilotPaneSection() {
               <html:button id="chat-paper-mastery" class="pp-btn pp-btn--secondary">Paper Mastery</html:button>
               <html:button id="chat-critical-read" class="pp-btn pp-btn--secondary">Critical Read</html:button>
             </div>
-            <div id="chat-compare-helper" class="pp-compare-helper pp-compare-helper--default"></div>
+            <div id="chat-compare-helper" class="pp-compare-helper pp-compare-helper--default" role="status" aria-live="polite" aria-atomic="true"></div>
             <div id="chat-paper-tool-status" class="pp-status-text" style="display: none;"></div>
             <div id="chat-paper-tool-cards" class="pp-tool-cards" style="display: none;"></div>
             <div id="paper-pilot-mastery-section" class="pp-mastery-panel" style="display: none;">
@@ -270,13 +270,13 @@ export function registerPaperPilotPaneSection() {
           </div>
         </div>
         <div id="paper-pilot-run-state" class="pp-run-state" style="display: none;"></div>
-        <div id="chat-streaming-indicator" class="pp-streaming" style="display: none;">
+        <div id="chat-streaming-indicator" class="pp-streaming" role="status" aria-live="polite" aria-atomic="true" style="display: none;">
           <span class="pp-streaming-dot"></span>
           <span class="pp-streaming-dot"></span>
           <span class="pp-streaming-dot"></span>
           <span class="pp-streaming-text">Thinking…</span>
         </div>
-        <div id="chat-messages"></div>
+        <div id="chat-messages" role="log" aria-live="polite" aria-relevant="additions text" aria-label="Paper conversation"></div>
         <div id="paper-pilot-composer">
           <div id="paper-pilot-draft" class="pp-status-card pp-status-card--draft" style="display: none;"></div>
           <div id="chat-input-shell">
@@ -3901,7 +3901,22 @@ function renderHelpState(chatMessages: HTMLElement, response: string) {
     return;
   }
 
-  addMessage(chatMessages, response, "ai");
+  const doc = chatMessages.ownerDocument;
+  const help = doc.createElement("div");
+  help.className = "pp-chat-help";
+  help.dataset.ppChatHelp = "true";
+  help.setAttribute("role", "note");
+
+  const title = doc.createElement("div");
+  title.className = "pp-chat-help__title";
+  title.textContent = "Start with this paper";
+
+  const body = doc.createElement("div");
+  body.className = "pp-chat-help__body";
+  body.textContent = response;
+
+  help.append(title, body);
+  chatMessages.appendChild(help);
 }
 
 function renderMessageHistory(
@@ -4400,6 +4415,7 @@ async function handleUserInput(
     options?.onAdmitted?.();
     ztoolkit.log("Placeholder question:", question);
     if (!options?.silentUserMessage) {
+      chatMessages.querySelector('[data-pp-chat-help="true"]')?.remove();
       addMessage(chatMessages, options?.displayQuestion || question, "user");
     }
     input.value = "";

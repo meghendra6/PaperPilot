@@ -98,6 +98,7 @@ export function createPaneHeader(params: {
   popover.className = "pp-pane-header__popover";
   popover.setAttribute("role", "dialog");
   popover.setAttribute("aria-label", "AI engine settings");
+  popover.tabIndex = -1;
   popover.hidden = true;
 
   const modeStatus = doc.createElement("div");
@@ -219,7 +220,9 @@ export function createPaneHeader(params: {
     popover.hidden = !open;
     trigger.setAttribute("aria-expanded", String(open));
     root.classList.toggle("pp-pane-header--open", open);
-    if (!open && restoreFocus) {
+    if (open) {
+      popover.focus();
+    } else if (restoreFocus) {
       trigger.focus();
     }
   };

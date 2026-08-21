@@ -7,7 +7,7 @@ export class GeminiCliProvider implements ReaderAiProvider {
       label: "Gemini CLI",
       status: "idle" as const,
       placeholderResponse:
-        "Gemini CLI mode is selected. Ask a question to check the local CLI and start a paper-grounded conversation.",
+        "Ask about this paper below. Open the Gemini header to change the engine or model.",
       discoveryCapabilities: {
         // Gemini's local tool policy is not observable through the current
         // adapter. Fail closed until a runtime capability handshake exists.

@@ -14,7 +14,7 @@ export class CodexCliProvider implements ReaderAiProvider {
       label: "Codex CLI",
       status: "checking" as const,
       placeholderResponse:
-        "Codex CLI mode is selected. Use the reader controls to check authentication, choose a model, and continue the paper conversation.",
+        "Ask about this paper below. Open the Codex header to check authentication or change the model.",
       discoveryCapabilities: {
         agentWebSearch,
         structuredCandidateSearch: typeof fetch === "function",
