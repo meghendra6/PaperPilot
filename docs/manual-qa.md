@@ -54,7 +54,7 @@ Use this checklist inside real Zotero 7, 8, 9, and 10 runtimes before claiming r
 - [ ] Open or generate a session with more than 48 visible chat messages; confirm only 48 message wrappers are mounted, the earlier-message control reports the suspended count, and the saved-session message count is unchanged
 - [ ] Scroll to the top and bottom boundaries of a long chat; confirm the window advances in both directions without a visible jump, then use the earlier/newer buttons with keyboard focus
 - [ ] While viewing an older chat window, send a new question; confirm the pane returns to the latest window, the new turn remains visible, and older turns stay recoverable by scrolling up
-- [ ] Type one and many lines in the composer; confirm it grows from 72px to at most 180px, then scrolls internally
+- [ ] Type one and many lines in the composer; confirm it grows from 72px to at most 180px, then scrolls internally while the inset Send button never covers the placeholder or entered text
 - [ ] Confirm every resize handle has a visible hover/focus state, remains keyboard reachable, and does not change the Send button's click/Enter behavior
 - [ ] Switch away from and back to the paper (or refresh the custom section) and confirm exactly one header and three disclosure triggers remain, with no duplicate listeners or console errors
 - [ ] Start a run on paper A, switch to paper B and back to A before completion, and confirm A still shows `Running` until the final persisted answer replaces it in the rebuilt pane
@@ -175,6 +175,24 @@ Use this checklist inside real Zotero 7, 8, 9, and 10 runtimes before claiming r
 - [ ] Open a second paper and confirm context/session state does not leak from the first
 
 ## 9. Verified discovery / Critical Read / auto-highlight checks
+
+### Chat composer alignment runtime record — 2026-08-23
+
+The focused candidate was loaded as a temporary add-on in installed Zotero
+10.0 with an isolated profile and data directory. Structured Firefox RDP
+inspection and a captured window image confirmed:
+
+- the Send control rendered inside the input border at the lower-right corner
+  instead of hanging beside the textarea;
+- the 304px-wide narrow pane kept a 292px-wide textarea with 78px of right
+  padding and a 52 x 32px Send control fully inside that input area;
+- twelve lines grew the textarea from 72px to its 180px cap and scrolled
+  internally without moving or covering the Send control; and
+- the absolutely positioned control remained programmatically focusable, while
+  the empty composer returned to 72px after the multiline smoke.
+
+This focused check did not invoke an external model; the existing send and
+Enter-key checks remain in the full manual matrix above.
 
 ### Resizable reader layout runtime record — 2026-08-21
 
