@@ -11,6 +11,10 @@ const paneHeaderSource = readFileSync(
   join(process.cwd(), "src", "modules", "ui", "paneHeader.ts"),
   "utf8",
 );
+const paneStyleSource = readFileSync(
+  join(process.cwd(), "addon", "chrome", "content", "zoteroPane.css"),
+  "utf8",
+);
 
 test("reader pane exposes conversation and progress updates to assistive technology", () => {
   assert.match(
@@ -65,5 +69,20 @@ test("reader pane exposes adjustable workspace, section, and overall heights", (
   assert.match(
     readerPaneSource,
     /initialBodyHeight: paneLayout\.sectionBodyHeights\.sessions/,
+  );
+});
+
+test("chat composer keeps the Send control inset without covering text", () => {
+  assert.match(
+    paneStyleSource,
+    /#chat-input-shell \{[\s\S]*?position: relative;/,
+  );
+  assert.match(
+    paneStyleSource,
+    /#chat-input \{[\s\S]*?padding: 10px 78px 10px 12px;/,
+  );
+  assert.match(
+    paneStyleSource,
+    /#chat-send \{[\s\S]*?position: absolute;[\s\S]*?right: 12px;[\s\S]*?bottom: 12px;/,
   );
 });

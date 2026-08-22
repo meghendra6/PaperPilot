@@ -768,9 +768,9 @@
    11. Chat input
    ============================================================ */
 #chat-input-shell {
+  position: relative;
   display: flex;
-  align-items: flex-end;
-  gap: 6px;
+  align-items: stretch;
   width: 100%;
   background-color: var(--pp-bg-input);
   border-radius: var(--pp-radius-md);
@@ -793,7 +793,7 @@
   min-width: 0;
   min-height: 72px;
   max-height: 180px;
-  padding: 10px 12px;
+  padding: 10px 78px 10px 12px;
   border: 1px solid var(--pp-border-medium);
   border-radius: var(--pp-radius-md);
   font-family: inherit;
@@ -809,8 +809,12 @@
 }
 
 #chat-send {
-  flex: 0 0 auto;
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 1;
   min-width: 52px;
+  min-height: 32px;
 }
 
 #chat-input::-webkit-scrollbar {
