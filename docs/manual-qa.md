@@ -55,6 +55,7 @@ Use this checklist inside real Zotero 7, 8, 9, and 10 runtimes before claiming r
 - [ ] Scroll to the top and bottom boundaries of a long chat; confirm the window advances in both directions without a visible jump, then use the earlier/newer buttons with keyboard focus
 - [ ] While viewing an older chat window, send a new question; confirm the pane returns to the latest window, the new turn remains visible, and older turns stay recoverable by scrolling up
 - [ ] Let a short running placeholder become a long final answer; confirm the chat follows the rendered answer to the bottom instead of returning to its top
+- [ ] Select a PDF passage and run `Explain`; confirm both the submitted turn and the completed answer remain at the bottom after the persisted transcript rerenders instead of jumping to the top
 - [ ] On a completed assistant answer, activate Copy and confirm the clipboard contains the latest visible answer; a rejected clipboard write must report `Copy failed`, never `Copied!`
 - [ ] Type one and many lines in the composer; confirm it grows from 72px to at most 180px, then scrolls internally while the inset Send button never covers the placeholder or entered text
 - [ ] Confirm every resize handle has a visible hover/focus state, remains keyboard reachable, and does not change the Send button's click/Enter behavior
@@ -177,6 +178,20 @@ Use this checklist inside real Zotero 7, 8, 9, and 10 runtimes before claiming r
 - [ ] Open a second paper and confirm context/session state does not leak from the first
 
 ## 9. Verified discovery / Critical Read / auto-highlight checks
+
+### Selection Explain transcript-rerender runtime record — 2026-08-23
+
+The focused candidate was loaded as a temporary add-on in installed Zotero
+10.0 with an isolated profile and data directory. The registered PDF selection
+popup handler was invoked with a real `Explain` button and a deterministic local
+Claude-compatible executable, without calling an external model. After the
+20,155-character answer completed and the persisted transcript rebuilt its
+message DOM, structured Firefox RDP inspection measured `scrollTop 15392`,
+`scrollHeight 16052`, and `clientHeight 660`: a bottom gap of exactly zero.
+
+The isolated window's message virtualization was forced visible for the long
+layout measurement because its Paper Pilot section was outside the active
+desktop viewport. The production `content-visibility: auto` rule was unchanged.
 
 ### Chat copy and answer-scroll runtime record — 2026-08-23
 
