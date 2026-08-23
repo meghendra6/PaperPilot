@@ -89,6 +89,7 @@ export function buildGeminiCommand(params: {
   model: string;
   resumeSessionId?: string;
   executablePath: string;
+  profile: RunProfile;
 }) {
   const env = buildGeminiShellEnvironment();
   const environmentLines = Object.entries(env)
@@ -99,6 +100,8 @@ export function buildGeminiCommand(params: {
   const resumePart = params.resumeSessionId
     ? `--resume ${shellEscape(params.resumeSessionId)}`
     : "";
+  const approvalPart =
+    params.profile === "chat" ? "--yolo" : "--approval-mode plan";
 
   return [
     `mkdir -p ${shellEscape(outputDir)}`,
@@ -106,7 +109,7 @@ export function buildGeminiCommand(params: {
     ...environmentLines,
     `(` +
       `cd ${shellEscape(params.workspacePath)} && ` +
-      `cat ${shellEscape(params.promptPath)} | ${shellEscape(params.executablePath)} --skip-trust ${resumePart} -m ${shellEscape(params.model)} --approval-mode plan --output-format text -p '' > ${shellEscape(params.outputPath)} 2> ${shellEscape(params.stderrPath)}; ` +
+      `cat ${shellEscape(params.promptPath)} | ${shellEscape(params.executablePath)} --skip-trust ${resumePart} -m ${shellEscape(params.model)} ${approvalPart} --output-format text -p '' > ${shellEscape(params.outputPath)} 2> ${shellEscape(params.stderrPath)}; ` +
       `printf '%s' $? > ${shellEscape(params.exitCodePath)}` +
       `) & echo $! > ${shellEscape(params.pidPath)}`,
   ].join(" && ");
@@ -322,6 +325,7 @@ export async function startGeminiRunForQuestion(params: {
       ? params.resumeSessionId
       : undefined,
     executablePath,
+    profile,
   });
 
   const result = await Zotero.Utilities.Internal.exec("/bin/zsh", [

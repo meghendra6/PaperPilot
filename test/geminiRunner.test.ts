@@ -18,9 +18,10 @@ type BuildGeminiCommand = (params: {
   model: string;
   resumeSessionId?: string;
   executablePath: string;
+  profile: "chat" | "analysis" | "discovery";
 }) => string;
 
-test("buildGeminiCommand streams the prompt file instead of expanding it into argv", () => {
+test("buildGeminiCommand uses plan mode for hidden analysis runs", () => {
   const buildGeminiCommand = (
     geminiRunner as unknown as { buildGeminiCommand?: BuildGeminiCommand }
   ).buildGeminiCommand;
@@ -37,6 +38,7 @@ test("buildGeminiCommand streams the prompt file instead of expanding it into ar
     question: "Summarize this paper",
     model: "gemini-3.1-pro-preview",
     executablePath: "/opt/Homebrew Tools/gemini's bin/gemini",
+    profile: "analysis",
   });
 
   const syntax = checkShellSyntax(script);
@@ -56,6 +58,28 @@ test("buildGeminiCommand streams the prompt file instead of expanding it into ar
     script,
     /2> '\/tmp\/Paper Pilot\/Smith'\\''s paper\/gemini-stderr\.log'/,
   );
+});
+
+test("buildGeminiCommand preserves the existing chat approval policy", () => {
+  const buildGeminiCommand = (
+    geminiRunner as unknown as { buildGeminiCommand?: BuildGeminiCommand }
+  ).buildGeminiCommand!;
+  const script = buildGeminiCommand({
+    promptPath: "/tmp/paper/prompt.txt",
+    outputPath: "/tmp/paper/output.txt",
+    stderrPath: "/tmp/paper/stderr.log",
+    exitCodePath: "/tmp/paper/exit.txt",
+    pidPath: "/tmp/paper/pid.txt",
+    workspacePath: "/tmp/paper",
+    question: "Explain this result",
+    model: "gemini-3.1-pro-preview",
+    executablePath: "gemini",
+    profile: "chat",
+  });
+
+  assert.equal(checkShellSyntax(script).status, 0);
+  assert.match(script, /--yolo/);
+  assert.doesNotMatch(script, /--approval-mode plan/);
 });
 
 test("Gemini progress keeps successful stderr out of parsed assistant text", async () => {

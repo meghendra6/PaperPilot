@@ -164,8 +164,8 @@ Automated acceptance requires:
 - invalid Mastery difficulty values and non-finite/out-of-range confidence do
   not enter workflow state
 - every silent workflow uses `analysis` or `discovery`, never `chat`
-- Gemini command tests reject `--yolo` and require plan mode for analysis and
-  discovery
+- Gemini command tests preserve the existing chat approval policy while
+  rejecting `--yolo` and requiring plan mode for analysis and discovery
 - hidden workflows use a workspace path distinct from visible chat
 - selected text, nearby context, retrieved chunks, and recent turns each have one
   workspace owner
