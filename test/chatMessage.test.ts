@@ -3,11 +3,14 @@ import * as assert from "node:assert/strict";
 
 import {
   addMessage,
+  copyTextToClipboard,
   setMessageContent,
 } from "../src/modules/components/ChatMessage";
 import { sanitizeAssistantText } from "../src/modules/message/assistantOutput";
 
 class FakeDocument {
+  defaultView: Record<string, unknown> | null = null;
+
   createElement(tagName: string) {
     return new FakeElement(tagName, this);
   }
@@ -32,6 +35,10 @@ class FakeElement {
   scrollHeight = 64;
   tagName: string;
   ownerDocument: FakeDocument;
+  parentElement: FakeElement | null = null;
+  id = "";
+  type = "";
+  disabled = false;
   className = "";
   classList = {
     add: (...classes: string[]) => {
@@ -46,6 +53,7 @@ class FakeElement {
   };
   private _textContent = "";
   private _innerHTML = "";
+  private listeners = new Map<string, Array<() => unknown>>();
 
   constructor(tagName = "div", ownerDocument = new FakeDocument()) {
     this.tagName = tagName;
@@ -77,15 +85,27 @@ class FakeElement {
 
   appendChild(child: FakeElement) {
     if (child.tagName === "#fragment") {
-      this.children.push(...child.children);
+      for (const fragmentChild of child.children) {
+        fragmentChild.parentElement = this;
+        this.children.push(fragmentChild);
+      }
       return child;
     }
+    child.parentElement = this;
     this.children.push(child);
     return child;
   }
 
-  addEventListener(_event: string, _handler: () => void) {
-    // no-op in tests
+  addEventListener(event: string, handler: () => unknown) {
+    const handlers = this.listeners.get(event) || [];
+    handlers.push(handler);
+    this.listeners.set(event, handlers);
+  }
+
+  async click() {
+    for (const handler of this.listeners.get("click") || []) {
+      await handler();
+    }
   }
 
   replaceChildren(...children: FakeElement[]) {
@@ -198,6 +218,132 @@ test("setMessageContent preserves assistant markdown on updates", () => {
     assert.equal(fake.children[1]?.tagName, "p");
     assert.match(fake.children[1]?.innerHTML, /<strong>bold<\/strong>/);
   });
+});
+
+test("setMessageContent keeps an updated assistant answer at the bottom", () => {
+  withFakeDocument(() => {
+    const container = new FakeElement();
+    const frames: Array<() => void> = [];
+    container.ownerDocument.defaultView = {
+      requestAnimationFrame(callback: () => void) {
+        frames.push(callback);
+        return frames.length;
+      },
+    };
+    container.id = "chat-messages";
+    container.scrollHeight = 120;
+    const message = addMessage(
+      container as unknown as Element,
+      "Running…",
+      "ai",
+    ) as unknown as FakeElement;
+    const footer = message.children.at(-1);
+
+    container.scrollTop = 0;
+    setMessageContent(
+      message as unknown as HTMLElement,
+      "A much longer final answer",
+      "ai",
+    );
+
+    assert.equal(container.scrollTop, container.scrollHeight);
+    assert.equal(message.children.at(-1), footer);
+
+    container.scrollHeight = 640;
+    frames.shift()?.();
+    assert.equal(container.scrollTop, 640);
+    frames.shift()?.();
+    assert.equal(container.scrollTop, 640);
+  });
+});
+
+test("an updated assistant message copies its latest answer", async () => {
+  const doc = new FakeDocument();
+  const previousDocument = globalThis.document;
+  let copied = "";
+  doc.defaultView = {
+    Components: {
+      classes: {
+        "@mozilla.org/widget/clipboardhelper;1": {
+          getService() {
+            return {
+              copyString(text: string) {
+                copied = text;
+              },
+            };
+          },
+        },
+      },
+      interfaces: { nsIClipboardHelper: {} },
+    },
+  };
+  globalThis.document = doc as unknown as Document;
+
+  try {
+    const container = new FakeElement("div", doc);
+    container.id = "chat-messages";
+    const message = addMessage(
+      container as unknown as Element,
+      "Starting…",
+      "ai",
+    ) as unknown as FakeElement;
+    setMessageContent(
+      message as unknown as HTMLElement,
+      "The final answer",
+      "ai",
+    );
+
+    const copyButton = message.children.at(-1)?.children[0];
+    await copyButton?.click();
+
+    assert.equal(copied, "The final answer");
+    assert.equal(copyButton?.textContent, "Copied!");
+    assert.equal(copyButton?.disabled, false);
+  } finally {
+    globalThis.document = previousDocument;
+  }
+});
+
+test("copyTextToClipboard uses Zotero's privileged clipboard helper", async () => {
+  const doc = new FakeDocument();
+  let copied = "";
+  doc.defaultView = {
+    Components: {
+      classes: {
+        "@mozilla.org/widget/clipboardhelper;1": {
+          getService() {
+            return {
+              copyString(text: string) {
+                copied = text;
+              },
+            };
+          },
+        },
+      },
+      interfaces: { nsIClipboardHelper: {} },
+    },
+  };
+
+  await copyTextToClipboard("copied answer", doc as unknown as Document);
+  assert.equal(copied, "copied answer");
+});
+
+test("copyTextToClipboard reports rejected browser clipboard writes", async () => {
+  const doc = new FakeDocument();
+  doc.defaultView = {
+    navigator: {
+      clipboard: {
+        async writeText() {
+          throw new Error("denied");
+        },
+      },
+    },
+  };
+
+  await assert.rejects(
+    copyTextToClipboard("answer", doc as unknown as Document),
+    /denied/,
+  );
 });
 
 test("addMessage renders --- as a horizontal rule", () => {
