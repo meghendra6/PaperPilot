@@ -253,6 +253,85 @@ test("Critical Read prompts preserve reader input as untrusted data and hide rev
   assert.match(prompt, /Figure 2/);
 });
 
+test("Critical Read prompts request only the current step schema", () => {
+  const state = startCriticalRead(buildInitialCriticalReadState());
+  const scanPrompt = buildCriticalReadStepPrompt({ state, stepID: 1 });
+  const methodPrompt = buildCriticalReadStepPrompt({ state, stepID: 4 });
+  const alternativePrompt = buildCriticalReadStepPrompt({ state, stepID: 7 });
+
+  assert.match(scanPrompt, /scanObservations/);
+  assert.doesNotMatch(scanPrompt, /methodChecks|alternatives|finalSynthesis/);
+  assert.match(methodPrompt, /methodChecks/);
+  assert.doesNotMatch(methodPrompt, /scanObservations|alternatives/);
+  assert.match(alternativePrompt, /alternatives/);
+  assert.match(alternativePrompt, /finalSynthesis/);
+  assert.doesNotMatch(alternativePrompt, /methodChecks|scanObservations/);
+});
+
+test("Critical Read prompts carry bounded structured prior outputs without review text", () => {
+  const initial = startCriticalRead(buildInitialCriticalReadState());
+  const state = {
+    ...initial,
+    steps: initial.steps.map((step) =>
+      step.id === 1
+        ? {
+            ...step,
+            status: "complete" as const,
+            readerInput: "My initial observation",
+            output: {
+              ...output,
+              scanObservations: {
+                abstractSignal: "Scoped abstract claim",
+                figureTableSignals: ["Figure 2 rises"],
+                openQuestions: ["Does it generalize?"],
+              },
+            },
+          }
+        : step.id === 3
+          ? ({
+              ...step,
+              status: "complete" as const,
+              discovery: {
+                schemaVersion: 1,
+                plan: {
+                  concernSummary: "Novelty concern",
+                  primaryField: "Machine learning",
+                  adjacentFields: [],
+                  venues: [],
+                  queries: [],
+                  scopeSummary: "Prior work",
+                },
+                verifiedMain: [
+                  {
+                    title: "Relevant prior work",
+                    publicationClass: "verified_main",
+                    evidenceConfidence: "high",
+                    relationship: "direct",
+                    relevanceReason: "Same problem",
+                    noveltyRelationship: "same_problem_different_method",
+                    reviewInsight: { concerns: ["MUST NOT APPEAR"] },
+                  },
+                ],
+                otherPeerReviewed: [],
+                noveltyRadar: [],
+                excluded: [],
+                limitations: ["One database unavailable"],
+                parseWarnings: [],
+                completedAt: "2026-08-23T00:00:00.000Z",
+              },
+            } as never)
+          : step,
+    ),
+  };
+
+  const prompt = buildCriticalReadStepPrompt({ state, stepID: 7 });
+  assert.match(prompt, /Scoped abstract claim/);
+  assert.match(prompt, /Figure 2 rises/);
+  assert.match(prompt, /Relevant prior work/);
+  assert.match(prompt, /One database unavailable/);
+  assert.doesNotMatch(prompt, /MUST NOT APPEAR/);
+});
+
 test("Critical Read report keeps reader judgments separate from synthesis", () => {
   let state = startCriticalRead(buildInitialCriticalReadState());
   state = completeCriticalReadStep({

@@ -176,6 +176,10 @@ Use this checklist inside real Zotero 7, 8, 9, and 10 runtimes before claiming r
 - [ ] Confirm research-brief and paper-tool cards reset with the blank draft
 - [ ] Switch between Gemini CLI, Claude Code, and Codex CLI and confirm previous threads do not mix
 - [ ] Open a second paper and confirm context/session state does not leak from the first
+- [ ] For each engine, send two visible chat turns, run one Workbench action, then send another chat turn; confirm the final turn resumes the visible chat context and never the hidden workflow
+- [ ] Confirm the chat, analysis, and discovery runs use distinct workspace folders and hidden completion does not change the saved provider resume id
+- [ ] Inspect an analysis run for each engine: Codex uses a read-only sandbox without search, Claude uses plan permission mode, and Gemini uses plan approval mode without `--yolo`
+- [ ] With current Codex/Claude CLIs, run one structured Workbench action and confirm native schema output succeeds; with a wrapper whose help omits the schema flag, confirm the same action succeeds through parser-only fallback
 
 ## 9. Verified discovery / Critical Read / auto-highlight checks
 

@@ -1,5 +1,6 @@
 import { getPref } from "../../utils/prefs";
 import { buildPaperWorkspacePath } from "./pathBuilder";
+import { getRunWorkspaceTitle, type RunProfile } from "../ai/runProfile";
 
 declare const IOUtils: any;
 declare const Zotero: any;
@@ -56,6 +57,7 @@ export async function cleanupWorkspaceIfEnabled(workspacePath: string) {
 export async function cleanupPaperWorkspaceForItemIfEnabled(params: {
   itemID: number;
   title: string;
+  profile?: RunProfile;
 }) {
   const workspaceRoot = String(
     getPref("codexWorkspaceRoot") || "/tmp/zotero-paper-ai",
@@ -64,7 +66,7 @@ export async function cleanupPaperWorkspaceForItemIfEnabled(params: {
     buildPaperWorkspacePath({
       root: workspaceRoot,
       itemID: params.itemID,
-      title: params.title,
+      title: getRunWorkspaceTitle(params.title, params.profile || "chat"),
     }),
   );
 }

@@ -3,14 +3,17 @@ import type { ResearchBriefQuery } from "./researchBrief";
 import {
   buildResearchBriefQuestion,
   parseResearchBriefResponse,
+  RESEARCH_BRIEF_OUTPUT_SCHEMA,
 } from "./researchBrief";
 import {
   buildPaperToolQuestion,
   getPaperToolPreset,
+  PAPER_TOOL_OUTPUT_SCHEMA,
   parsePaperToolResponse,
   type PaperToolPresetID,
 } from "./paperTools";
 import { normalizeResponseLanguage } from "./translation/responseLanguage";
+import type { StructuredOutputSchema } from "./ai/structuredOutput";
 
 export type PaperArtifactKind =
   | "research-brief"
@@ -43,6 +46,7 @@ export interface PaperArtifactRequest {
   kind: PaperArtifactKind;
   label: string;
   prompt: string;
+  outputSchema: StructuredOutputSchema;
 }
 
 export interface PaperArtifactEvidencePresentation {
@@ -178,6 +182,7 @@ export function buildPaperArtifactRequest(
       kind,
       label: "Research brief",
       prompt: buildResearchBriefQuestion(item, responseLanguage),
+      outputSchema: RESEARCH_BRIEF_OUTPUT_SCHEMA,
     };
   }
 
@@ -196,6 +201,7 @@ export function buildPaperArtifactRequest(
     kind,
     label: preset.label,
     prompt: buildPaperToolQuestion(item, kind, responseLanguage),
+    outputSchema: PAPER_TOOL_OUTPUT_SCHEMA,
   };
 }
 

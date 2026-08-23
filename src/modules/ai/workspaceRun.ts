@@ -1,4 +1,6 @@
 import type { EngineMode } from "./types";
+import type { RunProfile } from "./runProfile";
+import type { StructuredOutputSchema } from "./structuredOutput";
 import { isClaudeRunActiveForItem } from "../claude/runState";
 import { isCodexRunActiveForItem } from "../codex/runState";
 import { isGeminiRunActiveForItem } from "../gemini/runState";
@@ -98,6 +100,8 @@ export async function startWorkspaceTextRun(params: {
   title: string;
   sessionId: string;
   question: string;
+  profile: Exclude<RunProfile, "chat">;
+  outputSchema?: StructuredOutputSchema;
   requiredDiscoveryCapabilities?: import("../discovery/types").DiscoveryCapabilities;
   signal?: AbortSignal;
   deadline?: number;
@@ -133,6 +137,8 @@ export async function startWorkspaceTextRun(params: {
         title: params.title,
         sessionId: params.sessionId,
         question: params.question,
+        profile: params.profile,
+        outputSchema: params.outputSchema,
       });
     } else if (params.mode === "gemini_cli") {
       const { startGeminiRunForQuestion } = await import("../gemini/runner");
@@ -141,6 +147,8 @@ export async function startWorkspaceTextRun(params: {
         title: params.title,
         sessionId: params.sessionId,
         question: params.question,
+        profile: params.profile,
+        outputSchema: params.outputSchema,
       });
     } else {
       if (
@@ -161,6 +169,8 @@ export async function startWorkspaceTextRun(params: {
         webSearchEnabledOverride: params.requiredDiscoveryCapabilities
           ? true
           : undefined,
+        profile: params.profile,
+        outputSchema: params.outputSchema,
       });
     }
 
@@ -202,12 +212,14 @@ export async function startWorkspaceTextRun(params: {
           await cleanupPaperWorkspaceForItemIfEnabled({
             itemID: params.itemID,
             title: params.title,
+            profile: params.profile,
           });
         },
         async () => {
           await cleanupPaperWorkspaceForItemIfEnabled({
             itemID: params.itemID,
             title: params.title,
+            profile: params.profile,
           });
         },
       );
@@ -220,6 +232,7 @@ export async function startWorkspaceTextRun(params: {
       await cleanupPaperWorkspaceForItemIfEnabled({
         itemID: params.itemID,
         title: params.title,
+        profile: params.profile,
       });
     }
     throw error;

@@ -275,6 +275,12 @@ test("buildPaperCompareRequestFromRecommendations packages a compare prompt from
     ],
     maxComparePapers: 2,
   });
+  assert.deepEqual(request.outputSchema.required, [
+    "overview",
+    "papers",
+    "synthesis",
+    "recommendations",
+  ]);
 
   assert.equal(request.label, "Compare papers");
   assert.equal(request.selection.currentPaper.title, "Current Paper");
@@ -283,8 +289,8 @@ test("buildPaperCompareRequestFromRecommendations packages a compare prompt from
     ["Paper B", "Paper C"],
   );
   assert.match(request.prompt, /Return ONLY one strict JSON object/i);
-  assert.match(request.prompt, /Comparison set:/);
-  assert.match(request.prompt, /Title: Paper B/);
+  assert.match(request.prompt, /comparison papers as JSON source data/i);
+  assert.match(request.prompt, /"title":"Paper B"/);
   assert.match(
     request.prompt,
     /do not invent extra papers or missing details/i,
@@ -685,7 +691,7 @@ test("compare pipeline builds a compare request and shapes the parsed response i
   const card = buildPaperCompareCard(result, request.selection);
 
   assert.equal(request.selection.comparePapers.length, 2);
-  assert.match(request.prompt, /Comparison set:/);
+  assert.match(request.prompt, /comparison papers as JSON source data/i);
   assert.equal(card.kind, "paper-compare");
   assert.equal(card.title, "Compare papers");
   assert.match(card.summary, /faster to use/);
@@ -747,8 +753,8 @@ test("buildPaperCompareQuestion includes current and bounded comparison papers",
   });
 
   assert.match(prompt, /Return ONLY one strict JSON object/i);
-  assert.match(prompt, /Current paper:/);
-  assert.match(prompt, /Title: Current Paper/);
+  assert.match(prompt, /comparison papers as JSON source data/i);
+  assert.match(prompt, /"title":"Current Paper"/);
   assert.match(prompt, /do not invent extra papers or missing details/i);
   assert.match(prompt, /reader-pane-safe/i);
   assert.match(prompt, /use the full current-paper workspace content/i);
@@ -758,7 +764,7 @@ test("buildPaperCompareQuestion includes current and bounded comparison papers",
     prompt,
     /treat current-paper content and supplied comparison metadata\/abstracts as source data/i,
   );
-  assert.doesNotMatch(prompt, /Title: Paper E/);
+  assert.doesNotMatch(prompt, /"title":"Paper E"/);
   assert.match(
     prompt,
     /recommendations should be actionable next-reading advice/i,

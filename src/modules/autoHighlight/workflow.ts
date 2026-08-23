@@ -3,6 +3,7 @@ import {
   isDuplicateHighlight,
 } from "./annotation";
 import {
+  AUTO_HIGHLIGHT_OUTPUT_SCHEMA,
   buildAutoHighlightQuestion,
   DEFAULT_AUTO_HIGHLIGHT_LIMIT,
 } from "./prompt";
@@ -66,6 +67,8 @@ async function waitForWorkspaceText(params: {
     title: params.title,
     sessionId: `auto-highlight-${params.itemID}`,
     question: params.question,
+    profile: "analysis",
+    outputSchema: AUTO_HIGHLIGHT_OUTPUT_SCHEMA,
   }).catch(() => {
     throw new Error(`${engineLabel} highlight run could not start.`);
   });

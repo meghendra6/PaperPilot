@@ -18,6 +18,7 @@ type BuildClaudeCommand = (params: {
   resumeSessionId?: string;
   executablePath: string;
   permissionMode: string;
+  outputSchema?: Record<string, unknown>;
 }) => string;
 
 test("buildClaudeCommand streams the prompt file into Claude Code print mode", () => {
@@ -81,6 +82,31 @@ test("buildClaudeCommand uses Claude Code continue mode for the latest session m
 
   assert.match(script, / --continue /);
   assert.doesNotMatch(script, /--resume 'latest'/);
+});
+
+test("buildClaudeCommand shell-escapes the native JSON schema", () => {
+  const buildClaudeCommand = (
+    claudeRunner as unknown as { buildClaudeCommand?: BuildClaudeCommand }
+  ).buildClaudeCommand!;
+  const script = buildClaudeCommand({
+    promptPath: "/tmp/paper/prompt.txt",
+    outputPath: "/tmp/paper/output.txt",
+    stderrPath: "/tmp/paper/stderr.log",
+    exitCodePath: "/tmp/paper/exit.txt",
+    pidPath: "/tmp/paper/pid.txt",
+    workspacePath: "/tmp/paper",
+    model: "sonnet",
+    executablePath: "claude",
+    permissionMode: "plan",
+    outputSchema: {
+      type: "object",
+      properties: { quote: { type: "string" } },
+    },
+  });
+
+  assert.equal(checkShellSyntax(script).status, 0);
+  assert.match(script, /--json-schema '\{"type":"object"/);
+  assert.match(script, /--permission-mode 'plan'/);
 });
 
 test("Claude progress keeps successful stderr out of parsed assistant text", async () => {

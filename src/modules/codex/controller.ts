@@ -49,6 +49,8 @@ import { readCodexRunProgress, startCodexRunForQuestion } from "./runner";
 import { stopCodexRunSilently } from "./stopRun";
 import { classifyCodexLoginFailure } from "./statusClassification";
 import { isWorkspaceRunReservedForItem } from "../ai/workspaceRun";
+import type { RunProfile } from "../ai/runProfile";
+import type { StructuredOutputSchema } from "../ai/structuredOutput";
 
 declare const addon: any;
 export { stopCodexRunSilently } from "./stopRun";
@@ -67,8 +69,11 @@ export async function handleCodexQuestion(params: {
   streamingIndicator: HTMLElement;
   suppressChatMessages?: boolean;
   continuationToken?: ReaderRunToken;
+  profile?: RunProfile;
+  outputSchema?: StructuredOutputSchema;
   onComplete?: (result: ReaderRunCompletionResult) => void | Promise<void>;
 }) {
+  const profile = params.profile || "chat";
   const continuingParent = Boolean(
     params.continuationToken &&
       isReaderRunTokenActive(params.itemID, params.continuationToken),
@@ -174,11 +179,14 @@ export async function handleCodexQuestion(params: {
     annotationIDs: params.annotationIDs,
     useResume: params.useResume,
     resumeSessionId: params.resumeSessionId,
+    profile,
+    outputSchema: params.outputSchema,
   }).catch(async (error) => {
     cancelTimeout();
     await cleanupPaperWorkspaceForItemIfEnabled({
       itemID: params.itemID,
       title: params.sessionTitle,
+      profile,
     });
     if (!isReaderRunTokenActive(params.itemID, runToken)) {
       markPendingEnginePreparationSettled(params.itemID, runToken);
@@ -462,6 +470,7 @@ export async function handleCodexQuestion(params: {
               rawEvent: progress.rawOutput,
               resumeSessionId: resumedThreadId,
               suppressMessage: params.suppressChatMessages,
+              updateResumeMetadata: profile === "chat",
             });
           } else {
             await sessionHistoryService.persistAssistantTurn({
@@ -473,6 +482,7 @@ export async function handleCodexQuestion(params: {
               success: false,
               rawEvent: terminalFailure!.rawError,
               suppressMessage: params.suppressChatMessages,
+              updateResumeMetadata: profile === "chat",
             });
           }
         },

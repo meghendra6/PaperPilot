@@ -2,8 +2,15 @@ import { getPref, setPref } from "../../utils/prefs";
 import { getZoteroProfilePath } from "../../utils/zoteroProfile";
 import { normalizeGeminiModel } from "../codex/modelOptions";
 import { normalizeResponseLanguage } from "../translation/responseLanguage";
+import {
+  canResumeProviderSession,
+  getRunWorkspaceTitle,
+  type RunProfile,
+} from "../ai/runProfile";
+import type { StructuredOutputSchema } from "../ai/structuredOutput";
 import { getCurrentReaderContext } from "../context/readerContext";
 import { getIndexedChunks } from "../context/indexStore";
+import { findNearbyContext } from "../context/nearbyContext";
 import {
   buildContextPayload,
   buildGeminiWorkspacePrompt,
@@ -82,6 +89,7 @@ export function buildGeminiCommand(params: {
   model: string;
   resumeSessionId?: string;
   executablePath: string;
+  profile: RunProfile;
 }) {
   const env = buildGeminiShellEnvironment();
   const environmentLines = Object.entries(env)
@@ -92,6 +100,8 @@ export function buildGeminiCommand(params: {
   const resumePart = params.resumeSessionId
     ? `--resume ${shellEscape(params.resumeSessionId)}`
     : "";
+  const approvalPart =
+    params.profile === "chat" ? "--yolo" : "--approval-mode plan";
 
   return [
     `mkdir -p ${shellEscape(outputDir)}`,
@@ -99,7 +109,7 @@ export function buildGeminiCommand(params: {
     ...environmentLines,
     `(` +
       `cd ${shellEscape(params.workspacePath)} && ` +
-      `cat ${shellEscape(params.promptPath)} | ${shellEscape(params.executablePath)} --skip-trust ${resumePart} -m ${shellEscape(params.model)} --yolo --output-format text -p '' > ${shellEscape(params.outputPath)} 2> ${shellEscape(params.stderrPath)}; ` +
+      `cat ${shellEscape(params.promptPath)} | ${shellEscape(params.executablePath)} --skip-trust ${resumePart} -m ${shellEscape(params.model)} ${approvalPart} --output-format text -p '' > ${shellEscape(params.outputPath)} 2> ${shellEscape(params.stderrPath)}; ` +
       `printf '%s' $? > ${shellEscape(params.exitCodePath)}` +
       `) & echo $! > ${shellEscape(params.pidPath)}`,
   ].join(" && ");
@@ -113,7 +123,10 @@ export async function startGeminiRunForQuestion(params: {
   selectedText?: string;
   annotationIDs?: string[];
   resumeSessionId?: string;
+  profile?: RunProfile;
+  outputSchema?: StructuredOutputSchema;
 }): Promise<StartedGeminiRun | FailedGeminiRun> {
+  const profile = params.profile || "chat";
   const executablePath =
     String(getPref("geminiExecutablePath") || "gemini").trim() || "gemini";
   const preferredModel = String(
@@ -131,7 +144,7 @@ export async function startGeminiRunForQuestion(params: {
   const workspacePath = buildPaperWorkspacePath({
     root: workspaceRoot,
     itemID: params.itemID,
-    title: params.title,
+    title: getRunWorkspaceTitle(params.title, profile),
   });
 
   await Zotero.File.createDirectoryIfMissingAsync(workspacePath);
@@ -141,13 +154,6 @@ export async function startGeminiRunForQuestion(params: {
     responseLanguage: normalizeResponseLanguage(getPref("responseLanguage")),
     selectedText: params.selectedText,
     annotationIDs: params.annotationIDs,
-    surroundingText: getPref("retrievalIncludeNearbyContext")
-      ? params.selectedText
-      : undefined,
-    recentTurns: messageStore.recentRaw(params.sessionId, 3).map((message) => ({
-      role: message.role,
-      text: message.text,
-    })),
   });
   const readerContext = await getCurrentReaderContext();
   payload.pageNumber = readerContext.pageIndex;
@@ -187,6 +193,9 @@ export async function startGeminiRunForQuestion(params: {
       ],
     }));
   const fullText = paperContent.fullText;
+  payload.surroundingText = getPref("retrievalIncludeNearbyContext")
+    ? findNearbyContext({ fullText, selectedText: params.selectedText })
+    : undefined;
   const indexedChunks = getIndexedChunks({
     itemKey: String(item.key || params.itemID),
     text: fullText,
@@ -312,8 +321,11 @@ export async function startGeminiRunForQuestion(params: {
     workspacePath,
     question: params.question,
     model,
-    resumeSessionId: params.resumeSessionId,
+    resumeSessionId: canResumeProviderSession(profile)
+      ? params.resumeSessionId
+      : undefined,
     executablePath,
+    profile,
   });
 
   const result = await Zotero.Utilities.Internal.exec("/bin/zsh", [
