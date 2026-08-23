@@ -3,26 +3,12 @@ import { buildResponseLanguageInstruction } from "../translation/responseLanguag
 
 export function buildPromptPreview(params: {
   question: string;
-  selectedText?: string;
-  surroundingText?: string;
-  annotationIDs?: string[];
-  pageNumber?: number;
   responseLanguage?: string;
 }) {
   const sections = [
     `Question: ${params.question}`,
     params.responseLanguage
       ? `Preferred response language: ${buildResponseLanguageInstruction(params.responseLanguage)}`
-      : undefined,
-    params.selectedText ? `Selected text: ${params.selectedText}` : undefined,
-    params.surroundingText
-      ? `Surrounding context: ${params.surroundingText}`
-      : undefined,
-    typeof params.pageNumber === "number"
-      ? `Page: ${params.pageNumber}`
-      : undefined,
-    params.annotationIDs?.length
-      ? `Annotations: ${params.annotationIDs.join(", ")}`
       : undefined,
   ].filter(Boolean);
 
@@ -37,7 +23,6 @@ export function buildContextPayload(params: {
   annotationIDs?: string[];
   retrievedChunks?: string[];
   responseLanguage?: string;
-  recentTurns?: Array<{ role: string; text: string }>;
 }): ContextPayload {
   const payload = {
     selectedText: params.selectedText,
@@ -45,29 +30,11 @@ export function buildContextPayload(params: {
     pageNumber: params.pageNumber,
     annotationIDs: params.annotationIDs,
     retrievedChunks: params.retrievedChunks ?? [],
-    recentTurns: params.recentTurns ?? [],
-    promptPreview: buildPromptPreview(params),
+    promptPreview: buildPromptPreview({
+      question: params.question,
+      responseLanguage: params.responseLanguage,
+    }),
   };
-
-  if (payload.retrievedChunks.length) {
-    payload.promptPreview = [
-      payload.promptPreview,
-      "",
-      "Retrieved chunks:",
-      ...payload.retrievedChunks.map(
-        (chunk, index) => `[${index + 1}] ${chunk}`,
-      ),
-    ].join("\n");
-  }
-
-  if (payload.recentTurns.length) {
-    payload.promptPreview = [
-      payload.promptPreview,
-      "",
-      "Recent turns:",
-      ...payload.recentTurns.map((turn) => `${turn.role}: ${turn.text}`),
-    ].join("\n");
-  }
   return payload;
 }
 

@@ -49,8 +49,9 @@ test("buildPaperToolQuestion adds strict JSON instructions and paper metadata", 
   );
 
   assert.match(prompt, /Return ONLY one strict JSON object/i);
-  assert.match(prompt, /Title: Structured Tooling for Papers/);
-  assert.match(prompt, /Authors: Grace Hopper/);
+  assert.match(prompt, /metadata as JSON source data/i);
+  assert.match(prompt, /"title":"Structured Tooling for Papers"/);
+  assert.match(prompt, /"authors":\["Grace Hopper"\]/);
   assert.match(prompt, /evidence":"explicit\|inference\|mixed/);
   assert.match(
     prompt,

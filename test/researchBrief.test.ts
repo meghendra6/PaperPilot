@@ -19,9 +19,10 @@ test("buildResearchBriefQuestion includes strict JSON instructions and paper met
   } as any);
 
   assert.match(prompt, /Return ONLY one strict JSON object/i);
-  assert.match(prompt, /Title: A Paper About Tooling/);
-  assert.match(prompt, /Authors: Ada Lovelace/);
-  assert.match(prompt, /Abstract: This paper studies research workflows\./);
+  assert.match(prompt, /metadata as JSON source data/i);
+  assert.match(prompt, /"title":"A Paper About Tooling"/);
+  assert.match(prompt, /"authors":\["Ada Lovelace"\]/);
+  assert.match(prompt, /"abstract":"This paper studies research workflows\."/);
   assert.match(prompt, /searchQueries/);
   assert.match(prompt, /omit the claim instead of guessing/i);
   assert.match(prompt, /reader-pane-safe/i);

@@ -4,6 +4,5 @@ export interface ContextPayload {
   pageNumber?: number;
   annotationIDs?: string[];
   retrievedChunks: string[];
-  recentTurns?: Array<{ role: string; text: string }>;
   promptPreview: string;
 }

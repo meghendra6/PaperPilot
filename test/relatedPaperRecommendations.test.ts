@@ -356,9 +356,9 @@ test("buildRelatedPaperQuestion includes the current paper context", () => {
   } as any);
 
   assert.match(question, /Return ONLY one strict JSON/i);
-  assert.match(question, /Title: Current Paper/);
-  assert.match(question, /Authors: Author One, Author Two/);
-  assert.match(question, /Abstract: Important abstract\./);
+  assert.match(question, /"title":"Current Paper"/);
+  assert.match(question, /"authors":\["Author One","Author Two"\]/);
+  assert.match(question, /"abstract":"Important abstract\."/);
   assert.match(question, /user must not be asked to choose fields or venues/i);
   assert.match(question, /leading archival venues/i);
   assert.match(question, /open-world/i);

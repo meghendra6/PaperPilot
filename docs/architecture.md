@@ -66,6 +66,8 @@ detached.
 | `runLifecycle.ts`       | shared progress, retry, and token-aware completion state                 |
 | `runPresentation.ts`    | item-scoped active-run events that reconnect rebuilt pane DOM            |
 | `runProgress.ts`        | pure phase transitions and absolute-deadline calculation                 |
+| `runProfile.ts`         | explicit `chat`, `analysis`, and `discovery` capability/session boundary |
+| `structuredOutput.ts`   | native-schema capability probe with parser-only fallback                 |
 | `runTimeout.ts`         | one watchdog and timeout completion path shared by all engines           |
 | `retryEngineRequest.ts` | engine-neutral retry dispatch for the last normal chat request           |
 | `workspaceRun.ts`       | mode-dispatching helpers: start a run, read progress, extract text       |
@@ -110,13 +112,21 @@ polled**:
    also creates `addon.data.runProgressStates[itemID]` in `Preparing workspace`.
 3. `runner.startXRunForQuestion`:
    - resolves the executable path and reads prefs (model, sandbox, permissions)
+   - applies the explicit run profile: visible `chat` may resume its provider
+     session, while hidden `analysis` and `discovery` runs never resume or
+     update it and use separate profile-suffixed workspace paths
    - computes the workspace path: `{workspaceRoot}/{itemID}-{slugified-title}`
-     (`workspace/pathBuilder.ts`)
+     (`workspace/pathBuilder.ts`); analysis and discovery add their profile to
+     the title before slugging
    - extracts paper content via `tools/paperWorkspaceContent.ts` — OpenDataLoader
      when Java is available, falling back to Zotero `attachmentText`
    - chunks and retrieves top-K passages (`context/indexStore.ts`,
      `context/retriever.ts`)
    - writes the workspace artifacts (see below)
+   - for a structured workflow, probes the installed CLI help once and supplies
+     the workflow JSON Schema through Codex `--output-schema` or Claude
+     `--json-schema` when supported; a missing flag or failed probe falls back
+     to the validating parser without blocking the run
    - builds the CLI argv and wraps it in a **detached background shell script**
      (`codex/shell.ts` for Codex; inline in the runner for Claude and Gemini)
    - runs `Zotero.Utilities.Internal.exec("/bin/zsh", ["-lc", script])`
@@ -193,6 +203,11 @@ workflow error instead of exposing stderr. `ui/runProgressCard.ts` renders the
 same progress, cancel, retry, settings, and login-help surface for every engine.
 Only normal chat turns enter `addon.data.lastEngineRequests`; silent Workbench
 Paper Mastery, and Critical Read runs continue to use their own workflow buttons.
+Normal chat uses the configured provider permissions. Analysis is read-only
+(Codex read-only sandbox, Claude plan permission, Gemini plan approval) and has
+no web search. Discovery keeps the same filesystem boundary while admitting the
+verified web-search path. Hidden completion can persist workflow state without
+changing the visible session's provider resume id.
 
 Per-engine file names inside the workspace:
 
@@ -210,21 +225,22 @@ returns plain text, so both are read directly.
 
 `context/workspaceArtifacts.ts` builds the payload; the runner writes the files.
 
-| File                        | Written by     | Contents                                                            |
-| --------------------------- | -------------- | ------------------------------------------------------------------- |
-| `paper.md`                  | all engines    | structured Markdown, or full text if extraction fell back           |
-| `paper.json`                | all engines    | structured elements + `extractionMethod` + `extractionNotes`        |
-| `paper.txt`                 | all engines    | compatibility snapshot: metadata header plus text                   |
-| `metadata.json`             | all engines    | title, authors, year, item/attachment key, abstract                 |
-| `selection.json`            | all engines    | `ContextPayload`: selection, page, retrieved chunks, prompt preview |
-| `recent-turns.json`         | all engines    | last 3 turns for follow-up continuity                               |
-| `annotations.json`          | all engines    | annotation ids tied to this request                                 |
-| `CONTEXT_INDEX.md`          | all engines    | reading-order file map                                              |
-| `discovery-request.json`    | discovery runs | normalized research concern and current-paper context               |
-| `discovery-plan.json`       | discovery runs | agent-owned field, venue, and query planning scaffold               |
-| `discovery-candidates.json` | discovery runs | deterministic scholarly-provider candidates                         |
-| `discovery-evidence.json`   | discovery runs | official-evidence collection scaffold                               |
-| `figures/`                  | Codex only     | empty directory for image assets                                    |
+| File                        | Written by                      | Contents                                                                  |
+| --------------------------- | ------------------------------- | ------------------------------------------------------------------------- |
+| `paper.md`                  | all engines                     | structured Markdown, or full text if extraction fell back                 |
+| `paper.json`                | all engines                     | structured elements + `extractionMethod` + `extractionNotes`              |
+| `paper.txt`                 | all engines                     | compatibility snapshot: metadata header plus text                         |
+| `metadata.json`             | all engines                     | title, authors, year, item/attachment key, abstract                       |
+| `selection.json`            | all engines                     | selected text, actual nearby context, page, annotations, retrieved chunks |
+| `recent-turns.json`         | all engines                     | last 3 turns for follow-up continuity                                     |
+| `annotations.json`          | all engines                     | annotation ids tied to this request                                       |
+| `CONTEXT_INDEX.md`          | all engines                     | reading-order file map                                                    |
+| `discovery-request.json`    | discovery runs                  | normalized research concern and current-paper context                     |
+| `discovery-plan.json`       | discovery runs                  | agent-owned field, venue, and query planning scaffold                     |
+| `discovery-candidates.json` | discovery runs                  | deterministic scholarly-provider candidates                               |
+| `discovery-evidence.json`   | discovery runs                  | official-evidence collection scaffold                                     |
+| `figures/`                  | Codex only                      | empty directory for image assets                                          |
+| `output-schema.json`        | supported Codex structured runs | native final-output JSON Schema                                           |
 
 All three engine prompts instruct the agent to read `CONTEXT_INDEX.md`. Discovery
 runs additionally stage the four `discovery-*.json` files for a reproducible
@@ -232,6 +248,13 @@ candidate-discovery and publication-verification protocol. The agent owns field
 and venue judgment; these files standardize inputs and evidence boundaries rather
 than imposing a closed conference list. If you add an artifact, add it to every
 applicable runner _and_ to the prompt that tells the model to read it.
+
+The prompt preview owns only the explicit request and response-language
+instruction. Selection, retrieval, and annotation data appear once in
+`selection.json`; visible conversation context appears once in
+`recent-turns.json`. When nearby context is enabled, the runner finds the
+selection inside extracted full text and writes bounded text before and after
+it. A failed match omits nearby context instead of copying the selection.
 
 `discovery/providers/` is the read-only network boundary. Semantic Scholar,
 OpenAlex, DBLP, and Crossref receive only bounded query strings and bibliographic

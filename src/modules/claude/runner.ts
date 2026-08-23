@@ -8,9 +8,19 @@ import {
 } from "../context/promptPreviewBuilder";
 import { getCurrentReaderContext } from "../context/readerContext";
 import { getIndexedChunks } from "../context/indexStore";
+import { findNearbyContext } from "../context/nearbyContext";
 import { selectRelevantChunksFromChunks } from "../context/retriever";
 import { messageStore } from "../message/messageStore";
 import { normalizeResponseLanguage } from "../translation/responseLanguage";
+import {
+  canResumeProviderSession,
+  getRunWorkspaceTitle,
+  type RunProfile,
+} from "../ai/runProfile";
+import {
+  cliSupportsFlag,
+  type StructuredOutputSchema,
+} from "../ai/structuredOutput";
 import {
   paperWorkspaceContentCache,
   type PaperWorkspaceContent,
@@ -96,6 +106,7 @@ export function buildClaudeCommand(params: {
   resumeSessionId?: string;
   executablePath: string;
   permissionMode: string;
+  outputSchema?: StructuredOutputSchema;
 }) {
   const env = buildClaudeShellEnvironment();
   const environmentLines = Object.entries(env)
@@ -109,6 +120,9 @@ export function buildClaudeCommand(params: {
       : `--resume ${shellEscape(params.resumeSessionId)}`
     : "";
   const permissionMode = normalizeClaudePermissionMode(params.permissionMode);
+  const outputSchemaPart = params.outputSchema
+    ? `--json-schema ${shellEscape(JSON.stringify(params.outputSchema))}`
+    : "";
 
   return [
     `mkdir -p ${shellEscape(outputDir)}`,
@@ -116,7 +130,7 @@ export function buildClaudeCommand(params: {
     ...environmentLines,
     `(` +
       `cd ${shellEscape(params.workspacePath)} && ` +
-      `cat ${shellEscape(params.promptPath)} | ${shellEscape(params.executablePath)} -p --output-format text --model ${shellEscape(params.model)} ${resumePart} --permission-mode ${shellEscape(permissionMode)} --setting-sources project,local > ${shellEscape(params.outputPath)} 2> ${shellEscape(params.stderrPath)}; ` +
+      `cat ${shellEscape(params.promptPath)} | ${shellEscape(params.executablePath)} -p --output-format text --model ${shellEscape(params.model)} ${resumePart} ${outputSchemaPart} --permission-mode ${shellEscape(permissionMode)} --setting-sources project,local > ${shellEscape(params.outputPath)} 2> ${shellEscape(params.stderrPath)}; ` +
       `printf '%s' $? > ${shellEscape(params.exitCodePath)}` +
       `) & echo $! > ${shellEscape(params.pidPath)}`,
   ].join(" && ");
@@ -130,16 +144,20 @@ export async function startClaudeRunForQuestion(params: {
   selectedText?: string;
   annotationIDs?: string[];
   resumeSessionId?: string;
+  profile?: RunProfile;
+  outputSchema?: StructuredOutputSchema;
 }): Promise<StartedClaudeRun | FailedClaudeRun> {
+  const profile = params.profile || "chat";
   const executablePath =
     String(getPref("claudeExecutablePath") || "claude").trim() || "claude";
   const preferredModel = String(
     getPref("claudeDefaultModel") || "sonnet",
   ).trim();
   const model = normalizeClaudeModel(preferredModel);
-  const permissionMode = String(
-    getPref("claudePermissionMode") || "default",
-  ).trim();
+  const permissionMode =
+    profile === "chat"
+      ? String(getPref("claudePermissionMode") || "default").trim()
+      : "plan";
 
   if (model !== preferredModel) {
     setPref("claudeDefaultModel", model);
@@ -151,7 +169,7 @@ export async function startClaudeRunForQuestion(params: {
   const workspacePath = buildPaperWorkspacePath({
     root: workspaceRoot,
     itemID: params.itemID,
-    title: params.title,
+    title: getRunWorkspaceTitle(params.title, profile),
   });
 
   await Zotero.File.createDirectoryIfMissingAsync(workspacePath);
@@ -161,13 +179,6 @@ export async function startClaudeRunForQuestion(params: {
     responseLanguage: normalizeResponseLanguage(getPref("responseLanguage")),
     selectedText: params.selectedText,
     annotationIDs: params.annotationIDs,
-    surroundingText: getPref("retrievalIncludeNearbyContext")
-      ? params.selectedText
-      : undefined,
-    recentTurns: messageStore.recentRaw(params.sessionId, 3).map((message) => ({
-      role: message.role,
-      text: message.text,
-    })),
   });
   const readerContext = await getCurrentReaderContext();
   payload.pageNumber = readerContext.pageIndex;
@@ -207,6 +218,9 @@ export async function startClaudeRunForQuestion(params: {
       ],
     }));
   const fullText = paperContent.fullText;
+  payload.surroundingText = getPref("retrievalIncludeNearbyContext")
+    ? findNearbyContext({ fullText, selectedText: params.selectedText })
+    : undefined;
   const indexedChunks = getIndexedChunks({
     itemKey: String(item.key || params.itemID),
     text: fullText,
@@ -323,6 +337,17 @@ export async function startClaudeRunForQuestion(params: {
     );
   }
 
+  const nativeOutputSchema =
+    params.outputSchema &&
+    (await cliSupportsFlag({
+      executablePath,
+      helpArgs: ["--help"],
+      flag: "--json-schema",
+      environment: buildClaudeShellEnvironment(),
+    }))
+      ? params.outputSchema
+      : undefined;
+
   const script = buildClaudeCommand({
     promptPath,
     outputPath,
@@ -331,9 +356,12 @@ export async function startClaudeRunForQuestion(params: {
     pidPath,
     workspacePath,
     model,
-    resumeSessionId: params.resumeSessionId,
+    resumeSessionId: canResumeProviderSession(profile)
+      ? params.resumeSessionId
+      : undefined,
     executablePath,
     permissionMode,
+    outputSchema: nativeOutputSchema,
   });
 
   const result = await Zotero.Utilities.Internal.exec("/bin/zsh", [

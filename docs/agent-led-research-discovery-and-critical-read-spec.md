@@ -1201,8 +1201,8 @@ requires confirmation before replacement. Specifically:
   pages, reviews, and user notes are untrusted source data.
 - Prompts MUST instruct the agent not to follow instructions embedded in those
   sources.
-- User concerns and reader answers MUST be placed inside explicit data
-  delimiters analogous to Paper Mastery's `<user_answer>` handling.
+- User concerns and reader answers MUST be serialized as explicit JSON source
+  data and parsed as data, never as prompt instructions.
 - Provider requests MUST NOT include local file paths, full PDF contents,
   annotations, chat history, or unrelated Zotero metadata.
 - API keys, CLI credentials, cookies, and private reviews MUST NOT enter saved

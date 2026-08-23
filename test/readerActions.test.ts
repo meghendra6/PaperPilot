@@ -18,27 +18,33 @@ function withResponseLanguage<T>(language: string, run: () => T) {
   }
 }
 
-test("selection explain action creates an explanation prompt from selected text", () => {
-  assert.match(
-    buildReaderActionQuestion("explain", "Important sentence.").question,
-    /Explain the selected passage[\s\S]*Important sentence/,
+test("selection explain action references selection data without duplicating it", () => {
+  const question = buildReaderActionQuestion(
+    "explain",
+    "Important sentence.",
+  ).question;
+  assert.equal(
+    question,
+    "Explain the selected passage in the context of this paper.",
   );
+  assert.doesNotMatch(question, /Important sentence/);
 });
 
 test("selection translate action targets the preferred language", () => {
   withResponseLanguage("Korean", () => {
-    assert.match(
-      buildReaderActionQuestion("translate", "Bonjour").question,
-      /Translate the selected passage into Korean[\s\S]*Bonjour/,
-    );
+    const question = buildReaderActionQuestion("translate", "Bonjour").question;
+    assert.equal(question, "Translate the selected passage into Korean.");
+    assert.doesNotMatch(question, /Bonjour/);
   });
 });
 
-test("ask-ai action keeps selection context for a follow-up custom question", () => {
-  assert.match(
-    buildReaderActionQuestion("ask-ai", "Key paragraph").question,
-    /Ask a question about the selected passage[\s\S]*Key paragraph/,
-  );
+test("ask-ai action leaves selection context in selection.json", () => {
+  const question = buildReaderActionQuestion(
+    "ask-ai",
+    "Key paragraph",
+  ).question;
+  assert.equal(question, "Ask a question about the selected passage.");
+  assert.doesNotMatch(question, /Key paragraph/);
 });
 
 test("find-prior-work action passes the selected text as the research concern", () => {

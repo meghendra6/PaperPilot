@@ -149,7 +149,13 @@ export function buildWorkspaceArtifacts(params: {
       extractionMethod: params.extractionMethod,
       extractionNotes: params.extractionNotes ?? [],
     },
-    selection: params.payload,
+    selection: {
+      selectedText: params.payload.selectedText,
+      surroundingText: params.payload.surroundingText,
+      pageNumber: params.payload.pageNumber,
+      annotationIDs: params.payload.annotationIDs,
+      retrievedChunks: params.payload.retrievedChunks,
+    },
     annotations: params.annotations ?? [],
     recentTurns: params.recentTurns,
     discoveryArtifacts: discoveryRequest

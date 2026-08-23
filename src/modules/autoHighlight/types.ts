@@ -1,7 +1,5 @@
 export interface HighlightCandidate {
   quote: string;
-  reason?: string;
-  importance?: number;
 }
 
 export interface PDFTextSpan {

@@ -45,6 +45,8 @@ import {
 import { startGeminiRunForQuestion, readGeminiRunProgress } from "./runner";
 import { stopGeminiRunSilently } from "./stopRun";
 import { isWorkspaceRunReservedForItem } from "../ai/workspaceRun";
+import type { RunProfile } from "../ai/runProfile";
+import type { StructuredOutputSchema } from "../ai/structuredOutput";
 
 declare const addon: any;
 
@@ -63,8 +65,11 @@ export async function handleGeminiQuestion(params: {
   streamingIndicator: HTMLElement;
   suppressChatMessages?: boolean;
   continuationToken?: ReaderRunToken;
+  profile?: RunProfile;
+  outputSchema?: StructuredOutputSchema;
   onComplete?: (result: ReaderRunCompletionResult) => void | Promise<void>;
 }) {
+  const profile = params.profile || "chat";
   const continuingParent = Boolean(
     params.continuationToken &&
       isReaderRunTokenActive(params.itemID, params.continuationToken),
@@ -168,11 +173,14 @@ export async function handleGeminiQuestion(params: {
     selectedText: params.selectedText,
     annotationIDs: params.annotationIDs,
     resumeSessionId: params.resumeSessionId,
+    profile,
+    outputSchema: params.outputSchema,
   }).catch(async (error) => {
     cancelTimeout();
     await cleanupPaperWorkspaceForItemIfEnabled({
       itemID: params.itemID,
       title: params.sessionTitle,
+      profile,
     });
     if (!isReaderRunTokenActive(params.itemID, runToken)) {
       markPendingEnginePreparationSettled(params.itemID, runToken);
@@ -386,6 +394,7 @@ export async function handleGeminiQuestion(params: {
             rawEvent: progress.rawOutput,
             resumeSessionId: params.resumeSessionId,
             suppressMessage: params.suppressChatMessages,
+            updateResumeMetadata: profile === "chat",
           });
           if (isPendingEngineCompletionCurrent(params.itemID, runToken)) {
             clearGeminiRunStateForItem(params.itemID);

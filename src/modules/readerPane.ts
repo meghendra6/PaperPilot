@@ -12,6 +12,8 @@ import {
 import { getStatusLabel } from "./ai/statusLabels";
 import { getProviderDescriptorForItem } from "./ai/providerRegistry";
 import type { EngineMode } from "./ai/types";
+import type { RunProfile } from "./ai/runProfile";
+import type { StructuredOutputSchema } from "./ai/structuredOutput";
 import {
   getActiveReaderRunMode,
   isReaderRunTokenActive,
@@ -60,7 +62,10 @@ import {
   type RecommendationGroup,
   type RecommendedPaper,
 } from "./relatedRecommendations";
-import { buildCriticalReadStepPrompt } from "./criticalRead/prompt";
+import {
+  buildCriticalReadStepPrompt,
+  getCriticalReadOutputSchema,
+} from "./criticalRead/prompt";
 import { parseCriticalReadOutput } from "./criticalRead/parser";
 import { buildCriticalReadReportMarkdown } from "./criticalRead/report";
 import {
@@ -126,6 +131,8 @@ import {
   buildFinalReportPrompt,
   parseMasteryQuestionResponse,
   parseMasteryEvaluationResponse,
+  MASTERY_EVALUATION_OUTPUT_SCHEMA,
+  MASTERY_QUESTION_OUTPUT_SCHEMA,
 } from "./comprehensionCheck/prompt";
 import {
   getMasteryState,
@@ -2567,6 +2574,7 @@ export function registerPaperPilotPaneSection() {
           ) => void | Promise<void>,
           continuationToken?: ReaderRunToken,
           onAdmitted?: () => void,
+          outputSchema?: StructuredOutputSchema,
         ) {
           const itemID = item.id;
           const { mode, placeholderResponse } =
@@ -2585,6 +2593,8 @@ export function registerPaperPilotPaneSection() {
               {
                 silentUserMessage: true,
                 suppressChatMessages: true,
+                profile: "analysis",
+                outputSchema,
                 continuationToken,
                 onAdmitted,
                 onComplete: async (result) => {
@@ -2695,6 +2705,7 @@ export function registerPaperPilotPaneSection() {
             resetOnFail,
             undefined,
             markAdmitted,
+            MASTERY_QUESTION_OUTPUT_SCHEMA,
           );
         });
 
@@ -2836,11 +2847,14 @@ export function registerPaperPilotPaneSection() {
                   renderMasteryCompletion(fst ?? s);
                 },
                 continuationToken,
+                undefined,
+                MASTERY_QUESTION_OUTPUT_SCHEMA,
               );
             },
             resetSubmitOnFail,
             undefined,
             markAdmitted,
+            MASTERY_EVALUATION_OUTPUT_SCHEMA,
           );
         });
 
@@ -4101,6 +4115,8 @@ async function runCriticalReadAgentRequest(params: {
       displayQuestion: `Critical Read · Step ${step.id}`,
       silentUserMessage: true,
       suppressChatMessages: true,
+      profile: "analysis",
+      outputSchema: getCriticalReadOutputSchema(step.id),
       onAdmitted: params.onAdmitted,
       onComplete: params.onComplete,
     },
@@ -4168,6 +4184,8 @@ async function runPaperArtifactRequest(params: {
       displayQuestion: request.label,
       silentUserMessage: true,
       suppressChatMessages: true,
+      profile: "analysis",
+      outputSchema: request.outputSchema,
       onAdmitted: markAdmitted,
       onComplete: async ({ success, assistantText }) => {
         if (!success) {
@@ -4377,6 +4395,8 @@ async function runPaperCompareRequest(params: {
       displayQuestion: request.label,
       silentUserMessage: true,
       suppressChatMessages: true,
+      profile: "analysis",
+      outputSchema: request.outputSchema,
       onAdmitted: markAdmitted,
       onComplete: async ({ success, assistantText }) => {
         if (!success) {
@@ -4467,6 +4487,8 @@ async function handleUserInput(
   options?: {
     displayQuestion?: string;
     silentUserMessage?: boolean;
+    profile?: RunProfile;
+    outputSchema?: StructuredOutputSchema;
     suppressChatMessages?: boolean;
     continuationToken?: ReaderRunToken;
     onAdmitted?: () => void;
@@ -4505,6 +4527,7 @@ async function handleUserInput(
   }
 
   try {
+    const profile = options?.profile || "chat";
     options?.onAdmitted?.();
     ztoolkit.log("Placeholder question:", question);
     if (!options?.silentUserMessage) {
@@ -4564,8 +4587,11 @@ async function handleUserInput(
         question,
         selectedText,
         annotationIDs: draft?.annotationIDs,
-        useResume: Boolean(session.lastCodexSessionID),
-        resumeSessionId: session.lastCodexSessionID,
+        useResume: profile === "chat" && Boolean(session.lastCodexSessionID),
+        resumeSessionId:
+          profile === "chat" ? session.lastCodexSessionID : undefined,
+        profile,
+        outputSchema: options?.outputSchema,
         chatMessages,
         streamingIndicator,
         suppressChatMessages: options?.suppressChatMessages,
@@ -4595,7 +4621,10 @@ async function handleUserInput(
         question,
         selectedText,
         annotationIDs: draft?.annotationIDs,
-        resumeSessionId: session.lastClaudeSessionID,
+        resumeSessionId:
+          profile === "chat" ? session.lastClaudeSessionID : undefined,
+        profile,
+        outputSchema: options?.outputSchema,
         chatMessages,
         streamingIndicator,
         suppressChatMessages: options?.suppressChatMessages,
@@ -4625,7 +4654,10 @@ async function handleUserInput(
         question,
         selectedText,
         annotationIDs: draft?.annotationIDs,
-        resumeSessionId: session.lastGeminiSessionID,
+        resumeSessionId:
+          profile === "chat" ? session.lastGeminiSessionID : undefined,
+        profile,
+        outputSchema: options?.outputSchema,
         chatMessages,
         streamingIndicator,
         suppressChatMessages: options?.suppressChatMessages,

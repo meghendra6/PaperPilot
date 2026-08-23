@@ -20,6 +20,25 @@ import {
   releaseChatEngineRequest,
   releaseRetryEngineRequest,
 } from "../src/modules/ai/runLifecycle";
+import {
+  canResumeProviderSession,
+  getRunWorkspaceTitle,
+} from "../src/modules/ai/runProfile";
+
+test("run profiles isolate hidden workflows from the visible chat session", () => {
+  assert.equal(getRunWorkspaceTitle("Paper", "chat"), "Paper");
+  assert.equal(
+    getRunWorkspaceTitle("Paper", "analysis"),
+    "Paper analysis workflow",
+  );
+  assert.equal(
+    getRunWorkspaceTitle("Paper", "discovery"),
+    "Paper discovery workflow",
+  );
+  assert.equal(canResumeProviderSession("chat"), true);
+  assert.equal(canResumeProviderSession("analysis"), false);
+  assert.equal(canResumeProviderSession("discovery"), false);
+});
 
 test("workspace run labels cover all configured engines", () => {
   assert.equal(getWorkspaceEngineLabel("codex_cli"), "Codex CLI");
@@ -159,6 +178,7 @@ test("workspace preparation cancellation returns promptly and owns late cleanup"
       title: "Paper",
       sessionId: "session",
       question: "question",
+      profile: "analysis",
       signal: controller.signal,
       deadline: Date.now() + 60_000,
       prepareRun: () => preparation,

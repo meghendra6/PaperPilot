@@ -1250,6 +1250,58 @@ test("SessionHistoryService.persistAssistantTurn with suppressMessage skips chat
   }
 });
 
+test("SessionHistoryService can suppress resume metadata for a hidden workflow", async () => {
+  const { globals, repository, service } = createService({
+    saveDocumentSessions: true,
+    privacyStoreLocalHistory: true,
+    privacySavePromptsOnly: false,
+    privacySaveResponses: true,
+  });
+
+  try {
+    const session = service.ensureDraftSession({
+      itemID: 604,
+      mode: "codex_cli",
+    });
+    sessionStore.update(604, "codex_cli", undefined, (existing) => {
+      existing.lastCodexSessionID = "visible-chat-thread";
+    });
+    messageStore.append(session.sessionId, {
+      role: "user",
+      text: "Visible chat question",
+      sourceMode: "codex_cli",
+      status: "done",
+    });
+
+    await service.persistAssistantTurn({
+      itemID: 604,
+      sessionId: session.sessionId,
+      mode: "codex_cli",
+      paperTitle: "Hidden workflow paper",
+      assistantText: '{"question":"silent"}',
+      success: true,
+      resumeSessionId: "hidden-analysis-thread",
+      suppressMessage: true,
+      updateResumeMetadata: false,
+    });
+
+    assert.equal(
+      sessionStore.get(604)?.lastCodexSessionID,
+      "visible-chat-thread",
+    );
+    assert.equal(
+      (await repository.readSessionSnapshot(604, session.sessionId))
+        ?.lastCodexSessionID,
+      "visible-chat-thread",
+    );
+
+    messageStore.clear(session.sessionId);
+    sessionStore.reset(604, "codex_cli");
+  } finally {
+    globals.restore();
+  }
+});
+
 test("SessionHistoryService keeps raw failure diagnostics out of replayed message text", async () => {
   const { globals, repository, service } = createService({
     saveDocumentSessions: true,

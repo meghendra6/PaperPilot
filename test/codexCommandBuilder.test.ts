@@ -149,6 +149,20 @@ test("buildCodexExecCommand includes image flag when provided", () => {
   );
 });
 
+test("buildCodexExecCommand passes a supported native output schema path", () => {
+  const command = buildCodexExecCommand({
+    cd: "/tmp/paper-workspace",
+    model: "gpt-5.6-terra",
+    outputSchemaPath: "/tmp/paper-workspace/output-schema.json",
+  });
+
+  assert.deepEqual(command.slice(-3), [
+    "--output-schema",
+    "/tmp/paper-workspace/output-schema.json",
+    "-",
+  ]);
+});
+
 test("buildCodexResumeCommand builds the expected follow-up command", () => {
   assert.deepEqual(buildCodexResumeCommand({ cd: "/tmp/paper-workspace" }), [
     "codex",
@@ -195,7 +209,7 @@ test("buildPaperWorkspacePath creates a stable per-paper workspace path", () => 
   );
 });
 
-test("buildContextPayload assembles a prompt preview from question and selection", () => {
+test("buildContextPayload keeps source context out of the prompt preview", () => {
   const payload = buildContextPayload({
     question: "Summarize the contribution",
     responseLanguage: "Korean",
@@ -209,11 +223,14 @@ test("buildContextPayload assembles a prompt preview from question and selection
     [
       "Question: Summarize the contribution",
       "Preferred response language: Respond in Korean. Use English technical terms for technical terminology where appropriate.",
-      "Selected text: Transformers replace recurrence with attention.",
-      "Page: 3",
-      "Annotations: A1, A2",
     ].join("\n"),
   );
+  assert.equal(
+    payload.selectedText,
+    "Transformers replace recurrence with attention.",
+  );
+  assert.equal(payload.pageNumber, 3);
+  assert.deepEqual(payload.annotationIDs, ["A1", "A2"]);
 });
 
 test("deriveCodexRunState derives workspace path and status from login state", () => {
@@ -450,7 +467,11 @@ test("buildWorkspaceArtifacts assembles paper and context files", () => {
   assert.equal(artifacts.metadata.title, "Attention Is All You Need");
   assert.equal(artifacts.metadata.itemKey, "ITEMKEY");
   assert.equal(artifacts.metadata.attachmentKey, "ATTACHKEY");
-  assert.equal(artifacts.selection.promptPreview, "Question: Summarize");
+  assert.equal("promptPreview" in artifacts.selection, false);
+  assert.equal(
+    artifacts.selection.selectedText,
+    "Transformers replace recurrence with attention.",
+  );
   assert.equal(artifacts.annotations.length, 0);
   assert.match(artifacts.paperText, /Structured Markdown/);
   assert.match(artifacts.contextIndexText, /paper\.md/);

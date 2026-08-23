@@ -71,6 +71,10 @@ export function buildCodexExecCommand(
     parts.push("--image", options.imagePath);
   }
 
+  if (options.outputSchemaPath) {
+    parts.push("--output-schema", options.outputSchemaPath);
+  }
+
   maybePush(parts, Boolean(options.skipGitRepoCheck), "--skip-git-repo-check");
   parts.push("-");
   return parts;

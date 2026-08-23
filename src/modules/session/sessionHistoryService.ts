@@ -216,6 +216,7 @@ export class SessionHistoryService {
     rawEvent?: string;
     resumeSessionId?: string;
     suppressMessage?: boolean;
+    updateResumeMetadata?: boolean;
   }) {
     const session = sessionStore.get(params.itemID);
     const createdAt = this.now().toISOString();
@@ -250,7 +251,9 @@ export class SessionHistoryService {
         lastMode: params.mode,
         messages,
       };
-      applyResumeMetadata(updatedSnapshot, params);
+      if (params.updateResumeMetadata !== false) {
+        applyResumeMetadata(updatedSnapshot, params);
+      }
       await this.repository.saveSessionSnapshot({
         paperItemID: params.itemID,
         paperTitle: params.paperTitle,
@@ -269,14 +272,16 @@ export class SessionHistoryService {
       });
     }
 
-    sessionStore.update(
-      params.itemID,
-      params.mode,
-      session.threadTitle,
-      (existing) => {
-        applyResumeMetadata(existing, params);
-      },
-    );
+    if (params.updateResumeMetadata !== false) {
+      sessionStore.update(
+        params.itemID,
+        params.mode,
+        session.threadTitle,
+        (existing) => {
+          applyResumeMetadata(existing, params);
+        },
+      );
+    }
 
     return this.persistActiveSession({
       itemID: params.itemID,

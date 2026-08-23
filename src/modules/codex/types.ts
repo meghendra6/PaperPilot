@@ -7,6 +7,7 @@ export interface CodexExecOptions {
   webSearchEnabled?: boolean;
   skipGitRepoCheck?: boolean;
   imagePath?: string;
+  outputSchemaPath?: string;
 }
 
 export interface CodexResumeOptions {

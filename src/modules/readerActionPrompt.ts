@@ -15,12 +15,6 @@ export function buildReaderActionQuestion(
   action: ReaderActionName,
   text?: string,
 ) {
-  const selected = text
-    ? `
-
-Selected text:
-${text}`
-    : "";
   switch (action) {
     case "find-prior-work":
       return {
@@ -30,13 +24,14 @@ ${text}`
     case "explain":
     case "annotation-explain":
       return {
-        question: `Explain the selected passage in the context of this paper.${selected}`,
+        question: "Explain the selected passage in the context of this paper.",
         autoSubmit: true,
       };
     case "summarize":
     case "annotation-summarize":
       return {
-        question: `Summarize the selected passage in the context of this paper.${selected}`,
+        question:
+          "Summarize the selected passage in the context of this paper.",
         autoSubmit: true,
       };
     case "translate": {
@@ -44,7 +39,7 @@ ${text}`
         getPref("responseLanguage"),
       );
       return {
-        question: `Translate the selected passage into ${targetLanguage}.${selected}`,
+        question: `Translate the selected passage into ${targetLanguage}.`,
         autoSubmit: true,
       };
     }
@@ -53,7 +48,7 @@ ${text}`
     default:
       return {
         question: text
-          ? `Ask a question about the selected passage.${selected}`
+          ? "Ask a question about the selected passage."
           : "Ask a question about this annotation.",
         autoSubmit: false,
       };

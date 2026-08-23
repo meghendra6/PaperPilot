@@ -3362,6 +3362,9 @@ test("discovery prompt is zero-config, open-world, and lane explicit", () => {
   assert.match(prompt, /verifiedMain/);
   assert.match(prompt, /otherPeerReviewed/);
   assert.match(prompt, /noveltyRadar/);
+  assert.match(prompt, /metadata as JSON source data/i);
+  assert.match(prompt, /"title":"Current Paper"/);
+  assert.match(prompt, /"text":"Has this idea been studied\?"/);
 });
 
 test("search intent inference distinguishes novelty checks", () => {

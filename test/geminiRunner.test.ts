@@ -49,6 +49,8 @@ test("buildGeminiCommand streams the prompt file instead of expanding it into ar
   );
   assert.match(script, /'\/opt\/Homebrew Tools\/gemini'\\''s bin\/gemini'/);
   assert.match(script, /--skip-trust/);
+  assert.match(script, /--approval-mode plan/);
+  assert.doesNotMatch(script, /--yolo/);
   assert.match(script, /-p ''/);
   assert.match(
     script,

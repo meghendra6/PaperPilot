@@ -26,6 +26,14 @@ test("buildPaperArtifactRequest builds research brief prompts from item metadata
   assert.equal(request.label, "Research brief");
   assert.match(request.prompt, /Reader Workbench/);
   assert.match(request.prompt, /Return ONLY one strict JSON object/i);
+  assert.deepEqual(request.outputSchema.required, [
+    "summary",
+    "contributions",
+    "methods",
+    "limitations",
+    "followUpQuestions",
+    "searchQueries",
+  ]);
 });
 
 test("parsePaperArtifactCard converts research brief JSON into compact card sections", () => {

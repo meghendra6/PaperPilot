@@ -15,14 +15,12 @@ test("parseHighlightCandidatesWithRepair repairs prose-only responses via retry"
     requestText: async () => {
       requestCount += 1;
       return JSON.stringify({
-        highlights: [{ quote: "Exact repaired quote", reason: "important" }],
+        highlights: [{ quote: "Exact repaired quote", reason: "ignored" }],
       });
     },
   });
 
   assert.equal(requestCount, 1);
   assert.deepEqual(seenStatuses, ["Repairing AI response…"]);
-  assert.deepEqual(repaired, [
-    { quote: "Exact repaired quote", reason: "important" },
-  ]);
+  assert.deepEqual(repaired, [{ quote: "Exact repaired quote" }]);
 });

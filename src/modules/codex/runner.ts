@@ -1,7 +1,17 @@
 import { getPref } from "../../utils/prefs";
 import { normalizeResponseLanguage } from "../translation/responseLanguage";
+import {
+  canResumeProviderSession,
+  getRunWorkspaceTitle,
+  type RunProfile,
+} from "../ai/runProfile";
+import {
+  cliSupportsFlag,
+  type StructuredOutputSchema,
+} from "../ai/structuredOutput";
 import { getCurrentReaderContext } from "../context/readerContext";
 import { getIndexedChunks } from "../context/indexStore";
+import { findNearbyContext } from "../context/nearbyContext";
 import {
   buildCodexWorkspacePrompt,
   buildContextPayload,
@@ -69,7 +79,10 @@ export async function startCodexRunForQuestion(params: {
   resumeSessionId?: string;
   imagePath?: string;
   webSearchEnabledOverride?: boolean;
+  profile?: RunProfile;
+  outputSchema?: StructuredOutputSchema;
 }): Promise<StartedCodexRun | FailedCodexRun> {
+  const profile = params.profile || "chat";
   const executablePath = await resolveCodexExecutablePath(
     String(getPref("codexExecutablePath") || ""),
   );
@@ -84,16 +97,22 @@ export async function startCodexRunForQuestion(params: {
     getPref("codexWorkspaceRoot") || "/tmp/zotero-paper-ai",
   );
   const webSearchEnabled =
-    params.webSearchEnabledOverride ?? Boolean(getPref("codexEnableWebSearch"));
-  const sandbox = String(getPref("codexSandboxMode") || "read-only") as
-    | "read-only"
-    | "workspace-write"
-    | "danger-full-access";
+    profile === "analysis"
+      ? false
+      : profile === "discovery"
+        ? true
+        : (params.webSearchEnabledOverride ??
+          Boolean(getPref("codexEnableWebSearch")));
+  const sandbox = (
+    profile === "chat"
+      ? String(getPref("codexSandboxMode") || "read-only")
+      : "read-only"
+  ) as "read-only" | "workspace-write" | "danger-full-access";
   const approvalMode = String(getPref("codexApprovalMode") || "never");
   const workspacePath = buildPaperWorkspacePath({
     root: workspaceRoot,
     itemID: params.itemID,
-    title: params.title,
+    title: getRunWorkspaceTitle(params.title, profile),
   });
 
   await Zotero.File.createDirectoryIfMissingAsync(workspacePath);
@@ -103,13 +122,6 @@ export async function startCodexRunForQuestion(params: {
     responseLanguage: normalizeResponseLanguage(getPref("responseLanguage")),
     selectedText: params.selectedText,
     annotationIDs: params.annotationIDs,
-    surroundingText: getPref("retrievalIncludeNearbyContext")
-      ? params.selectedText
-      : undefined,
-    recentTurns: messageStore.recentRaw(params.sessionId, 3).map((message) => ({
-      role: message.role,
-      text: message.text,
-    })),
   });
   const readerContext = await getCurrentReaderContext();
   payload.pageNumber = readerContext.pageIndex;
@@ -149,6 +161,9 @@ export async function startCodexRunForQuestion(params: {
       ],
     }));
   const fullText = paperContent.fullText;
+  payload.surroundingText = getPref("retrievalIncludeNearbyContext")
+    ? findNearbyContext({ fullText, selectedText: params.selectedText })
+    : undefined;
   const indexedChunks = getIndexedChunks({
     itemKey: String(item.key || params.itemID),
     text: fullText,
@@ -191,6 +206,7 @@ export async function startCodexRunForQuestion(params: {
   const stderrPath = `${workspacePath}/codex-stderr.log`;
   const exitCodePath = `${workspacePath}/codex-exit.txt`;
   const pidPath = `${workspacePath}/codex-pid.txt`;
+  const outputSchemaPath = `${workspacePath}/output-schema.json`;
   const paperPath = `${workspacePath}/paper.txt`;
   const paperMarkdownPath = `${workspacePath}/paper.md`;
   const paperJsonPath = `${workspacePath}/paper.json`;
@@ -269,30 +285,50 @@ export async function startCodexRunForQuestion(params: {
     );
   }
 
-  const command = params.useResume
-    ? buildCodexResumeCommand(
-        {
-          cd: workspacePath,
-          sessionId: params.resumeSessionId,
-          model,
-          reasoningEffort,
-          webSearchEnabled,
-        },
-        executablePath,
-      )
-    : buildCodexExecCommand(
-        {
-          cd: workspacePath,
-          model,
-          reasoningEffort,
-          sandbox,
-          approvalMode,
-          webSearchEnabled,
-          imagePath: params.imagePath,
-          skipGitRepoCheck: true,
-        },
-        executablePath,
-      );
+  const nativeOutputSchema =
+    params.outputSchema &&
+    (await cliSupportsFlag({
+      executablePath,
+      helpArgs: ["exec", "--help"],
+      flag: "--output-schema",
+      environment: buildCodexCommandEnvironment(executablePath),
+    }))
+      ? params.outputSchema
+      : undefined;
+  if (nativeOutputSchema) {
+    await Zotero.File.putContentsAsync(
+      outputSchemaPath,
+      JSON.stringify(nativeOutputSchema, null, 2),
+      "utf-8",
+    );
+  }
+
+  const command =
+    params.useResume && canResumeProviderSession(profile)
+      ? buildCodexResumeCommand(
+          {
+            cd: workspacePath,
+            sessionId: params.resumeSessionId,
+            model,
+            reasoningEffort,
+            webSearchEnabled,
+          },
+          executablePath,
+        )
+      : buildCodexExecCommand(
+          {
+            cd: workspacePath,
+            model,
+            reasoningEffort,
+            sandbox,
+            approvalMode,
+            webSearchEnabled,
+            imagePath: params.imagePath,
+            outputSchemaPath: nativeOutputSchema ? outputSchemaPath : undefined,
+            skipGitRepoCheck: true,
+          },
+          executablePath,
+        );
 
   const script = buildBackgroundCodexShellScript({
     promptPath,
