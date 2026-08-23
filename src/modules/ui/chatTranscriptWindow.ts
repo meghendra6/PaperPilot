@@ -112,6 +112,7 @@ export function renderChatTranscriptWindow<T>(params: {
   let disposed = false;
   let suppressScroll = false;
   let scrollFrame: number | undefined;
+  let latestScrollFrame: number | undefined;
   let lastScrollTop = 0;
   let liveKey = 0;
   let suspendedBefore = range.start;
@@ -131,6 +132,39 @@ export function renderChatTranscriptWindow<T>(params: {
       scrollFrame = undefined;
       suppressScroll = false;
       lastScrollTop = params.container.scrollTop;
+    });
+  };
+
+  const cancelLatestScroll = () => {
+    if (latestScrollFrame === undefined) return;
+    view?.cancelAnimationFrame(latestScrollFrame);
+    latestScrollFrame = undefined;
+  };
+
+  const settleLatestScroll = () => {
+    const scrollToBottom = () => {
+      params.container.scrollTop = params.container.scrollHeight;
+    };
+    scrollToBottom();
+
+    if (!view?.requestAnimationFrame) {
+      suppressScroll = false;
+      lastScrollTop = params.container.scrollTop;
+      return;
+    }
+    if (scrollFrame !== undefined) {
+      view.cancelAnimationFrame(scrollFrame);
+      scrollFrame = undefined;
+    }
+    cancelLatestScroll();
+    latestScrollFrame = view.requestAnimationFrame(() => {
+      scrollToBottom();
+      latestScrollFrame = view.requestAnimationFrame(() => {
+        latestScrollFrame = undefined;
+        scrollToBottom();
+        suppressScroll = false;
+        lastScrollTop = params.container.scrollTop;
+      });
     });
   };
 
@@ -202,6 +236,7 @@ export function renderChatTranscriptWindow<T>(params: {
     focusDirection?: "earlier" | "newer",
   ): void {
     if (disposed) return;
+    cancelLatestScroll();
     const items = params.getItems();
     const normalized = normalizeRange(nextRange, items.length);
     const anchor = behavior === "preserve" ? captureAnchor() : undefined;
@@ -240,7 +275,7 @@ export function renderChatTranscriptWindow<T>(params: {
     atLatest = normalized.end >= items.length;
     rendering = false;
     if (behavior === "latest") {
-      params.container.scrollTop = params.container.scrollHeight;
+      settleLatestScroll();
     } else if (!restoreAnchor(anchor)) {
       params.container.scrollTop =
         focusDirection === "earlier" ? params.container.scrollHeight : 0;
@@ -252,7 +287,7 @@ export function renderChatTranscriptWindow<T>(params: {
         )
         ?.focus({ preventScroll: true });
     }
-    releaseScrollSuppression();
+    if (behavior === "preserve") releaseScrollSuppression();
   }
 
   const shift = (direction: "earlier" | "newer", fromButton = false) => {
@@ -367,6 +402,7 @@ export function renderChatTranscriptWindow<T>(params: {
       disposed = true;
       params.container.removeEventListener("scroll", onScroll);
       if (scrollFrame !== undefined) view?.cancelAnimationFrame(scrollFrame);
+      cancelLatestScroll();
       scrollFrame = undefined;
       if (transcriptWindows.get(params.container) === registered) {
         transcriptWindows.delete(params.container);

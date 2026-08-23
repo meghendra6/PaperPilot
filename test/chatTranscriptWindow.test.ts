@@ -11,7 +11,12 @@ import {
 } from "../src/modules/ui/chatTranscriptWindow";
 
 class FakeDocument {
-  defaultView = undefined;
+  defaultView:
+    | {
+        requestAnimationFrame(callback: () => void): number;
+        cancelAnimationFrame(frame: number): void;
+      }
+    | undefined;
 
   createElement(tagName: string) {
     return new FakeElement(tagName, this);
@@ -26,6 +31,7 @@ class FakeElement {
   parentElement: FakeElement | null = null;
   scrollTop = 0;
   clientHeight = 100;
+  layoutScrollHeight: number | undefined;
   type = "";
   private ownText = "";
   private listeners = new Map<string, Array<(...args: unknown[]) => void>>();
@@ -49,7 +55,7 @@ class FakeElement {
   }
 
   get scrollHeight() {
-    return this.children.length * 10;
+    return this.layoutScrollHeight ?? this.children.length * 10;
   }
 
   append(...children: FakeElement[]) {
@@ -271,6 +277,54 @@ test("rendered chat transcript detaches overflow while keeping suspension contro
   wrappers = container.querySelectorAll(".pp-message-wrapper");
   assert.equal(wrappers[0]?.dataset.ppTranscriptKey, "message-52");
   assert.equal(wrappers.at(-1)?.dataset.ppTranscriptKey, "message-99");
+  handle.dispose();
+});
+
+test("latest transcript follows answer height that settles after rerender", () => {
+  const doc = new FakeDocument();
+  const frames = new Map<number, () => void>();
+  let nextFrame = 1;
+  doc.defaultView = {
+    requestAnimationFrame(callback) {
+      const frame = nextFrame++;
+      frames.set(frame, callback);
+      return frame;
+    },
+    cancelAnimationFrame(frame) {
+      frames.delete(frame);
+    },
+  };
+  const runNextFrame = () => {
+    const entry = frames.entries().next().value as
+      | [number, () => void]
+      | undefined;
+    assert.ok(entry);
+    frames.delete(entry[0]);
+    entry[1]();
+  };
+  const container = new FakeElement("div", doc);
+  container.layoutScrollHeight = 120;
+
+  const handle = renderChatTranscriptWindow({
+    container: container as unknown as HTMLElement,
+    getItems: () => ["question", "long answer"],
+    getKey: (item) => item,
+    renderItem: () => {
+      const wrapper = new FakeElement("div", doc);
+      wrapper.className = "pp-message-wrapper";
+      container.append(wrapper);
+      return wrapper as unknown as HTMLElement;
+    },
+  });
+
+  assert.equal(container.scrollTop, 120);
+  container.layoutScrollHeight = 640;
+  runNextFrame();
+  assert.equal(container.scrollTop, 640);
+  runNextFrame();
+  assert.equal(container.scrollTop, 640);
+  assert.equal(frames.size, 0);
+
   handle.dispose();
 });
 
