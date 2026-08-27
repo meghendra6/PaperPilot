@@ -224,6 +224,8 @@ function buildOpenDataLoaderScript(params: {
     "xycut",
     "--table-method",
     "cluster",
+    "--markdown-page-separator",
+    "\n\n<!-- page %page-number% -->\n\n",
   ]
     .map(shellEscape)
     .join(" ");

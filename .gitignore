@@ -1,5 +1,4 @@
 build
-research-workspace/dist/
 logs
 node_modules
 pnpm-lock.yaml

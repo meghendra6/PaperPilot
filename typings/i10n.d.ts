@@ -5,6 +5,8 @@
 export type FluentMessageId =
   | 'item-section-paperpilot-head-text'
   | 'item-section-paperpilot-sidenav-tooltip'
+  | 'item-section-research-workspace-head-text'
+  | 'item-section-research-workspace-sidenav-tooltip'
   | 'pref-claude-allowed-models'
   | 'pref-claude-default-model'
   | 'pref-claude-executable-path'

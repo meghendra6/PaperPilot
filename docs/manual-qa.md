@@ -602,7 +602,22 @@ and the same fail-closed outcome.
 - [ ] Confirm no engine downloads an official PDF body merely to verify publication status
 - [ ] Confirm every discovery/Critical Read surface remains paper-scoped across two open papers
 
-## 12. Regression checks
+## 12. Integrated Research Workspace checks
+
+- [ ] Install only `paper-pilot.xpi`; confirm Zotero lists no separate PaperPilot Research Workspace extension and the Research Workspace section appears under the Paper Pilot add-on ID
+- [ ] Open the section from both a reader tab and a library item, switch the active Paper Pilot engine, and confirm runs use that engine without adding hidden turns to visible chat or changing its resume session
+- [ ] With OpenDataLoader available, confirm the paper summary reports `structured`; disable it and confirm the honest `zotero_text` fallback still loads
+- [ ] Search for an exact symbol and a conceptual mechanism; confirm hybrid search ranks relevant chunks without launching an AI CLI
+- [ ] Run claim extraction, profiled audit, reproducibility, and Paper-to-Code; confirm strict JSON is parsed, evidence links open the correct attachment/page, and parser failure permits one correction attempt
+- [ ] Start and resume Mastery 2.0, submit an answer with confidence, and confirm criterion scores, misconceptions, calibration, and the next review survive a Zotero restart
+- [ ] Select at least two library papers and build an Evidence Matrix and Literature Graph; confirm persisted coverage and graph integrity, then create and grade a cross-paper mastery question
+- [ ] Classify citation contexts and confirm unknown attachment evidence is discarded rather than made navigable
+- [ ] Export JSON and Markdown; confirm both files are written below the Zotero profile's `paperpilot-research-workspace/exports` directory
+- [ ] Start with a former companion `workspace-v3.json`; confirm papers, reports, Mastery, matrices, graphs, cross-paper state, and citation state remain while provider/executable and Monitor state are removed
+- [ ] Cancel or close the pane during a run; confirm the process is stopped, its workspace is cleaned, and the paper reservation becomes available again
+- [ ] Confirm no Research Monitor controls, state, runtime modules, add-on manifest, companion bootstrap, or second XPI are present
+
+## 13. Regression checks
 
 - [ ] Preferences pane opens without errors
 - [ ] Build artifacts install and load in Zotero

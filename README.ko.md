@@ -19,9 +19,9 @@ Paper Pilot는 Zotero 7-10 PDF 리더를 위한 AI 읽기 워크벤치입니다.
 - **Paper Mastery** — 다회차 소크라테스식 이해도 점검 후 Markdown 학습 리포트 생성
 - 자동 검증과 Zotero 9·10 런타임 스모크를 기록했으며, 더 넓은 Zotero 7-10·크로스엔진 매트릭스는 수동 QA로 유지
 
-## Research Workspace companion
+## 통합 Research Workspace
 
-이 저장소에는 별도로 설치할 수 있는 [PaperPilot Research Workspace 0.3.0 companion](./research-workspace/README.md)도 포함됩니다. 기존 Paper Pilot 리더 패널을 교체하지 않고, evidence ledger, Mastery 2.0, hybrid retrieval, reproducibility, paper-to-code, cross-paper 분석, citation stance, research monitor용 독립 item-pane section을 추가합니다. Build 및 runtime acceptance는 본체 add-on과 분리해 검증합니다.
+Research Workspace는 이제 Paper Pilot 본체에 포함되며, 동일한 로컬 엔진 선택·논문 추출·실행 생명주기를 사용합니다. 별도 item-pane section에서 로컬 hybrid search, claim–evidence ledger, profiled Critical Read, Mastery 2.0, reproducibility audit, Paper-to-Code, evidence matrix, literature graph, cross-paper mastery, citation stance, JSON/Markdown export를 제공합니다. Paper Pilot XPI 하나만 설치하면 되며 companion add-on과 Research Monitor는 없습니다.
 
 ## 스크린샷과 데모
 
