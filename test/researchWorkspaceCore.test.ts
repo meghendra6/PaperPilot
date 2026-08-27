@@ -1,5 +1,7 @@
 import { test } from "node:test";
 import * as assert from "node:assert/strict";
+import { readFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
 
 import {
   buildHybridIndex,
@@ -51,6 +53,23 @@ import { buildPaperToCodePrompt } from "../src/modules/researchWorkspace/core/pa
 import { buildEvidenceMatrixExtractionPrompt } from "../src/modules/researchWorkspace/core/evidenceMatrix/prompt";
 import { ResearchWorkspaceService } from "../src/modules/researchWorkspace/service";
 import { buildOpenDataLoaderHybridChunks } from "../src/modules/researchWorkspace/paperSource";
+
+test("integrated Research Workspace sources contain no CommonJS runtime residue", () => {
+  const sourceRoot = join(process.cwd(), "src", "modules", "researchWorkspace");
+  const collectTypeScriptFiles = (directory: string): string[] =>
+    readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+      const path = join(directory, entry.name);
+      if (entry.isDirectory()) return collectTypeScriptFiles(path);
+      return entry.isFile() && entry.name.endsWith(".ts") ? [path] : [];
+    });
+
+  for (const file of collectTypeScriptFiles(sourceRoot)) {
+    const source = readFileSync(file, "utf8");
+    assert.doesNotMatch(source, /Object\.defineProperty\(exports\b/);
+    assert.doesNotMatch(source, /\bmodule\.exports\b/);
+    assert.doesNotMatch(source, /\brequire\s*\(/);
+  }
+});
 
 test("hybrid retrieval keeps technical aliases and ranks the mechanism", () => {
   const tokens = tokenizeHybrid("qk_scale affects TTFT and TPOT", true);

@@ -58,7 +58,7 @@ function button(
   doc: Document,
   text: string,
   action: () => void | Promise<void>,
-  className = "pprw-button",
+  className = "pprw-button pp-btn pp-btn--secondary",
 ) {
   const node = element(doc, "button", className, text);
   node.type = "button";
@@ -288,7 +288,7 @@ function renderOutput(
             guarded(root, "Opening evidence", async () => {
               await openEvidence(reference, fallbackAttachmentID);
             }),
-          "pprw-evidence",
+          "pprw-evidence pp-btn pp-btn--ghost",
         ),
       );
     }
@@ -322,19 +322,20 @@ async function renderResearchWorkspaceView(root: HTMLElement, item: any) {
   root.replaceChildren();
 
   const title = element(doc, "div", "pprw-title");
-  title.append(element(doc, "h2", "", "Paper Pilot · Research Workspace"));
   title.append(
     element(
       doc,
       "p",
       "",
-      "Evidence-grounded analysis, mastery, reproducibility, and cross-paper synthesis in one add-on.",
+      "Evidence-grounded workflows for this paper and the current Zotero selection.",
     ),
   );
   root.append(title);
   const statusRow = element(doc, "div", "pprw-status-row");
   const statusNode = element(doc, "div", "pprw-status", "Loading paper…");
   statusNode.dataset.kind = "info";
+  statusNode.setAttribute("role", "status");
+  statusNode.setAttribute("aria-live", "polite");
   const cancelButton = button(
     doc,
     "Cancel",
@@ -344,12 +345,13 @@ async function renderResearchWorkspaceView(root: HTMLElement, item: any) {
       setStatus(root, "Cancelling…", "info", current.generation);
       current.abortController.abort();
     },
-    "pprw-button pprw-cancel",
+    "pprw-button pprw-cancel pp-btn pp-btn--ghost",
   );
   cancelButton.disabled = true;
   statusRow.append(statusNode, cancelButton);
   root.append(statusRow);
   const result = element(doc, "div", "pprw-result");
+  result.setAttribute("aria-live", "polite");
   root.append(result);
 
   let paper: ResearchWorkspacePaper;
