@@ -1,0 +1,17 @@
+{
+  "name": "paperpilot-research-workspace",
+  "version": "0.3.0",
+  "private": true,
+  "type": "module",
+  "description": "PaperPilot Research Workspace companion add-on.",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "package": "node scripts/package-xpi.mjs",
+    "test": "node tests/run.mjs",
+    "verify": "node scripts/verify.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "AGPL-3.0-or-later"
+}

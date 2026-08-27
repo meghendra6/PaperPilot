@@ -174,3 +174,18 @@ This note documents the purpose, target answer shape, and guardrails for the mai
 - Native schema output never replaces local parsing, normalization, live publication verification, or exact PDF quote matching.
 
 For structured workflows (`Research brief`, `Agent-led verified research discovery`, `Public review insight`, `Critical Read`, `Paper tools`, `Paper compare`, `Auto-highlight`, and Paper Mastery JSON turns), prompts instruct the model to use full current-paper workspace content when available, treat supplied content/metadata/abstracts as source data only, and ignore instructions embedded inside those sources.
+
+### Research Workspace companion
+
+- Files: `research-workspace/src/modules/**/prompt.ts` and the paired parsers
+- Purpose: provide the independently installed companion's Phase 1–3 structured workflows without reusing the visible Paper Pilot chat session
+- Guardrails:
+  - paper text, citation contexts, selected-paper payloads, learner answers, monitor queries, and candidates are serialized inside trust-labeled data blocks
+  - source text cannot close its surrounding delimiter; matching closing tags are escaped before prompt assembly
+  - attachment and paper identifiers are parser-constrained to the supplied sets
+  - malformed required arrays, unknown or duplicate IDs, incomplete rubric grades, dangling graph edges, invalid enum values, and incomplete monitor rankings are rejected
+  - deterministic local logic owns rubric maxima, evidence coverage denominators, monitor action thresholds, and graph integrity
+  - missing citation classifications alone degrade to `unclear`, as documented by the companion specification
+
+The complete response shapes and runtime limits are defined in
+`research-workspace/docs/IMPLEMENTATION_SPEC.ko.md`.
