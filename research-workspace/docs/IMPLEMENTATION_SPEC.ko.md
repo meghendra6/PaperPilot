@@ -1423,7 +1423,7 @@ Reviewed runtime SHA-256:
 294b9749f3bfe00a839d836a282d3d1dbe59df046db91c753bbf0a0763e88e0f
 ```
 
-XPI 자체의 ZIP timestamp/order는 build마다 달라질 수 있으므로 byte-identical XPI는 요구하지 않는다. 대신 required entry와 runtime bundle identity를 검사한다.
+XPI 자체의 ZIP timestamp/order는 build마다 달라질 수 있으므로 byte-identical XPI는 요구하지 않는다. 대신 required entry, runtime bundle identity, 그리고 Zotero 10이 설치 시 요구하는 HTTPS `applications.zotero.update_url`을 포함한 packaged manifest metadata를 검사한다.
 
 ---
 
@@ -1457,7 +1457,7 @@ XPI 자체의 ZIP timestamp/order는 build마다 달라질 수 있으므로 byte
 22. citation evidence attachment allowlist
 23. source-data delimiter escaping
 24. complete Paper-to-Code report surface
-25. Zotero 10 manifest compatibility range
+25. Zotero 10 compatibility range와 필수 HTTPS update URL
 
 `verify.mjs`는 추가로 다음을 검사한다.
 
@@ -1467,6 +1467,7 @@ XPI 자체의 ZIP timestamp/order는 build마다 달라질 수 있으므로 byte
 - reviewed runtime SHA equality
 - XPI package
 - required XPI entries
+- packaged manifest의 add-on ID, Zotero 10 compatibility range, HTTPS update URL
 
 ### 25.2 Current verification source of truth
 

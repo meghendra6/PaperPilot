@@ -7,6 +7,7 @@
   "applications": {
     "zotero": {
       "id": "paperpilot-research-workspace@meghendra6",
+      "update_url": "https://github.com/meghendra6/PaperPilot/releases/download/release/update.json",
       "strict_min_version": "7.0",
       "strict_max_version": "10.0.*"
     }

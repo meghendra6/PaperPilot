@@ -13,7 +13,7 @@ Expected high-level result:
 Loaded 53 runtime modules without syntax/link errors.
 25 contract regression tests pass.
 Runtime bundle matches build-support/runtime.sha256.
-Rebuilt XPI passes ZIP integrity and contains all required entries.
+Rebuilt XPI passes ZIP integrity and contains all required entries and Zotero install metadata.
 ```
 
 `build-support/runtime.sha256`는 reviewed source bundle의 integrity gate입니다. Runtime source를 변경하면 tests와 diff를 검토하고, 생성된 bundle hash를 의도적으로 갱신해야 합니다.
