@@ -14,6 +14,10 @@ import {
   unregisterReaderActionPlaceholders,
 } from "./modules/readerActions";
 import { PAPER_PILOT_PREF_PANE_ID } from "./modules/ui/runProgressCard";
+import {
+  registerResearchWorkspacePaneSection,
+  unregisterResearchWorkspacePaneSection,
+} from "./modules/researchWorkspace/view";
 
 async function onStartup() {
   await Promise.all([
@@ -25,6 +29,7 @@ async function onStartup() {
   initLocale();
   await registerPreferencePane();
   registerPaperPilotPaneSection();
+  registerResearchWorkspacePaneSection();
   registerReaderActionPlaceholders();
   await Promise.all(Zotero.getMainWindows().map(onMainWindowLoad));
 }
@@ -52,6 +57,7 @@ async function onMainWindowLoad(win: Window) {
   // Recreate toolkit bound to the active window context
   addon.data.ztoolkit = createZToolkit();
   registerPaperPilotPaneSection();
+  registerResearchWorkspacePaneSection();
 }
 
 async function registerPreferencePane() {
@@ -81,6 +87,7 @@ function onShutdown(): void {
   addon.data.pendingEngineCompletions?.clear();
   addon.data.runProgressStates?.clear();
   unregisterReaderActionPlaceholders();
+  unregisterResearchWorkspacePaneSection();
   ztoolkit.unregisterAll();
   addon.data.dialog?.window?.close();
   // Remove plugin stylesheet from all windows

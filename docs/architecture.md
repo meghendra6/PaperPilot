@@ -17,12 +17,12 @@ network client for model calls: every AI run shells out to a **local CLI**
 already installed and authenticated on the user's machine.
 
 ```text
-Zotero Reader (XUL/HTML pane)
-  └── src/modules/readerPane.ts        pane assembly and workflow wiring
-        ├── modules/ui/                header, sections, composer sizing
-        └── <engine>/controller.ts     run lifecycle + polling
-              └── <engine>/runner.ts   workspace build + process launch
-                    └── /bin/zsh -lc "<background script>"
+Zotero item panes
+  ├── src/modules/readerPane.ts              reader chat and workbench
+  └── modules/researchWorkspace/view.ts      single- and multi-paper tools
+        └── modules/researchWorkspace/       feature service and typed core
+              └── modules/ai/workspaceRun.ts
+                    └── <engine>/runner.ts   workspace build + process launch
                           └── codex | claude | gemini CLI
                                 └── reads the paper workspace directory
 ```
@@ -31,7 +31,8 @@ Zotero Reader (XUL/HTML pane)
 `src/addon.ts` holds all cross-call mutable state in `addon.data` — run states,
 pollers, per-item mode overrides, card state, session id. `src/hooks.ts` wires
 Zotero lifecycle events (`onStartup`, `onMainWindowLoad`, `onShutdown`) and
-registers the preference pane and reader pane section.
+registers the preference pane, reader pane section, and integrated Research
+Workspace section.
 
 Because state lives on `addon.data` keyed by `itemID`, **almost everything is
 paper-scoped**. Preserve that when adding features: leaking state across papers
@@ -51,22 +52,28 @@ record when needed. The full transcript remains available to session
 persistence and engine resume logic; only expensive rendered Markdown nodes are
 detached.
 
-## Research Workspace companion boundary
+## Integrated Research Workspace boundary
 
-`research-workspace/` is a second, independently installable Zotero add-on in
-this repository. It uses add-on ID
-`paperpilot-research-workspace@meghendra6` and registers its own Research
-Workspace item-pane section; it does not replace this add-on's `readerPane.ts`
-or share mutable `addon.data` state.
+`src/modules/researchWorkspace/` owns the paper- and collection-level research
+features. `view.ts` registers a second item-pane section under the Paper Pilot
+add-on ID so the multi-paper controls do not crowd `readerPane.ts`. The section
+is available from reader and library tabs, while selected-item workflows read
+the current Zotero selection.
 
-The companion owns its own Phase 1–3 feature engines, versioned workspace
-repository, Zotero/process adapter, deterministic bundle build, and XPI. Run
-`npm run verify:research-workspace` from the repository root to load all runtime
-modules, execute its contract tests, compare the bundle with the reviewed hash,
-and inspect the packaged XPI. Directly folding those engines into the main
-reader pane remains a separate integration project with the adapter and
-regression requirements documented in
-`research-workspace/docs/IMPLEMENTATION_SPEC.ko.md`.
+The feature service reuses `ai/workspaceRun.ts` with the `analysis` profile.
+It therefore follows the active Paper Pilot engine choice, never resumes or
+mutates visible-chat provider sessions, and shares the existing reservation,
+cancellation, timeout, and workspace-cleanup contracts. Paper loading reuses
+`tools/paperWorkspaceContent.ts`, preferring OpenDataLoader PDF and retaining the
+Zotero attachment-text fallback. There is no second manifest, bootstrap,
+provider configuration, subprocess adapter, or XPI.
+
+Research Workspace data remains separate from transient run workspaces at
+`<Zotero profile>/paperpilot-research-workspace/workspace-v3.json`. Schema v4
+loads the former companion's v1-v3 data in place, preserves papers, Mastery,
+reports, matrices, graphs, cross-paper sessions, and citation results, and
+drops companion provider/executable settings plus Research Monitor data. The
+legacy filename is intentional so existing data migrates without a manual move.
 
 ## Engine abstraction
 

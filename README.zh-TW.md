@@ -25,9 +25,9 @@ Paper Pilot 是一個面向 Zotero 7-10 PDF 閱讀器的 AI 閱讀工作台。�
 - **Paper Mastery** — 多輪蘇格拉底式理解度檢查，並產出 Markdown 學習報告
 - 已記錄自動化驗證及 Zotero 9、10 執行時冒煙測試；更廣泛的 Zotero 7-10 與跨引擎矩陣仍屬手動 QA
 
-## Research Workspace companion
+## 整合式 Research Workspace
 
-本倉庫也包含可獨立安裝的 [PaperPilot Research Workspace 0.3.0 companion](./research-workspace/README.md)。它不會取代現有 Paper Pilot 閱讀器面板，而是新增獨立的條目面板區段，用於 evidence ledger、Mastery 2.0、hybrid retrieval、reproducibility、paper-to-code、跨論文分析、citation stance 與 research monitor。其建置與執行時驗收會和主外掛分開驗證。
+Research Workspace 現已內建於 Paper Pilot，並共用同一套本機引擎選擇、論文擷取與執行生命週期。獨立的條目面板區段提供本機 hybrid search、claim–evidence ledger、profiled Critical Read、Mastery 2.0、reproducibility audit、Paper-to-Code、evidence matrix、literature graph、跨論文 mastery、citation stance，以及 JSON/Markdown 匯出。只需安裝一個 Paper Pilot XPI；不再提供 companion 外掛或 Research Monitor。
 
 ## 截圖與示範
 
