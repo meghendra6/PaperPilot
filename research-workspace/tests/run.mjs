@@ -823,11 +823,17 @@ await test("Paper-to-Code requires every implementation report surface", () => {
   );
 });
 
-await test("companion manifest targets the verified Zotero 10 range", () => {
+await test("companion manifest has required Zotero install metadata", () => {
   const manifest = JSON.parse(
     fs.readFileSync(new URL("../addon/manifest.json", import.meta.url), "utf8"),
   );
-  assert.equal(manifest.applications.zotero.strict_max_version, "10.0.*");
+  const zotero = manifest.applications.zotero;
+  assert.equal(zotero.strict_max_version, "10.0.*");
+  assert.equal(
+    zotero.update_url,
+    "https://github.com/meghendra6/PaperPilot/releases/download/release/update.json",
+  );
+  assert.match(zotero.update_url, /^https:\/\//);
 });
 
 console.log(`1..${count}`);

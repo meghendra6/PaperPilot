@@ -84,6 +84,23 @@ for (const entry of required) {
   if (!entries.includes(entry))
     throw new Error(`Rebuilt XPI is missing ${entry}`);
 }
+const packedManifestResult = spawnSync(
+  "unzip",
+  ["-p", rebuiltXpi, "manifest.json"],
+  { encoding: "utf8" },
+);
+if (packedManifestResult.status !== 0) {
+  throw new Error("Unable to read the rebuilt XPI manifest.");
+}
+const packedManifest = JSON.parse(packedManifestResult.stdout);
+const zoteroManifest = packedManifest.applications?.zotero;
+if (
+  zoteroManifest?.id !== "paperpilot-research-workspace@meghendra6" ||
+  !/^https:\/\//.test(zoteroManifest.update_url ?? "") ||
+  zoteroManifest.strict_max_version !== "10.0.*"
+) {
+  throw new Error("Rebuilt XPI has invalid Zotero install metadata.");
+}
 console.log(
   `Rebuilt XPI verified: ${entries.length} entries, ${fs.statSync(rebuiltXpi).size} bytes.`,
 );

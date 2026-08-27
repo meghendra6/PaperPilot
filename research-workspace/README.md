@@ -32,7 +32,7 @@ npm run verify
 1. 53개 runtime module syntax/link 검사
 2. 25개 contract regression test 실행
 3. runtime bundle 재생성 및 reviewed SHA-256 확인
-4. XPI 재패키징, ZIP integrity 및 required entry 검사
+4. XPI 재패키징, ZIP integrity, required entry 및 Zotero install metadata 검사
 
 Reviewed runtime SHA-256:
 
@@ -48,6 +48,8 @@ dist/paperpilot-research-workspace-0.3.0-rebuilt.xpi
 ```
 
 생성된 XPI는 Zotero의 **Tools → Add-ons → Install Add-on From File**에서 설치할 수 있습니다. 실제 Zotero 및 authenticated CLI 검증 항목은 구현 스펙의 runtime acceptance 절을 따릅니다.
+
+Zotero 10은 `applications.zotero.update_url`을 필수 install metadata로 검사합니다. Companion manifest는 repository release update manifest의 HTTPS URL을 포함하며, `npm run verify`는 최종 XPI 안의 이 필드를 직접 확인합니다.
 
 ## Integration note
 
