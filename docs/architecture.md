@@ -51,6 +51,23 @@ record when needed. The full transcript remains available to session
 persistence and engine resume logic; only expensive rendered Markdown nodes are
 detached.
 
+## Research Workspace companion boundary
+
+`research-workspace/` is a second, independently installable Zotero add-on in
+this repository. It uses add-on ID
+`paperpilot-research-workspace@meghendra6` and registers its own Research
+Workspace item-pane section; it does not replace this add-on's `readerPane.ts`
+or share mutable `addon.data` state.
+
+The companion owns its own Phase 1–3 feature engines, versioned workspace
+repository, Zotero/process adapter, deterministic bundle build, and XPI. Run
+`npm run verify:research-workspace` from the repository root to load all runtime
+modules, execute its contract tests, compare the bundle with the reviewed hash,
+and inspect the packaged XPI. Directly folding those engines into the main
+reader pane remains a separate integration project with the adapter and
+regression requirements documented in
+`research-workspace/docs/IMPLEMENTATION_SPEC.ko.md`.
+
 ## Engine abstraction
 
 `src/modules/ai/` is the thin layer over the three engines.

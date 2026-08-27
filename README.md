@@ -20,6 +20,10 @@ Paper Pilot is an AI reading workbench for the Zotero 7-10 PDF reader. It adds a
 - **Paper Mastery** — multi-round Socratic comprehension check with a final Markdown learning report
 - Automated verification and focused Zotero 9 and 10 runtime smokes are recorded; the broader Zotero 7-10 and cross-engine matrix remains manual QA
 
+## Research Workspace companion
+
+The repository also contains the independently installable [PaperPilot Research Workspace 0.3.0 companion](./research-workspace/README.md). It adds a separate item-pane section for evidence ledgers, Mastery 2.0, hybrid retrieval, reproducibility, paper-to-code, cross-paper analysis, citation stance, and research monitors without replacing the existing Paper Pilot reader pane. Build and runtime acceptance are tracked separately from the main add-on.
+
 ## Screenshots and demo
 
 Screenshots and demo clips are **not checked into the repository yet**.

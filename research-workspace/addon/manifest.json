@@ -1,0 +1,14 @@
+{
+  "manifest_version": 2,
+  "name": "PaperPilot Research Workspace",
+  "version": "0.3.0",
+  "description": "Phase 1–3 research intelligence workspace for PaperPilot and Zotero.",
+  "author": "Scott / PaperPilot",
+  "applications": {
+    "zotero": {
+      "id": "paperpilot-research-workspace@meghendra6",
+      "strict_min_version": "7.0",
+      "strict_max_version": "10.0.*"
+    }
+  }
+}
