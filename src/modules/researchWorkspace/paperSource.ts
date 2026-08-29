@@ -42,6 +42,18 @@ export interface ResearchWorkspaceStructuredChunk {
   };
 }
 
+export interface ResearchWorkspaceResolvedSource {
+  sourceID: string;
+  libraryID: number;
+  itemID: number;
+  itemKey: string;
+  attachmentID: number;
+  attachmentKey: string;
+  title: string;
+  paperItem: any;
+  attachment: any;
+}
+
 function record(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -112,7 +124,7 @@ export function buildOpenDataLoaderHybridChunks(params: {
   return chunks;
 }
 
-async function getItem(itemID: number) {
+export async function getResearchWorkspaceItem(itemID: number) {
   if (typeof Zotero.Items?.getAsync === "function") {
     return Zotero.Items.getAsync(itemID);
   }
@@ -128,7 +140,9 @@ async function resolvePaperAndAttachment(item: any) {
     if (!isPdf) throw new Error("The selected attachment is not a PDF.");
     const parentID = Number(item.parentItemID || 0);
     return {
-      paperItem: parentID ? (await getItem(parentID)) || item : item,
+      paperItem: parentID
+        ? (await getResearchWorkspaceItem(parentID)) || item
+        : item,
       attachment: item,
     };
   }
@@ -136,7 +150,7 @@ async function resolvePaperAndAttachment(item: any) {
   const attachments: any[] = [];
   const attachmentIDs = item?.getAttachments?.() ?? [];
   for (const attachmentID of attachmentIDs) {
-    const attachment = await getItem(Number(attachmentID));
+    const attachment = await getResearchWorkspaceItem(Number(attachmentID));
     if (
       attachment?.isPDFAttachment?.() ||
       attachment?.attachmentContentType === "application/pdf" ||
@@ -156,10 +170,10 @@ async function resolvePaperAndAttachment(item: any) {
   throw new Error("No PDF attachment found for this item.");
 }
 
-export async function loadResearchWorkspacePaper(
+export async function resolveResearchWorkspaceSource(
   item: any,
-  maxCharacters = 1_500_000,
-): Promise<ResearchWorkspacePaper> {
+): Promise<ResearchWorkspaceResolvedSource> {
+  if (!item) throw new Error("The selected Zotero item is unavailable.");
   const { paperItem, attachment } = await resolvePaperAndAttachment(item);
   const identity = createZoteroSourceIdentity({
     libraryID: attachment.libraryID ?? paperItem.libraryID,
@@ -167,7 +181,31 @@ export async function loadResearchWorkspacePaper(
     attachmentKey: attachment.key ?? attachment.id,
     standaloneAttachment: Number(paperItem.id) === Number(attachment.id),
   });
-  const sourceID = buildZoteroSourceID(identity);
+  return {
+    sourceID: buildZoteroSourceID(identity),
+    libraryID: identity.libraryID,
+    itemID: Number(paperItem.id),
+    itemKey: identity.itemKey,
+    attachmentID: Number(attachment.id),
+    attachmentKey: identity.attachmentKey,
+    title: String(paperItem.getField?.("title") || "Untitled paper"),
+    paperItem,
+    attachment,
+  };
+}
+
+export async function loadResearchWorkspacePaper(
+  item: any,
+  maxCharacters = 1_500_000,
+): Promise<ResearchWorkspacePaper> {
+  const resolved = await resolveResearchWorkspaceSource(item);
+  const { paperItem, attachment, sourceID } = resolved;
+  const identity = createZoteroSourceIdentity({
+    libraryID: resolved.libraryID,
+    itemKey: resolved.itemKey,
+    attachmentKey: resolved.attachmentKey,
+    standaloneAttachment: resolved.itemID === resolved.attachmentID,
+  });
   const content = await paperWorkspaceContentCache.getPaperContent(paperItem, {
     attachment,
     source: identity,
@@ -190,18 +228,18 @@ export async function loadResearchWorkspacePaper(
   }
 
   const paperKey = sourceID;
-  const itemKey = String(paperItem.key || paperItem.id);
-  const attachmentKey = String(attachment.key || attachment.id);
+  const itemKey = resolved.itemKey;
+  const attachmentKey = resolved.attachmentKey;
   return {
     sourceID,
     paperKey,
     libraryID: identity.libraryID,
     itemKey,
-    itemID: Number(paperItem.id),
-    attachmentID: Number(attachment.id),
+    itemID: resolved.itemID,
+    attachmentID: resolved.attachmentID,
     attachmentKey,
     contentFingerprint: content.contentFingerprint,
-    title: String(paperItem.getField?.("title") || "Untitled paper"),
+    title: resolved.title,
     context,
     extractionQuality:
       content.extractionMethod === "opendataloader-pdf"

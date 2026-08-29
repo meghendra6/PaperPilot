@@ -40,6 +40,12 @@ interface ViewRuntime {
   abortController?: AbortController;
 }
 
+export interface ResearchWorkspaceViewOptions {
+  preloadedPaper?: ResearchWorkspacePaper;
+  capturedPapers?: readonly ResearchWorkspacePaper[];
+  standalone?: boolean;
+}
+
 const runtime = new WeakMap<HTMLElement, ViewRuntime>();
 const activeAbortControllers = new Set<AbortController>();
 let registered = false;
@@ -144,7 +150,9 @@ function setBusy(root: HTMLElement, busy: boolean, generation?: symbol) {
   for (const node of Array.from(
     root.querySelectorAll("button, input, textarea"),
   ) as Array<HTMLButtonElement | HTMLInputElement | HTMLTextAreaElement>) {
-    node.disabled = node.classList.contains("pprw-cancel") ? !busy : busy;
+    node.disabled = node.classList.contains("pprw-cancel")
+      ? !busy
+      : busy || node.dataset.disabled === "true";
   }
   root.classList.toggle("is-busy", busy);
 }
@@ -297,7 +305,11 @@ function paperSummary(doc: Document, paper: ResearchWorkspacePaper) {
   return node;
 }
 
-async function renderResearchWorkspaceView(root: HTMLElement, item: any) {
+export async function renderResearchWorkspaceView(
+  root: HTMLElement,
+  item: any,
+  options: ResearchWorkspaceViewOptions = {},
+) {
   runtime.get(root)?.abortController?.abort();
   const generation = Symbol("research-workspace-render");
   runtime.set(root, { itemID: item?.id, generation, busy: false });
@@ -311,9 +323,24 @@ async function renderResearchWorkspaceView(root: HTMLElement, item: any) {
       doc,
       "p",
       "",
-      "Evidence-grounded workflows for this paper and the current Zotero selection.",
+      options.capturedPapers
+        ? "Evidence-grounded workflows for the immutable selection captured when this workspace opened."
+        : "Evidence-grounded workflows for this paper and the current Zotero selection.",
     ),
   );
+  if (!options.standalone) {
+    title.append(
+      button(
+        doc,
+        "Open Workspace",
+        async () => {
+          const { openResearchWorkspace } = await import("./window");
+          await openResearchWorkspace({ items: [item], origin: "item-pane" });
+        },
+        "pprw-button pp-btn pp-btn--primary",
+      ),
+    );
+  }
   root.append(title);
   const statusRow = element(doc, "div", "pprw-status-row");
   const statusNode = element(doc, "div", "pprw-status", "Loading paper…");
@@ -342,13 +369,23 @@ async function renderResearchWorkspaceView(root: HTMLElement, item: any) {
   let state: any;
   try {
     state = await loadResearchWorkspaceState();
-    paper = await loadResearchWorkspacePaper(
-      item,
-      state.preferences.maxPaperCharacters,
-    );
-    await registerResearchWorkspacePapers([paper]);
+    paper =
+      options.preloadedPaper ??
+      (await loadResearchWorkspacePaper(
+        item,
+        state.preferences.maxPaperCharacters,
+      ));
+    const papersToRegister = options.capturedPapers?.length
+      ? [...options.capturedPapers]
+      : [paper];
+    await registerResearchWorkspacePapers(papersToRegister);
     if (!isCurrent(root, generation)) return;
-    Object.assign(runtime.get(root)!, { paper });
+    Object.assign(runtime.get(root)!, {
+      paper,
+      ...(options.capturedPapers
+        ? { selectedPapers: [...options.capturedPapers] }
+        : {}),
+    });
     root.insertBefore(paperSummary(doc, paper), result);
     setStatus(root, "Ready.", "success", generation);
   } catch (error) {
@@ -555,7 +592,9 @@ async function renderResearchWorkspaceView(root: HTMLElement, item: any) {
       doc,
       "p",
       "pprw-muted",
-      "Select two or more Zotero items before running these tools.",
+      options.capturedPapers
+        ? `${options.capturedPapers.length} readable paper${options.capturedPapers.length === 1 ? " was" : "s were"} captured for this workspace. Start a new selection to change them.`
+        : "Select two or more Zotero items before running these tools.",
     ),
   );
   const crossQuestion = element(
@@ -570,9 +609,11 @@ async function renderResearchWorkspaceView(root: HTMLElement, item: any) {
     label: string,
   ) =>
     guarded(root, label, async ({ generation, signal, onStatus }) => {
-      const papers = await loadSelectedResearchWorkspacePapers(
-        state.preferences.maxPaperCharacters,
-      );
+      const papers = options.capturedPapers
+        ? [...options.capturedPapers]
+        : await loadSelectedResearchWorkspacePapers(
+            state.preferences.maxPaperCharacters,
+          );
       const value = await runResearchWorkspaceMultiOperation({
         papers,
         operation,
@@ -645,6 +686,14 @@ async function renderResearchWorkspaceView(root: HTMLElement, item: any) {
       ),
     ),
   );
+  if (options.capturedPapers && options.capturedPapers.length < 2) {
+    for (const node of Array.from(
+      collectionRow.querySelectorAll("button"),
+    ) as HTMLButtonElement[]) {
+      node.dataset.disabled = "true";
+      node.disabled = true;
+    }
+  }
   collection.content.append(collectionRow, crossQuestion, crossAnswer);
   root.insertBefore(collection.root, result);
 
@@ -743,4 +792,13 @@ export function unregisterResearchWorkspacePaneSection() {
     Zotero.logError?.(error);
   }
   registered = false;
+}
+
+export function disposeResearchWorkspaceView(root: HTMLElement) {
+  const current = runtime.get(root);
+  current?.abortController?.abort();
+  if (current?.abortController) {
+    activeAbortControllers.delete(current.abortController);
+  }
+  runtime.delete(root);
 }
