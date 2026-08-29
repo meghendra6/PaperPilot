@@ -1,6 +1,7 @@
 import type { ResearchWorkspacePaper } from "./paperSource";
 import {
   ResearchWorkspaceNotFoundError,
+  ResearchWorkspaceRevisionConflictError,
   type ResearchProject,
   type ResearchWorkspaceArtifact,
   type ResearchWorkspaceCatalogEntry,
@@ -8,6 +9,15 @@ import {
   type ResearchWorkspaceReviewStatus,
   type ResearchWorkspaceSourceRecord,
 } from "./persistence/contracts";
+import {
+  buildResearchWorkspaceScreeningLog,
+  createScreeningDecisionEvent,
+  currentScreeningEvent,
+  reconcileScreeningCriteria,
+  screeningDecisionMatchesInput,
+  screeningReviewStatus,
+  type RecordResearchWorkspaceScreeningDecisionInput,
+} from "./screeningLog";
 import {
   ResearchWorkspaceProjectRepository,
   researchWorkspaceSourcePathID,
@@ -49,6 +59,9 @@ export function researchWorkspaceSourceRecordFromPaper(
       standaloneAttachment: paper.itemID === paper.attachmentID,
     },
     title: paper.title,
+    ...(paper.creators?.length ? { creators: [...paper.creators] } : {}),
+    ...(paper.year ? { year: paper.year } : {}),
+    ...(paper.doi ? { doi: paper.doi } : {}),
     runtimeItemID: paper.itemID,
     runtimeAttachmentID: paper.attachmentID,
     contentFingerprint: { ...paper.contentFingerprint },
@@ -81,12 +94,22 @@ function quickProjectID(papers: readonly ResearchWorkspacePaper[]) {
 
 export class ResearchWorkspaceProjectController {
   private readonly now: () => Date;
+  private readonly screeningIDFactory: (prefix: string) => string;
 
   constructor(
     private readonly repository: ResearchWorkspaceProjectRepository,
-    options: { now?: () => Date } = {},
+    options: {
+      now?: () => Date;
+      screeningIDFactory?: (prefix: string) => string;
+    } = {},
   ) {
     this.now = options.now ?? (() => new Date());
+    this.screeningIDFactory =
+      options.screeningIDFactory ??
+      ((prefix) =>
+        `${prefix}-${Date.now().toString(36)}-${Math.random()
+          .toString(36)
+          .slice(2, 10)}`);
   }
 
   async home(): Promise<ResearchWorkspaceProjectHome> {
@@ -183,7 +206,6 @@ export class ResearchWorkspaceProjectController {
         unique.map((paper) => ({
           sourceID: paper.sourceID,
           role: "candidate" as const,
-          reviewStatus: "unreviewed" as const,
         })),
       );
     }
@@ -267,6 +289,143 @@ export class ResearchWorkspaceProjectController {
         ),
     );
     return this.details(params.projectID);
+  }
+
+  async updateScreeningProtocol(params: {
+    projectID: string;
+    expectedProjectRevision: number;
+    inclusionCriteria: string[];
+    exclusionCriteria: string[];
+  }) {
+    const bundle = await this.repository.getProject(params.projectID);
+    if (bundle.projectRevision !== params.expectedProjectRevision) {
+      throw new ResearchWorkspaceRevisionConflictError(
+        `project-${params.projectID}/project.json`,
+        params.expectedProjectRevision,
+        bundle.projectRevision,
+      );
+    }
+    const acceptedAt = timestamp(this.now);
+    await this.repository.updateProject(
+      params.projectID,
+      params.expectedProjectRevision,
+      (project) => ({
+        ...project,
+        scope: {
+          ...(project.scope?.pico ? { pico: { ...project.scope.pico } } : {}),
+          inclusionCriteria: reconcileScreeningCriteria({
+            existing: project.scope?.inclusionCriteria ?? [],
+            lines: params.inclusionCriteria,
+            kind: "inclusion",
+            acceptedAt,
+          }),
+          exclusionCriteria: reconcileScreeningCriteria({
+            existing: project.scope?.exclusionCriteria ?? [],
+            lines: params.exclusionCriteria,
+            kind: "exclusion",
+            acceptedAt,
+          }),
+        },
+      }),
+    );
+    return this.details(params.projectID);
+  }
+
+  async recordScreeningDecision(
+    input: RecordResearchWorkspaceScreeningDecisionInput,
+  ) {
+    const bundle = await this.repository.getProject(input.projectID);
+    const duplicate = bundle.members
+      .flatMap((member) => member.screeningEvents ?? [])
+      .find((event) => event.submissionID === input.submissionID);
+    if (duplicate) {
+      if (!screeningDecisionMatchesInput(duplicate, input)) {
+        throw new Error(
+          "Screening decision idempotency conflict: this submission ID was already used for different input.",
+        );
+      }
+      return this.details(input.projectID);
+    }
+    if (bundle.projectRevision !== input.expectedProjectRevision) {
+      throw new ResearchWorkspaceRevisionConflictError(
+        `project-${input.projectID}/project.json`,
+        input.expectedProjectRevision,
+        bundle.projectRevision,
+      );
+    }
+    const member = bundle.members.find(
+      (candidate) => candidate.sourceID === input.sourceID,
+    );
+    if (!member) {
+      throw new ResearchWorkspaceNotFoundError(
+        "Project member",
+        input.sourceID,
+      );
+    }
+    const sourceFile = await this.repository.getSource(input.sourceID);
+    if (!sourceFile) {
+      throw new ResearchWorkspaceNotFoundError("Source", input.sourceID);
+    }
+    if (
+      input.stage === "full-text" &&
+      sourceFile.source.availability !== "ready"
+    ) {
+      throw new Error(
+        "Full-text screening requires an available local PDF; use abstract screening or restore the source.",
+      );
+    }
+    const criteria = new Set(
+      [
+        ...(bundle.project.scope?.inclusionCriteria ?? []),
+        ...(bundle.project.scope?.exclusionCriteria ?? []),
+      ]
+        .filter((criterion) => criterion.enabled)
+        .map((criterion) => criterion.criterionID),
+    );
+    for (const criterionID of input.criterionIDs ?? []) {
+      if (!criteria.has(criterionID)) {
+        throw new Error(
+          `Unknown or disabled screening criterion ${criterionID}.`,
+        );
+      }
+    }
+    const event = createScreeningDecisionEvent({
+      input,
+      source: sourceFile.source,
+      project: bundle.project,
+      previous: currentScreeningEvent(member),
+      eventID: this.screeningIDFactory("screening-event"),
+      decidedAt: timestamp(this.now),
+    });
+    await this.repository.updateMembers(
+      input.projectID,
+      input.expectedMembersRevision,
+      (members) =>
+        members.map((candidate) =>
+          candidate.sourceID === input.sourceID
+            ? {
+                ...candidate,
+                reviewStatus: screeningReviewStatus(input.decision),
+                ...(input.decision === "exclude"
+                  ? { exclusionReason: event.reason!.text }
+                  : { exclusionReason: undefined }),
+                screeningEvents: [...(candidate.screeningEvents ?? []), event],
+                updatedAt: event.decidedAt,
+              }
+            : candidate,
+        ),
+    );
+    return this.details(input.projectID);
+  }
+
+  async screeningLog(projectID: string) {
+    const details = await this.details(projectID);
+    return buildResearchWorkspaceScreeningLog({
+      project: details.project,
+      members: details.members,
+      sources: details.sources,
+      generatedAt: timestamp(this.now),
+    });
   }
 
   async archiveProject(projectID: string) {

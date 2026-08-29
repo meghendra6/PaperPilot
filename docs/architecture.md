@@ -55,11 +55,13 @@ detached.
 
 ## Integrated Research Workspace boundary
 
-`src/modules/researchWorkspace/` owns the paper- and collection-level research
-features. `view.ts` registers a second item-pane section under the Paper Pilot
-add-on ID so the multi-paper controls do not crowd `readerPane.ts`. The section
-is available from reader and library tabs, while selected-item workflows read
-the current Zotero selection.
+`src/modules/researchWorkspace/` owns the paper- and project-level research
+features. `view.ts` keeps a compact item-pane launcher, while
+`projectWindow.ts` owns the persistent modeless project window. Library
+selection is captured once by `selectionCapture.ts` and handed to the project
+controller; project actions never depend on a later live-selection read. This
+keeps the workflow reachable when Zotero replaces the ordinary item pane for a
+multi-selection.
 
 The feature service reuses `ai/workspaceRun.ts` with the `analysis` profile.
 It therefore follows the active Paper Pilot engine choice, never resumes or
@@ -84,12 +86,22 @@ bounding boxes are never promoted. Verified references are navigable through
 and never scans other libraries. Unverified, not-found, and unavailable-source
 references remain labelled but have no Open in PDF action.
 
-Research Workspace data remains separate from transient run workspaces at
-`<Zotero profile>/paperpilot-research-workspace/workspace-v3.json`. Schema v4
-loads the former companion's v1-v3 data in place, preserves papers, Mastery,
-reports, matrices, graphs, cross-paper sessions, and citation results, and
-drops companion provider/executable settings plus Research Monitor data. The
-legacy filename is intentional so existing data migrates without a manual move.
+Research Workspace durable state remains separate from transient run
+workspaces under `<Zotero profile>/paperpilot-research-workspace/`. The current
+store uses a revisioned `catalog-v1.json`, shared source records, and one
+directory per project containing `project.json`, `members.json`, artifacts, and
+runs. Writes are atomic and revision guarded. The legacy `workspace-v3.json`
+is read only by the migration adapter, which preserves supported papers and
+artifacts while dropping companion provider settings and Research Monitor
+state.
+
+Screening is a local user-decision workflow. Project criteria live in the
+project scope; each include, exclude, or maybe action appends an immutable event
+to the member record with a protocol snapshot, source snapshot, stage, reason,
+and supersession link. Deterministic DOI or exact title-and-year duplicate
+signals and missing-PDF signals are advisory only. The semantic review-log
+projection and JSON/CSV exports include the complete decision history; they do
+not invoke a model or silently finalize a decision.
 
 ## Engine abstraction
 

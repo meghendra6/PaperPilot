@@ -150,6 +150,32 @@ export interface ResearchWorkspaceCitationView {
   correctionCount: number;
 }
 
+export interface ResearchWorkspaceReviewLogView {
+  kind: "review-log";
+  rows: Array<{
+    sourceID: string;
+    title: string;
+    decision: string;
+    stage: string;
+    reason: string;
+    decidedAt: string;
+    legacy: boolean;
+    issues: string[];
+    historyCount: number;
+  }>;
+  summary: {
+    total?: number;
+    unreviewed?: number;
+    include?: number;
+    exclude?: number;
+    maybe?: number;
+    decisions?: number;
+    duplicateSignals?: number;
+    missingPDFSignals?: number;
+  };
+  limitations: string[];
+}
+
 export interface ResearchWorkspaceGenericView {
   kind: "generic";
   value: unknown;
@@ -161,6 +187,7 @@ export type ResearchWorkspaceArtifactView =
   | ResearchWorkspaceSynthesisView
   | ResearchWorkspaceMasteryView
   | ResearchWorkspaceCitationView
+  | ResearchWorkspaceReviewLogView
   | ResearchWorkspaceGenericView;
 
 export interface ResearchWorkspaceArtifactRendererOptions {
@@ -395,6 +422,53 @@ function citationView(
   };
 }
 
+function reviewLogView(
+  value: UnknownRecord,
+): ResearchWorkspaceReviewLogView | undefined {
+  if (
+    value.kind !== "research-workspace-review-log" ||
+    !Array.isArray(value.rows)
+  ) {
+    return undefined;
+  }
+  const summary = record(value.summary) ?? {};
+  return {
+    kind: "review-log",
+    rows: value.rows
+      .map((entry) => record(entry))
+      .filter((entry): entry is UnknownRecord => Boolean(entry))
+      .map((row) => {
+        const current = record(row.current);
+        const issues = (Array.isArray(row.issues) ? row.issues : [])
+          .map((entry) => record(entry))
+          .filter((entry): entry is UnknownRecord => Boolean(entry))
+          .map((issue) => text(issue.kind, "review issue"));
+        return {
+          sourceID: text(row.sourceID, ""),
+          title: text(row.title, row.sourceID ? String(row.sourceID) : "Paper"),
+          decision: text(current?.decision ?? row.legacyDecision, "unreviewed"),
+          stage: text(current?.stage, "not recorded"),
+          reason: text(record(current?.reason)?.text, "—"),
+          decidedAt: text(current?.decidedAt, "—"),
+          legacy: !current && Boolean(row.legacyDecision),
+          issues,
+          historyCount: Array.isArray(row.history) ? row.history.length : 0,
+        };
+      }),
+    summary: {
+      total: finite(summary.total),
+      unreviewed: finite(summary.unreviewed),
+      include: finite(summary.include),
+      exclude: finite(summary.exclude),
+      maybe: finite(summary.maybe),
+      decisions: finite(summary.decisions),
+      duplicateSignals: finite(summary.duplicateSignals),
+      missingPDFSignals: finite(summary.missingPDFSignals),
+    },
+    limitations: stringList(value.limitations),
+  };
+}
+
 /**
  * Produces a user-facing projection without exposing an unanswered question's
  * hidden grading rubric. The full rubric remains in the private persisted
@@ -602,6 +676,13 @@ export function createResearchWorkspaceArtifactView(
 ): ResearchWorkspaceArtifactView {
   const candidate = record(value);
   if (!candidate) return { kind: "generic", value };
+  if (
+    artifactType === "review-log" ||
+    candidate.kind === "research-workspace-review-log"
+  ) {
+    const reviewLog = reviewLogView(candidate);
+    if (reviewLog) return reviewLog;
+  }
   if (artifactType === "evidence-matrix" || candidate.matrix) {
     const matrix = matrixView(candidate);
     if (matrix) return matrix;
@@ -1153,6 +1234,77 @@ function renderCitation(
   return root;
 }
 
+function renderReviewLog(doc: Document, view: ResearchWorkspaceReviewLogView) {
+  const root = element(doc, "div", "pprw-render pprw-render--review-log");
+  const metrics = element(doc, "div", "pprw-render-metrics");
+  metrics.append(
+    metric(doc, "Papers", text(view.summary.total)),
+    metric(doc, "Included", text(view.summary.include)),
+    metric(doc, "Excluded", text(view.summary.exclude)),
+    metric(doc, "Maybe", text(view.summary.maybe)),
+    metric(doc, "Unreviewed", text(view.summary.unreviewed)),
+    metric(doc, "Decision events", text(view.summary.decisions)),
+  );
+  root.append(metrics);
+  const issueCount =
+    (view.summary.duplicateSignals ?? 0) +
+    (view.summary.missingPDFSignals ?? 0);
+  if (issueCount) {
+    root.append(
+      element(
+        doc,
+        "p",
+        "pprw-render-note pprw-render-note--warning",
+        `${issueCount} local duplicate or missing-PDF signal${issueCount === 1 ? "" : "s"} require review. Signals never change decisions automatically.`,
+      ),
+    );
+  }
+  const scroll = element(doc, "div", "pprw-matrix-scroll");
+  const table = element(doc, "table", "pprw-matrix-table");
+  const head = element(doc, "thead");
+  const heading = element(doc, "tr");
+  for (const label of ["Paper", "Stage", "Decision", "Reason", "History"]) {
+    heading.append(element(doc, "th", "", label));
+  }
+  head.append(heading);
+  table.append(head);
+  const body = element(doc, "tbody");
+  for (const row of view.rows) {
+    const line = element(doc, "tr");
+    const paper = element(doc, "td");
+    paper.append(element(doc, "strong", "", row.title));
+    if (row.issues.length) {
+      const flags = element(doc, "div", "pprw-render-inline");
+      for (const issue of row.issues) {
+        flags.append(badge(doc, humanize(issue), "warning"));
+      }
+      paper.append(flags);
+    }
+    line.append(
+      paper,
+      element(doc, "td", "", humanize(row.stage)),
+      element(doc, "td", "", humanize(row.decision)),
+      element(doc, "td", "", row.reason),
+      element(
+        doc,
+        "td",
+        "",
+        row.legacy
+          ? "Legacy current state · no event history"
+          : `${row.historyCount} event${row.historyCount === 1 ? "" : "s"}`,
+      ),
+    );
+    body.append(line);
+  }
+  table.append(body);
+  scroll.append(table);
+  root.append(scroll);
+  if (view.limitations.length) {
+    root.append(renderStringList(doc, "Audit boundary", view.limitations));
+  }
+  return root;
+}
+
 const HIDDEN_TECHNICAL_FIELDS = new Set([
   "id",
   "schemaVersion",
@@ -1261,6 +1413,7 @@ export function renderResearchWorkspaceArtifactValue(
   if (view.kind === "synthesis") return renderSynthesis(doc, view, options);
   if (view.kind === "mastery") return renderMastery(doc, view, options);
   if (view.kind === "citation") return renderCitation(doc, view, options);
+  if (view.kind === "review-log") return renderReviewLog(doc, view);
   const root = element(doc, "div", "pprw-render pprw-render--generic");
   root.append(renderGenericValue(doc, view.value, options));
   return root;

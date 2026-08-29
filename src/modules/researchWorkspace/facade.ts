@@ -44,6 +44,11 @@ import {
   applyCitationStanceCorrection,
   type CitationStanceValue,
 } from "./core/citationStance/corrections";
+import {
+  serializeResearchWorkspaceScreeningLogCsv,
+  type RecordResearchWorkspaceScreeningDecisionInput,
+  type ResearchWorkspaceScreeningLog,
+} from "./screeningLog";
 import type { WorkspaceSupplementalFiles } from "../workspace/supplementalFiles";
 import {
   exportResearchWorkspaceTextFile,
@@ -952,7 +957,7 @@ export async function correctResearchWorkspaceCitationStance(params: {
 function projectMarkdown(
   value: Awaited<
     ReturnType<ResearchWorkspaceProjectController["exportProject"]>
-  >,
+  > & { reviewLog?: ResearchWorkspaceScreeningLog },
 ) {
   const lines = [
     `# ${value.project.name}`,
@@ -965,6 +970,30 @@ function projectMarkdown(
     `Artifacts: ${value.artifacts.length}`,
     "",
   ];
+  if (value.reviewLog) {
+    lines.push(
+      "## Screening & exclusion log",
+      "",
+      `Included: ${value.reviewLog.summary.include}`,
+      `Excluded: ${value.reviewLog.summary.exclude}`,
+      `Maybe: ${value.reviewLog.summary.maybe}`,
+      `Unreviewed: ${value.reviewLog.summary.unreviewed}`,
+      `Decision events: ${value.reviewLog.summary.decisions}`,
+      "",
+      "| Paper | Decision | Stage | Reason |",
+      "| --- | --- | --- | --- |",
+      ...value.reviewLog.rows.map((row) => {
+        const decision =
+          row.current?.decision ?? row.legacyDecision ?? "unreviewed";
+        const stage = row.current?.stage ?? "—";
+        const reason = row.current?.reason?.text ?? "—";
+        const cell = (entry: string) =>
+          entry.replace(/\|/g, "\\|").replace(/\r?\n/g, " ");
+        return `| ${cell(row.title)} | ${cell(decision)} | ${cell(stage)} | ${cell(reason)} |`;
+      }),
+      "",
+    );
+  }
   for (const artifact of value.artifacts) {
     const publicPayload = createResearchWorkspacePublicPayload(
       artifact.payload,
@@ -1002,9 +1031,13 @@ export async function exportIntegratedResearchWorkspace(params: {
   const projectID =
     params.projectID ?? (await prepareProject(undefined, [params.anchor!]));
   params.onStatus?.("Preparing project-scoped export…");
-  const exported = await projectController().exportProject(projectID);
+  const [exported, reviewLog] = await Promise.all([
+    projectController().exportProject(projectID),
+    projectController().screeningLog(projectID),
+  ]);
   const publicExport = {
     ...exported,
+    reviewLog,
     artifacts: exported.artifacts.map((artifact) => ({
       ...artifact,
       payload: createResearchWorkspacePublicPayload(
@@ -1034,6 +1067,45 @@ export function loadResearchWorkspaceHome() {
 
 export function loadResearchWorkspaceProject(projectID: string) {
   return projectController().details(projectID);
+}
+
+export function loadResearchWorkspaceScreeningLog(projectID: string) {
+  return projectController().screeningLog(projectID);
+}
+
+export function updateResearchWorkspaceScreeningProtocol(params: {
+  projectID: string;
+  expectedProjectRevision: number;
+  inclusionCriteria: string[];
+  exclusionCriteria: string[];
+}) {
+  return projectController().updateScreeningProtocol(params);
+}
+
+export function recordResearchWorkspaceScreeningDecision(
+  params: RecordResearchWorkspaceScreeningDecisionInput,
+) {
+  return projectController().recordScreeningDecision(params);
+}
+
+export async function exportResearchWorkspaceScreeningLog(projectID: string) {
+  const [details, log] = await Promise.all([
+    projectController().details(projectID),
+    projectController().screeningLog(projectID),
+  ]);
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const baseName = details.project.name.replace(/[^a-zA-Z0-9._-]+/g, "-");
+  const [jsonPath, csvPath] = await Promise.all([
+    exportResearchWorkspaceTextFile(
+      `${baseName}-screening-log-${stamp}.json`,
+      `${JSON.stringify(log, null, 2)}\n`,
+    ),
+    exportResearchWorkspaceTextFile(
+      `${baseName}-screening-log-${stamp}.csv`,
+      serializeResearchWorkspaceScreeningLogCsv(log),
+    ),
+  ]);
+  return { jsonPath, csvPath, log };
 }
 
 export function createResearchWorkspaceProject(params: {

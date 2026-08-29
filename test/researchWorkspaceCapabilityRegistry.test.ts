@@ -80,6 +80,17 @@ test("Quick Compare is a versioned Evidence Matrix preset", () => {
   );
 });
 
+test("Screening Log is an explicit local project workflow", () => {
+  const screening = getResearchWorkspaceCapability("screening-log");
+  assert.equal(screening.sourceScope, "project");
+  assert.equal(screening.entrypoint, "research-workspace");
+  assert.equal(screening.operation, "screening-log");
+  assert.equal(screening.renderer, "review-log");
+  assert.equal(screening.artifactType, undefined);
+  assert.equal(screening.editable, true);
+  assert.equal(screening.exportable, true);
+});
+
 test("canonical Reader bridge opens the captured PDF before activating one workflow", async () => {
   const events: string[] = [];
   let searches = 0;
@@ -150,4 +161,21 @@ test("workspace UI exposes canonical names and no duplicate v2 workflow", () => 
     /Profiled Critical Read|Profiled audit|Paper Mastery 2\.0/,
   );
   assert.doesNotMatch(source, /startOrResumeResearchWorkspaceMastery/);
+});
+
+test("project UI exposes the explicit screening workflow without prompt dialogs", () => {
+  const source = readFileSync(
+    join(
+      process.cwd(),
+      "src",
+      "modules",
+      "researchWorkspace",
+      "projectWindowView.ts",
+    ),
+    "utf8",
+  );
+  assert.match(source, /Screening & exclusion log/i);
+  assert.match(source, /Record decision/);
+  assert.match(source, /Export screening JSON \+ CSV/);
+  assert.doesNotMatch(source, /prompt\(\s*["']Reason for exclusion/);
 });

@@ -78,6 +78,53 @@ export type ResearchWorkspaceReviewStatus =
   | "included"
   | "excluded";
 
+export type ResearchWorkspaceScreeningStage = "abstract" | "full-text";
+
+export type ResearchWorkspaceScreeningDecision =
+  | "include"
+  | "exclude"
+  | "maybe";
+
+export type ResearchWorkspaceScreeningReasonCode =
+  | "criterion"
+  | "duplicate"
+  | "missing-pdf"
+  | "other";
+
+export interface ResearchWorkspaceScreeningCriterionSnapshot {
+  criterionID: string;
+  kind: "inclusion" | "exclusion";
+  text: string;
+}
+
+export interface ResearchWorkspaceScreeningSourceSnapshot {
+  title: string;
+  doi?: string;
+  year?: number;
+  availability: ResearchWorkspaceSourceRecord["availability"];
+  contentFingerprint?: string;
+}
+
+export interface ResearchWorkspaceScreeningDecisionEvent {
+  eventID: string;
+  submissionID: string;
+  sourceID: string;
+  stage: ResearchWorkspaceScreeningStage;
+  decision: ResearchWorkspaceScreeningDecision;
+  reason?: {
+    code: ResearchWorkspaceScreeningReasonCode;
+    text: string;
+    criterionIDs?: string[];
+  };
+  note?: string;
+  actor: "local-user";
+  protocolFingerprint: string;
+  protocolSnapshot: ResearchWorkspaceScreeningCriterionSnapshot[];
+  sourceSnapshot: ResearchWorkspaceScreeningSourceSnapshot;
+  decidedAt: string;
+  supersedesEventID?: string;
+}
+
 export interface ResearchWorkspaceProjectMember {
   sourceID: string;
   role: ResearchWorkspaceMemberRole;
@@ -86,6 +133,7 @@ export interface ResearchWorkspaceProjectMember {
   addedAt: string;
   updatedAt: string;
   userNote?: string;
+  screeningEvents?: ResearchWorkspaceScreeningDecisionEvent[];
 }
 
 export interface ResearchWorkspaceSourceRecord {
@@ -391,5 +439,35 @@ export function assertResearchWorkspaceMember(
     throw new Error("Project member SourceID is required.");
   if (member.reviewStatus === "excluded" && !member.exclusionReason?.trim()) {
     throw new Error("Excluded project members require an exclusion reason.");
+  }
+  const currentScreening = member.screeningEvents?.at(-1);
+  if (currentScreening) {
+    const expectedStatus =
+      currentScreening.decision === "include"
+        ? "included"
+        : currentScreening.decision === "exclude"
+          ? "excluded"
+          : "maybe";
+    if (member.reviewStatus !== expectedStatus) {
+      throw new Error(
+        "Project member status does not match its screening history.",
+      );
+    }
+    if (
+      currentScreening.decision === "exclude" &&
+      member.exclusionReason?.trim() !== currentScreening.reason?.text.trim()
+    ) {
+      throw new Error(
+        "Project member exclusion reason does not match its screening history.",
+      );
+    }
+    if (
+      currentScreening.decision !== "exclude" &&
+      member.exclusionReason !== undefined
+    ) {
+      throw new Error(
+        "Included or maybe project members cannot retain an exclusion reason.",
+      );
+    }
   }
 }

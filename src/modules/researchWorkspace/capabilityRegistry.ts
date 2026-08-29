@@ -13,7 +13,8 @@ export type ResearchWorkspaceCapabilityID =
   | "project-synthesis"
   | "cross-paper-mastery"
   | "citation-context"
-  | "citation-stance";
+  | "citation-stance"
+  | "screening-log";
 
 export type ResearchWorkspaceSourceScope =
   | "single-source"
@@ -29,7 +30,8 @@ export type ResearchWorkspaceRendererID =
   | "evidence-matrix"
   | "relationship-graph"
   | "synthesis"
-  | "mastery";
+  | "mastery"
+  | "review-log";
 
 export interface ResearchWorkspaceCapabilityDefinition {
   id: ResearchWorkspaceCapabilityID;
@@ -231,6 +233,21 @@ const definitions: readonly ResearchWorkspaceCapabilityDefinition[] = [
     renderer: "mastery",
     reviewable: true,
     editable: false,
+    exportable: true,
+  },
+  {
+    id: "screening-log",
+    label: "Screening & Exclusion Log",
+    sourceScope: "project",
+    entrypoint: "research-workspace",
+    operation: "screening-log",
+    operationVersion: "screening-log-v1",
+    promptVersion: "local-user-decision-v1",
+    parserVersion: "screening-log-parser-v1",
+    schemaVersion: "screening-log-v1",
+    renderer: "review-log",
+    reviewable: true,
+    editable: true,
     exportable: true,
   },
   {
