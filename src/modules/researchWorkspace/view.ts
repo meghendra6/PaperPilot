@@ -11,7 +11,9 @@ import type { EvidenceReferenceV2 } from "./evidenceVerification";
 import { validateLiteratureGraph } from "./core/literatureGraph/graph";
 import {
   classifyResearchWorkspaceCitations,
+  correctResearchWorkspaceCitationStance,
   exportIntegratedResearchWorkspace,
+  extractResearchWorkspaceCitationContexts,
   loadResearchWorkspaceState,
   runResearchWorkspaceMultiOperation,
   runResearchWorkspaceProjectSynthesis,
@@ -21,6 +23,8 @@ import {
   type ResearchWorkspaceMultiOperation,
   type ResearchWorkspaceSingleOperation,
 } from "./facade";
+import type { CitationContextExtractionResult } from "./citationContextExtraction";
+import type { CitationStanceValue } from "./core/citationStance/corrections";
 import {
   loadResearchWorkspacePaper,
   type ResearchWorkspacePaper,
@@ -40,6 +44,9 @@ interface ViewRuntime {
   crossSessionRevision?: number;
   crossSubmissionID?: string;
   selectedPapers?: ResearchWorkspacePaper[];
+  citationExtraction?: CitationContextExtractionResult;
+  citationPayload?: Record<string, any>;
+  citationCorrectionSubmissionID?: string;
   projectID?: string;
   abortController?: AbortController;
 }
@@ -94,6 +101,19 @@ function textarea(doc: Document, placeholder: string, rows = 5) {
   return node;
 }
 
+function select(
+  doc: Document,
+  options: Array<{ value: string; label: string }>,
+) {
+  const node = element(doc, "select", "pprw-input");
+  for (const option of options) {
+    const item = element(doc, "option", "", option.label);
+    item.value = option.value;
+    node.append(item);
+  }
+  return node;
+}
+
 function details(doc: Document, title: string, open = false) {
   const root = element(doc, "details", "pprw-section");
   root.open = open;
@@ -135,8 +155,13 @@ function setBusy(root: HTMLElement, busy: boolean, generation?: symbol) {
   if (!current) return;
   current.busy = busy;
   for (const node of Array.from(
-    root.querySelectorAll("button, input, textarea"),
-  ) as Array<HTMLButtonElement | HTMLInputElement | HTMLTextAreaElement>) {
+    root.querySelectorAll("button, input, textarea, select"),
+  ) as Array<
+    | HTMLButtonElement
+    | HTMLInputElement
+    | HTMLTextAreaElement
+    | HTMLSelectElement
+  >) {
     node.disabled = node.classList.contains("pprw-cancel")
       ? !busy
       : busy || node.dataset.disabled === "true";
@@ -658,32 +683,207 @@ export async function renderResearchWorkspaceView(
   root.insertBefore(collection.root, result);
 
   const citations = details(doc, "Citation stance", false);
-  const citationInput = textarea(
+  const citationPrivacy = element(
     doc,
-    `JSON array: [{"id":"c1","citingPaperKey":"${paper.paperKey}","citedPaperKey":"OTHER","context":"...","evidence":[]}]`,
-    7,
+    "p",
+    "pprw-muted",
+    "Extraction and Zotero matching stay local. Stance analysis sends only the displayed citation snippets to your selected CLI provider after you approve it; it never sends the full PDF or bibliography.",
   );
+  const citationConsent = element(doc, "input", "");
+  citationConsent.type = "checkbox";
+  citationConsent.disabled = true;
+  citationConsent.dataset.disabled = "true";
+  const citationConsentLabel = element(doc, "label", "pprw-check-row");
+  citationConsentLabel.append(
+    citationConsent,
+    element(
+      doc,
+      "span",
+      "",
+      "I reviewed the extracted snippets and approve sending only those snippets for stance analysis.",
+    ),
+  );
+  const correctionContext = select(doc, [
+    { value: "", label: "Run stance analysis before correcting" },
+  ]);
+  const correctionStance = select(doc, [
+    { value: "supporting", label: "Supporting" },
+    { value: "contrasting", label: "Contrasting" },
+    { value: "methodological", label: "Methodological" },
+    { value: "mentioning", label: "Mentioning" },
+    { value: "background", label: "Background" },
+    { value: "uncertain", label: "Uncertain" },
+  ]);
+  const correctionReason = input(doc, "Why should this stance change?");
+  const analyzeCitationsButton = button(doc, "Analyze approved snippets", () =>
+    guarded(
+      root,
+      "Classifying approved citation contexts",
+      async ({ generation, signal, onStatus }) => {
+        const current = runtime.get(root);
+        if (!current) return;
+        const extraction = current.citationExtraction;
+        if (!extraction?.contexts.length) {
+          throw new Error("Extract citation contexts first.");
+        }
+        if (!citationConsent.checked) {
+          throw new Error("Review and approve the extracted snippets first.");
+        }
+        const papers = current.selectedPapers?.length
+          ? current.selectedPapers
+          : [paper];
+        const classified = await classifyResearchWorkspaceCitations({
+          anchor: paper,
+          papers,
+          contexts: extraction.contexts,
+          extraction,
+          approvedForModel: true,
+          projectID: options.projectID,
+          signal,
+          onStatus,
+        });
+        const value = {
+          ...classified,
+          schemaVersion: 1,
+          revision: Number(classified.revision ?? 0),
+          contexts: extraction.contexts,
+          sourceSnapshot: extraction.sourceSnapshot,
+          extractorVersion: extraction.extractorVersion,
+          coverage: {
+            ...extraction.coverage,
+            ...(classified.coverage ?? {}),
+          },
+          corrections: classified.corrections ?? [],
+        };
+        current.citationPayload = value;
+        current.citationCorrectionSubmissionID = undefined;
+        correctionContext.replaceChildren();
+        for (const context of extraction.contexts) {
+          const option = element(
+            doc,
+            "option",
+            "",
+            `${context.exactSentence.slice(0, 100)}${
+              context.exactSentence.length > 100 ? "…" : ""
+            }`,
+          );
+          option.value = context.id;
+          correctionContext.append(option);
+        }
+        delete correctionContext.dataset.disabled;
+        delete correctionStance.dataset.disabled;
+        delete correctionReason.dataset.disabled;
+        delete correctCitationButton.dataset.disabled;
+        correctionContext.disabled = false;
+        correctionStance.disabled = false;
+        correctionReason.disabled = false;
+        correctCitationButton.disabled = false;
+        renderOutput(
+          root,
+          "Citation stance review signal",
+          value,
+          paper.attachmentID,
+          generation,
+        );
+      },
+    ),
+  );
+  analyzeCitationsButton.disabled = true;
+  analyzeCitationsButton.dataset.disabled = "true";
+  citationConsent.addEventListener("change", () => {
+    const hasContexts = Boolean(
+      runtime.get(root)?.citationExtraction?.contexts.length,
+    );
+    const enabled = citationConsent.checked && hasContexts;
+    analyzeCitationsButton.disabled = !enabled;
+    if (enabled) delete analyzeCitationsButton.dataset.disabled;
+    else analyzeCitationsButton.dataset.disabled = "true";
+  });
+  const correctCitationButton = button(doc, "Save stance correction", () =>
+    guarded(
+      root,
+      "Saving citation stance correction",
+      async ({ generation, signal, onStatus }) => {
+        const current = runtime.get(root);
+        if (!current?.citationPayload) {
+          throw new Error("Run stance analysis before correcting it.");
+        }
+        if (!correctionContext.value) {
+          throw new Error("Choose a citation context to correct.");
+        }
+        if (!correctionReason.value.trim()) {
+          throw new Error("Explain why the stance should change.");
+        }
+        current.citationCorrectionSubmissionID ??=
+          typeof globalThis.crypto?.randomUUID === "function"
+            ? `citation-correction-${globalThis.crypto.randomUUID()}`
+            : `citation-correction-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+        const papers = current.selectedPapers?.length
+          ? current.selectedPapers
+          : [paper];
+        const value = await correctResearchWorkspaceCitationStance({
+          papers,
+          payload: current.citationPayload,
+          contextID: correctionContext.value,
+          stance: correctionStance.value as CitationStanceValue,
+          reason: correctionReason.value,
+          expectedRevision: Number(current.citationPayload.revision ?? 0),
+          submissionID: current.citationCorrectionSubmissionID,
+          projectID: options.projectID,
+          signal,
+          onStatus,
+        });
+        current.citationPayload = value;
+        current.citationCorrectionSubmissionID = undefined;
+        correctionReason.value = "";
+        renderOutput(
+          root,
+          "Citation stance · corrected",
+          value,
+          paper.attachmentID,
+          generation,
+        );
+      },
+    ),
+  );
+  for (const control of [
+    correctionContext,
+    correctionStance,
+    correctionReason,
+    correctCitationButton,
+  ]) {
+    control.disabled = true;
+    control.dataset.disabled = "true";
+  }
   citations.content.append(
-    citationInput,
-    button(doc, "Classify contexts", () =>
+    citationPrivacy,
+    button(doc, "Extract citation contexts locally", () =>
       guarded(
         root,
-        "Classifying citation contexts",
+        "Extracting local citation contexts",
         async ({ generation, signal, onStatus }) => {
-          const parsed = JSON.parse(citationInput.value);
-          if (!Array.isArray(parsed)) {
-            throw new Error("Citation input must be a JSON array.");
-          }
-          const value = await classifyResearchWorkspaceCitations({
-            anchor: paper,
-            contexts: parsed,
+          const current = runtime.get(root);
+          if (!current) return;
+          const papers = current.selectedPapers?.length
+            ? current.selectedPapers
+            : [paper];
+          const value = await extractResearchWorkspaceCitationContexts({
+            papers,
             projectID: options.projectID,
             signal,
             onStatus,
           });
+          current.citationExtraction = value;
+          current.citationPayload = undefined;
+          citationConsent.checked = false;
+          citationConsent.disabled = !value.contexts.length;
+          if (value.contexts.length) delete citationConsent.dataset.disabled;
+          else citationConsent.dataset.disabled = "true";
+          analyzeCitationsButton.disabled = true;
+          analyzeCitationsButton.dataset.disabled = "true";
           renderOutput(
             root,
-            "Citation stance",
+            "Local citation context review",
             value,
             paper.attachmentID,
             generation,
@@ -691,6 +891,18 @@ export async function renderResearchWorkspaceView(
         },
       ),
     ),
+    citationConsentLabel,
+    analyzeCitationsButton,
+    element(
+      doc,
+      "p",
+      "pprw-muted",
+      "Stance is a review signal, not a verdict about whether a cited claim is true.",
+    ),
+    correctionContext,
+    correctionStance,
+    correctionReason,
+    correctCitationButton,
   );
   root.insertBefore(citations.root, result);
 

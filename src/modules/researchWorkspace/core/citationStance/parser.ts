@@ -4,8 +4,11 @@ import * as types_1 from "../evidence/types";
 const STANCES = new Set([
   "supporting",
   "contrasting",
-  "mentioning",
   "methodological",
+  "background",
+  "uncertain",
+  // Read compatibility for artifacts written before the canonical taxonomy.
+  "mentioning",
   "unclear",
 ]);
 function parse(response, contexts, allowedAttachments) {
@@ -34,9 +37,10 @@ function parse(response, contexts, allowedAttachments) {
     if (seen.has(contextId))
       throw new Error(`Duplicate citation context ${contextId}`);
     seen.add(contextId);
-    const stance = String(object.stance ?? "unclear");
-    if (!STANCES.has(stance))
-      throw new Error(`Invalid citation stance ${stance}`);
+    const rawStance = String(object.stance ?? "uncertain");
+    if (!STANCES.has(rawStance))
+      throw new Error(`Invalid citation stance ${rawStance}`);
+    const stance = rawStance === "unclear" ? "uncertain" : rawStance;
     const confidenceNumber = Number(object.confidence);
     return {
       contextId,
@@ -72,7 +76,7 @@ function parse(response, contexts, allowedAttachments) {
         ...(context.targetClaimId
           ? { targetClaimId: context.targetClaimId }
           : {}),
-        stance: "unclear",
+        stance: "uncertain",
         confidence: 0,
         rationale: "No classification returned.",
         limitations: ["Missing model output"],

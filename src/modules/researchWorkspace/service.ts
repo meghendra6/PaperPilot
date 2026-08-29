@@ -739,7 +739,17 @@ class ResearchWorkspaceService {
       summary: (0, engine_2.summarizeCrossPaperMastery)(session),
     };
   }
-  async classifyCitationContexts(contexts, papers = []) {
+  async classifyCitationContexts(
+    contexts,
+    papers = [],
+    extraction,
+    approvedForModel = false,
+  ) {
+    if (approvedForModel !== true) {
+      throw new Error(
+        "Citation snippets require explicit approval before stance analysis.",
+      );
+    }
     if (!Array.isArray(contexts) || contexts.length === 0)
       throw new Error("Citation input must contain at least one context.");
     const seen = new Set();
@@ -772,9 +782,40 @@ class ResearchWorkspaceService {
       normalizedContexts,
       papers,
     );
+    // The primary UI supplies these only after its explicit snippet-review
+    // consent gate. Bound the admitted payload independently as defense in depth.
+    const submittedContexts = [];
+    let submittedCharacters = 0;
+    for (const context of admittedContexts) {
+      const characters = String(context.context || "").length;
+      if (
+        submittedContexts.length >= 120 ||
+        submittedCharacters + characters > 120_000
+      ) {
+        continue;
+      }
+      submittedContexts.push(context);
+      submittedCharacters += characters;
+    }
     const state = await this.state();
+    const promptContexts = submittedContexts.map((context) => ({
+      id: context.id,
+      citingPaperKey: context.citingPaperKey,
+      citedPaperKey: context.citedPaperKey,
+      context: context.context,
+      exactSentence: context.exactSentence,
+      marker: context.marker,
+      reference: context.reference
+        ? {
+            title: context.reference.title,
+            firstAuthor: context.reference.firstAuthor,
+            year: context.reference.year,
+            doi: context.reference.doi,
+          }
+        : undefined,
+    }));
     const prompt = (0, prompt_7.buildCitationStancePrompt)(
-      admittedContexts,
+      promptContexts,
       state.preferences.responseLanguage,
     );
     const parsedResults = await this.runParsed(
@@ -783,24 +824,57 @@ class ResearchWorkspaceService {
       (response) =>
         (0, parser_7.parseCitationStanceResponse)({
           response,
-          contexts: admittedContexts,
+          contexts: submittedContexts,
           allowedAttachments: [
             ...new Set(
-              admittedContexts.flatMap((context) =>
+              submittedContexts.flatMap((context) =>
                 context.evidence.map((entry) => entry.attachmentKey),
               ),
             ),
           ],
         }),
     );
-    const results = await this.verifyEvidence(parsedResults, papers);
+    const verifiedResults = await this.verifyEvidence(parsedResults, papers);
+    const analyzedIDs = new Set(
+      verifiedResults.map((result) => result.contextId),
+    );
+    const results = [
+      ...verifiedResults,
+      ...admittedContexts
+        .filter((context) => !analyzedIDs.has(context.id))
+        .map((context) => ({
+          contextId: context.id,
+          stance: "uncertain",
+          confidence: 0,
+          rationale:
+            "Not submitted because the bounded analysis limit was reached.",
+          limitations: ["Not analyzed by the stance classifier"],
+          evidence: [],
+        })),
+    ];
     await this.env.repository.update((next) => {
       next.citationContexts.push(...admittedContexts);
       next.citationResults.push(...results);
     });
     return {
+      schemaVersion: 1,
+      revision: 0,
+      contexts: admittedContexts,
       results,
       summary: (0, engine_3.summarizeCitationStances)(results),
+      coverage: {
+        ...(extraction?.coverage ?? {}),
+        eligibleContexts: admittedContexts.length,
+        submittedToModel: submittedContexts.length,
+        analyzedContexts: verifiedResults.length,
+        truncatedContexts: admittedContexts.length - submittedContexts.length,
+        analysisCoverage: admittedContexts.length
+          ? verifiedResults.length / admittedContexts.length
+          : null,
+      },
+      sourceSnapshot: extraction?.sourceSnapshot,
+      extractorVersion: extraction?.extractorVersion,
+      corrections: [],
     };
   }
   async exportWorkspace() {

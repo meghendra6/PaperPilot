@@ -409,6 +409,55 @@ test("citation stance drops model evidence outside supplied attachments", () => 
   assert.deepEqual(results[0].evidence, []);
 });
 
+test("citation stance preserves mentioning and migrates only legacy unclear", () => {
+  const contexts = [
+    {
+      id: "mention",
+      citingPaperKey: "P1",
+      citedPaperKey: "P2",
+      context: "The related tool is mentioned briefly.",
+      evidence: [],
+    },
+    {
+      id: "legacy",
+      citingPaperKey: "P1",
+      citedPaperKey: "P3",
+      context: "The relationship is unclear.",
+      evidence: [],
+    },
+  ];
+  const results = (parseCitationStanceResponse as any)({
+    response: JSON.stringify({
+      results: [
+        {
+          contextId: "mention",
+          stance: "mentioning",
+          confidence: 0.8,
+          rationale: "Brief reference only",
+        },
+        {
+          contextId: "legacy",
+          stance: "unclear",
+          confidence: 0.4,
+          rationale: "Legacy output",
+        },
+      ],
+    }),
+    contexts,
+    allowedAttachments: [],
+  });
+  assert.equal(results[0].stance, "mentioning");
+  assert.equal(results[1].stance, "uncertain");
+});
+
+test("citation stance service rejects snippets without explicit approval", async () => {
+  const service = new ResearchWorkspaceService({} as any);
+  await assert.rejects(
+    () => service.classifyCitationContexts([], [], undefined, false),
+    /explicit approval/,
+  );
+});
+
 test("workspace v3 migrates to v4 and discards companion provider and Monitor state", () => {
   const state = migrateResearchWorkspaceState(
     {

@@ -182,6 +182,8 @@ export function releaseReservationAfterConfirmedCleanup(
 
 export interface LibraryItemCandidate {
   id: number;
+  libraryID?: number;
+  itemKey?: string;
   title?: string;
   year?: number;
   doi?: string;
@@ -670,6 +672,8 @@ export async function getLibraryItemCandidates(libraryID: number) {
     .filter((item: any) => !item.isAttachment() && !item.isNote())
     .map((item: any) => ({
       id: item.id,
+      libraryID: item.libraryID,
+      itemKey: item.key,
       title: String(item.getField("title") || "").trim(),
       year: toOptionalYear(item.getField("year") || item.getField("date")),
       doi: toOptionalString(item.getField("DOI")),

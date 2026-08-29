@@ -277,6 +277,61 @@ test("Cross-paper mastery renders learner progress without leaking an unanswered
   assert.equal(exported.question.rubric, undefined);
 });
 
+test("Citation view exposes exact sentence, local page, resolution, and stance limits", () => {
+  const value = {
+    contexts: [
+      {
+        id: "C1",
+        exactSentence: "Paper A reports a conflicting outcome [2].",
+        context: "Before. Paper A reports a conflicting outcome [2]. After.",
+        marker: "[2]",
+        pageIndex: 4,
+        reference: { raw: "Doe (2020). Paper B." },
+        resolution: {
+          status: "resolved",
+          method: "project-title",
+          title: "Paper B",
+        },
+        evidence: [],
+      },
+    ],
+    results: [
+      {
+        contextId: "C1",
+        stance: "contrasting",
+        confidence: 0.8,
+        rationale: "The outcome conflicts.",
+        limitations: ["One local sentence"],
+      },
+    ],
+    coverage: {
+      sourcesAnalyzed: 2,
+      contextsExtracted: 1,
+      resolved: 1,
+      ambiguous: 0,
+      unresolved: 0,
+      pageLocated: 1,
+      submittedToModel: 1,
+      analyzedContexts: 1,
+      limitations: [],
+    },
+    corrections: [],
+  };
+  const view = createResearchWorkspaceArtifactView(value, "citation-stance");
+  assert.equal(view.kind, "citation");
+  if (view.kind !== "citation") return;
+  assert.equal(view.rows[0].pageIndex, 4);
+  assert.equal(view.rows[0].resolutionStatus, "resolved");
+  assert.equal(view.rows[0].stance, "contrasting");
+  const rendered = renderResearchWorkspaceArtifactValue(
+    new FakeDocument() as unknown as Document,
+    value,
+    { artifactType: "citation-stance" },
+  ) as unknown as FakeElement;
+  assert.match(renderedText(rendered), /Page 5/);
+  assert.match(renderedText(rendered), /review signal, not a verdict/i);
+});
+
 test("Research Workspace result surfaces no longer render raw JSON", () => {
   const viewSource = readFileSync(
     join(process.cwd(), "src/modules/researchWorkspace/view.ts"),
