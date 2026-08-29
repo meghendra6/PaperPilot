@@ -187,11 +187,17 @@ export class ResearchWorkspaceProjectController {
         current.source.contentFingerprint.value !==
           paper.contentFingerprint.value
       ) {
-        await this.repository.markArtifactsStaleForSource({
-          projectID,
-          sourceID: paper.sourceID,
-          contentFingerprint: paper.contentFingerprint.value,
-        });
+        const projectIDs = await this.repository.listProjectIDsForSource(
+          paper.sourceID,
+          { includeArchived: true },
+        );
+        for (const affectedProjectID of projectIDs) {
+          await this.repository.markArtifactsStaleForSource({
+            projectID: affectedProjectID,
+            sourceID: paper.sourceID,
+            contentFingerprint: paper.contentFingerprint.value,
+          });
+        }
       }
       await this.repository.putSource(
         researchWorkspaceSourceRecordFromPaper(paper, this.now()),
@@ -200,14 +206,27 @@ export class ResearchWorkspaceProjectController {
     }
     if (unique.length) {
       const bundle = await this.repository.getProject(projectID);
-      await this.repository.addMembers(
-        projectID,
-        bundle.membersRevision,
-        unique.map((paper) => ({
+      const existingSourceIDs = new Set(
+        bundle.members.map((member) => member.sourceID),
+      );
+      const additions = unique
+        .filter((paper) => !existingSourceIDs.has(paper.sourceID))
+        .map((paper) => ({
           sourceID: paper.sourceID,
           role: "candidate" as const,
-        })),
-      );
+        }));
+      if (additions.length) {
+        const membersFile = await this.repository.addMembers(
+          projectID,
+          bundle.membersRevision,
+          additions,
+        );
+        await this.repository.markArtifactsStaleForMembersRevision({
+          projectID,
+          membersRevision: membersFile.revision,
+          reason: "project-source-added",
+        });
+      }
     }
     return this.details(projectID);
   }
@@ -268,7 +287,10 @@ export class ResearchWorkspaceProjectController {
     userNote?: string;
   }) {
     const bundle = await this.repository.getProject(params.projectID);
-    await this.repository.updateMembers(
+    const previous = bundle.members.find(
+      (member) => member.sourceID === params.sourceID,
+    );
+    const membersFile = await this.repository.updateMembers(
       params.projectID,
       bundle.membersRevision,
       (members) =>
@@ -288,6 +310,16 @@ export class ResearchWorkspaceProjectController {
             : member,
         ),
     );
+    if (previous) {
+      await this.repository.markArtifactsStaleForMembersRevision({
+        projectID: params.projectID,
+        membersRevision: membersFile.revision,
+        reason:
+          previous.reviewStatus !== params.reviewStatus
+            ? "project-review-scope-changed"
+            : "project-member-record-changed",
+      });
+    }
     return this.details(params.projectID);
   }
 
@@ -397,7 +429,7 @@ export class ResearchWorkspaceProjectController {
       eventID: this.screeningIDFactory("screening-event"),
       decidedAt: timestamp(this.now),
     });
-    await this.repository.updateMembers(
+    const membersFile = await this.repository.updateMembers(
       input.projectID,
       input.expectedMembersRevision,
       (members) =>
@@ -415,6 +447,14 @@ export class ResearchWorkspaceProjectController {
             : candidate,
         ),
     );
+    await this.repository.markArtifactsStaleForMembersRevision({
+      projectID: input.projectID,
+      membersRevision: membersFile.revision,
+      reason:
+        member.reviewStatus !== screeningReviewStatus(input.decision)
+          ? "screening-decision-changed-project-scope"
+          : "project-member-record-changed",
+    });
     return this.details(input.projectID);
   }
 

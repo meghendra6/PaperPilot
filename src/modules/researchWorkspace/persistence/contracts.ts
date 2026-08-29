@@ -177,6 +177,7 @@ export type ResearchWorkspaceArtifactType =
   | "citation-context"
   | "citation-stance"
   | "synthesis"
+  | "contradiction-gap-dashboard"
   | "review-log";
 
 export type ResearchWorkspaceArtifactStatus =
@@ -193,13 +194,21 @@ export interface ResearchWorkspaceArtifactLineage {
     contentFingerprint: string;
     contextProjectionFingerprint: string;
   }>;
+  artifactInputs?: Array<{
+    artifactID: string;
+    artifactType: ResearchWorkspaceArtifactType;
+    version: number;
+    updatedAt: string;
+    payloadFingerprint: string;
+  }>;
+  membersRevision?: number;
   operation: string;
   operationVersion: string;
   promptVersion: string;
   parserVersion: string;
   schemaVersion?: string;
   evidenceVerifierVersion: string;
-  providerMode: ResearchWorkspaceEngineMode | "unknown";
+  providerMode: ResearchWorkspaceEngineMode | "local" | "unknown";
   model?: string;
   runID: string;
 }

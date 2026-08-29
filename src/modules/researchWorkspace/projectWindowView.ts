@@ -8,6 +8,8 @@ import {
   loadResearchWorkspaceHome,
   loadResearchWorkspaceProject,
   recordResearchWorkspaceScreeningDecision,
+  reviewResearchWorkspaceContradictionGap,
+  runResearchWorkspaceContradictionGapDashboard,
   updateResearchWorkspaceMember,
   updateResearchWorkspaceProject,
   updateResearchWorkspaceScreeningProtocol,
@@ -29,6 +31,10 @@ import {
   buildResearchWorkspaceScreeningLog,
   currentScreeningEvent,
 } from "./screeningLog";
+import type {
+  ContradictionClassification,
+  ContradictionGapDashboard,
+} from "./contradictionGap";
 
 const HTML_NS = "http://www.w3.org/1999/xhtml";
 const generations = new WeakMap<HTMLElement, symbol>();
@@ -250,6 +256,9 @@ async function renderProject(
     renderScreeningLog(doc, root, details, capturedPapers, generation),
     renderProjectPapers(doc, root, details, capturedPapers, generation),
   );
+  root.append(
+    renderContradictionGapPanel(doc, root, details, capturedPapers, generation),
+  );
   root.append(renderArtifactHistory(doc, root, details));
 
   if (capturedPapers.length) {
@@ -275,6 +284,233 @@ async function renderProject(
     );
     root.append(empty);
   }
+}
+
+function renderContradictionGapPanel(
+  doc: Document,
+  root: HTMLElement,
+  details: ResearchWorkspaceProjectDetails,
+  capturedPapers: readonly ResearchWorkspacePaper[],
+  generation: symbol,
+) {
+  const section = element(
+    doc,
+    "section",
+    "pprw-project-panel pprw-contradiction-gap-panel",
+  );
+  section.append(
+    element(doc, "h3", "", "Contradictions & Evidence Gaps"),
+    element(
+      doc,
+      "p",
+      "pprw-muted",
+      "Local evidence map, not a truth verdict. It reads current saved artifacts only—no PDF extraction, model, CLI, or network request.",
+    ),
+  );
+  const includedSources = details.members.filter(
+    (member) => member.reviewStatus !== "excluded",
+  );
+  const eligibleTypes = new Set([
+    "claim-ledger",
+    "evidence-matrix",
+    "synthesis",
+    "methodology-audit",
+    "reproducibility",
+  ]);
+  const hasCurrentInput = details.artifacts.some(
+    (artifact) =>
+      artifact.status === "complete" && eligibleTypes.has(artifact.type),
+  );
+  const build = button(
+    doc,
+    "Build / refresh local dashboard",
+    async () => {
+      try {
+        setMessage(root, "Building the local contradiction and gap map…");
+        await runResearchWorkspaceContradictionGapDashboard({
+          projectID: details.project.projectID,
+          onStatus: (status) => setMessage(root, status),
+        });
+        await renderProject(
+          root,
+          details.project.projectID,
+          capturedPapers,
+          generation,
+        );
+      } catch (error) {
+        setMessage(
+          root,
+          error instanceof Error ? error.message : String(error),
+          "error",
+        );
+      }
+    },
+    true,
+  );
+  build.disabled = !includedSources.length || !hasCurrentInput;
+  section.append(build);
+  if (!includedSources.length) {
+    section.append(
+      element(
+        doc,
+        "p",
+        "pprw-project-warning",
+        "Include or retain at least one project source before building this dashboard.",
+      ),
+    );
+  } else if (!hasCurrentInput) {
+    section.append(
+      element(
+        doc,
+        "p",
+        "pprw-project-warning",
+        "Create a current Claim Ledger, Evidence Matrix, Synthesis, Methodology Audit, or Reproducibility artifact first.",
+      ),
+    );
+  }
+
+  const latest = details.artifacts.find(
+    (artifact) => artifact.type === "contradiction-gap-dashboard",
+  );
+  if (!latest) {
+    section.append(
+      element(
+        doc,
+        "p",
+        "pprw-muted",
+        "No dashboard has been saved for this project yet.",
+      ),
+    );
+    return section;
+  }
+  const dashboard = latest.payload as ContradictionGapDashboard;
+  if (dashboard.kind !== "research-workspace-contradiction-gap-dashboard") {
+    section.append(
+      element(
+        doc,
+        "p",
+        "pprw-project-warning",
+        "The latest dashboard is unreadable.",
+      ),
+    );
+    return section;
+  }
+  const metrics = element(doc, "div", "pprw-home-metrics");
+  metrics.append(
+    metric(doc, dashboard.coverage.multiSourceSupport, "multi-source support"),
+    metric(
+      doc,
+      dashboard.coverage.directContradictions,
+      "rule contradiction candidates",
+    ),
+    metric(doc, dashboard.coverage.nonComparable, "rule non-comparable"),
+    metric(doc, dashboard.coverage.uncertain, "rule uncertain"),
+    metric(doc, dashboard.coverage.gaps, "evidence gaps"),
+  );
+  section.append(metrics);
+  if (latest.status !== "complete") {
+    section.append(
+      element(
+        doc,
+        "p",
+        "pprw-project-warning",
+        `This dashboard is ${latest.status}. Refresh it before recording further reviews.`,
+      ),
+    );
+  }
+  if (!dashboard.relationships.length) {
+    section.append(
+      element(
+        doc,
+        "p",
+        "pprw-muted",
+        "No comparable contradiction candidates were found in the current verified evidence-linked assertions. Review the evidence gaps below in the saved artifact.",
+      ),
+    );
+    return section;
+  }
+  const reviewList = element(doc, "div", "pprw-artifact-history");
+  for (const relationship of dashboard.relationships.slice(0, 50)) {
+    const card = element(doc, "article", "pprw-artifact-card");
+    const effective =
+      relationship.userClassification ?? relationship.classification;
+    card.append(
+      element(doc, "strong", "", relationship.topic),
+      element(
+        doc,
+        "p",
+        "pprw-muted",
+        `Rule result: ${relationship.classification} · Effective: ${effective} · Review: ${relationship.reviewState}`,
+      ),
+    );
+    const classification = element(doc, "select", "pprw-select");
+    for (const value of [
+      "direct-contradiction",
+      "non-comparable",
+      "uncertain",
+    ] as ContradictionClassification[]) {
+      const option = element(doc, "option", "", value);
+      option.value = value;
+      option.selected = value === effective;
+      classification.append(option);
+    }
+    const reason = textInput(doc, "Reason required for reclassify or dismiss");
+    let submissionID: string | undefined;
+    const resetSubmission = () => {
+      submissionID = undefined;
+    };
+    classification.addEventListener("change", resetSubmission);
+    reason.addEventListener("input", resetSubmission);
+    const submit = async (action: "confirm" | "reclassify" | "dismiss") => {
+      submissionID ??= `gap-review-${Date.now().toString(36)}-${Math.random()
+        .toString(36)
+        .slice(2, 10)}`;
+      try {
+        setMessage(root, `Saving ${action} review…`);
+        await reviewResearchWorkspaceContradictionGap({
+          projectID: details.project.projectID,
+          artifactID: latest.artifactID,
+          relationshipID: relationship.relationshipID,
+          action,
+          ...(action === "reclassify"
+            ? {
+                toClassification:
+                  classification.value as ContradictionClassification,
+              }
+            : {}),
+          ...(reason.value.trim() ? { reason: reason.value.trim() } : {}),
+          submissionID,
+          expectedDashboardRevision: dashboard.revision,
+        });
+        await renderProject(
+          root,
+          details.project.projectID,
+          capturedPapers,
+          generation,
+        );
+      } catch (error) {
+        setMessage(
+          root,
+          error instanceof Error ? error.message : String(error),
+          "error",
+        );
+      }
+    };
+    const actions = element(doc, "div", "pprw-row");
+    const confirm = button(doc, "Confirm rule result", () => submit("confirm"));
+    const reclassify = button(doc, "Save reclassification", () =>
+      submit("reclassify"),
+    );
+    const dismiss = button(doc, "Dismiss candidate", () => submit("dismiss"));
+    confirm.disabled = latest.status !== "complete";
+    reclassify.disabled = latest.status !== "complete";
+    dismiss.disabled = latest.status !== "complete";
+    actions.append(confirm, reclassify, dismiss);
+    card.append(classification, reason, actions);
+    reviewList.append(card);
+  }
+  section.append(element(doc, "h4", "", "Reviewable comparisons"), reviewList);
+  return section;
 }
 
 function renderScreeningLog(

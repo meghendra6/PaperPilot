@@ -26,6 +26,7 @@ class FakeElement {
   textContent = "";
   type = "";
   scope = "";
+  readonly dataset: Record<string, string> = {};
 
   constructor(readonly tagName: string) {}
 
@@ -211,6 +212,71 @@ test("Screening review log renders semantic metrics and history", () => {
   assert(!tags(rendered).includes("pre"));
   assert.match(renderedText(rendered), /Meets the protocol/);
   assert.match(renderedText(rendered), /Signals require reviewer confirmation/);
+});
+
+test("contradiction dashboard renders semantic comparisons without raw JSON", () => {
+  const payload = {
+    kind: "research-workspace-contradiction-gap-dashboard",
+    atoms: [
+      {
+        atomID: "fact-1",
+        evidence: [
+          {
+            sourceID: "SOURCE-1",
+            attachmentKey: "PDF-1",
+            pageIndex: 2,
+            verification: { status: "verified" },
+          },
+        ],
+      },
+    ],
+    supportGroups: [],
+    relationships: [
+      {
+        relationshipID: "relationship-1",
+        topic: "Opposite outcome directions",
+        classification: "direct-contradiction",
+        reviewState: "unreviewed",
+        comparability: { status: "comparable" },
+        sides: [
+          { position: "Increased", atomIDs: ["fact-1"] },
+          { position: "Decreased", atomIDs: ["fact-1"] },
+        ],
+        limitations: ["Current project snapshot only."],
+      },
+    ],
+    gaps: [
+      {
+        kind: "missing-reporting",
+        statement: "Replication was not assessed.",
+        sourceIDs: ["SOURCE-1"],
+      },
+    ],
+    nextSearchQuestions: ["Which replication evidence is available?"],
+    coverage: {
+      includedSources: 1,
+      admittedArtifacts: 1,
+      verifiedFactAtoms: 1,
+      multiSourceSupport: 0,
+      directContradictions: 1,
+      nonComparable: 0,
+      uncertain: 0,
+      gaps: 1,
+    },
+    limitations: ["Not a truth verdict."],
+  };
+  const rendered = renderResearchWorkspaceArtifactValue(
+    new FakeDocument() as unknown as Document,
+    payload,
+    { artifactType: "contradiction-gap-dashboard" },
+  ) as unknown as FakeElement;
+  assert(!tags(rendered).includes("pre"));
+  assert.match(
+    renderedText(rendered),
+    /Rule-detected contradiction candidates/,
+  );
+  assert.match(renderedText(rendered), /Replication was not assessed/);
+  assert.match(renderedText(rendered), /Verified/);
 });
 
 test("Project synthesis view exposes coverage, evidence groups, and warnings", () => {

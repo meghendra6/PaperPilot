@@ -49,6 +49,12 @@ import {
   type RecordResearchWorkspaceScreeningDecisionInput,
   type ResearchWorkspaceScreeningLog,
 } from "./screeningLog";
+import {
+  applyContradictionGapReview,
+  buildContradictionGapDashboard,
+  type ContradictionClassification,
+  type ContradictionGapDashboard,
+} from "./contradictionGap";
 import type { WorkspaceSupplementalFiles } from "../workspace/supplementalFiles";
 import {
   exportResearchWorkspaceTextFile,
@@ -1071,6 +1077,112 @@ export function loadResearchWorkspaceProject(projectID: string) {
 
 export function loadResearchWorkspaceScreeningLog(projectID: string) {
   return projectController().screeningLog(projectID);
+}
+
+export async function runResearchWorkspaceContradictionGapDashboard(params: {
+  projectID: string;
+  signal?: AbortSignal;
+  onStatus?: (status: string) => void;
+}) {
+  const details = await projectController().details(params.projectID);
+  const dashboard = buildContradictionGapDashboard({
+    details,
+    generatedAt: new Date().toISOString(),
+  });
+  if (!dashboard.scope.includedSourceIDs.length) {
+    throw new Error(
+      "This project has no non-excluded sources for contradiction analysis.",
+    );
+  }
+  if (!dashboard.inputArtifacts.length) {
+    throw new Error(
+      "Build a current Claim Ledger, Evidence Matrix, Synthesis, Methodology Audit, or Reproducibility artifact first.",
+    );
+  }
+  const sourceByID = new Map(
+    details.sources.map((source) => [source.sourceID, source]),
+  );
+  const sources = dashboard.scope.includedSourceIDs
+    .map((sourceID) => sourceByID.get(sourceID))
+    .filter((source): source is NonNullable<typeof source> => Boolean(source));
+  return operationCoordinator().runDerived({
+    projectID: params.projectID,
+    sources,
+    artifactInputs: dashboard.inputArtifacts.map((input) => ({
+      artifactID: input.artifactID,
+      artifactType: input.artifactType,
+      version: input.version,
+      updatedAt: input.updatedAt,
+      payloadFingerprint: input.payloadFingerprint,
+    })),
+    membersRevision: dashboard.scope.membersRevision,
+    operation: "contradiction-gap-dashboard",
+    operationVersion: "contradiction-gap-dashboard-v1",
+    promptVersion: "local-artifact-derivation-v1",
+    parserVersion: "contradiction-gap-parser-v1",
+    schemaVersion: "contradiction-gap-dashboard-v1",
+    artifactType: "contradiction-gap-dashboard",
+    artifactTitle: "Contradictions & Evidence Gaps",
+    providerMode: "local",
+    signal: params.signal,
+    onStatus: params.onStatus,
+    execute: () => dashboard,
+  });
+}
+
+export async function reviewResearchWorkspaceContradictionGap(params: {
+  projectID: string;
+  artifactID: string;
+  relationshipID: string;
+  action: "confirm" | "reclassify" | "dismiss";
+  toClassification?: ContradictionClassification;
+  reason?: string;
+  submissionID: string;
+  expectedDashboardRevision: number;
+}) {
+  const repository = getResearchWorkspaceProjectRepository();
+  const file = await repository.getArtifact(
+    params.projectID,
+    params.artifactID,
+  );
+  if (!file || file.artifact.type !== "contradiction-gap-dashboard") {
+    throw new Error("Contradiction dashboard artifact was not found.");
+  }
+  if (file.artifact.status !== "complete") {
+    throw new Error("Refresh the stale or superseded dashboard before review.");
+  }
+  if (!params.submissionID.trim()) {
+    throw new Error("A review submission ID is required.");
+  }
+  const dashboard = file.artifact.payload as ContradictionGapDashboard;
+  if (
+    dashboard.kind !== "research-workspace-contradiction-gap-dashboard" ||
+    dashboard.projectID !== params.projectID
+  ) {
+    throw new Error("Contradiction dashboard payload is invalid.");
+  }
+  const next = applyContradictionGapReview({
+    dashboard,
+    input: {
+      relationshipID: params.relationshipID,
+      action: params.action,
+      ...(params.toClassification
+        ? { toClassification: params.toClassification }
+        : {}),
+      ...(params.reason ? { reason: params.reason } : {}),
+      submissionID: params.submissionID,
+      expectedDashboardRevision: params.expectedDashboardRevision,
+    },
+    eventID: `contradiction-review-${params.submissionID}`,
+    reviewedAt: new Date().toISOString(),
+  });
+  if (next === dashboard) return file;
+  return repository.updateArtifact(
+    params.projectID,
+    params.artifactID,
+    file.revision,
+    (artifact) => ({ ...artifact, payload: next }),
+  );
 }
 
 export function updateResearchWorkspaceScreeningProtocol(params: {

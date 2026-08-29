@@ -14,7 +14,8 @@ export type ResearchWorkspaceCapabilityID =
   | "cross-paper-mastery"
   | "citation-context"
   | "citation-stance"
-  | "screening-log";
+  | "screening-log"
+  | "contradiction-gap-dashboard";
 
 export type ResearchWorkspaceSourceScope =
   | "single-source"
@@ -31,7 +32,8 @@ export type ResearchWorkspaceRendererID =
   | "relationship-graph"
   | "synthesis"
   | "mastery"
-  | "review-log";
+  | "review-log"
+  | "contradiction-gap-dashboard";
 
 export interface ResearchWorkspaceCapabilityDefinition {
   id: ResearchWorkspaceCapabilityID;
@@ -246,6 +248,22 @@ const definitions: readonly ResearchWorkspaceCapabilityDefinition[] = [
     parserVersion: "screening-log-parser-v1",
     schemaVersion: "screening-log-v1",
     renderer: "review-log",
+    reviewable: true,
+    editable: true,
+    exportable: true,
+  },
+  {
+    id: "contradiction-gap-dashboard",
+    label: "Contradictions & Evidence Gaps",
+    sourceScope: "project",
+    entrypoint: "research-workspace",
+    operation: "contradiction-gap-dashboard",
+    operationVersion: "contradiction-gap-dashboard-v1",
+    promptVersion: "local-artifact-derivation-v1",
+    parserVersion: "contradiction-gap-parser-v1",
+    schemaVersion: "contradiction-gap-dashboard-v1",
+    artifactType: "contradiction-gap-dashboard",
+    renderer: "contradiction-gap-dashboard",
     reviewable: true,
     editable: true,
     exportable: true,

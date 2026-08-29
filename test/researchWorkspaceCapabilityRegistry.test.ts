@@ -179,3 +179,32 @@ test("project UI exposes the explicit screening workflow without prompt dialogs"
   assert.match(source, /Export screening JSON \+ CSV/);
   assert.doesNotMatch(source, /prompt\(\s*["']Reason for exclusion/);
 });
+
+test("Contradictions and Evidence Gaps is a local project capability", () => {
+  const capability = getResearchWorkspaceCapability(
+    "contradiction-gap-dashboard",
+  );
+  assert.equal(capability.sourceScope, "project");
+  assert.equal(capability.entrypoint, "research-workspace");
+  assert.equal(capability.operation, "contradiction-gap-dashboard");
+  assert.equal(capability.artifactType, "contradiction-gap-dashboard");
+  assert.equal(capability.renderer, "contradiction-gap-dashboard");
+  assert.equal(capability.reviewable, true);
+  assert.equal(capability.exportable, true);
+
+  const source = readFileSync(
+    join(
+      process.cwd(),
+      "src",
+      "modules",
+      "researchWorkspace",
+      "projectWindowView.ts",
+    ),
+    "utf8",
+  );
+  assert.match(source, /Contradictions & Evidence Gaps/);
+  assert.match(source, /no PDF extraction, model, CLI, or network request/i);
+  assert.match(source, /Confirm rule result/);
+  assert.match(source, /Save reclassification/);
+  assert.match(source, /Dismiss candidate/);
+});

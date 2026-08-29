@@ -144,6 +144,64 @@ test("project creation registers sources and idempotent membership", async () =>
   assert.equal(again.members[0].reviewStatus, "unreviewed");
 });
 
+test("updating a shared source stales artifacts in every project that uses it", async () => {
+  const { projects, operations, repository } = setup();
+  const original = paper("A", "fingerprint-shared-v1");
+  const first = await projects.createProject(
+    { projectID: "project-shared-one", name: "Shared one" },
+    [original],
+  );
+  const second = await projects.createProject(
+    { projectID: "project-shared-two", name: "Shared two" },
+    [original],
+  );
+  const firstArtifact = await operations.run({
+    projectID: first.project.projectID,
+    papers: [original],
+    sourcesPrepared: true,
+    operation: "claims",
+    operationVersion: "claims-v1",
+    artifactType: "claim-ledger",
+    artifactTitle: "Claims one",
+    providerMode: "codex_cli",
+    execute: async () => ({ claims: [] }),
+  });
+  const secondArtifact = await operations.run({
+    projectID: second.project.projectID,
+    papers: [original],
+    sourcesPrepared: true,
+    operation: "claims",
+    operationVersion: "claims-v1",
+    artifactType: "claim-ledger",
+    artifactTitle: "Claims two",
+    providerMode: "codex_cli",
+    execute: async () => ({ claims: [] }),
+  });
+
+  await projects.addPapers(first.project.projectID, [
+    paper("A", "fingerprint-shared-v2"),
+  ]);
+
+  assert.equal(
+    (
+      await repository.getArtifact(
+        first.project.projectID,
+        firstArtifact.artifact.artifact.artifactID,
+      )
+    )?.artifact.status,
+    "stale",
+  );
+  assert.equal(
+    (
+      await repository.getArtifact(
+        second.project.projectID,
+        secondArtifact.artifact.artifact.artifactID,
+      )
+    )?.artifact.status,
+    "stale",
+  );
+});
+
 test("quick projects use a deterministic source-scoped identity", async () => {
   const { projects } = setup();
   const first = await projects.ensureQuickProject([paper("B"), paper("A")]);
