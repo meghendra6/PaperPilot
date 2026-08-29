@@ -2,7 +2,9 @@ import {
   RESEARCH_WORKSPACE_ARTIFACT_SCHEMA_VERSION,
   RESEARCH_WORKSPACE_CATALOG_SCHEMA_VERSION,
   RESEARCH_WORKSPACE_MEMBERS_SCHEMA_VERSION,
+  RESEARCH_WORKSPACE_MIGRATION_SCHEMA_VERSION,
   RESEARCH_WORKSPACE_PROJECT_SCHEMA_VERSION,
+  RESEARCH_WORKSPACE_PREFERENCES_SCHEMA_VERSION,
   RESEARCH_WORKSPACE_RUN_SCHEMA_VERSION,
   RESEARCH_WORKSPACE_SOURCE_SCHEMA_VERSION,
   assertResearchWorkspaceID,
@@ -10,7 +12,9 @@ import {
   type ResearchWorkspaceArtifactFile,
   type ResearchWorkspaceCatalog,
   type ResearchWorkspaceMembersFile,
+  type ResearchWorkspaceLegacyMigrationFile,
   type ResearchWorkspaceProjectFile,
+  type ResearchWorkspacePreferencesFile,
   type ResearchWorkspaceRunFile,
   type ResearchWorkspaceSourceFile,
 } from "./contracts";
@@ -294,7 +298,11 @@ export function parseResearchWorkspaceArtifactFile(
   text(lineage.promptVersion, "lineage promptVersion");
   text(lineage.parserVersion, "lineage parserVersion");
   text(lineage.evidenceVerifierVersion, "lineage evidenceVerifierVersion");
-  oneOf(lineage.providerMode, ENGINE_MODES, "lineage providerMode");
+  oneOf(
+    lineage.providerMode,
+    [...ENGINE_MODES, "unknown"],
+    "lineage providerMode",
+  );
   assertResearchWorkspaceID(text(lineage.runID, "lineage runID"), "runID");
   if (!Array.isArray(lineage.inputs)) {
     throw new Error("lineage inputs must be an array.");
@@ -341,6 +349,87 @@ export function parseResearchWorkspaceRunFile(
   }
   object(run.progress, "run progress");
   return value as ResearchWorkspaceRunFile;
+}
+
+export function parseResearchWorkspacePreferencesFile(
+  value: unknown,
+): ResearchWorkspacePreferencesFile {
+  const root = object(value, "preferences file");
+  schema(
+    root.schemaVersion,
+    RESEARCH_WORKSPACE_PREFERENCES_SCHEMA_VERSION,
+    "preferences file",
+  );
+  revision(root.revision, "preferences revision");
+  text(root.createdAt, "preferences createdAt");
+  text(root.updatedAt, "preferences updatedAt");
+  const preferences = object(root.preferences, "preferences");
+  oneOf(
+    preferences.responseLanguage,
+    ["English", "Korean", "Chinese"],
+    "responseLanguage",
+  );
+  const maxPaperCharacters = Number(preferences.maxPaperCharacters);
+  if (
+    !Number.isInteger(maxPaperCharacters) ||
+    maxPaperCharacters < 10_000 ||
+    maxPaperCharacters > 10_000_000
+  ) {
+    throw new Error("maxPaperCharacters is out of range.");
+  }
+  const artifactHistoryLimit = Number(preferences.artifactHistoryLimit);
+  if (
+    !Number.isInteger(artifactHistoryLimit) ||
+    artifactHistoryLimit < 1 ||
+    artifactHistoryLimit > 100
+  ) {
+    throw new Error("artifactHistoryLimit is out of range.");
+  }
+  if (typeof preferences.retainRawRunLogs !== "boolean") {
+    throw new Error("retainRawRunLogs must be boolean.");
+  }
+  return value as ResearchWorkspacePreferencesFile;
+}
+
+export function parseResearchWorkspaceLegacyMigrationFile(
+  value: unknown,
+): ResearchWorkspaceLegacyMigrationFile {
+  const root = object(value, "legacy migration file");
+  schema(
+    root.schemaVersion,
+    RESEARCH_WORKSPACE_MIGRATION_SCHEMA_VERSION,
+    "legacy migration file",
+  );
+  revision(root.revision, "legacy migration revision");
+  const migration = object(root.migration, "legacy migration");
+  text(migration.importerVersion, "legacy importerVersion");
+  oneOf(migration.status, ["in-progress", "completed"], "migration status");
+  text(migration.legacyPath, "legacy path");
+  text(migration.startedAt, "migration startedAt");
+  assertResearchWorkspaceID(
+    text(migration.createdProjectID, "migration projectID"),
+    "projectID",
+  );
+  const fingerprint = object(migration.legacyFingerprint, "legacy fingerprint");
+  oneOf(
+    fingerprint.algorithm,
+    ["sha256", "fnv1a-128-fallback"],
+    "legacy fingerprint algorithm",
+  );
+  text(fingerprint.value, "legacy fingerprint value");
+  const summary = object(migration.summary, "legacy migration summary");
+  revision(summary.migratedSources, "migratedSources");
+  revision(summary.skippedSources, "skippedSources");
+  revision(summary.detachedSources, "detachedSources");
+  revision(summary.ambiguousSources, "ambiguousSources");
+  object(summary.artifactCounts, "artifactCounts");
+  if (
+    !Array.isArray(summary.warnings) ||
+    summary.warnings.some((warning) => typeof warning !== "string")
+  ) {
+    throw new Error("migration warnings must be an array of strings.");
+  }
+  return value as ResearchWorkspaceLegacyMigrationFile;
 }
 
 export function parseStoredJSON<T>(

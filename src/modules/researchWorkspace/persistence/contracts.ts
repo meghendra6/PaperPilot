@@ -4,6 +4,8 @@ export const RESEARCH_WORKSPACE_MEMBERS_SCHEMA_VERSION = 1 as const;
 export const RESEARCH_WORKSPACE_SOURCE_SCHEMA_VERSION = 1 as const;
 export const RESEARCH_WORKSPACE_ARTIFACT_SCHEMA_VERSION = 1 as const;
 export const RESEARCH_WORKSPACE_RUN_SCHEMA_VERSION = 1 as const;
+export const RESEARCH_WORKSPACE_PREFERENCES_SCHEMA_VERSION = 1 as const;
+export const RESEARCH_WORKSPACE_MIGRATION_SCHEMA_VERSION = 1 as const;
 
 export type ResearchWorkspaceEngineMode =
   | "codex_cli"
@@ -148,7 +150,7 @@ export interface ResearchWorkspaceArtifactLineage {
   parserVersion: string;
   schemaVersion?: string;
   evidenceVerifierVersion: string;
-  providerMode: ResearchWorkspaceEngineMode;
+  providerMode: ResearchWorkspaceEngineMode | "unknown";
   model?: string;
   runID: string;
 }
@@ -264,6 +266,50 @@ export interface ResearchWorkspaceRunFile {
   schemaVersion: typeof RESEARCH_WORKSPACE_RUN_SCHEMA_VERSION;
   revision: number;
   run: ResearchWorkspaceRun;
+}
+
+export interface ResearchWorkspacePreferences {
+  responseLanguage: "English" | "Korean" | "Chinese";
+  maxPaperCharacters: number;
+  artifactHistoryLimit: number;
+  retainRawRunLogs: boolean;
+}
+
+export interface ResearchWorkspacePreferencesFile {
+  schemaVersion: typeof RESEARCH_WORKSPACE_PREFERENCES_SCHEMA_VERSION;
+  revision: number;
+  preferences: ResearchWorkspacePreferences;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ResearchWorkspaceLegacyMigrationSummary {
+  migratedSources: number;
+  skippedSources: number;
+  detachedSources: number;
+  ambiguousSources: number;
+  artifactCounts: Record<string, number>;
+  warnings: string[];
+}
+
+export interface ResearchWorkspaceLegacyMigrationMarker {
+  importerVersion: string;
+  status: "in-progress" | "completed";
+  legacyPath: string;
+  legacyFingerprint: {
+    algorithm: "sha256" | "fnv1a-128-fallback";
+    value: string;
+  };
+  startedAt: string;
+  completedAt?: string;
+  createdProjectID: string;
+  summary: ResearchWorkspaceLegacyMigrationSummary;
+}
+
+export interface ResearchWorkspaceLegacyMigrationFile {
+  schemaVersion: typeof RESEARCH_WORKSPACE_MIGRATION_SCHEMA_VERSION;
+  revision: number;
+  migration: ResearchWorkspaceLegacyMigrationMarker;
 }
 
 export interface ResearchWorkspaceProjectBundle {
