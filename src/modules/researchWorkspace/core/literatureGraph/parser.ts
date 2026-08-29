@@ -72,6 +72,11 @@ function parseLiteratureGraphResponse(params) {
         evidence: (0, types_1.normalizeEvidenceReferences)(object.evidence, {
           allowedAttachmentKeys: params.allowedAttachmentKeys,
         }),
+        ...(object.bibliographicProvenance &&
+        typeof object.bibliographicProvenance === "object" &&
+        !Array.isArray(object.bibliographicProvenance)
+          ? { bibliographicProvenance: object.bibliographicProvenance }
+          : {}),
         verified: object.verified === true,
       };
     },

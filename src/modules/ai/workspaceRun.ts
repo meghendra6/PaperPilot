@@ -14,6 +14,7 @@ import {
   releaseDirectWorkspaceRun,
 } from "./runLifecycle";
 import { stopDetachedRunProcess } from "./runCompletion";
+import type { WorkspaceSupplementalFiles } from "../workspace/supplementalFiles";
 
 export interface WorkspaceRunResult {
   ok: true;
@@ -102,6 +103,7 @@ export async function startWorkspaceTextRun(params: {
   question: string;
   profile: Exclude<RunProfile, "chat">;
   outputSchema?: StructuredOutputSchema;
+  workspaceFiles?: WorkspaceSupplementalFiles;
   requiredDiscoveryCapabilities?: import("../discovery/types").DiscoveryCapabilities;
   signal?: AbortSignal;
   deadline?: number;
@@ -139,6 +141,7 @@ export async function startWorkspaceTextRun(params: {
         question: params.question,
         profile: params.profile,
         outputSchema: params.outputSchema,
+        workspaceFiles: params.workspaceFiles,
       });
     } else if (params.mode === "gemini_cli") {
       const { startGeminiRunForQuestion } = await import("../gemini/runner");
@@ -149,6 +152,7 @@ export async function startWorkspaceTextRun(params: {
         question: params.question,
         profile: params.profile,
         outputSchema: params.outputSchema,
+        workspaceFiles: params.workspaceFiles,
       });
     } else {
       if (
@@ -171,6 +175,7 @@ export async function startWorkspaceTextRun(params: {
           : undefined,
         profile: params.profile,
         outputSchema: params.outputSchema,
+        workspaceFiles: params.workspaceFiles,
       });
     }
 
@@ -274,4 +279,49 @@ export function extractWorkspaceRunText(
   >,
 ) {
   return progress.parsedOutput;
+}
+
+function waitForWorkspacePoll(ms: number, signal?: AbortSignal) {
+  return new Promise<void>((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new DOMException("Cancelled", "AbortError"));
+      return;
+    }
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(new DOMException("Cancelled", "AbortError"));
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+export async function waitForWorkspaceTextRun(params: {
+  mode: EngineMode;
+  paths: {
+    outputPath: string;
+    stderrPath: string;
+    exitCodePath: string;
+  };
+  deadline: number;
+  signal?: AbortSignal;
+  pollIntervalMs?: number;
+}) {
+  while (Date.now() < params.deadline) {
+    if (params.signal?.aborted) {
+      throw new DOMException("Cancelled", "AbortError");
+    }
+    const progress = await readWorkspaceRunProgress(params.mode, params.paths);
+    if (progress.completed) {
+      return {
+        progress,
+        text: extractWorkspaceRunText(params.mode, progress),
+      };
+    }
+    await waitForWorkspacePoll(params.pollIntervalMs ?? 800, params.signal);
+  }
+  throw new Error("Workspace run timed out.");
 }

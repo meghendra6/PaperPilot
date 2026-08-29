@@ -2,8 +2,13 @@ import { getPref } from "../../utils/prefs";
 import { getModeForItem } from "../ai/modeStore";
 import { normalizeResponseLanguage } from "../translation/responseLanguage";
 import { runResearchWorkspaceAnalysis } from "./analysisRunner";
+import {
+  applyResearchWorkspaceContextPlan,
+  planResearchWorkspaceContext,
+} from "./contextPlanner";
 import { createResearchWorkspaceState } from "./core/researchWorkspace/state";
 import { ResearchWorkspaceOperationCoordinator } from "./operationCoordinator";
+import { researchWorkspaceOutputSchemaForPurpose } from "./outputSchemas";
 import type { ResearchWorkspacePaper } from "./paperSource";
 import type {
   ResearchProject,
@@ -11,7 +16,9 @@ import type {
   ResearchWorkspaceReviewStatus,
 } from "./persistence/contracts";
 import { ResearchWorkspaceProjectController } from "./projectController";
+import { buildResearchWorkspaceProjectWorkspace } from "./projectWorkspaceBuilder";
 import { ResearchWorkspaceService } from "./service";
+import type { WorkspaceSupplementalFiles } from "../workspace/supplementalFiles";
 import {
   exportResearchWorkspaceTextFile,
   getResearchWorkspaceProjectRepository,
@@ -63,6 +70,7 @@ async function createBoundService(params: {
   signal?: AbortSignal;
   onStatus?: (status: string) => void;
   seed?: (state: any) => void;
+  workspaceFiles?: WorkspaceSupplementalFiles;
 }) {
   const preferences =
     await getResearchWorkspaceProjectRepository().getPreferences();
@@ -79,12 +87,24 @@ async function createBoundService(params: {
     indexes: sharedHybridIndexes,
     exportTextFile: exportResearchWorkspaceTextFile,
     agent: {
-      run: (prompt: string, purpose: string) =>
+      run: (
+        prompt: string,
+        purpose: string,
+        outputSchema?: Record<string, unknown>,
+      ) =>
         runResearchWorkspaceAnalysis({
           itemID: params.anchor.itemID,
           itemTitle: params.anchor.title,
-          prompt,
+          prompt: params.workspaceFiles
+            ? [
+                "Read PROJECT_INDEX.md before performing this operation.",
+                "Use its bounded source projections and security rules.",
+                prompt,
+              ].join("\\n\\n")
+            : prompt,
           purpose,
+          outputSchema,
+          workspaceFiles: params.workspaceFiles,
           signal: params.signal,
           onStatus: params.onStatus,
         }),
@@ -310,6 +330,12 @@ const MULTI_OPERATION = {
   },
 } as const;
 
+function multiOperationPurpose(operation: ResearchWorkspaceMultiOperation) {
+  if (operation === "evidence-matrix") return "matrix-project-row";
+  if (operation === "literature-graph") return "literature-graph";
+  return "cross-paper-question";
+}
+
 export async function runResearchWorkspaceMultiOperation(params: {
   papers: ResearchWorkspacePaper[];
   operation: ResearchWorkspaceMultiOperation;
@@ -321,13 +347,91 @@ export async function runResearchWorkspaceMultiOperation(params: {
     throw new Error("Select at least two papers in the Zotero item list.");
   }
   const projectID = await prepareProject(params.projectID, params.papers);
-  const { service } = await createBoundService({
-    anchor: params.papers[0],
+  const contextPlan = planResearchWorkspaceContext({
     papers: params.papers,
+    operation: params.operation,
+  });
+  const projectedPapers = applyResearchWorkspaceContextPlan(
+    params.papers,
+    contextPlan,
+  );
+  const descriptor = MULTI_OPERATION[params.operation];
+  const details = await projectController().details(projectID);
+  const purpose = multiOperationPurpose(params.operation);
+  const projectWorkspace = buildResearchWorkspaceProjectWorkspace({
+    details,
+    papers: projectedPapers,
+    contextPlan,
+    descriptor: {
+      operation: params.operation,
+      operationVersion: descriptor.operationVersion,
+      promptVersion: `${params.operation}-prompt-v1`,
+      parserVersion: `${params.operation}-parser-v1`,
+    },
+    outputSchema: researchWorkspaceOutputSchemaForPurpose(purpose),
+  });
+  const { service } = await createBoundService({
+    anchor: projectedPapers[0],
+    papers: projectedPapers,
     signal: params.signal,
     onStatus: params.onStatus,
+    workspaceFiles: projectWorkspace.files,
   });
-  const descriptor = MULTI_OPERATION[params.operation];
+  const projectionFingerprints = new Map(
+    contextPlan.projections.map((projection) => [
+      projection.sourceID,
+      projection.fingerprint,
+    ]),
+  );
+  if (params.operation === "evidence-matrix") {
+    const matrix = service.createEvidenceMatrixShell(projectedPapers);
+    const initialPayload = {
+      matrix,
+      coverage: service.evidenceMatrixCoverage(matrix),
+      contextPlan,
+    };
+    const units = projectedPapers.map((paper) => ({
+      unitID: paper.sourceID,
+      sourceID: paper.sourceID,
+      paper,
+    }));
+    const coordinated = await operationCoordinator().runIncremental<
+      typeof initialPayload,
+      (typeof units)[number],
+      any
+    >({
+      projectID,
+      sourcesPrepared: true,
+      papers: params.papers,
+      operation: params.operation,
+      operationVersion: descriptor.operationVersion,
+      artifactType: descriptor.artifactType,
+      artifactTitle: descriptor.title,
+      providerMode: getModeForItem(params.papers[0].itemID),
+      contextProjectionFingerprints: projectionFingerprints,
+      initialPayload,
+      units,
+      signal: params.signal,
+      onStatus: params.onStatus,
+      executeUnit: (unit) =>
+        service.extractEvidenceMatrixRow(matrix, unit.paper),
+      mergeUnit: (payload, _unit, row) => {
+        const nextMatrix = service.mergeEvidenceMatrixRow(payload.matrix, row);
+        return {
+          ...payload,
+          matrix: nextMatrix,
+          coverage: service.evidenceMatrixCoverage(nextMatrix),
+        };
+      },
+      reusableUnit: (payload, unit) =>
+        payload.matrix.rows.find(
+          (row: any) => row.paperKey === unit.paper.paperKey,
+        ),
+      validateReusableUnit: (unit, row) =>
+        row?.paperKey === unit.paper.paperKey && Array.isArray(row?.cells),
+    });
+    return coordinated.result;
+  }
   const coordinated = await operationCoordinator().run<any>({
     projectID,
     sourcesPrepared: true,
@@ -337,15 +441,167 @@ export async function runResearchWorkspaceMultiOperation(params: {
     artifactType: descriptor.artifactType,
     artifactTitle: descriptor.title,
     providerMode: getModeForItem(params.papers[0].itemID),
+    contextProjectionFingerprints: projectionFingerprints,
     signal: params.signal,
     onStatus: params.onStatus,
     execute: () => {
-      if (params.operation === "evidence-matrix")
-        return service.createEvidenceMatrix(params.papers);
       if (params.operation === "literature-graph")
-        return service.createLiteratureGraph(params.papers);
-      return service.startCrossPaperMastery(params.papers);
+        return service
+          .createLiteratureGraph(projectedPapers)
+          .then((result: any) => ({ ...result, contextPlan }));
+      return service
+        .startCrossPaperMastery(projectedPapers)
+        .then((result: any) => ({ ...result, contextPlan }));
     },
+  });
+  return coordinated.result;
+}
+
+export async function runResearchWorkspaceProjectSynthesis(params: {
+  papers: ResearchWorkspacePaper[];
+  question: string;
+  projectID?: string;
+  signal?: AbortSignal;
+  onStatus?: (status: string) => void;
+}) {
+  if (params.papers.length < 2) {
+    throw new Error("Project synthesis requires at least two papers.");
+  }
+  const question = params.question.trim();
+  if (!question) throw new Error("Enter a project question.");
+  const projectID = await prepareProject(params.projectID, params.papers);
+  const contextPlan = planResearchWorkspaceContext({
+    papers: params.papers,
+    operation: "project-synthesis",
+    query: question,
+  });
+  if (contextPlan.insufficientCoverage) {
+    params.onStatus?.(
+      "Context coverage is limited; the synthesis will narrow unsupported claims.",
+    );
+  }
+  const projectedPapers = applyResearchWorkspaceContextPlan(
+    params.papers,
+    contextPlan,
+  );
+  const details = await projectController().details(projectID);
+  const admittedSourceIDs = new Set(
+    params.papers.map((paper) => paper.sourceID),
+  );
+  const localFreshnessWarnings = [
+    ...details.warnings,
+    ...details.sources
+      .filter(
+        (source) =>
+          admittedSourceIDs.has(source.sourceID) &&
+          source.availability !== "ready",
+      )
+      .map(
+        (source) =>
+          `${source.title} is currently ${source.availability}; historical evidence may not be navigable.`,
+      ),
+    ...details.artifacts
+      .filter(
+        (artifact) =>
+          artifact.status === "stale" &&
+          artifact.sourceIDs.some((sourceID) =>
+            admittedSourceIDs.has(sourceID),
+          ),
+      )
+      .map(
+        (artifact) =>
+          `${artifact.title} v${artifact.version} is stale and was not treated as current evidence.`,
+      ),
+    ...(contextPlan.insufficientCoverage
+      ? ["One or more sources have insufficient bounded context coverage."]
+      : []),
+  ];
+  const coverage = {
+    totalProjectSources: details.members.length,
+    analyzedSources: params.papers.length,
+    excludedSources: details.members
+      .filter(
+        (member) =>
+          member.reviewStatus === "excluded" ||
+          !admittedSourceIDs.has(member.sourceID),
+      )
+      .map((member) => ({
+        sourceID: member.sourceID,
+        reason:
+          member.exclusionReason ??
+          (member.reviewStatus === "excluded"
+            ? "Excluded without a recorded reason."
+            : "Not included in the immutable run snapshot."),
+      })),
+    contextPlan: {
+      plannerVersion: contextPlan.plannerVersion,
+      fingerprint: contextPlan.fingerprint,
+      requestedBudget: contextPlan.requestedBudget,
+      usedCharacters: contextPlan.usedCharacters,
+      omittedCharacters: contextPlan.omittedCharacters,
+      insufficientCoverage: contextPlan.insufficientCoverage,
+      sources: contextPlan.projections.map((projection) => ({
+        sourceID: projection.sourceID,
+        coverage: projection.coverage,
+        includedCharacters: projection.includedCharacters,
+        omittedCharacters: projection.omittedCharacters,
+        insufficient: projection.insufficient,
+      })),
+    },
+    freshnessWarnings: [...new Set(localFreshnessWarnings)],
+  };
+  const descriptor = {
+    operation: "project-synthesis",
+    operationVersion: "project-synthesis-v1",
+    promptVersion: "project-synthesis-prompt-v1",
+    parserVersion: "project-synthesis-parser-v1",
+  };
+  const projectWorkspace = buildResearchWorkspaceProjectWorkspace({
+    details,
+    papers: projectedPapers,
+    contextPlan,
+    descriptor,
+    outputSchema: researchWorkspaceOutputSchemaForPurpose("project-synthesis"),
+  });
+  const { service } = await createBoundService({
+    anchor: projectedPapers[0],
+    papers: projectedPapers,
+    signal: params.signal,
+    onStatus: params.onStatus,
+    workspaceFiles: projectWorkspace.files,
+  });
+  const coordinated = await operationCoordinator().run<any>({
+    projectID,
+    sourcesPrepared: true,
+    papers: params.papers,
+    operation: descriptor.operation,
+    operationVersion: descriptor.operationVersion,
+    artifactType: "synthesis",
+    artifactTitle: "Project Synthesis",
+    providerMode:
+      details.project.defaultEngineMode ??
+      getModeForItem(params.papers[0].itemID),
+    contextProjectionFingerprints: new Map(
+      contextPlan.projections.map((projection) => [
+        projection.sourceID,
+        projection.fingerprint,
+      ]),
+    ),
+    signal: params.signal,
+    onStatus: params.onStatus,
+    execute: () =>
+      service
+        .createProjectSynthesis(projectedPapers, question, coverage)
+        .then((result: any) => ({
+          ...result,
+          freshnessWarnings: [
+            ...new Set([
+              ...(result.freshnessWarnings ?? []),
+              ...localFreshnessWarnings,
+            ]),
+          ],
+          contextPlan,
+        })),
   });
   return coordinated.result;
 }
@@ -370,11 +626,34 @@ export async function submitResearchWorkspaceCrossPaperMastery(params: {
   if (!priorSession || priorSession.id !== params.sessionID) {
     throw new Error("Cross-paper session not found.");
   }
-  const { service } = await createBoundService({
-    anchor: params.papers[0],
+  const contextPlan = planResearchWorkspaceContext({
     papers: params.papers,
+    operation: "cross-paper-mastery-grade",
+  });
+  const projectedPapers = applyResearchWorkspaceContextPlan(
+    params.papers,
+    contextPlan,
+  );
+  const details = await projectController().details(projectID);
+  const gradeDescriptor = {
+    operation: "cross-paper-mastery-grade",
+    operationVersion: "cross-paper-mastery-v1",
+    promptVersion: "cross-paper-mastery-grade-prompt-v1",
+    parserVersion: "cross-paper-mastery-grade-parser-v1",
+  };
+  const projectWorkspace = buildResearchWorkspaceProjectWorkspace({
+    details,
+    papers: projectedPapers,
+    contextPlan,
+    descriptor: gradeDescriptor,
+    outputSchema: researchWorkspaceOutputSchemaForPurpose("cross-paper-grade"),
+  });
+  const { service } = await createBoundService({
+    anchor: projectedPapers[0],
+    papers: projectedPapers,
     signal: params.signal,
     onStatus: params.onStatus,
+    workspaceFiles: projectWorkspace.files,
   });
   await service.env.repository.update((state: any) => {
     state.crossPaperMastery = [priorSession];
@@ -384,20 +663,28 @@ export async function submitResearchWorkspaceCrossPaperMastery(params: {
     projectID,
     sourcesPrepared: true,
     papers: params.papers,
-    operation: "cross-paper-mastery-grade",
-    operationVersion: "cross-paper-mastery-v1",
+    operation: gradeDescriptor.operation,
+    operationVersion: gradeDescriptor.operationVersion,
     artifactType: "cross-paper-mastery",
     artifactTitle: "Cross-paper Mastery",
     providerMode: getModeForItem(params.papers[0].itemID),
+    contextProjectionFingerprints: new Map(
+      contextPlan.projections.map((projection) => [
+        projection.sourceID,
+        projection.fingerprint,
+      ]),
+    ),
     signal: params.signal,
     onStatus: params.onStatus,
     execute: () =>
-      service.submitCrossPaperMastery(
-        params.sessionID,
-        params.papers,
-        params.answer,
-        params.confidence,
-      ),
+      service
+        .submitCrossPaperMastery(
+          params.sessionID,
+          projectedPapers,
+          params.answer,
+          params.confidence,
+        )
+        .then((result: any) => ({ ...result, contextPlan })),
   });
   return coordinated.result;
 }

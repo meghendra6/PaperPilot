@@ -10,6 +10,7 @@ import {
   exportIntegratedResearchWorkspace,
   loadResearchWorkspaceState,
   runResearchWorkspaceMultiOperation,
+  runResearchWorkspaceProjectSynthesis,
   runResearchWorkspaceSingleOperation,
   searchResearchWorkspacePaper,
   startOrResumeResearchWorkspaceMastery,
@@ -604,6 +605,11 @@ export async function renderResearchWorkspaceView(
     "No cross-paper question yet.",
   );
   const crossAnswer = textarea(doc, "Cross-paper answer", 5);
+  const synthesisQuestion = textarea(
+    doc,
+    "Ask a project question across the captured papers",
+    3,
+  );
   const runMulti = (
     operation: ResearchWorkspaceMultiOperation,
     label: string,
@@ -655,6 +661,36 @@ export async function renderResearchWorkspaceView(
     button(doc, "Literature Graph", () =>
       runMulti("literature-graph", "Building Literature Graph"),
     ),
+    button(doc, "Project synthesis", () =>
+      guarded(
+        root,
+        "Synthesizing the project",
+        async ({ generation, signal, onStatus }) => {
+          if (!options.capturedPapers) {
+            throw new Error(
+              "Open the full Research Workspace to capture a multi-paper selection.",
+            );
+          }
+          if (!synthesisQuestion.value.trim()) {
+            throw new Error("Enter a project question.");
+          }
+          const value = await runResearchWorkspaceProjectSynthesis({
+            papers: [...options.capturedPapers],
+            question: synthesisQuestion.value,
+            projectID: options.projectID,
+            signal,
+            onStatus,
+          });
+          renderOutput(
+            root,
+            "Project synthesis",
+            value,
+            paper.attachmentID,
+            generation,
+          );
+        },
+      ),
+    ),
     button(doc, "Cross-paper question", () =>
       runMulti("cross-paper-mastery", "Creating cross-paper question"),
     ),
@@ -697,7 +733,12 @@ export async function renderResearchWorkspaceView(
       node.disabled = true;
     }
   }
-  collection.content.append(collectionRow, crossQuestion, crossAnswer);
+  collection.content.append(
+    synthesisQuestion,
+    collectionRow,
+    crossQuestion,
+    crossAnswer,
+  );
   root.insertBefore(collection.root, result);
 
   const citations = details(doc, "Citation stance", false);

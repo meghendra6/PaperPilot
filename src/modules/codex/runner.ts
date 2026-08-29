@@ -25,6 +25,10 @@ import {
 } from "../tools/paperWorkspaceContent";
 import { buildPaperWorkspacePath } from "../workspace/pathBuilder";
 import {
+  writeWorkspaceSupplementalFiles,
+  type WorkspaceSupplementalFiles,
+} from "../workspace/supplementalFiles";
+import {
   buildCodexExecCommand,
   buildCodexResumeCommand,
 } from "./commandBuilder";
@@ -81,6 +85,7 @@ export async function startCodexRunForQuestion(params: {
   webSearchEnabledOverride?: boolean;
   profile?: RunProfile;
   outputSchema?: StructuredOutputSchema;
+  workspaceFiles?: WorkspaceSupplementalFiles;
 }): Promise<StartedCodexRun | FailedCodexRun> {
   const profile = params.profile || "chat";
   const executablePath = await resolveCodexExecutablePath(
@@ -262,6 +267,7 @@ export async function startCodexRunForQuestion(params: {
     JSON.stringify(artifacts.recentTurns, null, 2),
     "utf-8",
   );
+  await writeWorkspaceSupplementalFiles(workspacePath, params.workspaceFiles);
   if (artifacts.discoveryArtifacts) {
     await Zotero.File.putContentsAsync(
       discoveryRequestPath,

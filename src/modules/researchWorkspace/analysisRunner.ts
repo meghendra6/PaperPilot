@@ -3,21 +3,16 @@ import { stopDetachedRunProcess } from "../ai/runCompletion";
 import type { StructuredOutputSchema } from "../ai/structuredOutput";
 import {
   claimWorkspaceRunReservation,
-  extractWorkspaceRunText,
   getWorkspaceEngineActiveMessage,
   getWorkspaceEngineLabel,
-  readWorkspaceRunProgress,
   releaseWorkspaceRunReservation,
   startWorkspaceTextRun,
+  waitForWorkspaceTextRun,
 } from "../ai/workspaceRun";
 import { cleanupWorkspaceIfEnabled } from "../workspace/cleanup";
+import type { WorkspaceSupplementalFiles } from "../workspace/supplementalFiles";
 
-const POLL_INTERVAL_MS = 800;
 const RUN_TIMEOUT_MS = 4 * 60 * 1000;
-
-function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 export async function runResearchWorkspaceAnalysis(params: {
   itemID: number;
@@ -25,6 +20,7 @@ export async function runResearchWorkspaceAnalysis(params: {
   purpose: string;
   prompt: string;
   outputSchema?: StructuredOutputSchema;
+  workspaceFiles?: WorkspaceSupplementalFiles;
   signal?: AbortSignal;
   onStatus?: (status: string) => void;
 }) {
@@ -54,6 +50,7 @@ export async function runResearchWorkspaceAnalysis(params: {
       question: params.prompt,
       profile: "analysis",
       outputSchema: params.outputSchema,
+      workspaceFiles: params.workspaceFiles,
       signal: params.signal,
       deadline,
       onDeferredCleanup: (cleanup) => {
@@ -70,27 +67,21 @@ export async function runResearchWorkspaceAnalysis(params: {
     }
 
     params.onStatus?.(`${engineLabel} is analyzing the paper…`);
-    while (Date.now() < deadline) {
-      if (params.signal?.aborted) {
-        throw new Error("Research Workspace task cancelled.");
-      }
-      const progress = await readWorkspaceRunProgress(mode, {
+    const completion = await waitForWorkspaceTextRun({
+      mode,
+      paths: {
         outputPath: started.outputPath,
         stderrPath: started.stderrPath,
         exitCodePath: started.exitCodePath,
-      });
-      if (progress.completed) {
-        completed = true;
-        const text = extractWorkspaceRunText(mode, progress);
-        if (progress.exitCode !== "0") {
-          throw new Error(text || `${engineLabel} run failed.`);
-        }
-        return text;
-      }
-      await sleep(POLL_INTERVAL_MS);
+      },
+      deadline,
+      signal: params.signal,
+    });
+    completed = true;
+    if (completion.progress.exitCode !== "0") {
+      throw new Error(completion.text || `${engineLabel} run failed.`);
     }
-
-    throw new Error(`${engineLabel} Research Workspace run timed out.`);
+    return completion.text;
   } finally {
     if (started?.ok) {
       if (!completed) {
