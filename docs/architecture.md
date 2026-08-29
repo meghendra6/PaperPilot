@@ -7,6 +7,7 @@ Related notes:
 
 - [`prompt-contracts.md`](./prompt-contracts.md) — required output shapes per prompt surface
 - [`manual-qa.md`](./manual-qa.md) — real-Zotero runtime checklist
+- [`research-workspace-redesign-spec.md`](./research-workspace-redesign-spec.md) — proposed selection-independent Research Workspace redesign and migration plan
 - [`agent-led-research-discovery-and-critical-read-spec.md`](./agent-led-research-discovery-and-critical-read-spec.md) — implemented verified-discovery and seven-step critical-reading specification
 - [`../AGENTS.md`](../AGENTS.md) — working agreements and verification expectations
 
