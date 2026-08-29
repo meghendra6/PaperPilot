@@ -21,9 +21,13 @@ function sourceBlock(tag, value) {
   return `<${tag} trust="source-data">\n${escaped}\n</${tag}>`;
 }
 function buildClaimExtractionPrompt(params) {
+  const sourceIdentity = params.sourceID
+    ? `Every evidence reference must also use sourceID ${JSON.stringify(params.sourceID)} and libraryID ${JSON.stringify(params.libraryID)}.`
+    : "";
   return `Extract an evidence-grounded claim ledger in ${params.responseLanguage || "English"}. Return JSON only: {claims:[{id,text,kind,confidence,support,contradictions,verificationStatus}]}.
 Kinds: author_claim, empirical_result, assumption, reader_inference, external_evidence. Verification status: verified, partially_verified, unverified, conflicting.
 Use attachmentKey ${JSON.stringify(params.attachmentKey)}. Separate what authors state from reader inference. Do not treat abstract rhetoric as verified without evidence.
+${sourceIdentity}
 ${sourceBlock("paper_context", params.paperContext)}`;
 }
 function parseClaimExtractionResponse(params) {

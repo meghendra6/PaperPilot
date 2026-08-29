@@ -26,6 +26,12 @@ function readPageIndex(value) {
     return undefined;
   return number;
 }
+function readLibraryID(value) {
+  const number = readFiniteNumber(value);
+  return number !== undefined && Number.isInteger(number) && number > 0
+    ? number
+    : undefined;
+}
 function clamp01(value) {
   return Math.min(1, Math.max(0, value));
 }
@@ -133,10 +139,14 @@ function normalizeEvidenceReference(value, options = {}) {
   const pageLabel = readString(value.pageLabel, MAX_LABEL_LENGTH);
   const sectionPath = normalizeStringArray(value.sectionPath);
   const elementId = readString(value.elementId, MAX_ELEMENT_ID_LENGTH);
-  const quote = readString(value.quote, MAX_QUOTE_LENGTH);
+  const sourceID = readString(value.sourceID, 512);
+  const libraryID = readLibraryID(value.libraryID);
+  const quote = readString(value.quote ?? value.exactQuote, MAX_QUOTE_LENGTH);
   const quoteHash = readString(value.quoteHash, MAX_HASH_LENGTH);
   return {
     schemaVersion: EVIDENCE_REFERENCE_SCHEMA_VERSION,
+    ...(sourceID ? { sourceID } : {}),
+    ...(libraryID !== undefined ? { libraryID } : {}),
     attachmentKey,
     ...(pageIndex !== undefined ? { pageIndex } : {}),
     ...(pageLabel ? { pageLabel } : {}),
@@ -170,6 +180,8 @@ function normalizeEvidenceReferences(value, options = {}) {
 }
 function evidenceReferenceKey(reference) {
   return [
+    reference.sourceID ?? "",
+    reference.libraryID ?? "",
     reference.attachmentKey,
     reference.pageIndex ?? "",
     reference.pageLabel ?? "",
@@ -190,7 +202,8 @@ function formatEvidenceLocator(reference) {
     parts.push(reference.sectionPath.join(" › "));
   }
   if (reference.elementType) {
-    const id = reference.elementId ? ` ${reference.elementId}` : "";
+    const elementID = reference.elementID ?? reference.elementId;
+    const id = elementID ? ` ${elementID}` : "";
     parts.push(
       `${reference.elementType[0].toUpperCase()}${reference.elementType.slice(1)}${id}`,
     );
@@ -198,14 +211,25 @@ function formatEvidenceLocator(reference) {
   return parts.length > 0 ? parts.join(" · ") : "Source location unavailable";
 }
 function toPdfNavigationTarget(reference) {
+  if (reference.verification?.status !== "verified") return null;
   return {
+    sourceID: reference.sourceID,
+    libraryID: reference.libraryID,
     attachmentKey: reference.attachmentKey,
     ...(reference.pageIndex !== undefined
       ? { pageIndex: reference.pageIndex }
       : {}),
     ...(reference.pageLabel ? { pageLabel: reference.pageLabel } : {}),
-    ...(reference.boundingBox ? { boundingBox: reference.boundingBox } : {}),
-    ...(reference.quote ? { quote: reference.quote } : {}),
+    ...(reference.boundingBoxes
+      ? { boundingBoxes: reference.boundingBoxes }
+      : reference.boundingBox
+        ? { boundingBox: reference.boundingBox }
+        : {}),
+    ...(reference.exactQuote
+      ? { exactQuote: reference.exactQuote }
+      : reference.quote
+        ? { quote: reference.quote }
+        : {}),
   };
 }
 

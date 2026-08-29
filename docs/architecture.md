@@ -75,6 +75,15 @@ fingerprint marks persisted paper outputs stale without deleting them. There is
 no second manifest, bootstrap, provider configuration, subprocess adapter, or
 XPI.
 
+Model-produced evidence is treated as a candidate locator. Before an artifact
+is persisted, `researchWorkspace/evidenceVerification.ts` resolves only its
+admitted library-scoped source and reuses the auto-highlight PDF matcher for an
+exact local quote match. Page geometry is derived from that local match; model
+bounding boxes are never promoted. Verified references are navigable through
+`evidenceNavigation.ts`, which performs one `libraryID + attachmentKey` lookup
+and never scans other libraries. Unverified, not-found, and unavailable-source
+references remain labelled but have no Open in PDF action.
+
 Research Workspace data remains separate from transient run workspaces at
 `<Zotero profile>/paperpilot-research-workspace/workspace-v3.json`. Schema v4
 loads the former companion's v1-v3 data in place, preserves papers, Mastery,

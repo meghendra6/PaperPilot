@@ -44,6 +44,27 @@ export function buildZoteroSourceID(identity: ZoteroSourceIdentity) {
   ].join(":");
 }
 
+export function parseZoteroSourceID(
+  sourceID: unknown,
+): Omit<ZoteroSourceIdentity, "standaloneAttachment"> | undefined {
+  const match = /^zotero:([1-9]\d*):([^:]+):([^:]+)$/.exec(
+    String(sourceID ?? "").trim(),
+  );
+  if (!match) return undefined;
+  try {
+    const itemKey = decodeURIComponent(match[2]).trim();
+    const attachmentKey = decodeURIComponent(match[3]).trim();
+    if (!itemKey || !attachmentKey) return undefined;
+    return {
+      libraryID: Number(match[1]),
+      itemKey,
+      attachmentKey,
+    };
+  } catch {
+    return undefined;
+  }
+}
+
 export function sameZoteroSource(
   left: ZoteroSourceIdentity,
   right: ZoteroSourceIdentity,

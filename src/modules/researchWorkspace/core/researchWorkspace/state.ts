@@ -75,6 +75,9 @@ function papers(value) {
         : {}),
       ...(typeof item.itemKey === "string" ? { itemKey: item.itemKey } : {}),
       ...(typeof item.itemID === "number" ? { itemID: item.itemID } : {}),
+      ...(typeof item.attachmentID === "number"
+        ? { attachmentID: item.attachmentID }
+        : {}),
       attachmentKey,
       ...(fingerprint ? { contentFingerprint: fingerprint } : {}),
       ...(typeof item.sourceStaleAt === "string"

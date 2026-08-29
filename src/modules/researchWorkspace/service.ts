@@ -27,6 +27,7 @@ import * as engine_3 from "./core/citationStance/engine";
 import * as controller_1 from "./core/comprehensionCheck/v2/controller";
 import * as viewModel_1 from "./core/comprehensionCheck/v2/viewModel";
 import * as evidenceTypes_1 from "./core/evidence/types";
+import { verifyResearchWorkspaceEvidence } from "./evidenceVerification";
 const DEFAULT_COLUMNS = [
   {
     id: "contribution",
@@ -157,6 +158,20 @@ class ResearchWorkspaceService {
       `${purpose} failed structured-output validation: ${lastError}`,
     );
   }
+  async verifyEvidence(value, papers) {
+    return verifyResearchWorkspaceEvidence(
+      value,
+      papers.map((paper) => ({
+        sourceID: paper.sourceID,
+        libraryID: paper.libraryID,
+        attachmentKey: paper.attachmentKey,
+        attachmentID: paper.attachmentID,
+        contentFingerprint: paper.contentFingerprint,
+        structuredChunks: paper.structuredChunks,
+      })),
+      this.env.evidenceVerification,
+    );
+  }
   async registerPaper(paper) {
     this.indexPaper(paper);
     return this.env.repository.update((state) => {
@@ -172,6 +187,7 @@ class ResearchWorkspaceService {
         libraryID: paper.libraryID,
         itemKey: paper.itemKey,
         itemID: paper.itemID,
+        attachmentID: paper.attachmentID,
         attachmentKey: paper.attachmentKey,
         contentFingerprint: paper.contentFingerprint,
         title: paper.title,
@@ -228,10 +244,12 @@ class ResearchWorkspaceService {
     const prompt = (0, claimExtraction_1.buildClaimExtractionPrompt)({
       paperContext: paper.context,
       paperKey: paper.paperKey,
+      sourceID: paper.sourceID,
+      libraryID: paper.libraryID,
       attachmentKey: paper.attachmentKey,
       responseLanguage: state.preferences.responseLanguage,
     });
-    const ledger = await this.runParsed(
+    const parsedLedger = await this.runParsed(
       prompt,
       "claim-extraction",
       (response) =>
@@ -241,6 +259,7 @@ class ResearchWorkspaceService {
           attachmentKey: paper.attachmentKey,
         }),
     );
+    const ledger = await this.verifyEvidence(parsedLedger, [paper]);
     await this.env.repository.update((next) => {
       const record = next.papers[paper.paperKey];
       if (!record) throw new Error("Paper is not registered.");
@@ -255,10 +274,12 @@ class ResearchWorkspaceService {
     const prompt = (0, prompt_1.buildProfiledCriticalReadPrompt)({
       paperContext: paper.context,
       profile,
+      sourceID: paper.sourceID,
+      libraryID: paper.libraryID,
       attachmentKey: paper.attachmentKey,
       responseLanguage: state.preferences.responseLanguage,
     });
-    const report = await this.runParsed(
+    const parsedReport = await this.runParsed(
       prompt,
       `critical-read-${profile.id}`,
       (response) =>
@@ -269,6 +290,7 @@ class ResearchWorkspaceService {
           profile: profile.id,
         }),
     );
+    const report = await this.verifyEvidence(parsedReport, [paper]);
     await this.env.repository.update((next) => {
       next.papers[paper.paperKey].criticalReads.push(report);
     });
@@ -279,10 +301,12 @@ class ResearchWorkspaceService {
     const prompt = (0, prompt_2.buildReproducibilityPrompt)({
       paperContext: paper.context,
       paperKey: paper.paperKey,
+      sourceID: paper.sourceID,
+      libraryID: paper.libraryID,
       attachmentKey: paper.attachmentKey,
       responseLanguage: state.preferences.responseLanguage,
     });
-    const report = await this.runParsed(
+    const parsedReport = await this.runParsed(
       prompt,
       "reproducibility-audit",
       (response) =>
@@ -292,6 +316,7 @@ class ResearchWorkspaceService {
           attachmentKey: paper.attachmentKey,
         }),
     );
+    const report = await this.verifyEvidence(parsedReport, [paper]);
     await this.env.repository.update((next) => {
       next.papers[paper.paperKey].reproducibilityReports.push(report);
     });
@@ -302,16 +327,22 @@ class ResearchWorkspaceService {
     const prompt = (0, prompt_3.buildPaperToCodePrompt)({
       paperContext: paper.context,
       paperKey: paper.paperKey,
+      sourceID: paper.sourceID,
+      libraryID: paper.libraryID,
       attachmentKey: paper.attachmentKey,
       responseLanguage: state.preferences.responseLanguage,
     });
-    const report = await this.runParsed(prompt, "paper-to-code", (response) =>
-      (0, parser_3.parsePaperToCodeResponse)({
-        response,
-        paperKey: paper.paperKey,
-        attachmentKey: paper.attachmentKey,
-      }),
+    const parsedReport = await this.runParsed(
+      prompt,
+      "paper-to-code",
+      (response) =>
+        (0, parser_3.parsePaperToCodeResponse)({
+          response,
+          paperKey: paper.paperKey,
+          attachmentKey: paper.attachmentKey,
+        }),
     );
+    const report = await this.verifyEvidence(parsedReport, [paper]);
     await this.env.repository.update((next) => {
       next.papers[paper.paperKey].paperToCodeReports.push(report);
     });
@@ -324,6 +355,11 @@ class ResearchWorkspaceService {
         load: async (paperKey) =>
           (await this.state()).papers[paperKey]?.mastery ?? null,
         save: async (session) => {
+          const verified = await this.verifyEvidence(session, [paper]);
+          if (verified && typeof verified === "object") {
+            for (const key of Object.keys(session)) delete session[key];
+            Object.assign(session, verified);
+          }
           await this.env.repository.update((state) => {
             if (!state.papers[session.paperKey])
               throw new Error("Paper is not registered.");
@@ -400,11 +436,13 @@ class ResearchWorkspaceService {
       const prompt = (0, prompt_4.buildEvidenceMatrixExtractionPrompt)({
         paperContext: paper.context,
         paperKey: paper.paperKey,
+        sourceID: paper.sourceID,
+        libraryID: paper.libraryID,
         attachmentKey: paper.attachmentKey,
         columns: matrix.columns,
         responseLanguage: state.preferences.responseLanguage,
       });
-      const row = await this.runParsed(
+      const parsedRow = await this.runParsed(
         prompt,
         `matrix-${paper.paperKey}`,
         (response) =>
@@ -415,6 +453,7 @@ class ResearchWorkspaceService {
             columns: matrix.columns,
           }),
       );
+      const row = await this.verifyEvidence(parsedRow, [paper]);
       matrix = (0, engine_1.upsertEvidenceMatrixRow)(matrix, row);
     }
     await this.env.repository.update((next) => {
@@ -435,23 +474,30 @@ class ResearchWorkspaceService {
     const prompt = (0, prompt_5.buildLiteratureGraphPrompt)({
       papers: papers.map((paper) => ({
         paperKey: paper.paperKey,
+        sourceID: paper.sourceID,
+        libraryID: paper.libraryID,
+        attachmentKey: paper.attachmentKey,
         title: paper.title,
         context: paper.context,
       })),
       responseLanguage: state.preferences.responseLanguage,
     });
     const graphID = id("graph");
-    const graph = await this.runParsed(prompt, "literature-graph", (response) =>
-      (0, parser_5.parseLiteratureGraphResponse)({
-        response,
-        id: graphID,
-        title: `Literature Graph · ${new Date().toLocaleDateString()}`,
-        allowedPaperKeys: new Set(papers.map((paper) => paper.paperKey)),
-        allowedAttachmentKeys: new Set(
-          papers.map((paper) => paper.attachmentKey),
-        ),
-      }),
+    const parsedGraph = await this.runParsed(
+      prompt,
+      "literature-graph",
+      (response) =>
+        (0, parser_5.parseLiteratureGraphResponse)({
+          response,
+          id: graphID,
+          title: `Literature Graph · ${new Date().toLocaleDateString()}`,
+          allowedPaperKeys: new Set(papers.map((paper) => paper.paperKey)),
+          allowedAttachmentKeys: new Set(
+            papers.map((paper) => paper.attachmentKey),
+          ),
+        }),
     );
+    const graph = await this.verifyEvidence(parsedGraph, papers);
     await this.env.repository.update((next) => {
       next.graphs = [
         ...next.graphs.filter((entry) => entry.id !== graph.id),
@@ -480,13 +526,16 @@ class ResearchWorkspaceService {
     const prompt = (0, prompt_6.buildCrossPaperQuestionPrompt)({
       papers: papers.map((paper) => ({
         paperKey: paper.paperKey,
+        sourceID: paper.sourceID,
+        libraryID: paper.libraryID,
+        attachmentKey: paper.attachmentKey,
         title: paper.title,
         context: paper.context,
       })),
       responseLanguage: state.preferences.responseLanguage,
     });
     const questionID = id("cross-question");
-    const question = await this.runParsed(
+    const parsedQuestion = await this.runParsed(
       prompt,
       "cross-paper-question",
       (response) =>
@@ -500,6 +549,7 @@ class ResearchWorkspaceService {
           ),
         }),
     );
+    const question = await this.verifyEvidence(parsedQuestion, papers);
     session = (0, engine_2.addCrossPaperQuestion)(session, question);
     await this.env.repository.update((next) => {
       next.crossPaperMastery.push(session);
@@ -519,12 +569,15 @@ class ResearchWorkspaceService {
       answer,
       paperContexts: papers.map((paper) => ({
         paperKey: paper.paperKey,
+        sourceID: paper.sourceID,
+        libraryID: paper.libraryID,
+        attachmentKey: paper.attachmentKey,
         context: paper.context,
       })),
       responseLanguage: state.preferences.responseLanguage,
     });
     const attemptID = id("cross-attempt");
-    const parsed = await this.runParsed(
+    const parsedAttempt = await this.runParsed(
       prompt,
       "cross-paper-grade",
       (response) =>
@@ -539,6 +592,7 @@ class ResearchWorkspaceService {
           ),
         }),
     );
+    const parsed = await this.verifyEvidence(parsedAttempt, papers);
     session = (0, engine_2.addCrossPaperAttempt)(session, parsed);
     const grade = {
       questionId: question.id,
@@ -564,7 +618,7 @@ class ResearchWorkspaceService {
       summary: (0, engine_2.summarizeCrossPaperMastery)(session),
     };
   }
-  async classifyCitationContexts(contexts) {
+  async classifyCitationContexts(contexts, papers = []) {
     if (!Array.isArray(contexts) || contexts.length === 0)
       throw new Error("Citation input must contain at least one context.");
     const seen = new Set();
@@ -593,29 +647,34 @@ class ResearchWorkspaceService {
         ),
       };
     });
+    const admittedContexts = await this.verifyEvidence(
+      normalizedContexts,
+      papers,
+    );
     const state = await this.state();
     const prompt = (0, prompt_7.buildCitationStancePrompt)(
-      normalizedContexts,
+      admittedContexts,
       state.preferences.responseLanguage,
     );
-    const results = await this.runParsed(
+    const parsedResults = await this.runParsed(
       prompt,
       "citation-stance",
       (response) =>
         (0, parser_7.parseCitationStanceResponse)({
           response,
-          contexts: normalizedContexts,
+          contexts: admittedContexts,
           allowedAttachments: [
             ...new Set(
-              normalizedContexts.flatMap((context) =>
+              admittedContexts.flatMap((context) =>
                 context.evidence.map((entry) => entry.attachmentKey),
               ),
             ),
           ],
         }),
     );
+    const results = await this.verifyEvidence(parsedResults, papers);
     await this.env.repository.update((next) => {
-      next.citationContexts.push(...normalizedContexts);
+      next.citationContexts.push(...admittedContexts);
       next.citationResults.push(...results);
     });
     return {

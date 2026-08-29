@@ -179,7 +179,7 @@ export async function classifyResearchWorkspaceCitations(params: {
 }) {
   const service = await createBoundService(params);
   await registerPapers(service, [params.anchor]);
-  return service.classifyCitationContexts(params.contexts);
+  return service.classifyCitationContexts(params.contexts, [params.anchor]);
 }
 
 export async function exportIntegratedResearchWorkspace(params: {

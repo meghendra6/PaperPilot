@@ -2220,6 +2220,8 @@
 }
 
 .pprw-evidence {
+  display: inline-flex;
+  align-items: center;
   min-width: 0;
   padding: 3px 7px;
   border-color: var(--pp-border-accent);
@@ -2227,6 +2229,12 @@
   background: var(--pp-bg-evidence);
   color: var(--pp-text-evidence);
   font-size: var(--pp-font-size-xs);
+}
+
+.pprw-evidence--unverified {
+  border: 1px dashed var(--pp-border-medium);
+  background: var(--pp-bg-secondary);
+  color: var(--pp-text-muted);
 }
 
 .paperpilot-research-workspace.is-busy {
