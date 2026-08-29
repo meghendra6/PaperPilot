@@ -252,16 +252,42 @@ function migrateRecommendationState(value: unknown) {
   };
 }
 
-function isCompletedMasteryState(
+function hasPersistableMasteryState(
   value: unknown,
 ): value is ComprehensionCheckState {
   return (
     isPlainObject(value) &&
-    value.phase === "complete" &&
-    value.running === false &&
+    [
+      "generating-question",
+      "awaiting-answer",
+      "evaluating",
+      "complete",
+    ].includes(String(value.phase)) &&
     Array.isArray(value.rounds) &&
     Array.isArray(value.topics)
   );
+}
+
+function persistedMasteryState(value: unknown) {
+  if (!hasPersistableMasteryState(value)) return undefined;
+  const cloned = cloneValue(value) as ComprehensionCheckState;
+  const interrupted = cloned.running;
+  if (cloned.schemaVersion === 2) {
+    cloned.revision = Number.isInteger(cloned.revision) ? cloned.revision : 0;
+  }
+  cloned.running = false;
+  if (cloned.phase === "evaluating" && cloned.currentQuestion) {
+    cloned.phase = "awaiting-answer";
+  } else if (cloned.phase === "generating-question") {
+    cloned.phase = cloned.currentQuestion ? "awaiting-answer" : "complete";
+  }
+  if (interrupted) {
+    cloned.status =
+      cloned.phase === "awaiting-answer"
+        ? "The previous evaluation was interrupted. Submit the answer again."
+        : "The previous question generation was interrupted. Review this session before restarting.";
+  }
+  return cloned;
 }
 
 function hasCriticalReadState(value: unknown) {
@@ -495,12 +521,8 @@ export function captureSessionSnapshot(params: {
       )
     : undefined;
   const mastery = prefs.persistAssistantDerivedState
-    ? cloneValue(
-        isCompletedMasteryState(
-          data.comprehensionCheckStates?.get(params.session.itemID),
-        )
-          ? data.comprehensionCheckStates?.get(params.session.itemID)
-          : undefined,
+    ? persistedMasteryState(
+        data.comprehensionCheckStates?.get(params.session.itemID),
       )
     : undefined;
   const criticalRead = prefs.persistAssistantDerivedState
@@ -590,11 +612,14 @@ export function applySessionSnapshot(
     data.relatedRecommendationStates?.delete(snapshot.paperItemID);
   }
 
-  if (snapshot.mastery && isCompletedMasteryState(snapshot.mastery)) {
-    data.comprehensionCheckStates?.set(
-      snapshot.paperItemID,
-      cloneValue(snapshot.mastery),
-    );
+  const restoredMastery = persistedMasteryState(snapshot.mastery);
+  if (restoredMastery) {
+    data.comprehensionCheckStates?.set(snapshot.paperItemID, {
+      ...restoredMastery,
+      ...(restoredMastery.schemaVersion === 2
+        ? { sessionID: snapshot.sessionId }
+        : {}),
+    });
   } else {
     data.comprehensionCheckStates?.delete(snapshot.paperItemID);
   }

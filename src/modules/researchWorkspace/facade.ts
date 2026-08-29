@@ -16,6 +16,7 @@ import {
   type EvidenceMatrixPresetID,
 } from "./evidenceMatrixPresets";
 import { ResearchWorkspaceOperationCoordinator } from "./operationCoordinator";
+import { createResearchWorkspacePublicPayload } from "./artifactRenderer";
 import { researchWorkspaceOutputSchemaForPurpose } from "./outputSchemas";
 import type { ResearchWorkspacePaper } from "./paperSource";
 import type {
@@ -25,6 +26,13 @@ import type {
 } from "./persistence/contracts";
 import { ResearchWorkspaceProjectController } from "./projectController";
 import { buildResearchWorkspaceProjectWorkspace } from "./projectWorkspaceBuilder";
+import {
+  crossPaperMasterySnapshotMatches,
+  getCrossPaperMasteryCurrentQuestion,
+  isCrossPaperMasterySubmissionReplay,
+  isPersistentCrossPaperMasterySession,
+  type PersistentCrossPaperMasterySession,
+} from "./masteryPersistence";
 import { ResearchWorkspaceService } from "./service";
 import type { WorkspaceSupplementalFiles } from "../workspace/supplementalFiles";
 import {
@@ -154,13 +162,19 @@ async function latestArtifact(
 ) {
   const artifacts =
     await getResearchWorkspaceProjectRepository().listArtifacts(projectID);
-  return artifacts.artifacts.find(
-    (artifact) =>
+  const expectedSourceIDs = [...new Set(sourceIDs)].sort();
+  return artifacts.artifacts.find((artifact) => {
+    const artifactSourceIDs = [...new Set(artifact.sourceIDs)].sort();
+    return (
       artifact.type === type &&
       artifact.status !== "failed" &&
       artifact.status !== "superseded" &&
-      sourceIDs.every((sourceID) => artifact.sourceIDs.includes(sourceID)),
-  );
+      artifactSourceIDs.length === expectedSourceIDs.length &&
+      artifactSourceIDs.every(
+        (sourceID, index) => sourceID === expectedSourceIDs[index],
+      )
+    );
+  });
 }
 
 export async function registerResearchWorkspacePapers(
@@ -350,6 +364,30 @@ export async function runResearchWorkspaceMultiOperation(params: {
     throw new Error("Select at least two papers in the Zotero item list.");
   }
   const projectID = await prepareProject(params.projectID, params.papers);
+  let priorCrossSession: PersistentCrossPaperMasterySession | undefined;
+  if (params.operation === "cross-paper-mastery") {
+    const previous = await latestArtifact(
+      projectID,
+      "cross-paper-mastery",
+      params.papers.map((paper) => paper.sourceID),
+    );
+    const candidate = (previous?.payload as any)?.session;
+    if (
+      isPersistentCrossPaperMasterySession(candidate) &&
+      crossPaperMasterySnapshotMatches(candidate, projectID, params.papers)
+    ) {
+      priorCrossSession = candidate;
+      const currentQuestion = getCrossPaperMasteryCurrentQuestion(candidate);
+      if (currentQuestion) {
+        return {
+          ...(previous?.payload as Record<string, unknown>),
+          session: candidate,
+          question: currentQuestion,
+          resumed: true,
+        };
+      }
+    }
+  }
   const contextPlan = planResearchWorkspaceContext({
     papers: params.papers,
     operation: params.operation,
@@ -384,6 +422,15 @@ export async function runResearchWorkspaceMultiOperation(params: {
     signal: params.signal,
     onStatus: params.onStatus,
     workspaceFiles: projectWorkspace.files,
+    ...(priorCrossSession
+      ? {
+          seed: (state: any) => {
+            state.crossPaperMastery = [priorCrossSession];
+            state.crossPaperQuestions = priorCrossSession.questions ?? [];
+            state.crossPaperAttempts = priorCrossSession.attempts ?? [];
+          },
+        }
+      : {}),
   });
   const projectionFingerprints = new Map(
     contextPlan.projections.map((projection) => [
@@ -475,7 +522,7 @@ export async function runResearchWorkspaceMultiOperation(params: {
           .createLiteratureGraph(projectedPapers)
           .then((result: any) => ({ ...result, contextPlan }));
       return service
-        .startCrossPaperMastery(projectedPapers)
+        .startCrossPaperMastery(projectedPapers, priorCrossSession, projectID)
         .then((result: any) => ({ ...result, contextPlan }));
     },
   });
@@ -634,6 +681,8 @@ export async function runResearchWorkspaceProjectSynthesis(params: {
 export async function submitResearchWorkspaceCrossPaperMastery(params: {
   papers: ResearchWorkspacePaper[];
   sessionID: string;
+  expectedRevision: number;
+  submissionID: string;
   answer: string;
   confidence?: number;
   projectID?: string;
@@ -643,13 +692,53 @@ export async function submitResearchWorkspaceCrossPaperMastery(params: {
   if (params.papers.length < 2) {
     throw new Error("Select at least two papers in the Zotero item list.");
   }
+  if (!params.submissionID.trim()) {
+    throw new Error("Cross-paper mastery requires a submission ID.");
+  }
+  if (
+    !Number.isInteger(params.expectedRevision) ||
+    params.expectedRevision < 0
+  ) {
+    throw new Error("Cross-paper mastery requires a valid expected revision.");
+  }
   const projectID = await prepareProject(params.projectID, params.papers);
   const previous = await latestArtifact(projectID, "cross-paper-mastery", [
     ...params.papers.map((paper) => paper.sourceID),
   ]);
   const priorSession = (previous?.payload as any)?.session;
-  if (!priorSession || priorSession.id !== params.sessionID) {
+  if (
+    !isPersistentCrossPaperMasterySession(priorSession) ||
+    priorSession.id !== params.sessionID ||
+    !crossPaperMasterySnapshotMatches(priorSession, projectID, params.papers)
+  ) {
     throw new Error("Cross-paper session not found.");
+  }
+  const duplicate = priorSession.attempts.find(
+    (attempt) => attempt.id === params.submissionID,
+  );
+  if (duplicate) {
+    const duplicateQuestion = priorSession.questions.find(
+      (question) => question.id === duplicate.questionId,
+    );
+    if (
+      !duplicateQuestion ||
+      !isCrossPaperMasterySubmissionReplay({
+        attempt: duplicate,
+        questionID: duplicateQuestion.id,
+        answer: params.answer,
+        learnerConfidence: params.confidence,
+      })
+    ) {
+      throw new Error(
+        "Cross-paper mastery idempotency conflict: this submission ID was already used for different input.",
+      );
+    }
+    return previous?.payload;
+  }
+  if (priorSession.revision !== params.expectedRevision) {
+    throw new Error(
+      `Cross-paper mastery revision conflict: expected ${params.expectedRevision}, found ${priorSession.revision}.`,
+    );
   }
   const contextPlan = planResearchWorkspaceContext({
     papers: params.papers,
@@ -661,7 +750,7 @@ export async function submitResearchWorkspaceCrossPaperMastery(params: {
   );
   const details = await projectController().details(projectID);
   const gradeDescriptor = {
-    operation: "cross-paper-mastery-grade",
+    operation: "cross-paper-mastery",
     operationVersion: "cross-paper-mastery-v1",
     promptVersion: "cross-paper-mastery-grade-prompt-v1",
     parserVersion: "cross-paper-mastery-grade-parser-v1",
@@ -708,6 +797,8 @@ export async function submitResearchWorkspaceCrossPaperMastery(params: {
           projectedPapers,
           params.answer,
           params.confidence,
+          params.expectedRevision,
+          params.submissionID,
         )
         .then((result: any) => ({ ...result, contextPlan })),
   });
@@ -762,13 +853,17 @@ function projectMarkdown(
     "",
   ];
   for (const artifact of value.artifacts) {
+    const publicPayload = createResearchWorkspacePublicPayload(
+      artifact.payload,
+      artifact.type,
+    );
     lines.push(
       `## ${artifact.title} · v${artifact.version}`,
       "",
       `Status: ${artifact.status}`,
       "",
       "```json",
-      JSON.stringify(artifact.payload, null, 2),
+      JSON.stringify(publicPayload, null, 2),
       "```",
       "",
     );
@@ -795,16 +890,26 @@ export async function exportIntegratedResearchWorkspace(params: {
     params.projectID ?? (await prepareProject(undefined, [params.anchor!]));
   params.onStatus?.("Preparing project-scoped export…");
   const exported = await projectController().exportProject(projectID);
+  const publicExport = {
+    ...exported,
+    artifacts: exported.artifacts.map((artifact) => ({
+      ...artifact,
+      payload: createResearchWorkspacePublicPayload(
+        artifact.payload,
+        artifact.type,
+      ),
+    })),
+  };
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
   const baseName = exported.project.name.replace(/[^a-zA-Z0-9._-]+/g, "-");
   const [jsonPath, markdownPath] = await Promise.all([
     exportResearchWorkspaceTextFile(
       `${baseName}-${stamp}.json`,
-      `${JSON.stringify(exported, null, 2)}\n`,
+      `${JSON.stringify(publicExport, null, 2)}\n`,
     ),
     exportResearchWorkspaceTextFile(
       `${baseName}-${stamp}.md`,
-      projectMarkdown(exported),
+      projectMarkdown(publicExport),
     ),
   ]);
   return { jsonPath, markdownPath, warnings: exported.warnings };
