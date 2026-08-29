@@ -127,6 +127,8 @@ class Addon {
       import("./modules/criticalRead/types").CriticalReadState
     >;
     dialog?: DialogHelper;
+    researchWorkspaceWindowState?: import("./modules/researchWorkspace/window").ResearchWorkspaceWindowState;
+    researchWorkspaceOpening?: Promise<void>;
   };
   // Lifecycle hooks
   public hooks: typeof hooks;

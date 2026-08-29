@@ -18,6 +18,12 @@ import {
   registerResearchWorkspacePaneSection,
   unregisterResearchWorkspacePaneSection,
 } from "./modules/researchWorkspace/view";
+import {
+  registerResearchWorkspaceLaunchers,
+  unregisterResearchWorkspaceLaunchers,
+  unregisterResearchWorkspaceLaunchersForWindow,
+} from "./modules/researchWorkspace/menu";
+import { closeResearchWorkspaceWindow } from "./modules/researchWorkspace/window";
 
 async function onStartup() {
   await Promise.all([
@@ -30,6 +36,7 @@ async function onStartup() {
   await registerPreferencePane();
   registerPaperPilotPaneSection();
   registerResearchWorkspacePaneSection();
+  registerResearchWorkspaceLaunchers();
   registerReaderActionPlaceholders();
   await Promise.all(Zotero.getMainWindows().map(onMainWindowLoad));
 }
@@ -58,6 +65,12 @@ async function onMainWindowLoad(win: Window) {
   addon.data.ztoolkit = createZToolkit();
   registerPaperPilotPaneSection();
   registerResearchWorkspacePaneSection();
+  registerResearchWorkspaceLaunchers(win);
+}
+
+async function onMainWindowUnload(win: Window) {
+  unregisterResearchWorkspaceLaunchersForWindow(win);
+  win.document.getElementById(`${config.addonRef}-stylesheet`)?.remove();
 }
 
 async function registerPreferencePane() {
@@ -88,8 +101,9 @@ function onShutdown(): void {
   addon.data.runProgressStates?.clear();
   unregisterReaderActionPlaceholders();
   unregisterResearchWorkspacePaneSection();
+  unregisterResearchWorkspaceLaunchers();
+  closeResearchWorkspaceWindow();
   ztoolkit.unregisterAll();
-  addon.data.dialog?.window?.close();
   // Remove plugin stylesheet from all windows
   for (const win of Zotero.getMainWindows()) {
     win.document.getElementById(`${config.addonRef}-stylesheet`)?.remove();
@@ -122,6 +136,7 @@ export default {
   onStartup,
   onShutdown,
   onMainWindowLoad,
+  onMainWindowUnload,
   onNotify,
   onPrefsEvent,
 };
