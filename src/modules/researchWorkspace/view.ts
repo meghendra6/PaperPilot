@@ -9,7 +9,6 @@ import {
   classifyResearchWorkspaceCitations,
   exportIntegratedResearchWorkspace,
   loadResearchWorkspaceState,
-  registerResearchWorkspacePapers,
   runResearchWorkspaceMultiOperation,
   runResearchWorkspaceSingleOperation,
   searchResearchWorkspacePaper,
@@ -21,7 +20,6 @@ import {
 } from "./facade";
 import {
   loadResearchWorkspacePaper,
-  loadSelectedResearchWorkspacePapers,
   type ResearchWorkspacePaper,
 } from "./paperSource";
 
@@ -37,6 +35,7 @@ interface ViewRuntime {
   paper?: ResearchWorkspacePaper;
   crossSessionID?: string;
   selectedPapers?: ResearchWorkspacePaper[];
+  projectID?: string;
   abortController?: AbortController;
 }
 
@@ -44,6 +43,7 @@ export interface ResearchWorkspaceViewOptions {
   preloadedPaper?: ResearchWorkspacePaper;
   capturedPapers?: readonly ResearchWorkspacePaper[];
   standalone?: boolean;
+  projectID?: string;
 }
 
 const runtime = new WeakMap<HTMLElement, ViewRuntime>();
@@ -375,13 +375,10 @@ export async function renderResearchWorkspaceView(
         item,
         state.preferences.maxPaperCharacters,
       ));
-    const papersToRegister = options.capturedPapers?.length
-      ? [...options.capturedPapers]
-      : [paper];
-    await registerResearchWorkspacePapers(papersToRegister);
     if (!isCurrent(root, generation)) return;
     Object.assign(runtime.get(root)!, {
       paper,
+      ...(options.projectID ? { projectID: options.projectID } : {}),
       ...(options.capturedPapers
         ? { selectedPapers: [...options.capturedPapers] }
         : {}),
@@ -460,6 +457,7 @@ export async function renderResearchWorkspaceView(
       const value = await runResearchWorkspaceSingleOperation({
         paper,
         operation,
+        projectID: options.projectID,
         signal,
         onStatus,
       });
@@ -535,6 +533,7 @@ export async function renderResearchWorkspaceView(
         async ({ generation, signal, onStatus }) => {
           const value = await startOrResumeResearchWorkspaceMastery({
             paper,
+            projectID: options.projectID,
             signal,
             onStatus,
           });
@@ -560,6 +559,7 @@ export async function renderResearchWorkspaceView(
             paper,
             answer: answer.value,
             confidence: Number(confidence.value),
+            projectID: options.projectID,
             signal,
             onStatus,
           });
@@ -609,14 +609,16 @@ export async function renderResearchWorkspaceView(
     label: string,
   ) =>
     guarded(root, label, async ({ generation, signal, onStatus }) => {
-      const papers = options.capturedPapers
-        ? [...options.capturedPapers]
-        : await loadSelectedResearchWorkspacePapers(
-            state.preferences.maxPaperCharacters,
-          );
+      if (!options.capturedPapers) {
+        throw new Error(
+          "Open the full Research Workspace to capture a multi-paper selection.",
+        );
+      }
+      const papers = [...options.capturedPapers];
       const value = await runResearchWorkspaceMultiOperation({
         papers,
         operation,
+        projectID: options.projectID,
         signal,
         onStatus,
       });
@@ -672,6 +674,7 @@ export async function renderResearchWorkspaceView(
             sessionID: current.crossSessionID,
             answer: crossAnswer.value,
             confidence: 0.7,
+            projectID: options.projectID,
             signal,
             onStatus,
           });
@@ -717,6 +720,7 @@ export async function renderResearchWorkspaceView(
           const value = await classifyResearchWorkspaceCitations({
             anchor: paper,
             contexts: parsed,
+            projectID: options.projectID,
             signal,
             onStatus,
           });
@@ -739,6 +743,7 @@ export async function renderResearchWorkspaceView(
       guarded(root, "Exporting workspace", async ({ generation, onStatus }) => {
         const value = await exportIntegratedResearchWorkspace({
           anchor: paper,
+          projectID: options.projectID,
           onStatus,
         });
         renderOutput(

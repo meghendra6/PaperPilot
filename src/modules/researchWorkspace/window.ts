@@ -9,9 +9,9 @@ import {
   type ResearchWorkspaceSkippedSelection,
 } from "./selectionSnapshot";
 import {
-  disposeResearchWorkspaceView,
-  renderResearchWorkspaceView,
-} from "./view";
+  disposeResearchWorkspaceProjectSurface,
+  renderResearchWorkspaceProjectSurface,
+} from "./projectWindowView";
 
 declare const addon: any;
 declare const Zotero: any;
@@ -166,39 +166,6 @@ function renderWindowFrame(
   return body;
 }
 
-async function renderWorkspaceHome(root: HTMLElement) {
-  const doc = root.ownerDocument;
-  const state = await loadResearchWorkspaceState();
-  const papers = Object.keys(state.papers || {}).length;
-  const matrices = Array.isArray(state.matrices) ? state.matrices.length : 0;
-  const graphs = Array.isArray(state.graphs) ? state.graphs.length : 0;
-  const home = element(doc, "section", "pprw-home");
-  home.append(
-    element(doc, "h2", "", "Workspace home"),
-    element(
-      doc,
-      "p",
-      "pprw-muted",
-      "Select one or more Zotero papers and use Start a new selection. Parent items with multiple PDFs require selecting the exact attachment row.",
-    ),
-  );
-  const metrics = element(doc, "div", "pprw-home-metrics");
-  for (const [label, value] of [
-    ["Indexed papers", papers],
-    ["Evidence matrices", matrices],
-    ["Literature graphs", graphs],
-  ] as const) {
-    const metric = element(doc, "div", "pprw-home-metric");
-    metric.append(
-      element(doc, "strong", "", String(value)),
-      element(doc, "span", "", label),
-    );
-    metrics.append(metric);
-  }
-  home.append(metrics);
-  root.replaceChildren(home);
-}
-
 function updateWindowState(
   snapshot: ResearchWorkspaceSelectionSnapshot,
   update: Omit<ResearchWorkspaceWindowState, "snapshot">,
@@ -248,14 +215,8 @@ async function initializeResearchWorkspaceDialog(
       ),
       skipped: loaded.skipped,
     });
-    if (!loaded.papers.length) {
-      await renderWorkspaceHome(body);
-      return;
-    }
-    await renderResearchWorkspaceView(body, undefined, {
-      preloadedPaper: loaded.papers[0],
+    await renderResearchWorkspaceProjectSurface(body, {
       capturedPapers: loaded.papers,
-      standalone: true,
     });
   } catch (error) {
     if (addon.data.dialog !== dialog || dialog.window.closed) return;
@@ -292,7 +253,7 @@ async function createResearchWorkspaceDialog(
       },
       beforeUnloadCallback: () => {
         const body = dialog.window.document.getElementById(WINDOW_BODY_ID);
-        if (body) disposeResearchWorkspaceView(body as HTMLElement);
+        if (body) disposeResearchWorkspaceProjectSurface(body as HTMLElement);
       },
       unloadCallback: () => {
         if (addon.data.dialog === dialog) {

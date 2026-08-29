@@ -24,7 +24,10 @@ import {
   unregisterResearchWorkspaceLaunchersForWindow,
 } from "./modules/researchWorkspace/menu";
 import { closeResearchWorkspaceWindow } from "./modules/researchWorkspace/window";
-import { recoverResearchWorkspaceProjectPersistence } from "./modules/researchWorkspace/storage";
+import {
+  migrateLegacyResearchWorkspace,
+  recoverResearchWorkspaceProjectPersistence,
+} from "./modules/researchWorkspace/storage";
 
 async function onStartup() {
   await Promise.all([
@@ -38,6 +41,15 @@ async function onStartup() {
     const recovery = await recoverResearchWorkspaceProjectPersistence();
     for (const warning of recovery.warnings) {
       ztoolkit.log(`Research Workspace recovery: ${warning}`);
+    }
+    const migration = await migrateLegacyResearchWorkspace();
+    if (migration.status === "completed" && migration.marker) {
+      ztoolkit.log(
+        `Research Workspace imported legacy data into project ${migration.marker.migration.createdProjectID}.`,
+      );
+      for (const warning of migration.marker.migration.summary.warnings) {
+        ztoolkit.log(`Research Workspace migration: ${warning}`);
+      }
     }
   } catch (error) {
     Zotero.logError?.(

@@ -627,8 +627,12 @@ export class ResearchWorkspaceProjectRepository {
   ) {
     const bundle = await this.getProject(projectID);
     const history = await this.listArtifacts(projectID);
+    const inputScope = [...input.sourceIDs].sort().join("\n");
     const sameType = history.artifacts.filter(
-      (artifact) => artifact.type === input.type,
+      (artifact) =>
+        artifact.type === input.type &&
+        [...artifact.sourceIDs].sort().join("\n") === inputScope &&
+        artifact.lineage.operation === input.lineage.operation,
     );
     const previous = sameType
       .filter((artifact) => artifact.status !== "superseded")
