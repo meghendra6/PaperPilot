@@ -9,6 +9,7 @@ import type {
   ResearchWorkspaceSourceRecord,
 } from "./persistence/contracts";
 import type { ResearchWorkspaceProjectRepository } from "./persistence/projectRepository";
+import { researchWorkspaceArtifactPayloadFingerprint } from "./artifactFingerprint";
 import { ResearchWorkspaceProjectController } from "./projectController";
 import {
   claimResearchWorkspaceOwner,
@@ -124,6 +125,96 @@ export class ResearchWorkspaceOperationCoordinator {
     options: { now?: () => Date } = {},
   ) {
     this.projects = new ResearchWorkspaceProjectController(repository, options);
+  }
+
+  private async assertDerivedInputsCurrent(
+    params: RunResearchWorkspaceDerivedOperation<unknown>,
+    sources: readonly ResearchWorkspaceSourceRecord[],
+    artifactInputs: NonNullable<
+      ResearchWorkspaceArtifactLineage["artifactInputs"]
+    >,
+  ) {
+    const bundle = await this.repository.getProject(params.projectID);
+    if (
+      params.membersRevision !== undefined &&
+      bundle.membersRevision !== params.membersRevision
+    ) {
+      throw new Error(
+        "The project source scope changed while the derived artifact was being built. Refresh and try again.",
+      );
+    }
+    const activeMemberSourceIDs = bundle.members
+      .filter((member) => member.reviewStatus !== "excluded")
+      .map((member) => member.sourceID)
+      .sort();
+    const sourceIDs = sources.map((source) => source.sourceID).sort();
+    if (
+      params.membersRevision !== undefined &&
+      JSON.stringify(activeMemberSourceIDs) !== JSON.stringify(sourceIDs)
+    ) {
+      throw new Error(
+        "The derived operation source snapshot does not match the current non-excluded project scope.",
+      );
+    }
+    const memberBySourceID = new Map(
+      bundle.members.map((member) => [member.sourceID, member]),
+    );
+    for (const source of sources) {
+      const member = memberBySourceID.get(source.sourceID);
+      if (!member || member.reviewStatus === "excluded") {
+        throw new Error(
+          `Source ${source.sourceID} is no longer included in this project.`,
+        );
+      }
+      const current = await this.repository.getSource(source.sourceID);
+      if (!current) {
+        throw new Error(`Source ${source.sourceID} is no longer available.`);
+      }
+      const expectedFingerprint =
+        source.contentFingerprint?.value ?? "source-content-unavailable";
+      const currentFingerprint =
+        current.source.contentFingerprint?.value ??
+        "source-content-unavailable";
+      if (
+        currentFingerprint !== expectedFingerprint ||
+        current.source.availability !== source.availability ||
+        current.source.identity.libraryID !== source.identity.libraryID ||
+        current.source.identity.itemKey !== source.identity.itemKey ||
+        current.source.identity.attachmentKey !==
+          source.identity.attachmentKey ||
+        current.source.identity.standaloneAttachment !==
+          source.identity.standaloneAttachment
+      ) {
+        throw new Error(
+          `Source ${source.sourceID} changed while the derived artifact was being built. Refresh and try again.`,
+        );
+      }
+    }
+    for (const input of artifactInputs) {
+      if (!bundle.project.artifactIDs.includes(input.artifactID)) {
+        throw new Error(
+          `Upstream artifact ${input.artifactID} is no longer part of this project.`,
+        );
+      }
+      const current = await this.repository.getArtifact(
+        params.projectID,
+        input.artifactID,
+      );
+      if (
+        !current ||
+        current.artifact.status !== "complete" ||
+        current.artifact.type !== input.artifactType ||
+        current.artifact.version !== input.version ||
+        current.artifact.updatedAt !== input.updatedAt ||
+        researchWorkspaceArtifactPayloadFingerprint(
+          current.artifact.payload,
+        ) !== input.payloadFingerprint
+      ) {
+        throw new Error(
+          `Upstream artifact ${input.artifactID} changed while the derived artifact was being built. Refresh and try again.`,
+        );
+      }
+    }
   }
 
   async run<T>(
@@ -290,6 +381,7 @@ export class ResearchWorkspaceOperationCoordinator {
       );
     }
     try {
+      await this.assertDerivedInputsCurrent(params, sources, artifactInputs);
       const sourceSnapshot = sources.map((source) => ({
         sourceID: source.sourceID,
         contentFingerprint:
@@ -329,6 +421,7 @@ export class ResearchWorkspaceOperationCoordinator {
         ) {
           throw new DOMException("Cancelled", "AbortError");
         }
+        await this.assertDerivedInputsCurrent(params, sources, artifactInputs);
         const completedAt = new Date().toISOString();
         const artifact = await this.repository.createArtifact(
           params.projectID,

@@ -662,3 +662,168 @@ test("superseding an upstream artifact stales dependent derived artifacts", asyn
   });
   assert.deepEqual(replay, []);
 });
+
+test("artifact updates stale every transitive dependent without looping", async () => {
+  const setup = repository();
+  const project = await setup.repository.createProject({
+    projectID: "project-transitive-staleness",
+    name: "Transitive staleness",
+  });
+  const sourceA = source("A");
+  await setup.repository.putSource(sourceA);
+  await setup.repository.addMembers(
+    project.project.projectID,
+    project.membersRevision,
+    [{ sourceID: sourceA.sourceID }],
+  );
+  const upstream = await setup.repository.createArtifact(
+    project.project.projectID,
+    {
+      type: "claim-ledger",
+      title: "Claims",
+      status: "complete",
+      sourceIDs: [sourceA.sourceID],
+      lineage: lineage([sourceA], "run-transitive-a"),
+      payload: { claims: [{ text: "Before" }] },
+    },
+  );
+  const middle = await setup.repository.createArtifact(
+    project.project.projectID,
+    {
+      type: "contradiction-gap-dashboard",
+      title: "Derived B",
+      status: "complete",
+      sourceIDs: [sourceA.sourceID],
+      lineage: {
+        ...lineage([sourceA], "run-transitive-b"),
+        artifactInputs: [
+          {
+            artifactID: upstream.artifact.artifactID,
+            artifactType: upstream.artifact.type,
+            version: upstream.artifact.version,
+            updatedAt: upstream.artifact.updatedAt,
+            payloadFingerprint: "artifact-payload-upstream",
+          },
+        ],
+      },
+      payload: { stage: "middle" },
+    },
+  );
+  const leaf = await setup.repository.createArtifact(
+    project.project.projectID,
+    {
+      type: "review-log",
+      title: "Derived C",
+      status: "complete",
+      sourceIDs: [sourceA.sourceID],
+      lineage: {
+        ...lineage([sourceA], "run-transitive-c"),
+        artifactInputs: [
+          {
+            artifactID: middle.artifact.artifactID,
+            artifactType: middle.artifact.type,
+            version: middle.artifact.version,
+            updatedAt: middle.artifact.updatedAt,
+            payloadFingerprint: "artifact-payload-middle",
+          },
+        ],
+      },
+      payload: { stage: "leaf" },
+    },
+  );
+  const upstreamFile = await setup.repository.getArtifact(
+    project.project.projectID,
+    upstream.artifact.artifactID,
+  );
+  assert(upstreamFile);
+  await setup.repository.updateArtifact(
+    project.project.projectID,
+    upstream.artifact.artifactID,
+    upstreamFile.revision,
+    (artifact) => ({ ...artifact, payload: { claims: [{ text: "After" }] } }),
+  );
+
+  const storedMiddle = await setup.repository.getArtifact(
+    project.project.projectID,
+    middle.artifact.artifactID,
+  );
+  const storedLeaf = await setup.repository.getArtifact(
+    project.project.projectID,
+    leaf.artifact.artifactID,
+  );
+  assert.equal(storedMiddle?.artifact.status, "stale");
+  assert.equal(storedLeaf?.artifact.status, "stale");
+  assert(
+    storedLeaf?.artifact.staleReasons?.includes(
+      `upstream-artifact-changed:${upstream.artifact.artifactID}`,
+    ),
+  );
+});
+
+test("deleting an upstream artifact leaves its dependents stale", async () => {
+  const setup = repository();
+  const project = await setup.repository.createProject({
+    projectID: "project-deleted-input",
+    name: "Deleted input",
+  });
+  const sourceA = source("A");
+  await setup.repository.putSource(sourceA);
+  await setup.repository.addMembers(
+    project.project.projectID,
+    project.membersRevision,
+    [{ sourceID: sourceA.sourceID }],
+  );
+  const upstream = await setup.repository.createArtifact(
+    project.project.projectID,
+    {
+      type: "claim-ledger",
+      title: "Claims",
+      status: "complete",
+      sourceIDs: [sourceA.sourceID],
+      lineage: lineage([sourceA], "run-delete-a"),
+      payload: { claims: [] },
+    },
+  );
+  const dependent = await setup.repository.createArtifact(
+    project.project.projectID,
+    {
+      type: "contradiction-gap-dashboard",
+      title: "Dependent",
+      status: "complete",
+      sourceIDs: [sourceA.sourceID],
+      lineage: {
+        ...lineage([sourceA], "run-delete-b"),
+        artifactInputs: [
+          {
+            artifactID: upstream.artifact.artifactID,
+            artifactType: upstream.artifact.type,
+            version: upstream.artifact.version,
+            updatedAt: upstream.artifact.updatedAt,
+            payloadFingerprint: "artifact-payload-upstream",
+          },
+        ],
+      },
+      payload: {},
+    },
+  );
+
+  await setup.repository.deleteArtifact(
+    project.project.projectID,
+    upstream.artifact.artifactID,
+  );
+  assert.equal(
+    await setup.repository.getArtifact(
+      project.project.projectID,
+      upstream.artifact.artifactID,
+    ),
+    undefined,
+  );
+  const stored = await setup.repository.getArtifact(
+    project.project.projectID,
+    dependent.artifact.artifactID,
+  );
+  assert.equal(stored?.artifact.status, "stale");
+  assert.deepEqual(stored?.artifact.staleReasons, [
+    `upstream-artifact-deleted:${upstream.artifact.artifactID}`,
+  ]);
+});

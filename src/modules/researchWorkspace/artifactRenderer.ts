@@ -1180,7 +1180,11 @@ function renderContradictionGap(
   metrics.append(
     metric(doc, "Project sources", String(view.coverage.includedSources)),
     metric(doc, "Current inputs", String(view.coverage.admittedArtifacts)),
-    metric(doc, "Verified facts", String(view.coverage.verifiedFactAtoms)),
+    metric(
+      doc,
+      "Verified evidence-linked assertions",
+      String(view.coverage.verifiedFactAtoms),
+    ),
     metric(
       doc,
       "Multi-source support",
@@ -1188,7 +1192,7 @@ function renderContradictionGap(
     ),
     metric(
       doc,
-      "Direct contradictions",
+      "Rule-detected contradiction candidates",
       String(view.coverage.directContradictions),
     ),
     metric(doc, "Evidence gaps", String(view.coverage.gaps)),
@@ -1217,7 +1221,7 @@ function renderContradictionGap(
   }
 
   const relationshipGroups = [
-    ["direct-contradiction", "Direct contradictions"],
+    ["direct-contradiction", "Contradiction candidates"],
     ["non-comparable", "Non-comparable designs"],
     ["uncertain", "Uncertain comparisons"],
   ] as const;

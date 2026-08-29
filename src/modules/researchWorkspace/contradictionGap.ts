@@ -1,9 +1,15 @@
-import type { EvidenceReferenceV2 } from "./evidenceVerification";
+import {
+  EVIDENCE_VERIFIER_VERSION,
+  type EvidenceReferenceV2,
+} from "./evidenceVerification";
 import type {
   ResearchWorkspaceArtifact,
   ResearchWorkspaceSourceRecord,
 } from "./persistence/contracts";
 import type { ResearchWorkspaceProjectDetails } from "./projectController";
+import { researchWorkspaceArtifactPayloadFingerprint } from "./artifactFingerprint";
+
+export { researchWorkspaceArtifactPayloadFingerprint };
 
 export const CONTRADICTION_GAP_DASHBOARD_VERSION =
   "contradiction-gap-dashboard-v1" as const;
@@ -173,22 +179,6 @@ function stableHash(value: string) {
   return (hash >>> 0).toString(16).padStart(8, "0");
 }
 
-function canonicalValue(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(canonicalValue);
-  const object = record(value);
-  if (!object) return value;
-  return Object.fromEntries(
-    Object.keys(object)
-      .sort()
-      .map((key) => [key, canonicalValue(object[key])]),
-  );
-}
-
-export function researchWorkspaceArtifactPayloadFingerprint(value: unknown) {
-  const serialized = JSON.stringify(canonicalValue(value));
-  return `artifact-payload-${stableHash(serialized)}-${serialized.length.toString(16)}`;
-}
-
 function normalizedStatement(value: string) {
   return value
     .normalize("NFKC")
@@ -226,9 +216,21 @@ function validVerifiedEvidence(
     const verification = record(reference?.verification);
     const sourceID = cleanText(reference?.sourceID, 512);
     const source = sourceByID.get(sourceID);
+    const method = cleanText(verification?.method, 64);
+    const verifiedAt = cleanText(verification?.verifiedAt, 64);
+    const hasMethodLocator =
+      (method === "pdf-exact-quote" &&
+        Boolean(cleanText(reference?.exactQuote))) ||
+      (method === "structured-element" &&
+        Boolean(cleanText(reference?.elementID)));
     if (
       !reference ||
+      reference.schemaVersion !== 2 ||
       verification?.status !== "verified" ||
+      verification.verifierVersion !== EVIDENCE_VERIFIER_VERSION ||
+      !verifiedAt ||
+      Number.isNaN(Date.parse(verifiedAt)) ||
+      !hasMethodLocator ||
       !source ||
       !allowedSourceIDs.has(sourceID) ||
       (expectedSourceID && sourceID !== expectedSourceID) ||
@@ -240,7 +242,9 @@ function validVerifiedEvidence(
     const key = [
       sourceID,
       reference.attachmentKey,
+      method,
       String(reference.pageIndex ?? ""),
+      cleanText(reference.elementID),
       cleanText(reference.exactQuote),
     ].join("|");
     if (seen.has(key)) continue;
@@ -260,6 +264,9 @@ function artifactAdmissionReason(
   includedSourceIDs: ReadonlySet<string>,
 ) {
   if (artifact.status !== "complete") return `status-${artifact.status}`;
+  if (artifact.lineage.evidenceVerifierVersion !== EVIDENCE_VERIFIER_VERSION) {
+    return "evidence-verifier-version-mismatch";
+  }
   if (!artifact.sourceIDs.length) return "no-source-scope";
   if (artifact.sourceIDs.some((sourceID) => !includedSourceIDs.has(sourceID))) {
     return "outside-included-scope";
@@ -393,12 +400,44 @@ function collectClaimLedger(
 
 interface MatrixObservation {
   columnID: string;
+  outcomeIdentity?: string;
   sourceID: string;
   atom?: VerifiedFactAtom;
   rawValue: unknown;
   statement: string;
   dimension: ContradictionGapDimension;
   status: string;
+}
+
+const GENERIC_OUTCOME_IDENTITIES = new Set([
+  "effect",
+  "evaluation",
+  "main outcome",
+  "measure",
+  "metric",
+  "outcome",
+  "performance",
+  "primary outcome",
+  "primary result",
+  "result",
+  "secondary outcome",
+  "value",
+]);
+
+function outcomeIdentity(columnID: string, columnLabel: string) {
+  for (const candidate of [columnLabel, columnID]) {
+    const normalized = normalizedStatement(candidate);
+    if (!normalized || GENERIC_OUTCOME_IDENTITIES.has(normalized)) continue;
+    if (
+      /^(?:(?:primary|secondary|main) )?(?:effects?|evaluations?|measures?|metrics?|outcomes?|performances?|results?|values?)$/.test(
+        normalized,
+      )
+    ) {
+      continue;
+    }
+    return normalized;
+  }
+  return undefined;
 }
 
 function collectMatrix(
@@ -439,6 +478,9 @@ function collectMatrix(
     });
     observations.push({
       columnID,
+      ...(dimension === "outcome" || dimension === "metric"
+        ? { outcomeIdentity: outcomeIdentity(columnID, columnLabel) }
+        : {}),
       sourceID,
       atom: created[0],
       rawValue: cell.value,
@@ -514,7 +556,7 @@ function collectSynthesis(
         })),
         comparability: { status: "unknown", differences: [] },
         limitations: [
-          "The upstream synthesis labels a contrast, but comparable design and opposite outcome direction are not established by the stored verified facts.",
+          "The upstream synthesis labels a contrast, but comparable design and opposite outcome direction are not established by the stored verified evidence-linked assertions.",
         ],
         origin: "deterministic",
         reviewState: "unreviewed",
@@ -697,12 +739,18 @@ function matrixRelationships(
           right.sourceID,
           observations,
         );
+        const sharedOutcomeIdentity =
+          left.outcomeIdentity && left.outcomeIdentity === right.outcomeIdentity
+            ? left.outcomeIdentity
+            : undefined;
         const classification: ContradictionClassification =
-          comparability.status === "comparable"
-            ? "direct-contradiction"
-            : comparability.status === "not-comparable"
-              ? "non-comparable"
-              : "uncertain";
+          !sharedOutcomeIdentity
+            ? "uncertain"
+            : comparability.status === "comparable"
+              ? "direct-contradiction"
+              : comparability.status === "not-comparable"
+                ? "non-comparable"
+                : "uncertain";
         result.push({
           relationshipID: `relationship-${stableHash(
             [columnID, left.sourceID, right.sourceID].join("|"),
@@ -715,13 +763,16 @@ function matrixRelationships(
             sourceIDs: [entry.sourceID],
           })),
           comparability,
-          limitations:
-            classification === "direct-contradiction"
+          limitations: !sharedOutcomeIdentity
+            ? [
+                "Opposite direction words were found, but the stored matrix does not identify one concrete shared outcome or metric.",
+              ]
+            : classification === "direct-contradiction"
               ? [
-                  "Direct contrast is limited to verified matrix facts with opposite direction and at least two matching design dimensions.",
+                  "This rule-detected candidate is limited to verified evidence-linked matrix assertions about the same stored outcome or metric, with opposite direction and at least two matching design dimensions.",
                 ]
               : [
-                  "Opposite direction alone is not enough to establish a direct contradiction.",
+                  "Opposite direction alone is not enough to establish a contradiction candidate.",
                 ],
           origin: "deterministic",
           reviewState: "unreviewed",
@@ -987,8 +1038,9 @@ export function buildContradictionGapDashboard(params: {
     },
     limitations: [
       "This dashboard describes only the currently included project sources and current, complete artifacts; it does not establish absence in the wider literature.",
-      "Only evidence references with local verification status verified and exact project source identity are admitted as fact atoms.",
-      "An opposite result is called a direct contradiction only when different sources have verified evidence and at least two stored design dimensions match exactly.",
+      "Only evidence references produced by the current local verifier with an exact project source identity and a supported locator method are admitted as evidence-linked assertions.",
+      "Local evidence verification confirms that the stored locator and quoted content are present; it does not prove entailment, truth, or study quality.",
+      "An opposite result becomes a rule-detected contradiction candidate only when different sources address the same concrete stored outcome or metric and at least two stored design dimensions match exactly.",
       ...admission
         .filter((entry) => entry.reason)
         .slice(0, 20)

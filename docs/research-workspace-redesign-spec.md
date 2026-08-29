@@ -1736,13 +1736,15 @@ the user explicitly enables a rule-based batch mode.
 Implementation status: delivered as a versioned, project-scoped local artifact.
 The deterministic builder uses only current saved artifacts and individually
 verified exact-source evidence; it records upstream artifact fingerprints and
-member revision for stale propagation. Direct contradiction requires opposite
-verified outcomes and at least two matching design dimensions. Non-comparable
-and uncertain cases remain separate, gaps are explicitly limited to the current
-project snapshot, and user review is append-only and revision/idempotency
-guarded. The project UI runs without a live Zotero selection and starts no PDF
-extraction, model, CLI, or network request. Real-Zotero runtime checks remain in
-the release checklist.
+member revision for stale propagation. A rule-detected contradiction candidate
+requires one concrete shared outcome or metric, opposite evidence-linked
+directions, and at least two matching design dimensions. Local evidence
+verification establishes locator/content presence, not entailment or truth.
+Non-comparable and uncertain cases remain separate, gaps are explicitly limited
+to the current project snapshot, and user review is append-only and
+revision/idempotency guarded. The project UI runs without a live Zotero
+selection and starts no PDF extraction, model, CLI, or network request.
+Real-Zotero runtime checks remain in the release checklist.
 
 Build a dashboard from verified project artifacts:
 

@@ -11,6 +11,7 @@ import {
 } from "../src/modules/researchWorkspace/core/synthesis/parser";
 import { validateAndAnnotateRelationshipGraph } from "../src/modules/researchWorkspace/core/literatureGraph/provenance";
 import { ResearchWorkspaceOperationCoordinator } from "../src/modules/researchWorkspace/operationCoordinator";
+import { researchWorkspaceArtifactPayloadFingerprint } from "../src/modules/researchWorkspace/artifactFingerprint";
 import { researchWorkspaceOutputSchemaForPurpose } from "../src/modules/researchWorkspace/outputSchemas";
 import type { ResearchWorkspacePaper } from "../src/modules/researchWorkspace/paperSource";
 import type { ResearchWorkspaceFileOps } from "../src/modules/researchWorkspace/persistence/contracts";
@@ -515,7 +516,9 @@ test("local derived operations run without a live selection and preserve depende
     artifactType: upstream.artifact.artifact.type,
     version: upstream.artifact.artifact.version,
     updatedAt: upstream.artifact.artifact.updatedAt,
-    payloadFingerprint: "artifact-payload-12345678-10",
+    payloadFingerprint: researchWorkspaceArtifactPayloadFingerprint(
+      upstream.artifact.artifact.payload,
+    ),
   } as const;
   const first = await coordinator.runDerived({
     projectID: created.project.projectID,
@@ -578,4 +581,79 @@ test("local derived operations run without a live selection and preserve depende
     }),
     /upstream artifact is required/,
   );
+});
+
+test("local derived operations reject an upstream artifact changed during execution", async () => {
+  const { repository } = createRepository();
+  const projects = new ResearchWorkspaceProjectController(repository);
+  const coordinator = new ResearchWorkspaceOperationCoordinator(repository);
+  const papers = [paper("RACE")];
+  const created = await projects.createProject(
+    { name: "Derived race" },
+    papers,
+  );
+  const upstream = await coordinator.run({
+    projectID: created.project.projectID,
+    papers,
+    sourcesPrepared: true,
+    operation: "claims",
+    operationVersion: "claims-v1",
+    artifactType: "claim-ledger",
+    artifactTitle: "Claims",
+    providerMode: "codex_cli",
+    execute: async () => ({ claims: [{ text: "Before" }] }),
+  });
+  const details = await projects.details(created.project.projectID);
+  const input = {
+    artifactID: upstream.artifact.artifact.artifactID,
+    artifactType: upstream.artifact.artifact.type,
+    version: upstream.artifact.artifact.version,
+    updatedAt: upstream.artifact.artifact.updatedAt,
+    payloadFingerprint: researchWorkspaceArtifactPayloadFingerprint(
+      upstream.artifact.artifact.payload,
+    ),
+  } as const;
+
+  await assert.rejects(
+    coordinator.runDerived({
+      projectID: created.project.projectID,
+      sources: details.sources,
+      artifactInputs: [input],
+      membersRevision: details.membersRevision,
+      operation: "contradiction-gap-dashboard",
+      operationVersion: "contradiction-gap-dashboard-v1",
+      promptVersion: "local-artifact-derivation-v1",
+      parserVersion: "contradiction-gap-parser-v1",
+      schemaVersion: "contradiction-gap-dashboard-v1",
+      artifactType: "contradiction-gap-dashboard",
+      artifactTitle: "Contradictions & Evidence Gaps",
+      execute: async () => {
+        const current = await repository.getArtifact(
+          created.project.projectID,
+          input.artifactID,
+        );
+        assert(current);
+        await repository.updateArtifact(
+          created.project.projectID,
+          input.artifactID,
+          current.revision,
+          (artifact) => ({
+            ...artifact,
+            payload: { claims: [{ text: "After" }] },
+          }),
+        );
+        return { kind: "research-workspace-contradiction-gap-dashboard" };
+      },
+    }),
+    /Upstream artifact .* changed/,
+  );
+  const artifacts = await repository.listArtifacts(created.project.projectID);
+  assert.equal(
+    artifacts.artifacts.filter(
+      (artifact) => artifact.type === "contradiction-gap-dashboard",
+    ).length,
+    0,
+  );
+  const runs = await repository.listRuns(created.project.projectID);
+  assert.equal(runs.runs.at(-1)?.status, "failed");
 });

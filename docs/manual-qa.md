@@ -626,8 +626,8 @@ and the same fail-closed outcome.
 - [ ] Export the Screening Log as JSON and CSV; confirm every historical event is present and spreadsheet-formula-leading titles, reasons, and notes are neutralized
 - [ ] With no live Zotero selection, open a project that already has current Claim Ledger, Evidence Matrix, or Synthesis artifacts and build Contradictions & Evidence Gaps
 - [ ] Confirm building the dashboard starts no PDF extraction, CLI/model process, or network request and records `local` in lineage
-- [ ] Verify opposite, locally verified outcome facts with two matching design dimensions appear as direct contradictions, while a population or method difference appears as non-comparable
-- [ ] Verify stale, partial, failed, fingerprint-mismatched, source-unavailable, and individually unverified evidence never becomes a dashboard fact
+- [ ] Verify opposite, locally verified evidence-linked assertions about one concrete shared outcome or metric with two matching design dimensions appear as rule-detected contradiction candidates, while generic result labels remain uncertain and a population or method difference appears as non-comparable
+- [ ] Verify stale, partial, failed, fingerprint-mismatched, source-unavailable, forged-verifier, and individually unverified evidence never becomes an admitted dashboard assertion
 - [ ] Confirm missing experiment, dataset, population, and replication coverage is described only as a gap in the current project snapshot
 - [ ] Confirm, reclassify with a reason, and dismiss with a reason; reopen Zotero and verify the append-only review history and deterministic rule result are both preserved
 - [ ] Replace an upstream artifact or change a paper's screening status and confirm the previous dashboard becomes stale without being deleted

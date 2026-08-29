@@ -401,10 +401,10 @@ function renderContradictionGapPanel(
     metric(
       doc,
       dashboard.coverage.directContradictions,
-      "direct contradictions",
+      "rule contradiction candidates",
     ),
-    metric(doc, dashboard.coverage.nonComparable, "non-comparable"),
-    metric(doc, dashboard.coverage.uncertain, "uncertain"),
+    metric(doc, dashboard.coverage.nonComparable, "rule non-comparable"),
+    metric(doc, dashboard.coverage.uncertain, "rule uncertain"),
     metric(doc, dashboard.coverage.gaps, "evidence gaps"),
   );
   section.append(metrics);
@@ -424,7 +424,7 @@ function renderContradictionGapPanel(
         doc,
         "p",
         "pprw-muted",
-        "No comparable contradiction candidates were found in the current verified facts. Review the evidence gaps below in the saved artifact.",
+        "No comparable contradiction candidates were found in the current verified evidence-linked assertions. Review the evidence gaps below in the saved artifact.",
       ),
     );
     return section;

@@ -187,11 +187,17 @@ export class ResearchWorkspaceProjectController {
         current.source.contentFingerprint.value !==
           paper.contentFingerprint.value
       ) {
-        await this.repository.markArtifactsStaleForSource({
-          projectID,
-          sourceID: paper.sourceID,
-          contentFingerprint: paper.contentFingerprint.value,
-        });
+        const projectIDs = await this.repository.listProjectIDsForSource(
+          paper.sourceID,
+          { includeArchived: true },
+        );
+        for (const affectedProjectID of projectIDs) {
+          await this.repository.markArtifactsStaleForSource({
+            projectID: affectedProjectID,
+            sourceID: paper.sourceID,
+            contentFingerprint: paper.contentFingerprint.value,
+          });
+        }
       }
       await this.repository.putSource(
         researchWorkspaceSourceRecordFromPaper(paper, this.now()),

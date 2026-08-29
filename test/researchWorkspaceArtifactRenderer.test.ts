@@ -271,7 +271,10 @@ test("contradiction dashboard renders semantic comparisons without raw JSON", ()
     { artifactType: "contradiction-gap-dashboard" },
   ) as unknown as FakeElement;
   assert(!tags(rendered).includes("pre"));
-  assert.match(renderedText(rendered), /Direct contradictions/);
+  assert.match(
+    renderedText(rendered),
+    /Rule-detected contradiction candidates/,
+  );
   assert.match(renderedText(rendered), /Replication was not assessed/);
   assert.match(renderedText(rendered), /Verified/);
 });

@@ -106,13 +106,17 @@ not invoke a model or silently finalize a decision.
 The contradiction and evidence-gap dashboard is a selection-independent local
 derivation over saved project artifacts. It admits only complete artifacts whose
 source fingerprints match the current non-excluded project scope, then checks
-each evidence reference for verified status and exact library/attachment
-identity. Direct contradiction requires opposite verified outcome directions
-from different sources plus at least two exactly matching stored design
-dimensions; explicit design differences are labelled non-comparable and missing
-comparability remains uncertain. Derived artifact lineage records upstream
-artifact payload fingerprints and the member revision. Superseding an upstream
-artifact or changing project membership marks dependent dashboards stale.
+each evidence reference for the current local verifier, a supported local
+locator method, and exact library/attachment identity. A rule-detected
+contradiction candidate requires one concrete shared outcome or metric,
+opposite evidence-linked directions from different sources, and at least two
+exactly matching stored design dimensions; explicit design differences are
+labelled non-comparable and missing comparability remains uncertain. Locator
+verification does not prove entailment or truth. Derived artifact lineage
+records upstream artifact payload fingerprints and the member revision.
+Updating, deleting, or superseding an upstream artifact recursively marks
+dependent artifacts stale; source changes invalidate every project sharing that
+source.
 User confirmation, reclassification, and dismissal are append-only review
 events and never overwrite the deterministic classification.
 

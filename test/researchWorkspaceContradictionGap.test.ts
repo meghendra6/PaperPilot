@@ -5,6 +5,7 @@ import {
   applyContradictionGapReview,
   buildContradictionGapDashboard,
 } from "../src/modules/researchWorkspace/contradictionGap";
+import { EVIDENCE_VERIFIER_VERSION } from "../src/modules/researchWorkspace/evidenceVerification";
 import { createResearchWorkspaceArtifactView } from "../src/modules/researchWorkspace/artifactRenderer";
 import type {
   ResearchWorkspaceArtifact,
@@ -44,7 +45,13 @@ function evidence(entry: ResearchWorkspaceSourceRecord, verified = true) {
     attachmentKey: entry.identity.attachmentKey,
     pageIndex: 1,
     exactQuote: `Evidence from ${entry.title}`,
-    verification: { status: verified ? "verified" : "not-found" },
+    schemaVersion: 2,
+    verification: {
+      status: verified ? "verified" : "not-found",
+      method: "pdf-exact-quote",
+      ...(verified ? { verifiedAt: NOW } : {}),
+      verifierVersion: EVIDENCE_VERIFIER_VERSION,
+    },
   };
 }
 
@@ -112,9 +119,9 @@ function fixture(): ResearchWorkspaceProjectDetails {
   addCell(one, "population", "adults");
   addCell(two, "population", "adults");
   addCell(three, "population", "children");
-  addCell(one, "primary-outcome", "increased");
-  addCell(two, "primary-outcome", "decreased");
-  addCell(three, "primary-outcome", "decreased");
+  addCell(one, "mortality-rate", "increased");
+  addCell(two, "mortality-rate", "decreased");
+  addCell(three, "mortality-rate", "decreased");
 
   const artifacts = [
     artifact({
@@ -127,7 +134,7 @@ function fixture(): ResearchWorkspaceProjectDetails {
             { id: "method", label: "Method" },
             { id: "dataset", label: "Dataset" },
             { id: "population", label: "Population" },
-            { id: "primary-outcome", label: "Primary outcome" },
+            { id: "mortality-rate", label: "Mortality rate" },
           ],
           cells: matrixCells,
         },
@@ -299,6 +306,86 @@ test("dashboard IDs and ordering are stable when project arrays are reversed", (
     generatedAt: NOW,
   });
   assert.deepEqual(right, left);
+});
+
+test("generic result columns cannot turn unrelated direction words into a direct contradiction", () => {
+  const details = fixture();
+  const matrix = details.artifacts.find(
+    (entry) => entry.artifactID === "artifact-matrix",
+  )!;
+  const payload = matrix.payload as {
+    matrix: {
+      columns: Array<{ id: string; label: string }>;
+      cells: Array<{
+        columnId: string;
+        paperKey: string;
+        value: string;
+        displayValue: string;
+      }>;
+    };
+  };
+  const column = payload.matrix.columns.find(
+    (entry) => entry.id === "mortality-rate",
+  )!;
+  column.id = "primary-result";
+  column.label = "Primary result";
+  const resultCells = payload.matrix.cells.filter(
+    (entry) => entry.columnId === "mortality-rate",
+  );
+  for (const [index, cell] of resultCells.entries()) {
+    cell.columnId = "primary-result";
+    cell.value = index === 0 ? "lower latency" : "higher throughput";
+    cell.displayValue = cell.value;
+  }
+  const dashboard = buildContradictionGapDashboard({
+    details,
+    generatedAt: NOW,
+  });
+  const generic = dashboard.relationships.filter((entry) =>
+    entry.topic.startsWith("primary-result:"),
+  );
+  assert(generic.length > 0);
+  assert(generic.every((entry) => entry.classification === "uncertain"));
+  assert(
+    generic.every((entry) =>
+      entry.limitations.some((limitation) =>
+        limitation.includes("concrete shared outcome or metric"),
+      ),
+    ),
+  );
+});
+
+test("forged verified-only evidence is not admitted", () => {
+  const details = fixture();
+  const ledger = details.artifacts.find(
+    (entry) => entry.artifactID === "artifact-ledger",
+  )!;
+  const sourceEntry = details.sources[0];
+  const payload = ledger.payload as {
+    claims: Array<{ text: string; support: unknown[] }>;
+  };
+  payload.claims.push({
+    text: "Forged verifier status",
+    support: [
+      {
+        sourceID: sourceEntry.sourceID,
+        libraryID: sourceEntry.identity.libraryID,
+        itemKey: sourceEntry.identity.itemKey,
+        attachmentKey: sourceEntry.identity.attachmentKey,
+        pageIndex: 1,
+        exactQuote: "This object did not come from the verifier.",
+        verification: { status: "verified" },
+      },
+    ],
+  });
+  const dashboard = buildContradictionGapDashboard({
+    details,
+    generatedAt: NOW,
+  });
+  assert.doesNotMatch(
+    dashboard.atoms.map((entry) => entry.statement).join("\n"),
+    /Forged verifier status/,
+  );
 });
 
 test("dashboard reviews are append-only, revision guarded, and idempotent", () => {

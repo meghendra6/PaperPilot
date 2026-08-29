@@ -458,7 +458,7 @@ export function parseResearchWorkspaceArtifactFile(
   );
   revision(root.revision, "artifact revision");
   const artifact = object(root.artifact, "artifact");
-  assertResearchWorkspaceID(
+  const artifactID = assertResearchWorkspaceID(
     text(artifact.artifactID, "artifactID"),
     "artifactID",
   );
@@ -468,9 +468,15 @@ export function parseResearchWorkspaceArtifactFile(
   );
   oneOf(artifact.type, ARTIFACT_TYPES, "artifact type");
   text(artifact.title, "artifact title");
-  revision(artifact.version, "artifact version");
+  if (revision(artifact.version, "artifact version") < 1) {
+    throw new Error("artifact version must be positive.");
+  }
   oneOf(artifact.status, ARTIFACT_STATUSES, "artifact status");
   stringArray(artifact.sourceIDs, "artifact sourceIDs");
+  const sourceIDs = artifact.sourceIDs as string[];
+  if (new Set(sourceIDs).size !== sourceIDs.length) {
+    throw new Error("artifact sourceIDs must be unique.");
+  }
   text(artifact.createdAt, "artifact createdAt");
   text(artifact.updatedAt, "artifact updatedAt");
   const lineage = object(artifact.lineage, "artifact lineage");
@@ -488,14 +494,25 @@ export function parseResearchWorkspaceArtifactFile(
   if (!Array.isArray(lineage.inputs)) {
     throw new Error("lineage inputs must be an array.");
   }
+  const lineageSourceIDs = new Set<string>();
   for (const input of lineage.inputs) {
     const item = object(input, "lineage input");
-    text(item.sourceID, "lineage sourceID");
+    const sourceID = text(item.sourceID, "lineage sourceID");
+    if (lineageSourceIDs.has(sourceID)) {
+      throw new Error(`Duplicate lineage source input ${sourceID}.`);
+    }
+    lineageSourceIDs.add(sourceID);
     text(item.contentFingerprint, "lineage contentFingerprint");
     text(
       item.contextProjectionFingerprint,
       "lineage contextProjectionFingerprint",
     );
+  }
+  if (
+    JSON.stringify([...lineageSourceIDs].sort()) !==
+    JSON.stringify([...sourceIDs].sort())
+  ) {
+    throw new Error("artifact sourceIDs must match lineage source inputs.");
   }
   if (lineage.membersRevision !== undefined) {
     revision(lineage.membersRevision, "lineage membersRevision");
@@ -519,12 +536,17 @@ export function parseResearchWorkspaceArtifactFile(
       }
       artifactInputIDs.add(artifactID);
       oneOf(item.artifactType, ARTIFACT_TYPES, "lineage artifact input type");
-      revision(item.version, "lineage artifact input version");
-      text(item.updatedAt, "lineage artifact input updatedAt");
+      if (revision(item.version, "lineage artifact input version") < 1) {
+        throw new Error("lineage artifact input version must be positive.");
+      }
+      isoDate(item.updatedAt, "lineage artifact input updatedAt");
       text(
         item.payloadFingerprint,
         "lineage artifact input payloadFingerprint",
       );
+    }
+    if (artifactInputIDs.has(artifactID)) {
+      throw new Error("An artifact cannot depend on itself.");
     }
   }
   return value as ResearchWorkspaceArtifactFile;
