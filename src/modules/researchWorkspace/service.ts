@@ -39,6 +39,10 @@ import {
   type EvidenceMatrixPresetID,
 } from "./evidenceMatrixPresets";
 import { verifyResearchWorkspaceEvidence } from "./evidenceVerification";
+import {
+  buildCrossPaperMasterySourceSnapshot,
+  isCrossPaperMasterySubmissionReplay,
+} from "./masteryPersistence";
 function id(prefix) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
@@ -522,11 +526,26 @@ class ResearchWorkspaceService {
       coverage,
     };
   }
-  async startCrossPaperMastery(papers) {
+  async startCrossPaperMastery(papers, priorSession, projectID) {
     if (papers.length < 2)
       throw new Error("Select at least two papers in the Zotero item list.");
     const state = await this.state();
-    const concept = {
+    const snapshot = buildCrossPaperMasterySourceSnapshot(papers);
+    let session = priorSession;
+    if (session) {
+      const previous = [...(session.sourceSnapshot ?? [])].sort((left, right) =>
+        String(left.sourceID).localeCompare(String(right.sourceID)),
+      );
+      const matches =
+        previous.length === snapshot.length &&
+        snapshot.every(
+          (entry, index) =>
+            previous[index]?.sourceID === entry.sourceID &&
+            previous[index]?.contentFingerprint === entry.contentFingerprint,
+        );
+      if (!matches) session = undefined;
+    }
+    const concept = session?.concepts?.[0] ?? {
       id: id("cross-concept"),
       label: "Cross-paper synthesis",
       paperKeys: papers.map((paper) => paper.paperKey),
@@ -534,11 +553,29 @@ class ResearchWorkspaceService {
       description:
         "Compare mechanisms, evidence, limitations, and transfer across selected papers.",
     };
-    let session = (0, engine_2.createCrossPaperMasterySession)({
-      id: id("cross-session"),
-      collectionKey: "selected-items",
-      concepts: [concept],
-    });
+    if (!session) {
+      session = (0, engine_2.createCrossPaperMasterySession)({
+        id: id("cross-session"),
+        collectionKey: projectID ?? "selected-items",
+        projectID,
+        sourceSnapshot: snapshot,
+        concepts: [concept],
+      });
+    }
+    const currentQuestion = session.questions[session.questions.length - 1];
+    if (
+      currentQuestion &&
+      !session.attempts.some(
+        (attempt) => attempt.questionId === currentQuestion.id,
+      )
+    ) {
+      return {
+        session,
+        question: currentQuestion,
+        summary: (0, engine_2.summarizeCrossPaperMastery)(session),
+        resumed: true,
+      };
+    }
     const prompt = (0, prompt_6.buildCrossPaperQuestionPrompt)({
       papers: papers.map((paper) => ({
         paperKey: paper.paperKey,
@@ -568,18 +605,86 @@ class ResearchWorkspaceService {
     const question = await this.verifyEvidence(parsedQuestion, papers);
     session = (0, engine_2.addCrossPaperQuestion)(session, question);
     await this.env.repository.update((next) => {
-      next.crossPaperMastery.push(session);
+      next.crossPaperMastery = [
+        ...next.crossPaperMastery.filter((entry) => entry.id !== session.id),
+        session,
+      ];
       next.crossPaperQuestions.push(question);
     });
-    return { session, question };
+    return {
+      session,
+      question,
+      summary: (0, engine_2.summarizeCrossPaperMastery)(session),
+      resumed: Boolean(priorSession),
+    };
   }
-  async submitCrossPaperMastery(sessionId, papers, answer, learnerConfidence) {
+  async submitCrossPaperMastery(
+    sessionId,
+    papers,
+    answer,
+    learnerConfidence,
+    expectedRevision,
+    submissionID,
+  ) {
     const state = await this.state();
     let session = state.crossPaperMastery.find(
       (entry) => entry.id === sessionId,
     );
     if (!session) throw new Error("Cross-paper session not found.");
+    if (!String(submissionID || "").trim()) {
+      throw new Error("Cross-paper mastery requires a submission ID.");
+    }
+    const duplicate = session.attempts.find(
+      (attempt) => attempt.id === submissionID,
+    );
+    if (duplicate) {
+      const duplicateQuestion = session.questions.find(
+        (entry) => entry.id === duplicate.questionId,
+      );
+      if (
+        !duplicateQuestion ||
+        !isCrossPaperMasterySubmissionReplay({
+          attempt: duplicate,
+          questionID: duplicateQuestion.id,
+          answer,
+          learnerConfidence,
+        })
+      ) {
+        throw new Error(
+          "Cross-paper mastery idempotency conflict: this submission ID was already used for different input.",
+        );
+      }
+      return {
+        session,
+        grade: {
+          questionId: duplicate.questionId,
+          scores: duplicate.grades,
+          totalScore: duplicate.grades.reduce(
+            (sum, entry) => sum + entry.score,
+            0,
+          ),
+          maxScore: duplicate.grades.reduce(
+            (sum, entry) => sum + entry.maxScore,
+            0,
+          ),
+          feedback: duplicate.grades
+            .map((entry) => entry.feedback)
+            .filter(Boolean)
+            .join("\n"),
+          misconceptions: duplicate.misconceptions,
+          graderConfidence: duplicate.graderConfidence,
+        },
+        summary: (0, engine_2.summarizeCrossPaperMastery)(session),
+        duplicate: true,
+      };
+    }
     const question = session.questions[session.questions.length - 1];
+    if (!question) throw new Error("Cross-paper mastery question not found.");
+    if (Number(session.revision ?? 0) !== Number(expectedRevision)) {
+      throw new Error(
+        `Cross-paper mastery revision conflict: expected ${expectedRevision}, found ${session.revision ?? 0}.`,
+      );
+    }
     const prompt = (0, prompt_6.buildCrossPaperGradePrompt)({
       question,
       answer,
@@ -592,7 +697,7 @@ class ResearchWorkspaceService {
       })),
       responseLanguage: state.preferences.responseLanguage,
     });
-    const attemptID = id("cross-attempt");
+    const attemptID = submissionID || id("cross-attempt");
     const parsedAttempt = await this.runParsed(
       prompt,
       "cross-paper-grade",

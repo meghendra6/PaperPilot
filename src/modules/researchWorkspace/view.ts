@@ -37,6 +37,8 @@ interface ViewRuntime {
   busy: boolean;
   paper?: ResearchWorkspacePaper;
   crossSessionID?: string;
+  crossSessionRevision?: number;
+  crossSubmissionID?: string;
   selectedPapers?: ResearchWorkspacePaper[];
   projectID?: string;
   abortController?: AbortController;
@@ -484,6 +486,21 @@ export async function renderResearchWorkspaceView(
     "No cross-paper question yet.",
   );
   const crossAnswer = textarea(doc, "Cross-paper answer", 5);
+  const crossConfidence = element(doc, "input", "pprw-range");
+  crossConfidence.type = "range";
+  crossConfidence.min = "0";
+  crossConfidence.max = "1";
+  crossConfidence.step = "0.05";
+  crossConfidence.value = "0.7";
+  const crossConfidenceLabel = element(
+    doc,
+    "span",
+    "pprw-confidence",
+    "Confidence before grading: 70%",
+  );
+  crossConfidence.addEventListener("input", () => {
+    crossConfidenceLabel.textContent = `Confidence before grading: ${Math.round(Number(crossConfidence.value) * 100)}%`;
+  });
   const synthesisQuestion = textarea(
     doc,
     "Ask a project question across the captured papers",
@@ -511,6 +528,8 @@ export async function renderResearchWorkspaceView(
         const current = runtime.get(root);
         if (!current || current.generation !== generation) return;
         current.crossSessionID = value.session.id;
+        current.crossSessionRevision = value.session.revision;
+        current.crossSubmissionID = undefined;
         current.selectedPapers = papers;
         crossQuestion.textContent = value.question.prompt;
         renderOutput(
@@ -585,17 +604,30 @@ export async function renderResearchWorkspaceView(
           if (!current?.crossSessionID || !current.selectedPapers) {
             throw new Error("Create a cross-paper question first.");
           }
+          const expectedRevision = current.crossSessionRevision;
+          if (!Number.isInteger(expectedRevision)) {
+            throw new Error("Reload the cross-paper session before grading.");
+          }
           if (!crossAnswer.value.trim())
             throw new Error("Enter an answer first.");
+          current.crossSubmissionID ??=
+            typeof globalThis.crypto?.randomUUID === "function"
+              ? `cross-submission-${globalThis.crypto.randomUUID()}`
+              : `cross-submission-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
           const value = await submitResearchWorkspaceCrossPaperMastery({
             papers: current.selectedPapers,
             sessionID: current.crossSessionID,
+            expectedRevision: expectedRevision!,
+            submissionID: current.crossSubmissionID,
             answer: crossAnswer.value,
-            confidence: 0.7,
+            confidence: Number(crossConfidence.value),
             projectID: options.projectID,
             signal,
             onStatus,
           });
+          current.crossSessionRevision = value.session.revision;
+          current.crossSubmissionID = undefined;
+          crossAnswer.value = "";
           renderOutput(
             root,
             "Cross-paper mastery feedback",
@@ -620,6 +652,8 @@ export async function renderResearchWorkspaceView(
     collectionRow,
     crossQuestion,
     crossAnswer,
+    crossConfidenceLabel,
+    crossConfidence,
   );
   root.insertBefore(collection.root, result);
 

@@ -5,6 +5,7 @@ import { join } from "node:path";
 
 import {
   createResearchWorkspaceArtifactView,
+  createResearchWorkspacePublicPayload,
   renderResearchWorkspaceArtifactValue,
 } from "../src/modules/researchWorkspace/artifactRenderer";
 
@@ -47,6 +48,10 @@ class FakeDocument {
 
 function tags(root: FakeElement): string[] {
   return [root.tagName, ...root.children.flatMap(tags)];
+}
+
+function renderedText(root: FakeElement): string {
+  return [root.textContent, ...root.children.map(renderedText)].join(" ");
 }
 
 test("Evidence Matrix view preserves columns, rows, coverage, and cell evidence", () => {
@@ -199,6 +204,77 @@ test("Project synthesis view exposes coverage, evidence groups, and warnings", (
   assert.equal(view.coverage?.excludedSources, 1);
   assert.equal(view.coverage?.insufficient, true);
   assert.deepEqual(view.freshnessWarnings, ["Paper S2 changed"]);
+});
+
+test("Cross-paper mastery renders learner progress without leaking an unanswered rubric", () => {
+  const payload = {
+    session: {
+      schemaVersion: 2,
+      revision: 1,
+      state: "awaiting-answer",
+      sourceSnapshot: [{ sourceID: "S1" }, { sourceID: "S2" }],
+      questions: [
+        {
+          id: "Q1",
+          prompt: "Compare the mechanisms.",
+          mode: "compare",
+          difficulty: "advanced",
+          paperKeys: ["S1", "S2"],
+          rubric: [
+            {
+              id: "mechanism",
+              expectedClaims: ["HIDDEN EXPECTED CLAIM"],
+            },
+          ],
+          criteria: [{ requiredClaims: ["HIDDEN REQUIRED CLAIM"] }],
+        },
+      ],
+      attempts: [],
+    },
+    question: {
+      id: "Q1",
+      prompt: "Compare the mechanisms.",
+      mode: "compare",
+      difficulty: "advanced",
+      paperKeys: ["S1", "S2"],
+      rubric: [{ expectedClaims: ["HIDDEN EXPECTED CLAIM"] }],
+    },
+    summary: {
+      answerQuality: 0.75,
+      calibration: 0.85,
+      conceptCoverage: 0.5,
+      openMisconceptions: ["Boundary condition"],
+      nextReviewAt: "2026-09-01T00:00:00.000Z",
+    },
+  };
+  const view = createResearchWorkspaceArtifactView(
+    payload,
+    "cross-paper-mastery",
+  );
+  assert.equal(view.kind, "mastery");
+  if (view.kind !== "mastery") return;
+  assert.equal(view.currentQuestion?.prompt, "Compare the mechanisms.");
+  assert.equal(view.sourceCount, 2);
+
+  const rendered = renderResearchWorkspaceArtifactValue(
+    new FakeDocument() as unknown as Document,
+    payload,
+    { artifactType: "cross-paper-mastery" },
+  ) as unknown as FakeElement;
+  const visibleText = renderedText(rendered);
+  assert.match(visibleText, /Compare the mechanisms/);
+  assert.doesNotMatch(
+    visibleText,
+    /HIDDEN EXPECTED CLAIM|HIDDEN REQUIRED CLAIM/,
+  );
+
+  const exported = createResearchWorkspacePublicPayload(
+    payload,
+    "cross-paper-mastery",
+  ) as typeof payload;
+  assert.equal(exported.session.questions[0].rubric, undefined);
+  assert.equal(exported.session.questions[0].criteria, undefined);
+  assert.equal(exported.question.rubric, undefined);
 });
 
 test("Research Workspace result surfaces no longer render raw JSON", () => {

@@ -136,10 +136,15 @@ import {
 } from "./comprehensionCheck/prompt";
 import {
   getMasteryState,
+  getMasteryStateForSession,
   setMasteryState,
   clearMasteryState,
   buildInitialMasteryState,
 } from "./comprehensionCheck/status";
+import {
+  createCanonicalMasteryRound,
+  updateCanonicalMasteryAnalytics,
+} from "./comprehensionCheck/analytics";
 import { createCollapsibleSection } from "./ui/collapsibleSection";
 import type { PaneSectionID } from "./ui/paneSectionState";
 import { createVerticalResizeHandle } from "./ui/paneResize";
@@ -264,12 +269,18 @@ export function registerPaperPilotPaneSection() {
             <div id="paper-pilot-mastery-section" class="pp-mastery-panel" style="display: none;">
               <div class="pp-mastery-topic-card">
                 <div id="paper-mastery-status" class="pp-mastery-status"></div>
+                <div id="paper-mastery-metrics" class="pp-mastery-metrics"></div>
                 <div id="paper-mastery-progress" class="pp-mastery-progress"></div>
               </div>
               <div id="paper-mastery-question" class="pp-mastery-question" style="display: none;"></div>
               <div id="paper-mastery-feedback" class="pp-mastery-feedback" style="display: none;"></div>
               <div id="paper-mastery-report" class="pp-mastery-report" style="display: none;"></div>
               <html:textarea id="paper-mastery-answer" class="pp-mastery-answer" placeholder="Type your answer here..." style="display: none;" />
+              <label id="paper-mastery-confidence-row" class="pp-mastery-confidence" style="display: none;">
+                Confidence before grading
+                <html:input id="paper-mastery-confidence" type="range" min="0" max="1" step="0.05" value="0.7" />
+                <span id="paper-mastery-confidence-value">70%</span>
+              </label>
               <div id="paper-mastery-actions" class="pp-mastery-actions" style="display: none;">
                 <html:button id="paper-mastery-submit" class="pp-btn pp-btn--primary">Submit Answer</html:button>
                 <html:button id="paper-mastery-end" class="pp-btn pp-btn--ghost">End Session</html:button>
@@ -554,6 +565,9 @@ export function registerPaperPilotPaneSection() {
       const masteryProgress = body.querySelector(
         "#paper-mastery-progress",
       ) as HTMLElement | null;
+      const masteryMetrics = body.querySelector(
+        "#paper-mastery-metrics",
+      ) as HTMLElement | null;
       const masteryQuestion = body.querySelector(
         "#paper-mastery-question",
       ) as HTMLElement | null;
@@ -563,6 +577,15 @@ export function registerPaperPilotPaneSection() {
       const masteryAnswer = body.querySelector(
         "#paper-mastery-answer",
       ) as HTMLTextAreaElement | null;
+      const masteryConfidenceRow = body.querySelector(
+        "#paper-mastery-confidence-row",
+      ) as HTMLElement | null;
+      const masteryConfidence = body.querySelector(
+        "#paper-mastery-confidence",
+      ) as HTMLInputElement | null;
+      const masteryConfidenceValue = body.querySelector(
+        "#paper-mastery-confidence-value",
+      ) as HTMLElement | null;
       const masterySubmit = body.querySelector(
         "#paper-mastery-submit",
       ) as HTMLButtonElement | null;
@@ -2123,6 +2146,31 @@ export function registerPaperPilotPaneSection() {
 
         let selectedHistoryDot: number = -1;
 
+        masteryConfidence?.addEventListener("input", () => {
+          if (masteryConfidenceValue) {
+            masteryConfidenceValue.textContent = `${Math.round(Number(masteryConfidence.value) * 100)}%`;
+          }
+        });
+
+        function renderMasteryMetrics(
+          state: import("./comprehensionCheck/types").ComprehensionCheckState,
+        ) {
+          if (!masteryMetrics) return;
+          const summary = state.summary;
+          if (!summary || !state.rounds.length) {
+            masteryMetrics.textContent = "";
+            return;
+          }
+          const calibration =
+            summary.calibration === null
+              ? "not yet available"
+              : `${Math.round(summary.calibration * 100)}%`;
+          const nextReview = summary.nextReviewAt
+            ? new Date(summary.nextReviewAt).toLocaleDateString()
+            : "not scheduled";
+          masteryMetrics.textContent = `Score ${Math.round(summary.averageScore * 100)}% · calibration ${calibration} · next review ${nextReview}`;
+        }
+
         function addHistorySection(
           parent: HTMLElement,
           modifier: string,
@@ -2195,6 +2243,27 @@ export function registerPaperPilotPaneSection() {
             "Feedback",
             r.evaluation,
           );
+          if (r.criterionScores?.length) {
+            addHistorySection(
+              masteryFeedback,
+              "criteria",
+              "Rubric scores",
+              r.criterionScores
+                .map(
+                  (criterion) =>
+                    `- **${criterion.criterionID}** ${criterion.score}/${criterion.maxScore}: ${criterion.feedback || "No additional feedback"}`,
+                )
+                .join("\n"),
+            );
+          }
+          if (typeof r.learnerConfidence === "number") {
+            addHistorySection(
+              masteryFeedback,
+              "confidence",
+              "Calibration input",
+              `Confidence ${Math.round(r.learnerConfidence * 100)}% · score ${Math.round((r.normalizedScore ?? 0) * 100)}%`,
+            );
+          }
           if (!r.understood && r.explanation) {
             addHistorySection(
               masteryFeedback,
@@ -2367,6 +2436,13 @@ export function registerPaperPilotPaneSection() {
             if (options.clearAnswer !== false) masteryAnswer.value = "";
             if (options.focus !== false) masteryAnswer.focus();
           }
+          if (masteryConfidenceRow) masteryConfidenceRow.style.display = "";
+          if (masteryConfidence && options.clearAnswer !== false) {
+            masteryConfidence.value = "0.7";
+          }
+          if (masteryConfidenceValue) {
+            masteryConfidenceValue.textContent = `${Math.round(Number(masteryConfidence?.value ?? 0.7) * 100)}%`;
+          }
           if (masteryActionsDiv) {
             masteryActionsDiv.style.display = "";
           }
@@ -2429,6 +2505,9 @@ export function registerPaperPilotPaneSection() {
           if (masteryAnswer) {
             masteryAnswer.style.display = "none";
           }
+          if (masteryConfidenceRow) {
+            masteryConfidenceRow.style.display = "none";
+          }
           if (masteryActionsDiv) {
             masteryActionsDiv.style.display = "none";
           }
@@ -2437,6 +2516,7 @@ export function registerPaperPilotPaneSection() {
               ? "Generating final report..."
               : "Complete";
           }
+          renderMasteryMetrics(state);
           if (masteryReport) {
             if (state.finalReport) {
               masteryReport.replaceChildren(
@@ -2468,7 +2548,9 @@ export function registerPaperPilotPaneSection() {
             return;
           }
 
+          const masterySessionID = state.sessionID;
           const markAdmitted = () => {
+            if (!getMasteryStateForSession(item.id, masterySessionID)) return;
             state.phase = "complete";
             state.running = true;
             state.status = "Generating final report...";
@@ -2478,7 +2560,7 @@ export function registerPaperPilotPaneSection() {
           await sendMasteryPrompt(
             buildFinalReportPrompt(state.rounds, state.topics),
             async (assistantText) => {
-              const s = getMasteryState(item.id);
+              const s = getMasteryStateForSession(item.id, masterySessionID);
               if (s) {
                 s.running = false;
                 s.status = "Complete";
@@ -2493,7 +2575,7 @@ export function registerPaperPilotPaneSection() {
               }
             },
             async () => {
-              const s = getMasteryState(item.id);
+              const s = getMasteryStateForSession(item.id, masterySessionID);
               if (s) {
                 s.running = false;
                 s.status = "Complete";
@@ -2523,11 +2605,13 @@ export function registerPaperPilotPaneSection() {
           if (!state || !hasProgress) {
             if (masterySection) masterySection.style.display = "none";
             if (paperMasteryBtn) paperMasteryBtn.textContent = "Paper Mastery";
+            if (masteryMetrics) masteryMetrics.textContent = "";
             return;
           }
 
           if (masterySection) masterySection.style.display = "";
           if (masteryStatus) masteryStatus.textContent = state.status;
+          renderMasteryMetrics(state);
           updateMasteryProgressDots(state);
           if (paperMasteryBtn) {
             paperMasteryBtn.textContent =
@@ -2552,6 +2636,8 @@ export function registerPaperPilotPaneSection() {
           } else {
             if (masteryQuestion) masteryQuestion.style.display = "none";
             if (masteryAnswer) masteryAnswer.style.display = "none";
+            if (masteryConfidenceRow)
+              masteryConfidenceRow.style.display = "none";
             if (masteryActionsDiv) masteryActionsDiv.style.display = "none";
           }
           if (
@@ -2559,6 +2645,8 @@ export function registerPaperPilotPaneSection() {
             state.phase === "evaluating"
           ) {
             if (masteryAnswer) masteryAnswer.style.display = "none";
+            if (masteryConfidenceRow)
+              masteryConfidenceRow.style.display = "none";
             if (masteryActionsDiv) masteryActionsDiv.style.display = "none";
           }
         }
@@ -2651,8 +2739,40 @@ export function registerPaperPilotPaneSection() {
           ) {
             return;
           }
-          const state = buildInitialMasteryState();
+          const activeSession = sessionStore.getOrCreate(
+            item.id,
+            getModeForItem(item.id),
+            String(item.getField("title") || ""),
+          );
+          let sourceSnapshot: import("./comprehensionCheck/types").MasterySourceSnapshot =
+            {
+              itemID: item.id,
+            };
+          try {
+            const { paperWorkspaceContentCache } = await import(
+              "./tools/paperWorkspaceContent"
+            );
+            const content =
+              await paperWorkspaceContentCache.getPaperContent(item);
+            sourceSnapshot = {
+              itemID: item.id,
+              libraryID: content.source?.libraryID,
+              itemKey: content.source?.itemKey,
+              attachmentKey: content.source?.attachmentKey,
+              contentFingerprint: content.contentFingerprint?.value,
+            };
+          } catch {
+            // The question runner will surface extraction errors. Preserve the
+            // stable item identity so a failed preparation cannot bind elsewhere.
+          }
+          const state = buildInitialMasteryState({
+            sessionID: activeSession.sessionId,
+            sourceSnapshot,
+          });
+          const masterySessionID = state.sessionID;
           const markAdmitted = () => {
+            if (sessionStore.get(item.id)?.sessionId !== masterySessionID)
+              return;
             clearMasteryState(item.id);
             masterySection.style.display = "";
             state.phase = "generating-question";
@@ -2666,7 +2786,7 @@ export function registerPaperPilotPaneSection() {
           };
 
           const resetOnFail = () => {
-            const fs = getMasteryState(item.id);
+            const fs = getMasteryStateForSession(item.id, masterySessionID);
             if (fs) {
               fs.phase = "idle";
               fs.running = false;
@@ -2685,7 +2805,8 @@ export function registerPaperPilotPaneSection() {
                 resetOnFail();
                 return;
               }
-              const s = getMasteryState(item.id) ?? buildInitialMasteryState();
+              const s = getMasteryStateForSession(item.id, masterySessionID);
+              if (!s) return;
               s.phase = "awaiting-answer";
               s.running = false;
               s.currentQuestion = parsed.question;
@@ -2694,6 +2815,7 @@ export function registerPaperPilotPaneSection() {
                 topic: parsed.topic,
                 understood: false,
                 confidence: 0,
+                difficulty: parsed.difficulty,
               });
               setMasteryState(item.id, s);
               if (masteryStatus) {
@@ -2723,12 +2845,23 @@ export function registerPaperPilotPaneSection() {
           }
 
           const markAdmitted = () => {
-            state.phase = "evaluating";
-            state.running = true;
-            state.status = "Evaluating your answer...";
-            setMasteryState(item.id, state);
+            const current = getMasteryStateForSession(
+              item.id,
+              masterySessionID,
+            );
+            if (
+              !current ||
+              current.phase !== "awaiting-answer" ||
+              current.currentQuestion !== question
+            ) {
+              return;
+            }
+            current.phase = "evaluating";
+            current.running = true;
+            current.status = "Evaluating your answer...";
+            setMasteryState(item.id, current);
             if (masteryStatus) {
-              masteryStatus.textContent = state.status;
+              masteryStatus.textContent = current.status;
             }
             if (masterySubmit) {
               masterySubmit.disabled = true;
@@ -2736,8 +2869,13 @@ export function registerPaperPilotPaneSection() {
           };
 
           const question = state.currentQuestion;
+          const masterySessionID = state.sessionID;
+          const learnerConfidence = Math.max(
+            0,
+            Math.min(1, Number(masteryConfidence?.value ?? 0.7)),
+          );
           const resetSubmitOnFail = () => {
-            const fs = getMasteryState(item.id);
+            const fs = getMasteryStateForSession(item.id, masterySessionID);
             if (fs) {
               fs.phase = "awaiting-answer";
               fs.running = false;
@@ -2760,19 +2898,24 @@ export function registerPaperPilotPaneSection() {
                 return;
               }
 
-              const s = getMasteryState(item.id) ?? state;
-              s.rounds.push({
+              const s = getMasteryStateForSession(item.id, masterySessionID);
+              if (!s || s.currentQuestion !== question) return;
+              const activeTopic = s.topics[s.rounds.length];
+              const round = createCanonicalMasteryRound({
                 question,
-                userAnswer: answer,
-                evaluation: evalResult.evaluation,
-                understood: evalResult.understood,
-                explanation: evalResult.explanation,
+                answer,
+                topic: activeTopic?.topic,
+                difficulty: activeTopic?.difficulty,
+                learnerConfidence,
+                evaluation: evalResult,
               });
+              s.rounds.push(round);
               if (s.topics.length > 0) {
                 const last = s.topics[s.topics.length - 1];
                 last.understood = evalResult.understood;
-                last.confidence = evalResult.confidence;
+                last.confidence = learnerConfidence;
               }
+              Object.assign(s, updateCanonicalMasteryAnalytics(s));
               clearHistoryDotSelection();
               showMasteryFeedback(
                 evalResult.evaluation,
@@ -2780,6 +2923,7 @@ export function registerPaperPilotPaneSection() {
                 evalResult.understood ? undefined : evalResult.explanation,
               );
               updateMasteryProgressDots(s);
+              renderMasteryMetrics(s);
 
               const MIN_ROUNDS = 3;
               const MAX_ROUNDS = 30;
@@ -2807,14 +2951,22 @@ export function registerPaperPilotPaneSection() {
                 async (nextText, nextContinuationToken) => {
                   const parsed = parseMasteryQuestionResponse(nextText);
                   if (!parsed) {
-                    const fst = getMasteryState(item.id);
+                    const fst = getMasteryStateForSession(
+                      item.id,
+                      masterySessionID,
+                    );
+                    if (!fst) return;
                     await showMasteryCompletion(
                       fst ?? s,
                       nextContinuationToken,
                     );
                     return;
                   }
-                  const st = getMasteryState(item.id) ?? s;
+                  const st = getMasteryStateForSession(
+                    item.id,
+                    masterySessionID,
+                  );
+                  if (!st) return;
                   st.phase = "awaiting-answer";
                   st.running = false;
                   st.currentQuestion = parsed.question;
@@ -2823,6 +2975,7 @@ export function registerPaperPilotPaneSection() {
                     topic: parsed.topic,
                     understood: false,
                     confidence: 0,
+                    difficulty: parsed.difficulty,
                   });
                   setMasteryState(item.id, st);
                   if (masteryStatus) {
@@ -2835,7 +2988,11 @@ export function registerPaperPilotPaneSection() {
                   }
                 },
                 () => {
-                  const fst = getMasteryState(item.id);
+                  const fst = getMasteryStateForSession(
+                    item.id,
+                    masterySessionID,
+                  );
+                  if (!fst) return;
                   if (fst) {
                     fst.phase = "complete";
                     fst.running = false;

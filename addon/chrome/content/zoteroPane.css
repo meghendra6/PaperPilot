@@ -1666,6 +1666,16 @@
   margin: 0;
 }
 
+.pp-mastery-metrics {
+  font-size: var(--pp-font-size-xs, 11px);
+  color: var(--pp-text-muted);
+  line-height: 1.45;
+}
+
+.pp-mastery-metrics:empty {
+  display: none;
+}
+
 .pp-mastery-progress {
   display: flex;
   gap: 6px;
@@ -1838,6 +1848,25 @@
   border-color: var(--pp-accent, #1976d2);
   box-shadow: 0 0 0 2px
     color-mix(in srgb, var(--pp-accent, #1976d2) 20%, transparent);
+}
+
+.pp-mastery-confidence {
+  display: grid;
+  grid-template-columns: minmax(120px, auto) minmax(100px, 1fr) 42px;
+  gap: 8px;
+  align-items: center;
+  color: var(--pp-text-muted);
+  font-size: var(--pp-font-size-sm);
+}
+
+.pp-mastery-confidence input[type="range"] {
+  width: 100%;
+}
+
+.pp-mastery-confidence span {
+  color: var(--pp-text-primary);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
 }
 
 /* --- Action buttons --- */

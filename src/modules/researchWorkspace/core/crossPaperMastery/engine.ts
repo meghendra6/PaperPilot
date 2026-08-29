@@ -1,4 +1,6 @@
 // @ts-nocheck -- Ported feature core is guarded by strict runtime parsers.
+import { scheduleMasteryReview } from "../../../comprehensionCheck/analytics";
+
 const clamp01 = (value) => {
   const number = Number(value);
   return Number.isFinite(number) ? Math.max(0, Math.min(1, number)) : 0;
@@ -17,10 +19,20 @@ function createCrossPaperMasterySession(params) {
     return { ...concept, paperKeys };
   });
   const now = params.now ?? new Date().toISOString();
+  const sourceSnapshot = [...(params.sourceSnapshot ?? [])]
+    .map((entry) => ({
+      sourceID: String(entry.sourceID),
+      contentFingerprint: String(entry.contentFingerprint),
+    }))
+    .sort((left, right) => left.sourceID.localeCompare(right.sourceID));
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
+    revision: 0,
     id: params.id,
     collectionKey: params.collectionKey,
+    projectID: params.projectID,
+    sourceSnapshot,
+    state: "generating-question",
     concepts,
     questions: [],
     attempts: [],
@@ -39,6 +51,8 @@ function addCrossPaperQuestion(
     throw new Error(`Duplicate question ${question.id}`);
   return {
     ...session,
+    revision: Number(session.revision ?? 0) + 1,
+    state: "awaiting-answer",
     questions: [...session.questions, question],
     updatedAt: now,
   };
@@ -74,6 +88,8 @@ function addCrossPaperAttempt(
       throw new Error(`Missing criterion ${criterionId}`);
   return {
     ...session,
+    revision: Number(session.revision ?? 0) + 1,
+    state: "ready-for-question",
     attempts: [
       ...session.attempts,
       {
@@ -83,6 +99,11 @@ function addCrossPaperAttempt(
         graderConfidence: clamp01(attempt.graderConfidence),
       },
     ],
+    schedule: scheduleMasteryReview({
+      score: scoreCrossPaperAttempt(question, { ...attempt, grades }),
+      previous: session.schedule,
+      now: new Date(now),
+    }),
     updatedAt: now,
   };
 }
@@ -140,6 +161,7 @@ function summarizeCrossPaperMastery(session) {
         calibrationErrors.reduce((sum, value) => sum + value, 0) /
           calibrationErrors.length
       : null,
+    nextReviewAt: session.schedule?.nextReviewAt,
     openMisconceptions: [
       ...new Set(
         session.attempts

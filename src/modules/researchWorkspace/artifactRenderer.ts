@@ -77,6 +77,43 @@ export interface ResearchWorkspaceSynthesisView {
   };
 }
 
+export interface ResearchWorkspaceMasteryView {
+  kind: "mastery";
+  state: string;
+  revision?: number;
+  sourceCount: number;
+  currentQuestion?: {
+    prompt: string;
+    mode: string;
+    difficulty: string;
+    sourceCount: number;
+  };
+  attempts: Array<{
+    question: string;
+    answer: string;
+    learnerConfidence?: number;
+    graderConfidence?: number;
+    score?: number;
+    maxScore?: number;
+    grades: Array<{
+      criterion: string;
+      score?: number;
+      maxScore?: number;
+      feedback: string;
+      evidence: ResearchWorkspaceEvidenceView[];
+    }>;
+    misconceptions: string[];
+  }>;
+  summary: {
+    answerQuality?: number;
+    calibration?: number;
+    conceptCoverage?: number;
+    questionCoverage?: number;
+    nextReviewAt?: string;
+    openMisconceptions: string[];
+  };
+}
+
 export interface ResearchWorkspaceGenericView {
   kind: "generic";
   value: unknown;
@@ -86,6 +123,7 @@ export type ResearchWorkspaceArtifactView =
   | ResearchWorkspaceMatrixView
   | ResearchWorkspaceGraphView
   | ResearchWorkspaceSynthesisView
+  | ResearchWorkspaceMasteryView
   | ResearchWorkspaceGenericView;
 
 export interface ResearchWorkspaceArtifactRendererOptions {
@@ -141,6 +179,149 @@ function evidenceViews(value: unknown): ResearchWorkspaceEvidenceView[] {
     locator: formatEvidenceLocator(reference),
     status: text(record(reference.verification)?.status, "unverified"),
   }));
+}
+
+function stringList(value: unknown) {
+  return Array.isArray(value)
+    ? value
+        .filter((entry): entry is string => typeof entry === "string")
+        .map((entry) => entry.trim())
+        .filter(Boolean)
+    : [];
+}
+
+function masteryView(
+  value: UnknownRecord,
+): ResearchWorkspaceMasteryView | undefined {
+  const session = record(value.session);
+  if (!session || !Array.isArray(session.questions)) return undefined;
+  const attempts = Array.isArray(session.attempts) ? session.attempts : [];
+  const questions = session.questions
+    .map((entry) => record(entry))
+    .filter((entry): entry is UnknownRecord => Boolean(entry));
+  const attemptedQuestionIDs = new Set(
+    attempts
+      .map((entry) => record(entry))
+      .map((entry) => text(entry?.questionId, ""))
+      .filter(Boolean),
+  );
+  const suppliedQuestion = record(value.question);
+  const currentQuestion =
+    suppliedQuestion ??
+    [...questions]
+      .reverse()
+      .find((entry) => !attemptedQuestionIDs.has(text(entry.id, "")));
+  const summary = record(value.summary) ?? {};
+  return {
+    kind: "mastery",
+    state: text(session.state, currentQuestion ? "awaiting-answer" : "active"),
+    revision: finite(session.revision),
+    sourceCount: Array.isArray(session.sourceSnapshot)
+      ? session.sourceSnapshot.length
+      : Array.isArray(currentQuestion?.paperKeys)
+        ? currentQuestion.paperKeys.length
+        : 0,
+    ...(currentQuestion
+      ? {
+          currentQuestion: {
+            prompt: text(
+              currentQuestion.prompt,
+              "Compare the selected papers.",
+            ),
+            mode: text(currentQuestion.mode, "compare"),
+            difficulty: text(currentQuestion.difficulty, "advanced"),
+            sourceCount: Array.isArray(currentQuestion.paperKeys)
+              ? currentQuestion.paperKeys.length
+              : 0,
+          },
+        }
+      : {}),
+    attempts: attempts
+      .map((entry) => record(entry))
+      .filter((entry): entry is UnknownRecord => Boolean(entry))
+      .map((attempt) => {
+        const question = questions.find(
+          (entry) => text(entry.id, "") === text(attempt.questionId, ""),
+        );
+        const grades = (Array.isArray(attempt.grades) ? attempt.grades : [])
+          .map((entry) => record(entry))
+          .filter((entry): entry is UnknownRecord => Boolean(entry));
+        return {
+          question: text(question?.prompt, "Previous mastery question"),
+          answer: text(attempt.answer, "No answer retained"),
+          learnerConfidence: finite(attempt.learnerConfidence),
+          graderConfidence: finite(attempt.graderConfidence),
+          score: grades.length
+            ? grades.reduce((sum, grade) => sum + (finite(grade.score) ?? 0), 0)
+            : undefined,
+          maxScore: grades.length
+            ? grades.reduce(
+                (sum, grade) => sum + (finite(grade.maxScore) ?? 0),
+                0,
+              )
+            : undefined,
+          grades: grades.map((grade) => ({
+            criterion: humanize(text(grade.criterionId, "criterion")),
+            score: finite(grade.score),
+            maxScore: finite(grade.maxScore),
+            feedback: text(grade.feedback, "No criterion feedback"),
+            evidence: evidenceViews(grade.evidence),
+          })),
+          misconceptions: stringList(attempt.misconceptions),
+        };
+      }),
+    summary: {
+      answerQuality: finite(summary.answerQuality),
+      calibration: finite(summary.calibration),
+      conceptCoverage: finite(summary.conceptCoverage),
+      questionCoverage: finite(summary.questionCoverage),
+      nextReviewAt:
+        typeof summary.nextReviewAt === "string"
+          ? summary.nextReviewAt
+          : undefined,
+      openMisconceptions: stringList(summary.openMisconceptions),
+    },
+  };
+}
+
+/**
+ * Produces a user-facing projection without exposing an unanswered question's
+ * hidden grading rubric. The full rubric remains in the private persisted
+ * session so an interrupted attempt can still be resumed and graded.
+ */
+export function createResearchWorkspacePublicPayload(
+  value: unknown,
+  artifactType?: ResearchWorkspaceArtifactType,
+): unknown {
+  if (artifactType !== "cross-paper-mastery") return value;
+  const root = record(value);
+  const session = record(root?.session);
+  if (!root || !session || !Array.isArray(session.questions)) return value;
+  const attemptedQuestionIDs = new Set(
+    (Array.isArray(session.attempts) ? session.attempts : [])
+      .map((entry) => record(entry))
+      .map((entry) => text(entry?.questionId, ""))
+      .filter(Boolean),
+  );
+  const projectQuestion = (questionValue: unknown) => {
+    const question = record(questionValue);
+    if (!question) return questionValue;
+    if (attemptedQuestionIDs.has(text(question.id, ""))) return questionValue;
+    const {
+      rubric: _rubric,
+      criteria: _criteria,
+      ...publicQuestion
+    } = question;
+    return publicQuestion;
+  };
+  return {
+    ...root,
+    ...(root.question ? { question: projectQuestion(root.question) } : {}),
+    session: {
+      ...session,
+      questions: session.questions.map(projectQuestion),
+    },
+  };
 }
 
 function matrixView(
@@ -324,6 +505,10 @@ export function createResearchWorkspaceArtifactView(
   if (artifactType === "synthesis" || (candidate.answer && candidate.claims)) {
     const synthesis = synthesisView(candidate);
     if (synthesis) return synthesis;
+  }
+  if (artifactType === "cross-paper-mastery" || candidate.session) {
+    const mastery = masteryView(candidate);
+    if (mastery) return mastery;
   }
   return { kind: "generic", value };
 }
@@ -613,6 +798,126 @@ function renderSynthesis(
   return root;
 }
 
+function renderMastery(
+  doc: Document,
+  view: ResearchWorkspaceMasteryView,
+  options: ResearchWorkspaceArtifactRendererOptions,
+) {
+  const root = element(doc, "div", "pprw-render pprw-render--mastery");
+  const metrics = element(doc, "div", "pprw-render-metrics");
+  metrics.append(
+    metric(doc, "Answer quality", percentage(view.summary.answerQuality)),
+    metric(doc, "Calibration", percentage(view.summary.calibration)),
+    metric(doc, "Concept coverage", percentage(view.summary.conceptCoverage)),
+    metric(doc, "Sources", String(view.sourceCount)),
+  );
+  root.append(metrics);
+
+  if (view.currentQuestion) {
+    const section = element(doc, "section", "pprw-render-section");
+    section.append(element(doc, "h4", "", "Current question"));
+    const card = element(doc, "article", "pprw-render-card");
+    card.append(
+      element(doc, "p", "pprw-render-statement", view.currentQuestion.prompt),
+    );
+    const metadata = element(doc, "div", "pprw-render-inline");
+    metadata.append(
+      badge(doc, humanize(view.currentQuestion.mode), "accent"),
+      badge(doc, humanize(view.currentQuestion.difficulty)),
+      badge(
+        doc,
+        `${view.currentQuestion.sourceCount} source${
+          view.currentQuestion.sourceCount === 1 ? "" : "s"
+        }`,
+      ),
+    );
+    card.append(metadata);
+    section.append(card);
+    root.append(section);
+  }
+
+  if (view.attempts.length) {
+    const section = element(doc, "section", "pprw-render-section");
+    section.append(element(doc, "h4", "", "Attempt history"));
+    const list = element(doc, "div", "pprw-render-card-list");
+    for (const attempt of view.attempts) {
+      const card = element(doc, "article", "pprw-render-card");
+      card.append(
+        element(doc, "h5", "", attempt.question),
+        element(doc, "p", "pprw-render-statement", attempt.answer),
+      );
+      const metadata = element(doc, "div", "pprw-render-inline");
+      if (attempt.score !== undefined && attempt.maxScore !== undefined) {
+        metadata.append(
+          badge(doc, `Score ${attempt.score}/${attempt.maxScore}`),
+        );
+      }
+      if (attempt.learnerConfidence !== undefined) {
+        metadata.append(
+          badge(
+            doc,
+            `Learner confidence ${percentage(attempt.learnerConfidence)}`,
+          ),
+        );
+      }
+      if (attempt.graderConfidence !== undefined) {
+        metadata.append(
+          badge(
+            doc,
+            `Grader confidence ${percentage(attempt.graderConfidence)}`,
+          ),
+        );
+      }
+      card.append(metadata);
+      for (const grade of attempt.grades) {
+        const gradeCard = element(doc, "div", "pprw-render-note");
+        gradeCard.append(
+          element(
+            doc,
+            "strong",
+            "",
+            `${grade.criterion} · ${text(grade.score)}/${text(grade.maxScore)}`,
+          ),
+          element(doc, "span", "", ` ${grade.feedback}`),
+        );
+        card.append(gradeCard);
+        if (grade.evidence.length) {
+          card.append(renderEvidence(doc, grade.evidence, options));
+        }
+      }
+      if (attempt.misconceptions.length) {
+        card.append(
+          renderStringList(doc, "Misconceptions", attempt.misconceptions),
+        );
+      }
+      list.append(card);
+    }
+    section.append(list);
+    root.append(section);
+  }
+
+  if (view.summary.openMisconceptions.length) {
+    root.append(
+      renderStringList(
+        doc,
+        "Open misconceptions",
+        view.summary.openMisconceptions,
+      ),
+    );
+  }
+  if (view.summary.nextReviewAt) {
+    root.append(
+      element(
+        doc,
+        "p",
+        "pprw-render-note",
+        `Next review: ${view.summary.nextReviewAt}`,
+      ),
+    );
+  }
+  return root;
+}
+
 const HIDDEN_TECHNICAL_FIELDS = new Set([
   "id",
   "schemaVersion",
@@ -719,6 +1024,7 @@ export function renderResearchWorkspaceArtifactValue(
   if (view.kind === "matrix") return renderMatrix(doc, view, options);
   if (view.kind === "graph") return renderGraph(doc, view, options);
   if (view.kind === "synthesis") return renderSynthesis(doc, view, options);
+  if (view.kind === "mastery") return renderMastery(doc, view, options);
   const root = element(doc, "div", "pprw-render pprw-render--generic");
   root.append(renderGenericValue(doc, view.value, options));
   return root;
