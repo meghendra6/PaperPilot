@@ -1,4 +1,5 @@
 // @ts-nocheck -- Ported feature core is guarded by strict runtime parsers.
+import { researchWorkspaceOutputSchemaForPurpose } from "./outputSchemas";
 import * as indexExports_1 from "./core/context/hybrid/indexExports";
 import * as claimExtraction_1 from "./core/evidence/claimExtraction";
 import * as detector_1 from "./core/criticalRead/profiled/detector";
@@ -18,6 +19,7 @@ import * as export_3 from "./core/evidenceMatrix/export";
 import * as prompt_5 from "./core/literatureGraph/prompt";
 import * as parser_5 from "./core/literatureGraph/parser";
 import * as export_4 from "./core/literatureGraph/export";
+import { validateAndAnnotateRelationshipGraph } from "./core/literatureGraph/provenance";
 import * as engine_2 from "./core/crossPaperMastery/engine";
 import * as prompt_6 from "./core/crossPaperMastery/prompt";
 import * as parser_6 from "./core/crossPaperMastery/parser";
@@ -27,6 +29,11 @@ import * as engine_3 from "./core/citationStance/engine";
 import * as controller_1 from "./core/comprehensionCheck/v2/controller";
 import * as viewModel_1 from "./core/comprehensionCheck/v2/viewModel";
 import * as evidenceTypes_1 from "./core/evidence/types";
+import { buildProjectSynthesisPrompt } from "./core/synthesis/prompt";
+import {
+  finalizeProjectSynthesisEvidence,
+  parseProjectSynthesisResponse,
+} from "./core/synthesis/parser";
 import { verifyResearchWorkspaceEvidence } from "./evidenceVerification";
 const DEFAULT_COLUMNS = [
   {
@@ -138,7 +145,11 @@ class ResearchWorkspaceService {
     });
   }
   async run(prompt, purpose) {
-    return this.env.agent.run(prompt, purpose);
+    return this.env.agent.run(
+      prompt,
+      purpose,
+      researchWorkspaceOutputSchemaForPurpose(purpose),
+    );
   }
   async runParsed(prompt, purpose, parse) {
     let currentPrompt = prompt;
@@ -418,11 +429,8 @@ class ResearchWorkspaceService {
       dashboard: (0, viewModel_1.toMasteryDashboardView)(withQuestion),
     };
   }
-  async createEvidenceMatrix(papers) {
-    if (papers.length < 2)
-      throw new Error("Select at least two papers in the Zotero item list.");
-    const state = await this.state();
-    let matrix = (0, engine_1.createEvidenceMatrix)({
+  createEvidenceMatrixShell(papers) {
+    return (0, engine_1.createEvidenceMatrix)({
       id: id("matrix"),
       title: `Evidence Matrix · ${new Date().toLocaleDateString()}`,
       columns: DEFAULT_COLUMNS,
@@ -432,29 +440,44 @@ class ResearchWorkspaceService {
         attachmentKeys: [paper.attachmentKey],
       })),
     });
+  }
+  async extractEvidenceMatrixRow(matrix, paper) {
+    const state = await this.state();
+    const prompt = (0, prompt_4.buildEvidenceMatrixExtractionPrompt)({
+      paperContext: paper.context,
+      paperKey: paper.paperKey,
+      sourceID: paper.sourceID,
+      libraryID: paper.libraryID,
+      attachmentKey: paper.attachmentKey,
+      columns: matrix.columns,
+      responseLanguage: state.preferences.responseLanguage,
+    });
+    const parsedRow = await this.runParsed(
+      prompt,
+      `matrix-${paper.paperKey}`,
+      (response) =>
+        (0, parser_4.parseEvidenceMatrixRowResponse)({
+          response,
+          paperKey: paper.paperKey,
+          attachmentKey: paper.attachmentKey,
+          columns: matrix.columns,
+        }),
+    );
+    return this.verifyEvidence(parsedRow, [paper]);
+  }
+  mergeEvidenceMatrixRow(matrix, row) {
+    return (0, engine_1.upsertEvidenceMatrixRow)(matrix, row);
+  }
+  evidenceMatrixCoverage(matrix) {
+    return (0, engine_1.calculateEvidenceMatrixCoverage)(matrix);
+  }
+  async createEvidenceMatrix(papers) {
+    if (papers.length < 2)
+      throw new Error("Select at least two papers in the Zotero item list.");
+    let matrix = this.createEvidenceMatrixShell(papers);
     for (const paper of papers) {
-      const prompt = (0, prompt_4.buildEvidenceMatrixExtractionPrompt)({
-        paperContext: paper.context,
-        paperKey: paper.paperKey,
-        sourceID: paper.sourceID,
-        libraryID: paper.libraryID,
-        attachmentKey: paper.attachmentKey,
-        columns: matrix.columns,
-        responseLanguage: state.preferences.responseLanguage,
-      });
-      const parsedRow = await this.runParsed(
-        prompt,
-        `matrix-${paper.paperKey}`,
-        (response) =>
-          (0, parser_4.parseEvidenceMatrixRowResponse)({
-            response,
-            paperKey: paper.paperKey,
-            attachmentKey: paper.attachmentKey,
-            columns: matrix.columns,
-          }),
-      );
-      const row = await this.verifyEvidence(parsedRow, [paper]);
-      matrix = (0, engine_1.upsertEvidenceMatrixRow)(matrix, row);
+      const row = await this.extractEvidenceMatrixRow(matrix, paper);
+      matrix = this.mergeEvidenceMatrixRow(matrix, row);
     }
     await this.env.repository.update((next) => {
       next.matrices = [
@@ -464,7 +487,7 @@ class ResearchWorkspaceService {
     });
     return {
       matrix,
-      coverage: (0, engine_1.calculateEvidenceMatrixCoverage)(matrix),
+      coverage: this.evidenceMatrixCoverage(matrix),
     };
   }
   async createLiteratureGraph(papers) {
@@ -497,7 +520,12 @@ class ResearchWorkspaceService {
           ),
         }),
     );
-    const graph = await this.verifyEvidence(parsedGraph, papers);
+    const verifiedGraph = await this.verifyEvidence(parsedGraph, papers);
+    const graph = validateAndAnnotateRelationshipGraph({
+      graph: verifiedGraph,
+      papers,
+      operationVersion: "relationship-graph-v1",
+    });
     await this.env.repository.update((next) => {
       next.graphs = [
         ...next.graphs.filter((entry) => entry.id !== graph.id),
@@ -505,6 +533,43 @@ class ResearchWorkspaceService {
       ];
     });
     return graph;
+  }
+  async createProjectSynthesis(papers, question, coverage) {
+    if (papers.length < 2)
+      throw new Error("Project synthesis requires at least two papers.");
+    if (!String(question || "").trim())
+      throw new Error("Project synthesis requires a question.");
+    const state = await this.state();
+    const prompt = buildProjectSynthesisPrompt({
+      question: String(question).trim(),
+      papers: papers.map((paper) => ({
+        sourceID: paper.sourceID,
+        libraryID: paper.libraryID,
+        attachmentKey: paper.attachmentKey,
+        title: paper.title,
+        context: paper.context,
+      })),
+      coverage,
+      responseLanguage: state.preferences.responseLanguage,
+    });
+    const parsed = await this.runParsed(
+      prompt,
+      "project-synthesis",
+      (response) =>
+        parseProjectSynthesisResponse({
+          response,
+          allowedSourceIDs: new Set(papers.map((paper) => paper.sourceID)),
+          allowedAttachmentKeys: new Set(
+            papers.map((paper) => paper.attachmentKey),
+          ),
+        }),
+    );
+    const verified = await this.verifyEvidence(parsed, papers);
+    return {
+      ...finalizeProjectSynthesisEvidence(verified),
+      question: String(question).trim(),
+      coverage,
+    };
   }
   async startCrossPaperMastery(papers) {
     if (papers.length < 2)

@@ -26,6 +26,10 @@ import {
   type PaperWorkspaceContent,
 } from "../tools/paperWorkspaceContent";
 import { buildPaperWorkspacePath } from "../workspace/pathBuilder";
+import {
+  writeWorkspaceSupplementalFiles,
+  type WorkspaceSupplementalFiles,
+} from "../workspace/supplementalFiles";
 import { buildWorkspaceArtifacts } from "../context/workspaceArtifacts";
 
 declare const Zotero: any;
@@ -146,6 +150,7 @@ export async function startClaudeRunForQuestion(params: {
   resumeSessionId?: string;
   profile?: RunProfile;
   outputSchema?: StructuredOutputSchema;
+  workspaceFiles?: WorkspaceSupplementalFiles;
 }): Promise<StartedClaudeRun | FailedClaudeRun> {
   const profile = params.profile || "chat";
   const executablePath =
@@ -314,6 +319,7 @@ export async function startClaudeRunForQuestion(params: {
     JSON.stringify(artifacts.recentTurns, null, 2),
     "utf-8",
   );
+  await writeWorkspaceSupplementalFiles(workspacePath, params.workspaceFiles);
   if (artifacts.discoveryArtifacts) {
     await Zotero.File.putContentsAsync(
       discoveryRequestPath,

@@ -23,6 +23,10 @@ import {
   type PaperWorkspaceContent,
 } from "../tools/paperWorkspaceContent";
 import { buildPaperWorkspacePath } from "../workspace/pathBuilder";
+import {
+  writeWorkspaceSupplementalFiles,
+  type WorkspaceSupplementalFiles,
+} from "../workspace/supplementalFiles";
 import { shellEscape } from "../codex/shell";
 
 declare const Zotero: any;
@@ -125,6 +129,7 @@ export async function startGeminiRunForQuestion(params: {
   resumeSessionId?: string;
   profile?: RunProfile;
   outputSchema?: StructuredOutputSchema;
+  workspaceFiles?: WorkspaceSupplementalFiles;
 }): Promise<StartedGeminiRun | FailedGeminiRun> {
   const profile = params.profile || "chat";
   const executablePath =
@@ -289,6 +294,7 @@ export async function startGeminiRunForQuestion(params: {
     JSON.stringify(artifacts.recentTurns, null, 2),
     "utf-8",
   );
+  await writeWorkspaceSupplementalFiles(workspacePath, params.workspaceFiles);
   if (artifacts.discoveryArtifacts) {
     await Zotero.File.putContentsAsync(
       discoveryRequestPath,
