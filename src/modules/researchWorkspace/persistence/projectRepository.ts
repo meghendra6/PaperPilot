@@ -3,6 +3,7 @@ import {
   RESEARCH_WORKSPACE_CATALOG_SCHEMA_VERSION,
   RESEARCH_WORKSPACE_MEMBERS_SCHEMA_VERSION,
   RESEARCH_WORKSPACE_PROJECT_SCHEMA_VERSION,
+  RESEARCH_WORKSPACE_PREFERENCES_SCHEMA_VERSION,
   RESEARCH_WORKSPACE_RUN_SCHEMA_VERSION,
   RESEARCH_WORKSPACE_SOURCE_SCHEMA_VERSION,
   ResearchWorkspaceNotFoundError,
@@ -19,6 +20,7 @@ import {
   type ResearchWorkspaceProjectBundle,
   type ResearchWorkspaceProjectFile,
   type ResearchWorkspaceProjectMember,
+  type ResearchWorkspacePreferences,
   type ResearchWorkspaceRepositoryOptions,
   type ResearchWorkspaceRun,
   type ResearchWorkspaceRunFile,
@@ -35,6 +37,7 @@ import {
   parseResearchWorkspaceCatalog,
   parseResearchWorkspaceMembersFile,
   parseResearchWorkspaceProjectFile,
+  parseResearchWorkspacePreferencesFile,
   parseResearchWorkspaceRunFile,
   parseResearchWorkspaceSourceFile,
 } from "./validation";
@@ -75,6 +78,21 @@ function emptyCatalog(now: string): ResearchWorkspaceCatalog {
     createdAt: now,
     updatedAt: now,
   };
+}
+
+function defaultPreferences(now: string) {
+  return {
+    schemaVersion: RESEARCH_WORKSPACE_PREFERENCES_SCHEMA_VERSION,
+    revision: 0,
+    preferences: {
+      responseLanguage: "English",
+      maxPaperCharacters: 1_500_000,
+      artifactHistoryLimit: 20,
+      retainRawRunLogs: false,
+    },
+    createdAt: now,
+    updatedAt: now,
+  } as const;
 }
 
 function stableHash(value: string, seed: number) {
@@ -148,6 +166,10 @@ export class ResearchWorkspaceProjectRepository {
 
   get catalogPath() {
     return joinPath(this.rootDir, "catalog-v1.json");
+  }
+
+  get preferencesPath() {
+    return joinPath(this.rootDir, "preferences-v1.json");
   }
 
   get projectsRoot() {
@@ -224,6 +246,41 @@ export class ResearchWorkspaceProjectRepository {
     return catalog.projects.filter(
       (entry) => options.includeArchived || !entry.archivedAt,
     );
+  }
+
+  async getPreferences() {
+    const stored = await this.files.read(
+      this.preferencesPath,
+      parseResearchWorkspacePreferencesFile,
+    );
+    return stored ?? defaultPreferences(this.timestamp());
+  }
+
+  async updatePreferences(
+    expectedRevision: number,
+    mutate: (
+      preferences: ResearchWorkspacePreferences,
+    ) => ResearchWorkspacePreferences,
+  ) {
+    const timestamp = this.timestamp();
+    return this.files.mutate({
+      path: this.preferencesPath,
+      parser: parseResearchWorkspacePreferencesFile,
+      expectedRevision,
+      create: () => defaultPreferences(timestamp),
+      mutate: (file) => {
+        const preferences = mutate(
+          cloneResearchWorkspaceValue(file.preferences),
+        );
+        const candidate = {
+          ...file,
+          preferences,
+          updatedAt: timestamp,
+        };
+        parseResearchWorkspacePreferencesFile(candidate);
+        return candidate;
+      },
+    });
   }
 
   private async updateCatalog(
@@ -691,6 +748,33 @@ export class ResearchWorkspaceProjectRepository {
     });
     if (syncCatalog) await this.syncCatalogEntry(projectID);
     return next as ResearchWorkspaceArtifactFile<T>;
+  }
+
+  async ensureArtifactReference(projectID: string, artifactID: string) {
+    const [bundle, artifact] = await Promise.all([
+      this.getProject(projectID),
+      this.getArtifact(projectID, artifactID),
+    ]);
+    if (!artifact) {
+      throw new ResearchWorkspaceNotFoundError("Artifact", artifactID);
+    }
+    if (bundle.project.artifactIDs.includes(artifactID)) return bundle;
+    await this.files.mutate({
+      path: this.getProjectPath(projectID),
+      parser: parseResearchWorkspaceProjectFile,
+      expectedRevision: bundle.projectRevision,
+      mutate: (file) => ({
+        ...file,
+        project: {
+          ...file.project,
+          artifactIDs: [...file.project.artifactIDs, artifactID],
+          activeArtifactID: artifactID,
+          updatedAt: this.timestamp(),
+        },
+      }),
+    });
+    await this.syncCatalogEntry(projectID);
+    return this.getProject(projectID);
   }
 
   async markArtifactsStaleForSource(params: {
