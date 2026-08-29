@@ -89,6 +89,7 @@ const ARTIFACT_TYPES = [
   "evidence-matrix",
   "relationship-graph",
   "cross-paper-mastery",
+  "citation-context",
   "citation-stance",
   "synthesis",
   "review-log",

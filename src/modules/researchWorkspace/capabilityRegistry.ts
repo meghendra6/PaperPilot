@@ -243,6 +243,7 @@ const definitions: readonly ResearchWorkspaceCapabilityDefinition[] = [
     promptVersion: "local-extractor-v1",
     parserVersion: "citation-context-parser-v1",
     schemaVersion: "citation-context-v1",
+    artifactType: "citation-context",
     renderer: "generic",
     reviewable: true,
     editable: true,

@@ -6,8 +6,9 @@ function summarizeCitationStances(results) {
   const supporting = count("supporting");
   const contrasting = count("contrasting");
   const mentioning = count("mentioning");
+  const background = count("background");
   const methodological = count("methodological");
-  const unclear = count("unclear");
+  const uncertain = count("uncertain") + count("unclear");
   const weighted = results.reduce(
     (sum, result) =>
       sum +
@@ -23,14 +24,16 @@ function summarizeCitationStances(results) {
     total,
     supporting,
     contrasting,
+    background,
     mentioning,
     methodological,
-    unclear,
+    uncertain,
+    unclear: uncertain,
     weightedSupport: weightedBalance,
     weightedBalance,
     conflictRate:
       supporting + contrasting ? contrasting / (supporting + contrasting) : 0,
-    classifiedRate: total ? (total - unclear) / total : 0,
+    classifiedRate: total ? (total - uncertain) / total : 0,
   };
 }
 

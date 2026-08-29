@@ -114,6 +114,42 @@ export interface ResearchWorkspaceMasteryView {
   };
 }
 
+export interface ResearchWorkspaceCitationView {
+  kind: "citation";
+  rows: Array<{
+    contextID: string;
+    exactSentence: string;
+    localContext: string;
+    marker: string;
+    pageIndex?: number;
+    reference: string;
+    resolvedTitle?: string;
+    resolutionStatus: string;
+    resolutionMethod: string;
+    stance: string;
+    modelStance?: string;
+    confidence?: number;
+    rationale?: string;
+    limitations: string[];
+    corrected: boolean;
+    evidence: ResearchWorkspaceEvidenceView[];
+  }>;
+  coverage: {
+    sources?: number;
+    detected?: number;
+    resolved?: number;
+    ambiguous?: number;
+    unresolved?: number;
+    pageLocated?: number;
+    submitted?: number;
+    analyzed?: number;
+    truncated?: number;
+    analysisCoverage?: number;
+    limitations: string[];
+  };
+  correctionCount: number;
+}
+
 export interface ResearchWorkspaceGenericView {
   kind: "generic";
   value: unknown;
@@ -124,6 +160,7 @@ export type ResearchWorkspaceArtifactView =
   | ResearchWorkspaceGraphView
   | ResearchWorkspaceSynthesisView
   | ResearchWorkspaceMasteryView
+  | ResearchWorkspaceCitationView
   | ResearchWorkspaceGenericView;
 
 export interface ResearchWorkspaceArtifactRendererOptions {
@@ -281,6 +318,80 @@ function masteryView(
           : undefined,
       openMisconceptions: stringList(summary.openMisconceptions),
     },
+  };
+}
+
+function citationView(
+  value: UnknownRecord,
+): ResearchWorkspaceCitationView | undefined {
+  if (!Array.isArray(value.contexts)) return undefined;
+  const results = new Map(
+    (Array.isArray(value.results) ? value.results : [])
+      .map((entry) => record(entry))
+      .filter((entry): entry is UnknownRecord => Boolean(entry))
+      .map((entry) => [text(entry.contextId, ""), entry]),
+  );
+  const rows = value.contexts
+    .map((entry) => record(entry))
+    .filter((entry): entry is UnknownRecord => Boolean(entry))
+    .map((context) => {
+      const result = results.get(text(context.id, ""));
+      const resolution = record(context.resolution) ?? {};
+      const reference = record(context.reference) ?? {};
+      return {
+        contextID: text(context.id, ""),
+        exactSentence: text(
+          context.exactSentence ?? context.context,
+          "Citation sentence unavailable",
+        ),
+        localContext: text(context.context),
+        marker: text(context.marker, "citation"),
+        pageIndex: finite(context.pageIndex),
+        reference: text(
+          reference.raw ?? reference.title ?? context.citedPaperKey,
+          "Unresolved reference",
+        ),
+        resolvedTitle:
+          typeof resolution.title === "string" && resolution.title.trim()
+            ? resolution.title.trim()
+            : undefined,
+        resolutionStatus: text(resolution.status, "unresolved"),
+        resolutionMethod: text(resolution.method, "none"),
+        stance: text(result?.stance, "not-analyzed"),
+        modelStance:
+          typeof result?.modelStance === "string"
+            ? result.modelStance
+            : undefined,
+        confidence: finite(result?.confidence),
+        rationale:
+          typeof result?.rationale === "string" && result.rationale.trim()
+            ? result.rationale.trim()
+            : undefined,
+        limitations: stringList(result?.limitations),
+        corrected: result?.correctedBy === "user",
+        evidence: evidenceViews(context.evidence),
+      };
+    });
+  const coverage = record(value.coverage) ?? {};
+  return {
+    kind: "citation",
+    rows,
+    coverage: {
+      sources: finite(coverage.sourcesAnalyzed),
+      detected: finite(coverage.contextsExtracted ?? coverage.markersFound),
+      resolved: finite(coverage.resolved),
+      ambiguous: finite(coverage.ambiguous),
+      unresolved: finite(coverage.unresolved),
+      pageLocated: finite(coverage.pageLocated),
+      submitted: finite(coverage.submittedToModel),
+      analyzed: finite(coverage.analyzedContexts),
+      truncated: finite(coverage.truncatedContexts),
+      analysisCoverage: finite(coverage.analysisCoverage),
+      limitations: stringList(coverage.limitations),
+    },
+    correctionCount: Array.isArray(value.corrections)
+      ? value.corrections.length
+      : 0,
   };
 }
 
@@ -509,6 +620,14 @@ export function createResearchWorkspaceArtifactView(
   if (artifactType === "cross-paper-mastery" || candidate.session) {
     const mastery = masteryView(candidate);
     if (mastery) return mastery;
+  }
+  if (
+    artifactType === "citation-context" ||
+    artifactType === "citation-stance" ||
+    candidate.contexts
+  ) {
+    const citation = citationView(candidate);
+    if (citation) return citation;
   }
   return { kind: "generic", value };
 }
@@ -918,6 +1037,122 @@ function renderMastery(
   return root;
 }
 
+function renderCitation(
+  doc: Document,
+  view: ResearchWorkspaceCitationView,
+  options: ResearchWorkspaceArtifactRendererOptions,
+) {
+  const root = element(doc, "div", "pprw-render pprw-render--citation");
+  const metrics = element(doc, "div", "pprw-render-metrics");
+  metrics.append(
+    metric(doc, "Sources", text(view.coverage.sources)),
+    metric(doc, "Detected contexts", text(view.coverage.detected)),
+    metric(
+      doc,
+      "Resolved",
+      view.coverage.detected
+        ? `${view.coverage.resolved ?? 0}/${view.coverage.detected}`
+        : "Not applicable",
+    ),
+    metric(
+      doc,
+      "Analyzed",
+      view.coverage.analyzed !== undefined
+        ? `${view.coverage.analyzed}/${view.coverage.submitted ?? 0}`
+        : "Not sent",
+    ),
+  );
+  root.append(metrics);
+  root.append(
+    element(
+      doc,
+      "p",
+      "pprw-render-note",
+      "Citation stance is a review signal, not a verdict about whether the cited claim is true.",
+    ),
+  );
+  if (view.coverage.limitations.length) {
+    const warnings = renderStringList(
+      doc,
+      "Coverage limitations",
+      view.coverage.limitations,
+    );
+    warnings.classList.add("pprw-render-section--warning");
+    root.append(warnings);
+  }
+  const list = element(doc, "div", "pprw-render-card-list");
+  for (const row of view.rows) {
+    const card = element(doc, "article", "pprw-render-card");
+    const metadata = element(doc, "div", "pprw-render-inline");
+    metadata.append(
+      badge(
+        doc,
+        humanize(row.stance),
+        row.stance === "contrasting" ? "warning" : "accent",
+      ),
+      badge(
+        doc,
+        humanize(row.resolutionStatus),
+        row.resolutionStatus === "resolved" ? "success" : "warning",
+      ),
+      badge(
+        doc,
+        row.pageIndex === undefined
+          ? "Page unavailable"
+          : `Page ${row.pageIndex + 1}`,
+      ),
+    );
+    if (row.confidence !== undefined) {
+      metadata.append(badge(doc, `Confidence ${percentage(row.confidence)}`));
+    }
+    if (row.corrected) metadata.append(badge(doc, "User corrected", "success"));
+    card.append(
+      metadata,
+      element(doc, "p", "pprw-render-statement", row.exactSentence),
+      element(
+        doc,
+        "p",
+        "pprw-render-note",
+        `Reference ${row.marker}: ${row.resolvedTitle ?? row.reference}`,
+      ),
+    );
+    if (row.rationale) {
+      card.append(
+        element(doc, "p", "pprw-render-note", `Rationale: ${row.rationale}`),
+      );
+    }
+    if (row.modelStance && row.modelStance !== row.stance) {
+      card.append(
+        element(
+          doc,
+          "p",
+          "pprw-render-note",
+          `Original model signal: ${humanize(row.modelStance)}`,
+        ),
+      );
+    }
+    if (row.limitations.length) {
+      card.append(renderStringList(doc, "Limitations", row.limitations));
+    }
+    if (row.evidence.length) {
+      card.append(renderEvidence(doc, row.evidence, options));
+    }
+    list.append(card);
+  }
+  if (!view.rows.length) {
+    list.append(
+      element(
+        doc,
+        "p",
+        "pprw-muted",
+        "No supported citation marker was automatically detected. This does not prove that the paper has no citations.",
+      ),
+    );
+  }
+  root.append(list);
+  return root;
+}
+
 const HIDDEN_TECHNICAL_FIELDS = new Set([
   "id",
   "schemaVersion",
@@ -1025,6 +1260,7 @@ export function renderResearchWorkspaceArtifactValue(
   if (view.kind === "graph") return renderGraph(doc, view, options);
   if (view.kind === "synthesis") return renderSynthesis(doc, view, options);
   if (view.kind === "mastery") return renderMastery(doc, view, options);
+  if (view.kind === "citation") return renderCitation(doc, view, options);
   const root = element(doc, "div", "pprw-render pprw-render--generic");
   root.append(renderGenericValue(doc, view.value, options));
   return root;

@@ -21,6 +21,9 @@ export interface ResearchWorkspacePaper {
   attachmentKey: string;
   contentFingerprint: PaperContentFingerprint;
   title: string;
+  creators?: string[];
+  year?: number;
+  doi?: string;
   context: string;
   extractionQuality: "structured" | "zotero_text";
   structuredContent?: unknown;
@@ -228,6 +231,19 @@ export async function loadResearchWorkspacePaper(
   const paperKey = sourceID;
   const itemKey = resolved.itemKey;
   const attachmentKey = resolved.attachmentKey;
+  const creators =
+    typeof paperItem.getCreators === "function"
+      ? paperItem
+          .getCreators()
+          .map((creator: any) =>
+            [creator.firstName, creator.lastName].filter(Boolean).join(" "),
+          )
+          .filter(Boolean)
+      : [];
+  const yearMatch = String(
+    paperItem.getField?.("year") || paperItem.getField?.("date") || "",
+  ).match(/\b\d{4}\b/);
+  const doi = String(paperItem.getField?.("DOI") || "").trim();
   return {
     sourceID,
     paperKey,
@@ -238,6 +254,9 @@ export async function loadResearchWorkspacePaper(
     attachmentKey,
     contentFingerprint: content.contentFingerprint,
     title: resolved.title,
+    ...(creators.length ? { creators } : {}),
+    ...(yearMatch ? { year: Number(yearMatch[0]) } : {}),
+    ...(doi ? { doi } : {}),
     context,
     extractionQuality:
       content.extractionMethod === "opendataloader-pdf"
@@ -255,4 +274,3 @@ export async function loadResearchWorkspacePaper(
       : {}),
   };
 }
-

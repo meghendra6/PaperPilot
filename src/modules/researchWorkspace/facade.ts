@@ -1,7 +1,12 @@
 import { getPref } from "../../utils/prefs";
+import { getLibraryItemCandidates } from "../relatedRecommendations";
 import { getModeForItem } from "../ai/modeStore";
 import { normalizeResponseLanguage } from "../translation/responseLanguage";
 import { runResearchWorkspaceAnalysis } from "./analysisRunner";
+import {
+  extractResearchWorkspaceCitationContexts as extractCitationContexts,
+  type CitationContextExtractionResult,
+} from "./citationContextExtraction";
 import {
   getResearchWorkspaceCapability,
   type ResearchWorkspaceCapabilityID,
@@ -10,6 +15,7 @@ import {
   applyResearchWorkspaceContextPlan,
   planResearchWorkspaceContext,
 } from "./contextPlanner";
+import { verifyResearchWorkspaceEvidence } from "./evidenceVerification";
 import { createResearchWorkspaceState } from "./core/researchWorkspace/state";
 import {
   getEvidenceMatrixPreset,
@@ -34,6 +40,10 @@ import {
   type PersistentCrossPaperMasterySession,
 } from "./masteryPersistence";
 import { ResearchWorkspaceService } from "./service";
+import {
+  applyCitationStanceCorrection,
+  type CitationStanceValue,
+} from "./core/citationStance/corrections";
 import type { WorkspaceSupplementalFiles } from "../workspace/supplementalFiles";
 import {
   exportResearchWorkspaceTextFile,
@@ -805,24 +815,81 @@ export async function submitResearchWorkspaceCrossPaperMastery(params: {
   return coordinated.result;
 }
 
-export async function classifyResearchWorkspaceCitations(params: {
-  anchor: ResearchWorkspacePaper;
-  contexts: unknown[];
+export async function extractResearchWorkspaceCitationContexts(params: {
+  papers: ResearchWorkspacePaper[];
   projectID?: string;
   signal?: AbortSignal;
   onStatus?: (status: string) => void;
 }) {
-  const projectID = await prepareProject(params.projectID, [params.anchor]);
+  if (!params.papers.length) throw new Error("Choose at least one local PDF.");
+  if (params.signal?.aborted) throw params.signal.reason;
+  const projectID = await prepareProject(params.projectID, params.papers);
+  params.onStatus?.("Reading local citation markers and bibliography entries…");
+  const libraries = [...new Set(params.papers.map((paper) => paper.libraryID))];
+  const candidateGroups = await Promise.all(
+    libraries.map(async (libraryID) => {
+      try {
+        return await getLibraryItemCandidates(libraryID);
+      } catch {
+        return [];
+      }
+    }),
+  );
+  if (params.signal?.aborted) throw params.signal.reason;
+  const descriptor = getResearchWorkspaceCapability("citation-context");
+  const coordinated =
+    await operationCoordinator().run<CitationContextExtractionResult>({
+      projectID,
+      sourcesPrepared: true,
+      papers: params.papers,
+      operation: descriptor.operation,
+      operationVersion: descriptor.operationVersion,
+      artifactType: "citation-context",
+      artifactTitle: "Citation Context Extraction",
+      providerMode: getModeForItem(params.papers[0].itemID),
+      signal: params.signal,
+      onStatus: params.onStatus,
+      execute: async () => {
+        const extracted = extractCitationContexts({
+          papers: params.papers,
+          libraryCandidates: candidateGroups.flat(),
+        });
+        return (await verifyResearchWorkspaceEvidence(
+          extracted,
+          params.papers,
+        )) as CitationContextExtractionResult;
+      },
+    });
+  return coordinated.result;
+}
+
+export async function classifyResearchWorkspaceCitations(params: {
+  anchor: ResearchWorkspacePaper;
+  contexts: unknown[];
+  papers?: ResearchWorkspacePaper[];
+  extraction?: CitationContextExtractionResult;
+  approvedForModel: boolean;
+  projectID?: string;
+  signal?: AbortSignal;
+  onStatus?: (status: string) => void;
+}) {
+  if (params.approvedForModel !== true) {
+    throw new Error(
+      "Citation snippets require explicit approval before stance analysis.",
+    );
+  }
+  const papers = params.papers?.length ? params.papers : [params.anchor];
+  const projectID = await prepareProject(params.projectID, papers);
   const { service } = await createBoundService({
     anchor: params.anchor,
-    papers: [params.anchor],
+    papers,
     signal: params.signal,
     onStatus: params.onStatus,
   });
   const coordinated = await operationCoordinator().run<any>({
     projectID,
     sourcesPrepared: true,
-    papers: [params.anchor],
+    papers,
     operation: "citation-stance",
     operationVersion: "citation-stance-v1",
     artifactType: "citation-stance",
@@ -831,8 +898,54 @@ export async function classifyResearchWorkspaceCitations(params: {
     signal: params.signal,
     onStatus: params.onStatus,
     execute: () =>
-      service.classifyCitationContexts(params.contexts, [params.anchor]),
+      service.classifyCitationContexts(
+        params.contexts,
+        papers,
+        params.extraction,
+        params.approvedForModel,
+      ),
   });
+  return coordinated.result;
+}
+
+export async function correctResearchWorkspaceCitationStance(params: {
+  papers: ResearchWorkspacePaper[];
+  payload: Record<string, unknown>;
+  contextID: string;
+  stance: CitationStanceValue;
+  reason: string;
+  expectedRevision: number;
+  submissionID: string;
+  projectID?: string;
+  signal?: AbortSignal;
+  onStatus?: (status: string) => void;
+}) {
+  if (!params.papers.length) throw new Error("Choose at least one local PDF.");
+  const projectID = await prepareProject(params.projectID, params.papers);
+  const coordinated = await operationCoordinator().run<Record<string, unknown>>(
+    {
+      projectID,
+      sourcesPrepared: true,
+      papers: params.papers,
+      operation: "citation-stance-correction",
+      operationVersion: "citation-stance-correction-v1",
+      artifactType: "citation-stance",
+      artifactTitle: "Citation Stance",
+      providerMode: getModeForItem(params.papers[0].itemID),
+      signal: params.signal,
+      onStatus: params.onStatus,
+      execute: async () =>
+        applyCitationStanceCorrection({
+          payload: params.payload,
+          contextID: params.contextID,
+          stance: params.stance,
+          reason: params.reason,
+          expectedRevision: params.expectedRevision,
+          submissionID: params.submissionID,
+          eventID: `citation-correction-${params.submissionID}`,
+        }),
+    },
+  );
   return coordinated.result;
 }
 
