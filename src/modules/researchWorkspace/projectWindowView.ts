@@ -12,6 +12,7 @@ import {
 import { renderResearchWorkspaceArtifactEnvelope } from "./artifactRenderer";
 import { openVerifiedResearchWorkspaceEvidence } from "./evidenceNavigation";
 import type { EvidenceReferenceV2 } from "./evidenceVerification";
+import { readResearchWorkspaceArtifact } from "./legacyCapabilityAdapters";
 import type { ResearchWorkspacePaper } from "./paperSource";
 import type {
   ResearchWorkspaceProjectDetails,
@@ -384,11 +385,16 @@ function renderArtifactHistory(
     return section;
   }
   const list = element(doc, "div", "pprw-artifact-history");
-  for (const artifact of details.artifacts) {
+  for (const storedArtifact of details.artifacts) {
+    const readable = readResearchWorkspaceArtifact(storedArtifact);
+    const artifact = readable.artifact;
     const item = element(doc, "details", "pprw-artifact-card");
     const summary = element(doc, "summary", "pprw-artifact-summary");
     summary.append(
       element(doc, "strong", "", artifact.title),
+      ...(readable.legacy
+        ? [element(doc, "span", "pprw-artifact-status", "legacy · read only")]
+        : []),
       element(
         doc,
         "span",

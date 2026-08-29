@@ -26,6 +26,9 @@ export interface RunResearchWorkspaceProjectOperation<T> {
   papers: readonly ResearchWorkspacePaper[];
   operation: string;
   operationVersion: string;
+  promptVersion?: string;
+  parserVersion?: string;
+  schemaVersion?: string;
   artifactType: ResearchWorkspaceArtifactType;
   artifactTitle: string;
   providerMode: ResearchWorkspaceEngineMode;
@@ -51,6 +54,9 @@ export interface RunResearchWorkspaceIncrementalOperation<
   papers: readonly ResearchWorkspacePaper[];
   operation: string;
   operationVersion: string;
+  promptVersion?: string;
+  parserVersion?: string;
+  schemaVersion?: string;
   artifactType: ResearchWorkspaceArtifactType;
   artifactTitle: string;
   providerMode: ResearchWorkspaceEngineMode;
@@ -170,8 +176,13 @@ export class ResearchWorkspaceOperationCoordinator {
             })),
             operation: params.operation,
             operationVersion: params.operationVersion,
-            promptVersion: `${params.operation}-prompt-v1`,
-            parserVersion: `${params.operation}-parser-v1`,
+            promptVersion:
+              params.promptVersion ?? `${params.operation}-prompt-v1`,
+            parserVersion:
+              params.parserVersion ?? `${params.operation}-parser-v1`,
+            ...(params.schemaVersion
+              ? { schemaVersion: params.schemaVersion }
+              : {}),
             evidenceVerifierVersion: "paperpilot-evidence-v2",
             providerMode: params.providerMode,
             runID: run.run.runID,
@@ -269,7 +280,8 @@ export class ResearchWorkspaceOperationCoordinator {
           (candidate.status === "partial" || candidate.status === "stale") &&
           candidate.lineage.operation === params.operation &&
           candidate.lineage.operationVersion === params.operationVersion &&
-          candidate.lineage.parserVersion === `${params.operation}-parser-v1` &&
+          candidate.lineage.parserVersion ===
+            (params.parserVersion ?? `${params.operation}-parser-v1`) &&
           candidate.sourceIDs.length === params.papers.length &&
           params.papers.every((paper) =>
             candidate.sourceIDs.includes(paper.sourceID),
@@ -354,8 +366,13 @@ export class ResearchWorkspaceOperationCoordinator {
           })),
           operation: params.operation,
           operationVersion: params.operationVersion,
-          promptVersion: `${params.operation}-prompt-v1`,
-          parserVersion: `${params.operation}-parser-v1`,
+          promptVersion:
+            params.promptVersion ?? `${params.operation}-prompt-v1`,
+          parserVersion:
+            params.parserVersion ?? `${params.operation}-parser-v1`,
+          ...(params.schemaVersion
+            ? { schemaVersion: params.schemaVersion }
+            : {}),
           evidenceVerifierVersion: "paperpilot-evidence-v2",
           providerMode: params.providerMode,
           runID: run.run.runID,

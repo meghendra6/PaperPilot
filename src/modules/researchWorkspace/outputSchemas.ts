@@ -73,7 +73,10 @@ export function researchWorkspaceOutputSchemaForPurpose(
 ): StructuredOutputSchema {
   if (purpose === "claim-extraction")
     return RESEARCH_WORKSPACE_OUTPUT_SCHEMAS.claimLedger;
-  if (purpose.startsWith("critical-read-"))
+  if (
+    purpose.startsWith("critical-read-") ||
+    purpose.startsWith("methodology-audit-")
+  )
     return RESEARCH_WORKSPACE_OUTPUT_SCHEMAS.criticalRead;
   if (purpose === "reproducibility-audit")
     return RESEARCH_WORKSPACE_OUTPUT_SCHEMAS.reproducibility;

@@ -3,10 +3,18 @@ import { getModeForItem } from "../ai/modeStore";
 import { normalizeResponseLanguage } from "../translation/responseLanguage";
 import { runResearchWorkspaceAnalysis } from "./analysisRunner";
 import {
+  getResearchWorkspaceCapability,
+  type ResearchWorkspaceCapabilityID,
+} from "./capabilityRegistry";
+import {
   applyResearchWorkspaceContextPlan,
   planResearchWorkspaceContext,
 } from "./contextPlanner";
 import { createResearchWorkspaceState } from "./core/researchWorkspace/state";
+import {
+  getEvidenceMatrixPreset,
+  type EvidenceMatrixPresetID,
+} from "./evidenceMatrixPresets";
 import { ResearchWorkspaceOperationCoordinator } from "./operationCoordinator";
 import { researchWorkspaceOutputSchemaForPurpose } from "./outputSchemas";
 import type { ResearchWorkspacePaper } from "./paperSource";
@@ -26,12 +34,13 @@ import {
 
 export type ResearchWorkspaceSingleOperation =
   | "claims"
-  | "critical-read"
+  | "methodology-audit"
   | "reproducibility"
   | "paper-to-code";
 
 export type ResearchWorkspaceMultiOperation =
   | "evidence-matrix"
+  | "quick-compare"
   | "literature-graph"
   | "cross-paper-mastery";
 
@@ -172,32 +181,25 @@ export async function searchResearchWorkspacePaper(params: {
   return service.searchPaper(params.paper, params.query);
 }
 
-const SINGLE_OPERATION = {
-  claims: {
-    artifactType: "claim-ledger",
-    title: "Claim–Evidence Ledger",
-    operationVersion: "claim-ledger-v1",
-  },
-  "critical-read": {
-    artifactType: "critical-read",
-    title: "Critical Read",
-    operationVersion: "critical-read-v1",
-  },
-  reproducibility: {
-    artifactType: "reproducibility",
-    title: "Reproducibility Audit",
-    operationVersion: "reproducibility-v1",
-  },
-  "paper-to-code": {
-    artifactType: "paper-to-code",
-    title: "Paper-to-Code",
-    operationVersion: "paper-to-code-v1",
-  },
-} as const;
+const SINGLE_CAPABILITY: Record<
+  ResearchWorkspaceSingleOperation,
+  ResearchWorkspaceCapabilityID
+> = {
+  claims: "claim-ledger",
+  "methodology-audit": "methodology-audit",
+  reproducibility: "reproducibility-audit",
+  "paper-to-code": "paper-to-code",
+};
+
+function normalizeSingleOperation(
+  operation: ResearchWorkspaceSingleOperation | "critical-read",
+): ResearchWorkspaceSingleOperation {
+  return operation === "critical-read" ? "methodology-audit" : operation;
+}
 
 export async function runResearchWorkspaceSingleOperation(params: {
   paper: ResearchWorkspacePaper;
-  operation: ResearchWorkspaceSingleOperation;
+  operation: ResearchWorkspaceSingleOperation | "critical-read";
   projectID?: string;
   signal?: AbortSignal;
   onStatus?: (status: string) => void;
@@ -209,24 +211,32 @@ export async function runResearchWorkspaceSingleOperation(params: {
     signal: params.signal,
     onStatus: params.onStatus,
   });
-  const descriptor = SINGLE_OPERATION[params.operation];
+  const operation = normalizeSingleOperation(params.operation);
+  const descriptor = getResearchWorkspaceCapability(
+    SINGLE_CAPABILITY[operation],
+  );
+  if (!descriptor.artifactType) {
+    throw new Error(`${descriptor.label} does not produce a project artifact.`);
+  }
   const coordinated = await operationCoordinator().run<any>({
     projectID,
     sourcesPrepared: true,
     papers: [params.paper],
-    operation: params.operation,
+    operation: descriptor.operation,
     operationVersion: descriptor.operationVersion,
+    promptVersion: descriptor.promptVersion,
+    parserVersion: descriptor.parserVersion,
+    schemaVersion: descriptor.schemaVersion,
     artifactType: descriptor.artifactType,
-    artifactTitle: descriptor.title,
+    artifactTitle: descriptor.label,
     providerMode: getModeForItem(params.paper.itemID),
     signal: params.signal,
     onStatus: params.onStatus,
     execute: () => {
-      if (params.operation === "claims")
-        return service.extractClaims(params.paper);
-      if (params.operation === "critical-read")
-        return service.runCriticalRead(params.paper);
-      if (params.operation === "reproducibility")
+      if (operation === "claims") return service.extractClaims(params.paper);
+      if (operation === "methodology-audit")
+        return service.runMethodologyAudit(params.paper);
+      if (operation === "reproducibility")
         return service.runReproducibility(params.paper);
       return service.runPaperToCode(params.paper);
     },
@@ -312,26 +322,19 @@ export async function submitResearchWorkspaceMastery(params: {
   return coordinated.result;
 }
 
-const MULTI_OPERATION = {
-  "evidence-matrix": {
-    artifactType: "evidence-matrix",
-    title: "Evidence Matrix",
-    operationVersion: "evidence-matrix-v1",
-  },
-  "literature-graph": {
-    artifactType: "relationship-graph",
-    title: "Relationship Graph",
-    operationVersion: "relationship-graph-v1",
-  },
-  "cross-paper-mastery": {
-    artifactType: "cross-paper-mastery",
-    title: "Cross-paper Mastery",
-    operationVersion: "cross-paper-mastery-v1",
-  },
-} as const;
+const MULTI_CAPABILITY: Record<
+  ResearchWorkspaceMultiOperation,
+  ResearchWorkspaceCapabilityID
+> = {
+  "evidence-matrix": "evidence-matrix",
+  "quick-compare": "quick-compare",
+  "literature-graph": "relationship-graph",
+  "cross-paper-mastery": "cross-paper-mastery",
+};
 
 function multiOperationPurpose(operation: ResearchWorkspaceMultiOperation) {
-  if (operation === "evidence-matrix") return "matrix-project-row";
+  if (operation === "evidence-matrix" || operation === "quick-compare")
+    return "matrix-project-row";
   if (operation === "literature-graph") return "literature-graph";
   return "cross-paper-question";
 }
@@ -355,7 +358,12 @@ export async function runResearchWorkspaceMultiOperation(params: {
     params.papers,
     contextPlan,
   );
-  const descriptor = MULTI_OPERATION[params.operation];
+  const descriptor = getResearchWorkspaceCapability(
+    MULTI_CAPABILITY[params.operation],
+  );
+  if (!descriptor.artifactType) {
+    throw new Error(`${descriptor.label} does not produce a project artifact.`);
+  }
   const details = await projectController().details(projectID);
   const purpose = multiOperationPurpose(params.operation);
   const projectWorkspace = buildResearchWorkspaceProjectWorkspace({
@@ -363,10 +371,10 @@ export async function runResearchWorkspaceMultiOperation(params: {
     papers: projectedPapers,
     contextPlan,
     descriptor: {
-      operation: params.operation,
+      operation: descriptor.operation,
       operationVersion: descriptor.operationVersion,
-      promptVersion: `${params.operation}-prompt-v1`,
-      parserVersion: `${params.operation}-parser-v1`,
+      promptVersion: descriptor.promptVersion,
+      parserVersion: descriptor.parserVersion,
     },
     outputSchema: researchWorkspaceOutputSchemaForPurpose(purpose),
   });
@@ -383,12 +391,23 @@ export async function runResearchWorkspaceMultiOperation(params: {
       projection.fingerprint,
     ]),
   );
-  if (params.operation === "evidence-matrix") {
-    const matrix = service.createEvidenceMatrixShell(projectedPapers);
+  if (
+    params.operation === "evidence-matrix" ||
+    params.operation === "quick-compare"
+  ) {
+    const presetID: EvidenceMatrixPresetID =
+      params.operation === "quick-compare" ? "quick-compare-v1" : "full";
+    const preset = getEvidenceMatrixPreset(presetID);
+    const matrix = service.createEvidenceMatrixShell(projectedPapers, presetID);
     const initialPayload = {
       matrix,
       coverage: service.evidenceMatrixCoverage(matrix),
       contextPlan,
+      preset: {
+        id: preset.id,
+        version: preset.version,
+        label: preset.label,
+      },
     };
     const units = projectedPapers.map((paper) => ({
       unitID: paper.sourceID,
@@ -403,10 +422,13 @@ export async function runResearchWorkspaceMultiOperation(params: {
       projectID,
       sourcesPrepared: true,
       papers: params.papers,
-      operation: params.operation,
+      operation: descriptor.operation,
       operationVersion: descriptor.operationVersion,
+      promptVersion: descriptor.promptVersion,
+      parserVersion: descriptor.parserVersion,
+      schemaVersion: descriptor.schemaVersion,
       artifactType: descriptor.artifactType,
-      artifactTitle: descriptor.title,
+      artifactTitle: descriptor.label,
       providerMode: getModeForItem(params.papers[0].itemID),
       contextProjectionFingerprints: projectionFingerprints,
       initialPayload,
@@ -436,10 +458,13 @@ export async function runResearchWorkspaceMultiOperation(params: {
     projectID,
     sourcesPrepared: true,
     papers: params.papers,
-    operation: params.operation,
+    operation: descriptor.operation,
     operationVersion: descriptor.operationVersion,
+    promptVersion: descriptor.promptVersion,
+    parserVersion: descriptor.parserVersion,
+    schemaVersion: descriptor.schemaVersion,
     artifactType: descriptor.artifactType,
-    artifactTitle: descriptor.title,
+    artifactTitle: descriptor.label,
     providerMode: getModeForItem(params.papers[0].itemID),
     contextProjectionFingerprints: projectionFingerprints,
     signal: params.signal,
