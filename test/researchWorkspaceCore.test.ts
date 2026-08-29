@@ -436,6 +436,58 @@ test("workspace v3 migrates to v4 and discards companion provider and Monitor st
   );
 });
 
+test("workspace state preserves canonical Zotero source and stale metadata", () => {
+  const sourceID = "zotero:7:ITEM:ATTACH";
+  const state = migrateResearchWorkspaceState({
+    schemaVersion: RESEARCH_WORKSPACE_SCHEMA_VERSION,
+    papers: {
+      [sourceID]: {
+        sourceID,
+        paperKey: sourceID,
+        libraryID: 7,
+        itemKey: "ITEM",
+        itemID: 11,
+        attachmentKey: "ATTACH",
+        contentFingerprint: {
+          algorithm: "zotero-version-mtime-size-v1",
+          value: "1:100:200:2026-08-29",
+          fileSize: 100,
+          modifiedTime: 200,
+          zoteroVersion: 1,
+        },
+        sourceStaleAt: "2026-08-29T01:00:00.000Z",
+        sourceStaleReason: "source-content-changed",
+        title: "Paper",
+        extractionQuality: "structured",
+      },
+    },
+  });
+  const stored = (state.papers as Record<string, any>)[sourceID];
+
+  assert.deepEqual(
+    {
+      sourceID: stored.sourceID,
+      libraryID: stored.libraryID,
+      itemKey: stored.itemKey,
+      contentFingerprint: stored.contentFingerprint,
+      sourceStaleReason: stored.sourceStaleReason,
+    },
+    {
+      sourceID,
+      libraryID: 7,
+      itemKey: "ITEM",
+      contentFingerprint: {
+        algorithm: "zotero-version-mtime-size-v1",
+        value: "1:100:200:2026-08-29",
+        fileSize: 100,
+        modifiedTime: 200,
+        zoteroVersion: 1,
+      },
+      sourceStaleReason: "source-content-changed",
+    },
+  );
+});
+
 test("workspace repository serializes atomic collection and paper updates", async () => {
   let persisted: string | undefined;
   const repository = new ResearchWorkspaceRepository("workspace.json", {
@@ -595,6 +647,65 @@ test("Research Workspace service retries one parser-rejected response", async ()
   assert.equal(parsed.ok, true);
   assert.equal(prompts.length, 2);
   assert.match(prompts[1], /validation_error trust="untrusted-data"/);
+});
+
+test("Research Workspace marks persisted artifacts stale after source replacement", async () => {
+  const sourceID = "zotero:7:ITEM:ATTACH";
+  const priorLedger = { claims: [{ id: "claim-1" }] };
+  const state: any = {
+    papers: {
+      [sourceID]: {
+        sourceID,
+        paperKey: sourceID,
+        libraryID: 7,
+        itemKey: "ITEM",
+        attachmentKey: "ATTACH",
+        contentFingerprint: {
+          algorithm: "zotero-version-mtime-size-v1",
+          value: "version-1",
+        },
+        title: "Paper",
+        extractionQuality: "zotero_text",
+        claimLedger: priorLedger,
+        criticalReads: [],
+        reproducibilityReports: [],
+        paperToCodeReports: [],
+      },
+    },
+  };
+  const service = new (ResearchWorkspaceService as any)({
+    repository: {
+      async update(update: (workspace: any) => void) {
+        await update(state);
+        return state;
+      },
+    },
+    agent: { async run() {} },
+  });
+
+  await service.registerPaper({
+    sourceID,
+    paperKey: sourceID,
+    libraryID: 7,
+    itemKey: "ITEM",
+    itemID: 11,
+    attachmentID: 12,
+    attachmentKey: "ATTACH",
+    contentFingerprint: {
+      algorithm: "zotero-version-mtime-size-v1",
+      value: "version-2",
+    },
+    title: "Paper",
+    context: "Replacement content",
+    extractionQuality: "zotero_text",
+  });
+
+  assert.equal(
+    state.papers[sourceID].sourceStaleReason,
+    "source-content-changed",
+  );
+  assert.match(state.papers[sourceID].sourceStaleAt, /^\d{4}-\d{2}-\d{2}T/);
+  assert.equal(state.papers[sourceID].claimLedger, priorLedger);
 });
 
 test("workspace repository surfaces corrupt persisted JSON", async () => {

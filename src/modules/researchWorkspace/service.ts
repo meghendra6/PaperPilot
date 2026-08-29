@@ -107,6 +107,10 @@ function sourceFingerprint(value) {
   }
   return `${value.length}:${(hash >>> 0).toString(16).padStart(8, "0")}`;
 }
+function contentFingerprintValue(fingerprint) {
+  if (typeof fingerprint === "string") return fingerprint;
+  return typeof fingerprint?.value === "string" ? fingerprint.value : "";
+}
 class ResearchWorkspaceService {
   constructor(env) {
     this.env = env;
@@ -157,13 +161,33 @@ class ResearchWorkspaceService {
     this.indexPaper(paper);
     return this.env.repository.update((state) => {
       const previous = state.papers[paper.paperKey];
+      const sourceChanged = Boolean(
+        contentFingerprintValue(previous?.contentFingerprint) &&
+          contentFingerprintValue(previous.contentFingerprint) !==
+            contentFingerprintValue(paper.contentFingerprint),
+      );
       state.papers[paper.paperKey] = {
+        sourceID: paper.sourceID,
         paperKey: paper.paperKey,
+        libraryID: paper.libraryID,
+        itemKey: paper.itemKey,
         itemID: paper.itemID,
         attachmentKey: paper.attachmentKey,
+        contentFingerprint: paper.contentFingerprint,
         title: paper.title,
         extractionQuality: paper.extractionQuality,
         indexedAt: now(),
+        ...(sourceChanged
+          ? {
+              sourceStaleAt: now(),
+              sourceStaleReason: "source-content-changed",
+            }
+          : previous?.sourceStaleAt
+            ? {
+                sourceStaleAt: previous.sourceStaleAt,
+                sourceStaleReason: previous.sourceStaleReason,
+              }
+            : {}),
         ...(previous?.claimLedger ? { claimLedger: previous.claimLedger } : {}),
         ...(previous?.mastery ? { mastery: previous.mastery } : {}),
         criticalReads: previous?.criticalReads ?? [],

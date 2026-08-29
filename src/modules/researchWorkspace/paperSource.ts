@@ -1,12 +1,25 @@
-import { paperWorkspaceContentCache } from "../tools/paperWorkspaceContent";
+import {
+  paperWorkspaceContentCache,
+  type PaperContentFingerprint,
+} from "../tools/paperWorkspaceContent";
+import {
+  buildZoteroSourceID,
+  createZoteroSourceIdentity,
+  sameZoteroSource,
+  type ZoteroSourceIdentity,
+} from "./sourceIdentity";
 
 declare const Zotero: any;
 
 export interface ResearchWorkspacePaper {
+  sourceID: string;
   paperKey: string;
+  libraryID: number;
+  itemKey: string;
   itemID: number;
   attachmentID: number;
   attachmentKey: string;
+  contentFingerprint: PaperContentFingerprint;
   title: string;
   context: string;
   extractionQuality: "structured" | "zotero_text";
@@ -120,6 +133,7 @@ async function resolvePaperAndAttachment(item: any) {
     };
   }
 
+  const attachments: any[] = [];
   const attachmentIDs = item?.getAttachments?.() ?? [];
   for (const attachmentID of attachmentIDs) {
     const attachment = await getItem(Number(attachmentID));
@@ -128,8 +142,16 @@ async function resolvePaperAndAttachment(item: any) {
       attachment?.attachmentContentType === "application/pdf" ||
       attachment?.attachmentContentType === ""
     ) {
-      return { paperItem: item, attachment };
+      attachments.push(attachment);
     }
+  }
+  if (attachments.length > 1) {
+    throw new Error(
+      "Multiple PDF attachments found. Select the exact PDF attachment row.",
+    );
+  }
+  if (attachments.length === 1) {
+    return { paperItem: item, attachment: attachments[0] };
   }
   throw new Error("No PDF attachment found for this item.");
 }
@@ -139,7 +161,26 @@ export async function loadResearchWorkspacePaper(
   maxCharacters = 1_500_000,
 ): Promise<ResearchWorkspacePaper> {
   const { paperItem, attachment } = await resolvePaperAndAttachment(item);
-  const content = await paperWorkspaceContentCache.getPaperContent(paperItem);
+  const identity = createZoteroSourceIdentity({
+    libraryID: attachment.libraryID ?? paperItem.libraryID,
+    itemKey: paperItem.key ?? paperItem.id,
+    attachmentKey: attachment.key ?? attachment.id,
+    standaloneAttachment: Number(paperItem.id) === Number(attachment.id),
+  });
+  const sourceID = buildZoteroSourceID(identity);
+  const content = await paperWorkspaceContentCache.getPaperContent(paperItem, {
+    attachment,
+    source: identity,
+  });
+  if (
+    !content.source ||
+    !content.contentFingerprint ||
+    !sameZoteroSource(content.source as ZoteroSourceIdentity, identity)
+  ) {
+    throw new Error(
+      "Extracted paper content does not match the selected Zotero attachment.",
+    );
+  }
   const context = String(content.markdownText || content.fullText || "").slice(
     0,
     Math.max(10_000, maxCharacters),
@@ -148,13 +189,18 @@ export async function loadResearchWorkspacePaper(
     throw new Error("No readable paper text could be extracted.");
   }
 
-  const paperKey = String(paperItem.key || paperItem.id);
+  const paperKey = sourceID;
+  const itemKey = String(paperItem.key || paperItem.id);
   const attachmentKey = String(attachment.key || attachment.id);
   return {
+    sourceID,
     paperKey,
+    libraryID: identity.libraryID,
+    itemKey,
     itemID: Number(paperItem.id),
     attachmentID: Number(attachment.id),
     attachmentKey,
+    contentFingerprint: content.contentFingerprint,
     title: String(paperItem.getField?.("title") || "Untitled paper"),
     context,
     extractionQuality:
@@ -183,8 +229,8 @@ export async function loadSelectedResearchWorkspacePapers(
   for (const item of selected.slice(0, 12)) {
     try {
       const paper = await loadResearchWorkspacePaper(item, maxCharacters);
-      if (seen.has(paper.paperKey)) continue;
-      seen.add(paper.paperKey);
+      if (seen.has(paper.sourceID)) continue;
+      seen.add(paper.sourceID);
       papers.push(paper);
     } catch {
       // Ignore selected rows without a readable PDF; the caller still enforces

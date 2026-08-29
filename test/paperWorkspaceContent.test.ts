@@ -1,7 +1,10 @@
 import { test } from "node:test";
 import * as assert from "node:assert/strict";
 
-import { resolveOpenDataLoaderJarPath } from "../src/modules/tools/paperWorkspaceContent";
+import {
+  PaperWorkspaceContentCache,
+  resolveOpenDataLoaderJarPath,
+} from "../src/modules/tools/paperWorkspaceContent";
 
 test("resolveOpenDataLoaderJarPath falls back to node_modules for file roots", async () => {
   const resolved = await resolveOpenDataLoaderJarPath({
@@ -14,5 +17,105 @@ test("resolveOpenDataLoaderJarPath falls back to node_modules for file roots", a
   assert.equal(
     resolved,
     "/tmp/project/node_modules/@opendataloader/pdf/lib/opendataloader-pdf-cli.jar",
+  );
+});
+
+test("paper content extraction stays bound to the explicitly requested attachment", async () => {
+  const cache = new PaperWorkspaceContentCache();
+  const parent = {
+    id: 1,
+    key: "ITEM",
+    libraryID: 7,
+    isAttachment: () => false,
+  };
+  const attachmentB = {
+    id: 3,
+    key: "ATTACH-B",
+    libraryID: 7,
+    version: 1,
+    attachmentText: "Text from PDF B",
+    getFilePathAsync: async () => undefined,
+    getField: () => "2026-08-29 00:00:00",
+  };
+
+  const content = await cache.getPaperContent(parent, {
+    attachment: attachmentB,
+    source: {
+      libraryID: 7,
+      itemKey: "ITEM",
+      attachmentKey: "ATTACH-B",
+      standaloneAttachment: false,
+    },
+  });
+
+  assert.equal(content.fullText, "Text from PDF B");
+  assert.equal(content.source?.attachmentKey, "ATTACH-B");
+});
+
+test("paper content cache invalidates when the Zotero attachment version changes", async () => {
+  const cache = new PaperWorkspaceContentCache();
+  const parent = {
+    id: 1,
+    key: "ITEM",
+    libraryID: 7,
+    isAttachment: () => false,
+  };
+  const attachment = {
+    id: 2,
+    key: "ATTACH",
+    libraryID: 7,
+    version: 1,
+    attachmentText: "First revision",
+    getFilePathAsync: async () => undefined,
+    getField: () => "2026-08-29 00:00:00",
+  };
+  const source = {
+    libraryID: 7,
+    itemKey: "ITEM",
+    attachmentKey: "ATTACH",
+    standaloneAttachment: false,
+  };
+
+  const first = await cache.getPaperContent(parent, { attachment, source });
+  attachment.version = 2;
+  attachment.attachmentText = "Second revision";
+  const second = await cache.getPaperContent(parent, { attachment, source });
+
+  assert.equal(first.fullText, "First revision");
+  assert.equal(second.fullText, "Second revision");
+  assert(first.contentFingerprint);
+  assert(second.contentFingerprint);
+  assert.notEqual(
+    first.contentFingerprint.value,
+    second.contentFingerprint.value,
+  );
+});
+
+test("paper content extraction rejects an attachment outside the requested source", async () => {
+  const cache = new PaperWorkspaceContentCache();
+  const attachment = {
+    id: 2,
+    key: "ATTACH-A",
+    libraryID: 7,
+    version: 1,
+    attachmentText: "Text",
+    getFilePathAsync: async () => undefined,
+  };
+
+  await assert.rejects(
+    () =>
+      cache.getPaperContent(
+        { id: 1, key: "ITEM", libraryID: 7 },
+        {
+          attachment,
+          source: {
+            libraryID: 7,
+            itemKey: "ITEM",
+            attachmentKey: "ATTACH-B",
+            standaloneAttachment: false,
+          },
+        },
+      ),
+    /does not match the requested source identity/,
   );
 });
