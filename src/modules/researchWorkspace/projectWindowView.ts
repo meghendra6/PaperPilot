@@ -9,6 +9,9 @@ import {
   updateResearchWorkspaceMember,
   updateResearchWorkspaceProject,
 } from "./facade";
+import { renderResearchWorkspaceArtifactEnvelope } from "./artifactRenderer";
+import { openVerifiedResearchWorkspaceEvidence } from "./evidenceNavigation";
+import type { EvidenceReferenceV2 } from "./evidenceVerification";
 import type { ResearchWorkspacePaper } from "./paperSource";
 import type {
   ResearchWorkspaceProjectDetails,
@@ -238,7 +241,7 @@ async function renderProject(
   root.append(
     renderProjectPapers(doc, root, details, capturedPapers, generation),
   );
-  root.append(renderArtifactHistory(doc, details));
+  root.append(renderArtifactHistory(doc, root, details));
 
   if (capturedPapers.length) {
     const operations = element(doc, "section", "pprw-project-operations");
@@ -362,6 +365,7 @@ function renderProjectPapers(
 
 function renderArtifactHistory(
   doc: Document,
+  root: HTMLElement,
   details: ResearchWorkspaceProjectDetails,
 ) {
   const section = element(doc, "section", "pprw-project-panel");
@@ -398,8 +402,6 @@ function renderArtifactHistory(
       "pprw-muted",
       `${artifact.sourceIDs.length} source${artifact.sourceIDs.length === 1 ? "" : "s"} · ${new Date(artifact.updatedAt).toLocaleString()}`,
     );
-    const payload = element(doc, "pre", "pprw-pre");
-    payload.textContent = JSON.stringify(artifact.payload, null, 2);
     item.append(summary, meta);
     if (artifact.staleReasons?.length) {
       item.append(
@@ -411,7 +413,23 @@ function renderArtifactHistory(
         ),
       );
     }
-    item.append(payload);
+    item.append(
+      renderResearchWorkspaceArtifactEnvelope(doc, artifact, {
+        onOpenEvidence: async (reference) => {
+          try {
+            await openVerifiedResearchWorkspaceEvidence(
+              reference as unknown as EvidenceReferenceV2,
+            );
+          } catch (error) {
+            setMessage(
+              root,
+              error instanceof Error ? error.message : String(error),
+              "error",
+            );
+          }
+        },
+      }),
+    );
     list.append(item);
   }
   section.append(list);

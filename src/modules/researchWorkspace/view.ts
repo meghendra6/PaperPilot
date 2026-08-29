@@ -1,7 +1,7 @@
 import { config } from "../../../package.json";
 import { getLocaleID } from "../../utils/locale";
+import { renderResearchWorkspaceArtifactValue } from "./artifactRenderer";
 import { calculateReproducibilityReadiness } from "./core/reproducibility/readiness";
-import { formatEvidenceLocator } from "./core/evidence/types";
 import { openVerifiedResearchWorkspaceEvidence } from "./evidenceNavigation";
 import type { EvidenceReferenceV2 } from "./evidenceVerification";
 import { validateLiteratureGraph } from "./core/literatureGraph/graph";
@@ -108,24 +108,6 @@ function formatPercent(value: unknown) {
   return Number.isFinite(number) ? `${Math.round(number * 100)}%` : "—";
 }
 
-function safeStringify(value: unknown) {
-  try {
-    const seen = new WeakSet<object>();
-    return JSON.stringify(
-      value,
-      (_key, entry) => {
-        if (!entry || typeof entry !== "object") return entry;
-        if (seen.has(entry)) return "[Circular]";
-        seen.add(entry);
-        return entry;
-      },
-      2,
-    );
-  } catch {
-    return String(value);
-  }
-}
-
 function isCurrent(root: HTMLElement, generation?: symbol) {
   return !generation || runtime.get(root)?.generation === generation;
 }
@@ -208,40 +190,6 @@ async function guarded(
   }
 }
 
-function collectEvidence(
-  value: unknown,
-  result: any[] = [],
-  seen = new Set<string>(),
-  visited = new WeakSet<object>(),
-) {
-  if (!value || typeof value !== "object") return result;
-  if (visited.has(value)) return result;
-  visited.add(value);
-  if (Array.isArray(value)) {
-    for (const entry of value) collectEvidence(entry, result, seen, visited);
-    return result;
-  }
-  const record = value as Record<string, unknown>;
-  if (
-    typeof record.attachmentKey === "string" &&
-    (record.pageIndex !== undefined ||
-      record.sectionPath ||
-      record.quote ||
-      record.exactQuote ||
-      record.elementType)
-  ) {
-    const key = `${record.sourceID || ""}:${record.libraryID || ""}:${record.attachmentKey}:${record.pageIndex}:${record.exactQuote || record.quote || ""}`;
-    if (!seen.has(key)) {
-      seen.add(key);
-      result.push(record);
-    }
-  }
-  for (const entry of Object.values(record)) {
-    collectEvidence(entry, result, seen, visited);
-  }
-  return result;
-}
-
 function renderOutput(
   root: HTMLElement,
   title: string,
@@ -255,41 +203,16 @@ function renderOutput(
   panel.replaceChildren(
     element(root.ownerDocument, "h3", "pprw-result-title", title),
   );
-  const evidence = collectEvidence(value);
-  if (evidence.length) {
-    const links = element(root.ownerDocument, "div", "pprw-evidence-links");
-    for (const reference of evidence.slice(0, 40)) {
-      const status = String(reference.verification?.status || "unverified");
-      if (status === "verified") {
-        links.append(
-          button(
-            root.ownerDocument,
-            `Verified · ${formatEvidenceLocator(reference)}`,
-            () =>
-              guarded(root, "Opening evidence", async () => {
-                await openVerifiedResearchWorkspaceEvidence(
-                  reference as EvidenceReferenceV2,
-                );
-              }),
-            "pprw-evidence pp-btn pp-btn--ghost",
-          ),
-        );
-      } else {
-        links.append(
-          element(
-            root.ownerDocument,
-            "span",
-            "pprw-evidence pprw-evidence--unverified",
-            `${status} · ${formatEvidenceLocator(reference)}`,
-          ),
-        );
-      }
-    }
-    panel.append(links);
-  }
-  const pre = element(root.ownerDocument, "pre", "pprw-pre");
-  pre.textContent = safeStringify(value);
-  panel.append(pre);
+  panel.append(
+    renderResearchWorkspaceArtifactValue(root.ownerDocument, value, {
+      onOpenEvidence: (reference) =>
+        guarded(root, "Opening evidence", async () => {
+          await openVerifiedResearchWorkspaceEvidence(
+            reference as unknown as EvidenceReferenceV2,
+          );
+        }),
+    }),
+  );
 }
 
 function paperSummary(doc: Document, paper: ResearchWorkspacePaper) {

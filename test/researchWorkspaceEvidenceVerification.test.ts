@@ -299,8 +299,16 @@ test("Research Workspace view exposes no cross-library evidence scan", () => {
     join(process.cwd(), "src/modules/researchWorkspace/view.ts"),
     "utf8",
   );
+  const rendererSource = readFileSync(
+    join(
+      process.cwd(),
+      "src/modules/researchWorkspace/artifactRenderer.ts",
+    ),
+    "utf8",
+  );
   assert.doesNotMatch(viewSource, /Libraries\?\.getAll|Libraries\.getAll/);
-  assert.match(viewSource, /status === "verified"/);
+  assert.doesNotMatch(rendererSource, /Libraries\?\.getAll|Libraries\.getAll/);
+  assert.match(rendererSource, /status === "verified"/);
   assert.match(viewSource, /openVerifiedResearchWorkspaceEvidence/);
 });
 
