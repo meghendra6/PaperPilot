@@ -12,6 +12,28 @@ export interface PaperWorkspaceContent {
   structuredContent?: unknown;
   extractionMethod: "opendataloader-pdf" | "zotero-attachment-text";
   extractionNotes: string[];
+  source?: PaperWorkspaceContentSource;
+  contentFingerprint?: PaperContentFingerprint;
+}
+
+export interface PaperWorkspaceContentSource {
+  libraryID: number;
+  itemKey: string;
+  attachmentKey: string;
+  standaloneAttachment: boolean;
+}
+
+export interface PaperContentFingerprint {
+  algorithm: "zotero-version-mtime-size-v1";
+  value: string;
+  fileSize?: number;
+  modifiedTime?: number;
+  zoteroVersion?: number;
+}
+
+export interface PaperWorkspaceContentOptions {
+  attachment?: any;
+  source?: PaperWorkspaceContentSource;
 }
 
 interface StructuredExtractionResult {
@@ -19,34 +41,71 @@ interface StructuredExtractionResult {
   structuredContent: unknown;
 }
 
-class PaperWorkspaceContentCache {
-  private currentItemID: string | null = null;
-  private currentContent: PaperWorkspaceContent | null = null;
+const EXTRACTOR_VERSION = "opendataloader-pdf@2.2.0|zotero-attachment-text@1";
+const EXTRACTION_OPTIONS_VERSION = "reading-order-xycut-v1";
+const MAX_CACHE_ENTRIES = 12;
 
-  async getPaperContent(item: any): Promise<PaperWorkspaceContent> {
-    const itemID = String(item.id);
-    if (this.currentItemID !== itemID || this.currentContent === null) {
-      this.currentContent = await this.extractPaperContent(item);
-      this.currentItemID = itemID;
-    }
+export class PaperWorkspaceContentCache {
+  private readonly entries = new Map<string, PaperWorkspaceContent>();
 
-    return this.currentContent;
-  }
-
-  clearCache() {
-    this.currentItemID = null;
-    this.currentContent = null;
-  }
-
-  private async extractPaperContent(item: any): Promise<PaperWorkspaceContent> {
-    const attachment = await resolvePdfAttachment(item);
+  async getPaperContent(
+    item: any,
+    options: PaperWorkspaceContentOptions = {},
+  ): Promise<PaperWorkspaceContent> {
+    const attachment = options.attachment ?? (await resolvePdfAttachment(item));
     if (!attachment) {
       throw new Error("No PDF attachment found for this item");
     }
+    const source =
+      options.source ?? buildPaperWorkspaceContentSource(item, attachment);
+    assertAttachmentMatchesSource(attachment, source);
+    const filePath = await attachment.getFilePathAsync();
+    const contentFingerprint = await buildPaperContentFingerprint(
+      attachment,
+      filePath,
+    );
+    const cacheKey = JSON.stringify([
+      source.libraryID,
+      source.itemKey,
+      source.attachmentKey,
+      contentFingerprint.value,
+      EXTRACTOR_VERSION,
+      EXTRACTION_OPTIONS_VERSION,
+    ]);
+    const cached = this.entries.get(cacheKey);
+    if (cached) {
+      this.entries.delete(cacheKey);
+      this.entries.set(cacheKey, cached);
+      return cached;
+    }
 
+    const content = await this.extractPaperContent(
+      attachment,
+      source,
+      contentFingerprint,
+      filePath,
+    );
+    this.entries.set(cacheKey, content);
+    while (this.entries.size > MAX_CACHE_ENTRIES) {
+      const oldest = this.entries.keys().next().value as string | undefined;
+      if (oldest === undefined) break;
+      this.entries.delete(oldest);
+    }
+    return content;
+  }
+
+  clearCache() {
+    this.entries.clear();
+  }
+
+  private async extractPaperContent(
+    attachment: any,
+    source: PaperWorkspaceContentSource,
+    contentFingerprint: PaperContentFingerprint,
+    filePath: string | undefined,
+  ): Promise<PaperWorkspaceContent> {
     const fallbackText = await Promise.resolve(attachment.attachmentText || "");
     const extractionNotes: string[] = [];
-    const filePath = await attachment.getFilePathAsync();
 
     if (filePath) {
       try {
@@ -57,6 +116,8 @@ class PaperWorkspaceContentCache {
           structuredContent: structured.structuredContent,
           extractionMethod: "opendataloader-pdf",
           extractionNotes,
+          source,
+          contentFingerprint,
         };
       } catch (error) {
         extractionNotes.push(
@@ -75,11 +136,96 @@ class PaperWorkspaceContentCache {
       fullText: fallbackText,
       extractionMethod: "zotero-attachment-text",
       extractionNotes,
+      source,
+      contentFingerprint,
     };
   }
 }
 
-async function resolvePdfAttachment(item: any) {
+function buildPaperWorkspaceContentSource(
+  item: any,
+  attachment: any,
+): PaperWorkspaceContentSource {
+  const libraryID = Number(attachment.libraryID ?? item.libraryID);
+  const attachmentKey = String(attachment.key ?? attachment.id ?? "").trim();
+  const itemKey = String(item.key ?? item.id ?? "").trim();
+  if (!Number.isInteger(libraryID) || libraryID <= 0) {
+    throw new Error("Could not resolve the Zotero library for this PDF.");
+  }
+  if (!itemKey || !attachmentKey) {
+    throw new Error("Could not resolve stable Zotero keys for this PDF.");
+  }
+  return {
+    libraryID,
+    itemKey,
+    attachmentKey,
+    standaloneAttachment: Number(item.id) === Number(attachment.id),
+  };
+}
+
+function assertAttachmentMatchesSource(
+  attachment: any,
+  source: PaperWorkspaceContentSource,
+) {
+  const actualLibraryID = Number(attachment.libraryID);
+  const actualAttachmentKey = String(
+    attachment.key ?? attachment.id ?? "",
+  ).trim();
+  if (
+    actualLibraryID !== source.libraryID ||
+    actualAttachmentKey !== source.attachmentKey
+  ) {
+    throw new Error(
+      "Resolved PDF attachment does not match the requested source identity.",
+    );
+  }
+}
+
+export async function buildPaperContentFingerprint(
+  attachment: any,
+  filePath?: string,
+): Promise<PaperContentFingerprint> {
+  const version = Number(attachment.version);
+  let fileSize: number | undefined;
+  let modifiedTime: number | undefined;
+  const ioUtils = (
+    globalThis as typeof globalThis & {
+      IOUtils?: {
+        stat?: (path: string) => Promise<Record<string, unknown>>;
+      };
+    }
+  ).IOUtils;
+  if (filePath && ioUtils?.stat) {
+    try {
+      const stat = await ioUtils.stat(filePath);
+      const size = Number(stat.size);
+      const modified = Number(stat.lastModified);
+      if (Number.isFinite(size) && size >= 0) fileSize = size;
+      if (Number.isFinite(modified) && modified >= 0) modifiedTime = modified;
+    } catch {
+      // Zotero version and dateModified remain a conservative fallback.
+    }
+  }
+  const dateModified = String(
+    attachment.getField?.("dateModified") ?? attachment.dateModified ?? "",
+  ).trim();
+  const zoteroVersion =
+    Number.isFinite(version) && version >= 0 ? version : undefined;
+  return {
+    algorithm: "zotero-version-mtime-size-v1",
+    value: [
+      zoteroVersion ?? "unknown",
+      fileSize ?? "unknown",
+      modifiedTime ?? "unknown",
+      dateModified || "unknown",
+    ].join(":"),
+    ...(fileSize !== undefined ? { fileSize } : {}),
+    ...(modifiedTime !== undefined ? { modifiedTime } : {}),
+    ...(zoteroVersion !== undefined ? { zoteroVersion } : {}),
+  };
+}
+
+export async function resolvePdfAttachment(item: any) {
   if (item.isAttachment()) {
     if (
       item.attachmentContentType === "application/pdf" ||

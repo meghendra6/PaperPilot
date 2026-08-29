@@ -25,6 +25,32 @@ function object(value) {
     ? value
     : undefined;
 }
+function contentFingerprint(value) {
+  if (typeof value === "string" && value) {
+    return {
+      algorithm: "zotero-version-mtime-size-v1",
+      value,
+    };
+  }
+  const item = object(value);
+  if (!item || typeof item.value !== "string" || !item.value) return undefined;
+  const algorithm =
+    item.algorithm === "sha256" ||
+    item.algorithm === "zotero-version-mtime-size-v1"
+      ? item.algorithm
+      : "zotero-version-mtime-size-v1";
+  return {
+    algorithm,
+    value: item.value,
+    ...(typeof item.fileSize === "number" ? { fileSize: item.fileSize } : {}),
+    ...(typeof item.modifiedTime === "number"
+      ? { modifiedTime: item.modifiedTime }
+      : {}),
+    ...(typeof item.zoteroVersion === "number"
+      ? { zoteroVersion: item.zoteroVersion }
+      : {}),
+  };
+}
 function papers(value) {
   const raw = object(value);
   if (!raw) return {};
@@ -35,10 +61,28 @@ function papers(value) {
     const title = typeof item.title === "string" ? item.title : key;
     const attachmentKey =
       typeof item.attachmentKey === "string" ? item.attachmentKey : "";
+    const fingerprint = contentFingerprint(item.contentFingerprint);
     result[key] = {
+      sourceID:
+        typeof item.sourceID === "string"
+          ? item.sourceID
+          : typeof item.paperKey === "string"
+            ? item.paperKey
+            : key,
       paperKey: typeof item.paperKey === "string" ? item.paperKey : key,
+      ...(typeof item.libraryID === "number"
+        ? { libraryID: item.libraryID }
+        : {}),
+      ...(typeof item.itemKey === "string" ? { itemKey: item.itemKey } : {}),
       ...(typeof item.itemID === "number" ? { itemID: item.itemID } : {}),
       attachmentKey,
+      ...(fingerprint ? { contentFingerprint: fingerprint } : {}),
+      ...(typeof item.sourceStaleAt === "string"
+        ? { sourceStaleAt: item.sourceStaleAt }
+        : {}),
+      ...(typeof item.sourceStaleReason === "string"
+        ? { sourceStaleReason: item.sourceStaleReason }
+        : {}),
       title,
       extractionQuality:
         item.extractionQuality === "structured" ||

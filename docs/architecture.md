@@ -66,8 +66,14 @@ It therefore follows the active Paper Pilot engine choice, never resumes or
 mutates visible-chat provider sessions, and shares the existing reservation,
 cancellation, timeout, and workspace-cleanup contracts. Paper loading reuses
 `tools/paperWorkspaceContent.ts`, preferring OpenDataLoader PDF and retaining the
-Zotero attachment-text fallback. There is no second manifest, bootstrap,
-provider configuration, subprocess adapter, or XPI.
+Zotero attachment-text fallback. When a child attachment row is selected,
+extraction is bound to that exact attachment rather than the parent item's first
+PDF. A canonical `zotero:<libraryID>:<itemKey>:<attachmentKey>` source ID
+prevents personal- and group-library collisions. The extraction cache is keyed
+by that source ID plus an attachment version/mtime/size fingerprint; a changed
+fingerprint marks persisted paper outputs stale without deleting them. There is
+no second manifest, bootstrap, provider configuration, subprocess adapter, or
+XPI.
 
 Research Workspace data remains separate from transient run workspaces at
 `<Zotero profile>/paperpilot-research-workspace/workspace-v3.json`. Schema v4
