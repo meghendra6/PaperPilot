@@ -424,20 +424,29 @@ const GENERIC_OUTCOME_IDENTITIES = new Set([
   "value",
 ]);
 
-function outcomeIdentity(columnID: string, columnLabel: string) {
-  for (const candidate of [columnLabel, columnID]) {
-    const normalized = normalizedStatement(candidate);
-    if (!normalized || GENERIC_OUTCOME_IDENTITIES.has(normalized)) continue;
-    if (
-      /^(?:(?:primary|secondary|main) )?(?:effects?|evaluations?|measures?|metrics?|outcomes?|performances?|results?|values?)$/.test(
-        normalized,
-      )
-    ) {
-      continue;
-    }
-    return normalized;
+function concreteOutcomeIdentity(candidate: string) {
+  const normalized = normalizedStatement(candidate);
+  if (!normalized || GENERIC_OUTCOME_IDENTITIES.has(normalized)) {
+    return undefined;
   }
-  return undefined;
+  if (
+    /^(?:(?:primary|secondary|main) )?(?:effects?|evaluations?|measures?|metrics?|outcomes?|performances?|results?|values?)$/.test(
+      normalized,
+    )
+  ) {
+    return undefined;
+  }
+  return normalized;
+}
+
+function outcomeIdentity(
+  columnID: string,
+  columnLabel: string,
+  hasExplicitLabel: boolean,
+) {
+  const fromLabel = concreteOutcomeIdentity(columnLabel);
+  if (hasExplicitLabel || fromLabel) return fromLabel;
+  return concreteOutcomeIdentity(columnID);
 }
 
 function collectMatrix(
@@ -450,7 +459,14 @@ function collectMatrix(
   const columns = new Map(
     arrayRecords(matrix.columns).map((column) => {
       const id = cleanText(column.id, 256);
-      return [id, cleanText(column.label ?? column.title ?? id, 512)] as const;
+      const explicitLabel = cleanText(column.label ?? column.title, 512);
+      return [
+        id,
+        {
+          label: explicitLabel || id,
+          hasExplicitLabel: Boolean(explicitLabel),
+        },
+      ] as const;
     }),
   );
   const observations: MatrixObservation[] = [];
@@ -458,7 +474,8 @@ function collectMatrix(
     const sourceID = cleanText(cell.paperKey ?? cell.sourceID, 512);
     const columnID = cleanText(cell.columnId ?? cell.columnID, 256);
     if (!collector.includedSourceIDs.has(sourceID) || !columnID) continue;
-    const columnLabel = columns.get(columnID) ?? columnID;
+    const column = columns.get(columnID);
+    const columnLabel = column?.label ?? columnID;
     const dimension = dimensionFromText(`${columnID} ${columnLabel}`);
     const statement = cleanText(
       cell.displayValue ??
@@ -479,7 +496,13 @@ function collectMatrix(
     observations.push({
       columnID,
       ...(dimension === "outcome" || dimension === "metric"
-        ? { outcomeIdentity: outcomeIdentity(columnID, columnLabel) }
+        ? {
+            outcomeIdentity: outcomeIdentity(
+              columnID,
+              columnLabel,
+              column?.hasExplicitLabel ?? false,
+            ),
+          }
         : {}),
       sourceID,
       atom: created[0],

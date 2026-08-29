@@ -49,7 +49,7 @@ export interface RunResearchWorkspaceDerivedOperation<T> {
   artifactInputs: NonNullable<
     ResearchWorkspaceArtifactLineage["artifactInputs"]
   >;
-  membersRevision?: number;
+  membersRevision: number;
   operation: string;
   operationVersion: string;
   promptVersion: string;
@@ -135,10 +135,7 @@ export class ResearchWorkspaceOperationCoordinator {
     >,
   ) {
     const bundle = await this.repository.getProject(params.projectID);
-    if (
-      params.membersRevision !== undefined &&
-      bundle.membersRevision !== params.membersRevision
-    ) {
+    if (bundle.membersRevision !== params.membersRevision) {
       throw new Error(
         "The project source scope changed while the derived artifact was being built. Refresh and try again.",
       );
@@ -148,10 +145,7 @@ export class ResearchWorkspaceOperationCoordinator {
       .map((member) => member.sourceID)
       .sort();
     const sourceIDs = sources.map((source) => source.sourceID).sort();
-    if (
-      params.membersRevision !== undefined &&
-      JSON.stringify(activeMemberSourceIDs) !== JSON.stringify(sourceIDs)
-    ) {
+    if (JSON.stringify(activeMemberSourceIDs) !== JSON.stringify(sourceIDs)) {
       throw new Error(
         "The derived operation source snapshot does not match the current non-excluded project scope.",
       );
@@ -212,6 +206,24 @@ export class ResearchWorkspaceOperationCoordinator {
       ) {
         throw new Error(
           `Upstream artifact ${input.artifactID} changed while the derived artifact was being built. Refresh and try again.`,
+        );
+      }
+      const inputSourceIDs = [...current.artifact.sourceIDs].sort();
+      if (
+        inputSourceIDs.some((sourceID) => !sourceIDs.includes(sourceID)) ||
+        current.artifact.lineage.inputs.some((lineageInput) => {
+          const source = sources.find(
+            (candidate) => candidate.sourceID === lineageInput.sourceID,
+          );
+          return (
+            !source ||
+            lineageInput.contentFingerprint !==
+              (source.contentFingerprint?.value ?? "source-content-unavailable")
+          );
+        })
+      ) {
+        throw new Error(
+          `Upstream artifact ${input.artifactID} is outside the current project source scope. Refresh and try again.`,
         );
       }
     }
@@ -441,9 +453,7 @@ export class ResearchWorkspaceOperationCoordinator {
               artifactInputs: artifactInputs.map((input) => ({
                 ...input,
               })),
-              ...(params.membersRevision !== undefined
-                ? { membersRevision: params.membersRevision }
-                : {}),
+              membersRevision: params.membersRevision,
               operation: params.operation,
               operationVersion: params.operationVersion,
               promptVersion: params.promptVersion,
@@ -457,6 +467,43 @@ export class ResearchWorkspaceOperationCoordinator {
             completedAt,
           },
         );
+        try {
+          if (
+            params.signal?.aborted ||
+            !isResearchWorkspaceOwnerClaimCurrent(owner, claim)
+          ) {
+            throw new DOMException("Cancelled", "AbortError");
+          }
+          await this.assertDerivedInputsCurrent(
+            params,
+            sources,
+            artifactInputs,
+          );
+        } catch (error) {
+          const stored = await this.repository.getArtifact(
+            params.projectID,
+            artifact.artifact.artifactID,
+          );
+          if (stored && stored.artifact.status === "complete") {
+            await this.repository.updateArtifact(
+              params.projectID,
+              stored.artifact.artifactID,
+              stored.revision,
+              (current) => ({
+                ...current,
+                status: "stale",
+                lastCurrentAt: current.updatedAt,
+                staleReasons: [
+                  ...new Set([
+                    ...(current.staleReasons ?? []),
+                    "derived-inputs-changed-during-save",
+                  ]),
+                ],
+              }),
+            );
+          }
+          throw error;
+        }
         run = await this.repository.updateRun(
           params.projectID,
           run.run.runID,

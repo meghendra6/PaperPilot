@@ -327,13 +327,13 @@ test("generic result columns cannot turn unrelated direction words into a direct
   const column = payload.matrix.columns.find(
     (entry) => entry.id === "mortality-rate",
   )!;
-  column.id = "primary-result";
+  column.id = "col-4";
   column.label = "Primary result";
   const resultCells = payload.matrix.cells.filter(
     (entry) => entry.columnId === "mortality-rate",
   );
   for (const [index, cell] of resultCells.entries()) {
-    cell.columnId = "primary-result";
+    cell.columnId = "col-4";
     cell.value = index === 0 ? "lower latency" : "higher throughput";
     cell.displayValue = cell.value;
   }
@@ -342,7 +342,7 @@ test("generic result columns cannot turn unrelated direction words into a direct
     generatedAt: NOW,
   });
   const generic = dashboard.relationships.filter((entry) =>
-    entry.topic.startsWith("primary-result:"),
+    entry.topic.startsWith("col-4:"),
   );
   assert(generic.length > 0);
   assert(generic.every((entry) => entry.classification === "uncertain"));

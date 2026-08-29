@@ -570,6 +570,7 @@ test("local derived operations run without a live selection and preserve depende
       projectID: created.project.projectID,
       sources: details.sources,
       artifactInputs: [],
+      membersRevision: details.membersRevision,
       operation: "empty-derived",
       operationVersion: "v1",
       promptVersion: "v1",
@@ -654,6 +655,85 @@ test("local derived operations reject an upstream artifact changed during execut
     ).length,
     0,
   );
+  const runs = await repository.listRuns(created.project.projectID);
+  assert.equal(runs.runs.at(-1)?.status, "failed");
+});
+
+test("local derived operations stale a result when an input changes during artifact creation", async () => {
+  const { repository } = createRepository();
+  const projects = new ResearchWorkspaceProjectController(repository);
+  const coordinator = new ResearchWorkspaceOperationCoordinator(repository);
+  const papers = [paper("SAVE-RACE")];
+  const created = await projects.createProject(
+    { name: "Derived save race" },
+    papers,
+  );
+  const upstream = await coordinator.run({
+    projectID: created.project.projectID,
+    papers,
+    sourcesPrepared: true,
+    operation: "claims",
+    operationVersion: "claims-v1",
+    artifactType: "claim-ledger",
+    artifactTitle: "Claims",
+    providerMode: "codex_cli",
+    execute: async () => ({ claims: [{ text: "Before" }] }),
+  });
+  const details = await projects.details(created.project.projectID);
+  const input = {
+    artifactID: upstream.artifact.artifact.artifactID,
+    artifactType: upstream.artifact.artifact.type,
+    version: upstream.artifact.artifact.version,
+    updatedAt: upstream.artifact.artifact.updatedAt,
+    payloadFingerprint: researchWorkspaceArtifactPayloadFingerprint(
+      upstream.artifact.artifact.payload,
+    ),
+  } as const;
+  const originalCreateArtifact = repository.createArtifact.bind(repository);
+  let injectChange = true;
+  repository.createArtifact = (async (projectID, artifactInput) => {
+    if (injectChange && artifactInput.type === "contradiction-gap-dashboard") {
+      injectChange = false;
+      const current = await repository.getArtifact(projectID, input.artifactID);
+      assert(current);
+      await repository.updateArtifact(
+        projectID,
+        input.artifactID,
+        current.revision,
+        (artifact) => ({
+          ...artifact,
+          payload: { claims: [{ text: "Changed during save" }] },
+        }),
+      );
+    }
+    return originalCreateArtifact(projectID, artifactInput);
+  }) as typeof repository.createArtifact;
+
+  await assert.rejects(
+    coordinator.runDerived({
+      projectID: created.project.projectID,
+      sources: details.sources,
+      artifactInputs: [input],
+      membersRevision: details.membersRevision,
+      operation: "contradiction-gap-dashboard",
+      operationVersion: "contradiction-gap-dashboard-v1",
+      promptVersion: "local-artifact-derivation-v1",
+      parserVersion: "contradiction-gap-parser-v1",
+      schemaVersion: "contradiction-gap-dashboard-v1",
+      artifactType: "contradiction-gap-dashboard",
+      artifactTitle: "Contradictions & Evidence Gaps",
+      execute: () => ({
+        kind: "research-workspace-contradiction-gap-dashboard",
+      }),
+    }),
+    /Upstream artifact .* changed/,
+  );
+  const artifacts = await repository.listArtifacts(created.project.projectID);
+  const derived = artifacts.artifacts.find(
+    (artifact) => artifact.type === "contradiction-gap-dashboard",
+  );
+  assert.equal(derived?.status, "stale");
+  assert(derived?.staleReasons?.includes("derived-inputs-changed-during-save"));
   const runs = await repository.listRuns(created.project.projectID);
   assert.equal(runs.runs.at(-1)?.status, "failed");
 });

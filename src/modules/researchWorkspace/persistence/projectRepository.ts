@@ -703,13 +703,15 @@ export class ResearchWorkspaceProjectRepository {
     await this.files.ensureDirectory(
       joinPath(this.getProjectRoot(projectID), "artifacts"),
     );
+    const artifactFile = {
+      schemaVersion: RESEARCH_WORKSPACE_ARTIFACT_SCHEMA_VERSION,
+      revision: 0,
+      artifact,
+    };
+    parseResearchWorkspaceArtifactFile(artifactFile);
     const created = await this.files.writeNew(
       this.getArtifactPath(projectID, artifactID),
-      {
-        schemaVersion: RESEARCH_WORKSPACE_ARTIFACT_SCHEMA_VERSION,
-        revision: 0,
-        artifact,
-      },
+      artifactFile,
     );
     await this.files.mutate({
       path: this.getProjectPath(projectID),
@@ -1010,7 +1012,6 @@ export class ResearchWorkspaceProjectRepository {
       artifactID,
       reason: `upstream-artifact-deleted:${artifactID}`,
     });
-    await this.files.remove(this.getArtifactPath(projectID, artifactID));
     await this.files.mutate({
       path: this.getProjectPath(projectID),
       parser: parseResearchWorkspaceProjectFile,
@@ -1029,6 +1030,7 @@ export class ResearchWorkspaceProjectRepository {
         },
       }),
     });
+    await this.files.remove(this.getArtifactPath(projectID, artifactID));
     await this.syncCatalogEntry(projectID);
   }
 

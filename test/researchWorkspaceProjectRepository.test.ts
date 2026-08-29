@@ -133,6 +133,60 @@ test("reading an empty project store performs no durable write", async () => {
   assert.deepEqual(setup.files.writes, []);
 });
 
+test("new artifacts are validated before their first durable write", async () => {
+  const setup = repository();
+  const project = await setup.repository.createProject({
+    projectID: "project-artifact-validation",
+    name: "Artifact validation",
+  });
+  const sourceA = source("A");
+  await setup.repository.putSource(sourceA);
+  await setup.repository.addMembers(
+    project.project.projectID,
+    project.membersRevision,
+    [{ sourceID: sourceA.sourceID }],
+  );
+  await assert.rejects(
+    setup.repository.createArtifact(project.project.projectID, {
+      type: "claim-ledger",
+      title: "Broken source scope",
+      status: "complete",
+      sourceIDs: [sourceA.sourceID],
+      lineage: { ...lineage([], "run-broken-scope") },
+      payload: {},
+    }),
+    /sourceIDs must match lineage source inputs/,
+  );
+  await assert.rejects(
+    setup.repository.createArtifact(project.project.projectID, {
+      artifactID: "artifact-self",
+      type: "claim-ledger",
+      title: "Self dependency",
+      status: "complete",
+      sourceIDs: [sourceA.sourceID],
+      lineage: {
+        ...lineage([sourceA], "run-self-dependency"),
+        artifactInputs: [
+          {
+            artifactID: "artifact-self",
+            artifactType: "claim-ledger",
+            version: 1,
+            updatedAt: "2026-08-29T00:00:00.000Z",
+            payloadFingerprint: "artifact-payload-self",
+          },
+        ],
+      },
+      payload: {},
+    }),
+    /cannot depend on itself/,
+  );
+  assert.equal(
+    (await setup.repository.listArtifacts(project.project.projectID)).artifacts
+      .length,
+    0,
+  );
+});
+
 test("screening histories round-trip and reject broken provenance", () => {
   const valid = {
     schemaVersion: RESEARCH_WORKSPACE_MEMBERS_SCHEMA_VERSION,
