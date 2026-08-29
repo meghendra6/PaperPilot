@@ -34,70 +34,11 @@ import {
   finalizeProjectSynthesisEvidence,
   parseProjectSynthesisResponse,
 } from "./core/synthesis/parser";
+import {
+  getEvidenceMatrixPreset,
+  type EvidenceMatrixPresetID,
+} from "./evidenceMatrixPresets";
 import { verifyResearchWorkspaceEvidence } from "./evidenceVerification";
-const DEFAULT_COLUMNS = [
-  {
-    id: "contribution",
-    label: "Main contribution",
-    extractionQuestion:
-      "What is the paper's main contribution relative to prior work?",
-    question: "What is the paper's main contribution relative to prior work?",
-    valueType: "text",
-    requiredEvidence: true,
-  },
-  {
-    id: "method",
-    label: "Method",
-    extractionQuestion: "What method or mechanism is proposed?",
-    question: "What method or mechanism is proposed?",
-    valueType: "text",
-    requiredEvidence: true,
-  },
-  {
-    id: "dataset",
-    label: "Datasets / workloads",
-    extractionQuestion: "Which datasets, benchmarks, or workloads are used?",
-    question: "Which datasets, benchmarks, or workloads are used?",
-    valueType: "list",
-    requiredEvidence: true,
-  },
-  {
-    id: "hardware",
-    label: "Hardware",
-    extractionQuestion: "What hardware and system configuration is reported?",
-    question: "What hardware and system configuration is reported?",
-    valueType: "text",
-    requiredEvidence: true,
-  },
-  {
-    id: "primary_metric",
-    label: "Primary metric",
-    extractionQuestion:
-      "What is the primary reported evaluation metric or result?",
-    question: "What is the primary reported evaluation metric or result?",
-    valueType: "text",
-    requiredEvidence: true,
-  },
-  {
-    id: "limitation",
-    label: "Limitation",
-    extractionQuestion:
-      "What limitation, threat to validity, or unsupported scope is stated or directly evidenced?",
-    question:
-      "What limitation, threat to validity, or unsupported scope is stated or directly evidenced?",
-    valueType: "text",
-    requiredEvidence: true,
-  },
-  {
-    id: "code",
-    label: "Code available",
-    extractionQuestion:
-      "Does the paper provide an official code or artifact URL?",
-    question: "Does the paper provide an official code or artifact URL?",
-    valueType: "boolean",
-    requiredEvidence: true,
-  },
-];
 function id(prefix) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
@@ -278,7 +219,7 @@ class ResearchWorkspaceService {
     });
     return ledger;
   }
-  async runCriticalRead(paper) {
+  async runMethodologyAudit(paper) {
     const state = await this.state();
     const detection = (0, detector_1.detectCriticalReadProfile)(paper.context);
     const profile = (0, profiles_1.getCriticalReadProfile)(detection.primary);
@@ -292,7 +233,7 @@ class ResearchWorkspaceService {
     });
     const parsedReport = await this.runParsed(
       prompt,
-      `critical-read-${profile.id}`,
+      `methodology-audit-${profile.id}`,
       (response) =>
         (0, parser_1.parseProfiledCriticalReadResponse)({
           response,
@@ -305,7 +246,16 @@ class ResearchWorkspaceService {
     await this.env.repository.update((next) => {
       next.papers[paper.paperKey].criticalReads.push(report);
     });
-    return { detection, report };
+    return {
+      kind: "methodology-audit",
+      schemaVersion: 1,
+      detection,
+      report,
+    };
+  }
+  /** @deprecated Read compatibility only. New callers use Methodology Audit. */
+  async runCriticalRead(paper) {
+    return this.runMethodologyAudit(paper);
   }
   async runReproducibility(paper) {
     const state = await this.state();
@@ -429,11 +379,12 @@ class ResearchWorkspaceService {
       dashboard: (0, viewModel_1.toMasteryDashboardView)(withQuestion),
     };
   }
-  createEvidenceMatrixShell(papers) {
+  createEvidenceMatrixShell(papers, presetID: EvidenceMatrixPresetID = "full") {
+    const preset = getEvidenceMatrixPreset(presetID);
     return (0, engine_1.createEvidenceMatrix)({
       id: id("matrix"),
-      title: `Evidence Matrix · ${new Date().toLocaleDateString()}`,
-      columns: DEFAULT_COLUMNS,
+      title: `${preset.label} · ${new Date().toLocaleDateString()}`,
+      columns: preset.columns,
       papers: papers.map((paper) => ({
         paperKey: paper.paperKey,
         title: paper.title,
@@ -474,7 +425,7 @@ class ResearchWorkspaceService {
   async createEvidenceMatrix(papers) {
     if (papers.length < 2)
       throw new Error("Select at least two papers in the Zotero item list.");
-    let matrix = this.createEvidenceMatrixShell(papers);
+    let matrix = this.createEvidenceMatrixShell(papers, "full");
     for (const paper of papers) {
       const row = await this.extractEvidenceMatrixRow(matrix, paper);
       matrix = this.mergeEvidenceMatrixRow(matrix, row);

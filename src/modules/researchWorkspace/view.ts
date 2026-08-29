@@ -1,6 +1,10 @@
 import { config } from "../../../package.json";
 import { getLocaleID } from "../../utils/locale";
 import { renderResearchWorkspaceArtifactValue } from "./artifactRenderer";
+import {
+  openCanonicalReaderCapability,
+  type CanonicalReaderCapability,
+} from "./canonicalReaderCapability";
 import { calculateReproducibilityReadiness } from "./core/reproducibility/readiness";
 import { openVerifiedResearchWorkspaceEvidence } from "./evidenceNavigation";
 import type { EvidenceReferenceV2 } from "./evidenceVerification";
@@ -13,9 +17,7 @@ import {
   runResearchWorkspaceProjectSynthesis,
   runResearchWorkspaceSingleOperation,
   searchResearchWorkspacePaper,
-  startOrResumeResearchWorkspaceMastery,
   submitResearchWorkspaceCrossPaperMastery,
-  submitResearchWorkspaceMastery,
   type ResearchWorkspaceMultiOperation,
   type ResearchWorkspaceSingleOperation,
 } from "./facade";
@@ -392,15 +394,40 @@ export async function renderResearchWorkspaceView(
       renderOutput(root, title, value, paper.attachmentID, generation);
     });
   const actionRow = row(doc);
+  const openCanonical = (
+    capability: CanonicalReaderCapability,
+    title: string,
+  ) =>
+    guarded(root, `Opening ${title}`, async ({ generation }) => {
+      const opened = await openCanonicalReaderCapability({ paper, capability });
+      renderOutput(
+        root,
+        title,
+        opened.activated
+          ? {
+              status: `${title} opened in the canonical Reader workflow.`,
+              sourceID: opened.sourceID,
+            }
+          : {
+              status: `The exact PDF opened. Open Paper Pilot in the Reader and choose ${title}.`,
+              sourceID: opened.sourceID,
+            },
+        paper.attachmentID,
+        generation,
+      );
+    });
   actionRow.append(
     button(doc, "Extract claims", () =>
       runSingle("claims", "Extracting claims", "Claim–Evidence Ledger"),
     ),
-    button(doc, "Profiled audit", () =>
+    button(doc, "Open Critical Read", () =>
+      openCanonical("critical-read", "Critical Read"),
+    ),
+    button(doc, "Methodology Audit", () =>
       runSingle(
-        "critical-read",
-        "Running profiled Critical Read",
-        "Profiled Critical Read",
+        "methodology-audit",
+        "Running Methodology Audit",
+        "Methodology Audit",
       ),
     ),
     button(doc, "Reproducibility", () =>
@@ -421,93 +448,22 @@ export async function renderResearchWorkspaceView(
   understanding.content.append(actionRow);
   root.insertBefore(understanding.root, result);
 
-  const mastery = details(doc, "Paper Mastery 2.0", true);
-  const question = element(
-    doc,
-    "div",
-    "pprw-question",
-    "Start or resume to generate an evidence-grounded question.",
+  const mastery = details(doc, "Paper Mastery", true);
+  mastery.content.append(
+    element(
+      doc,
+      "p",
+      "pprw-muted",
+      "Questions, answers, calibration, and review progress are maintained by the canonical Reader workflow.",
+    ),
   );
-  const answer = textarea(
-    doc,
-    "Answer without looking at the paper when possible.",
-    6,
-  );
-  const confidence = element(doc, "input", "pprw-range");
-  confidence.type = "range";
-  confidence.min = "0";
-  confidence.max = "1";
-  confidence.step = "0.05";
-  confidence.value = "0.7";
-  const confidenceLabel = element(
-    doc,
-    "span",
-    "pprw-confidence",
-    "Confidence: 70%",
-  );
-  confidence.addEventListener("input", () => {
-    confidenceLabel.textContent = `Confidence: ${Math.round(Number(confidence.value) * 100)}%`;
-  });
   const masteryRow = row(doc);
   masteryRow.append(
-    button(doc, "Start / Resume", () =>
-      guarded(
-        root,
-        "Preparing mastery",
-        async ({ generation, signal, onStatus }) => {
-          const value = await startOrResumeResearchWorkspaceMastery({
-            paper,
-            projectID: options.projectID,
-            signal,
-            onStatus,
-          });
-          question.textContent =
-            value.question?.prompt || "Session complete. Review the dashboard.";
-          renderOutput(
-            root,
-            "Mastery dashboard",
-            value.dashboard,
-            paper.attachmentID,
-            generation,
-          );
-        },
-      ),
-    ),
-    button(doc, "Submit answer", () =>
-      guarded(
-        root,
-        "Grading answer",
-        async ({ generation, signal, onStatus }) => {
-          if (!answer.value.trim()) throw new Error("Enter an answer first.");
-          const value = await submitResearchWorkspaceMastery({
-            paper,
-            answer: answer.value,
-            confidence: Number(confidence.value),
-            projectID: options.projectID,
-            signal,
-            onStatus,
-          });
-          answer.value = "";
-          question.textContent =
-            value.question?.prompt || "Session complete. Review the dashboard.";
-          renderOutput(
-            root,
-            "Mastery feedback",
-            { feedback: value.feedback, dashboard: value.dashboard },
-            paper.attachmentID,
-            generation,
-          );
-        },
-      ),
+    button(doc, "Open Paper Mastery", () =>
+      openCanonical("paper-mastery", "Paper Mastery"),
     ),
   );
-  mastery.content.append(
-    question,
-    answer,
-    confidenceLabel,
-    confidence,
-    masteryRow,
-  );
+  mastery.content.append(masteryRow);
   root.insertBefore(mastery.root, result);
 
   const collection = details(doc, "Selected-paper intelligence", false);
@@ -571,13 +527,16 @@ export async function renderResearchWorkspaceView(
         return;
       }
       const resultTitle =
-        operation === "evidence-matrix"
-          ? `Evidence Matrix · coverage ${formatPercent(value.coverage.extractionCoverage)}`
+        operation === "evidence-matrix" || operation === "quick-compare"
+          ? `${operation === "quick-compare" ? "Quick Compare" : "Evidence Matrix"} · coverage ${formatPercent(value.coverage.extractionCoverage)}`
           : `Literature Graph · ${validateLiteratureGraph(value).valid ? "valid" : "needs review"}`;
       renderOutput(root, resultTitle, value, paper.attachmentID, generation);
     });
   const collectionRow = row(doc);
   collectionRow.append(
+    button(doc, "Quick Compare", () =>
+      runMulti("quick-compare", "Building Quick Compare"),
+    ),
     button(doc, "Evidence Matrix", () =>
       runMulti("evidence-matrix", "Building Evidence Matrix"),
     ),
