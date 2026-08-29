@@ -6,6 +6,7 @@ import { loadResearchWorkspacePaper } from "../src/modules/researchWorkspace/pap
 import {
   buildZoteroSourceID,
   createZoteroSourceIdentity,
+  parseZoteroSourceID,
   sameZoteroSource,
 } from "../src/modules/researchWorkspace/sourceIdentity";
 
@@ -28,6 +29,12 @@ test("Zotero source IDs are deterministic and library scoped", () => {
   assert.notEqual(buildZoteroSourceID(personal), buildZoteroSourceID(group));
   assert.equal(sameZoteroSource(personal, { ...personal }), true);
   assert.equal(sameZoteroSource(personal, group), false);
+  assert.deepEqual(parseZoteroSourceID(buildZoteroSourceID(personal)), {
+    libraryID: 1,
+    itemKey: "ITEM:ONE",
+    attachmentKey: "ATTACH/ONE",
+  });
+  assert.equal(parseZoteroSourceID("zotero:bad"), undefined);
 });
 
 test("Zotero source identity rejects missing or invalid stable identifiers", () => {

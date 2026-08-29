@@ -2,6 +2,8 @@ import { config } from "../../../package.json";
 import { getLocaleID } from "../../utils/locale";
 import { calculateReproducibilityReadiness } from "./core/reproducibility/readiness";
 import { formatEvidenceLocator } from "./core/evidence/types";
+import { openVerifiedResearchWorkspaceEvidence } from "./evidenceNavigation";
+import type { EvidenceReferenceV2 } from "./evidenceVerification";
 import { validateLiteratureGraph } from "./core/literatureGraph/graph";
 import {
   classifyResearchWorkspaceCitations,
@@ -216,9 +218,10 @@ function collectEvidence(
     (record.pageIndex !== undefined ||
       record.sectionPath ||
       record.quote ||
+      record.exactQuote ||
       record.elementType)
   ) {
-    const key = `${record.attachmentKey}:${record.pageIndex}:${record.quote || ""}`;
+    const key = `${record.sourceID || ""}:${record.libraryID || ""}:${record.attachmentKey}:${record.pageIndex}:${record.exactQuote || record.quote || ""}`;
     if (!seen.has(key)) {
       seen.add(key);
       result.push(record);
@@ -230,44 +233,11 @@ function collectEvidence(
   return result;
 }
 
-async function openEvidence(reference: any, fallbackAttachmentID: number) {
-  let attachment = Zotero.Items.get(fallbackAttachmentID);
-  const attachmentKey = String(reference.attachmentKey || "").trim();
-  if (attachmentKey && attachment?.key !== attachmentKey) {
-    const libraries = Zotero.Libraries?.getAll?.() ?? [];
-    const libraryIDs = [
-      attachment?.libraryID,
-      ...libraries.map((library: any) => library.libraryID ?? library.id),
-    ].filter(
-      (value, index, values) => value && values.indexOf(value) === index,
-    );
-    for (const libraryID of libraryIDs) {
-      const candidate = Zotero.Items.getByLibraryAndKey?.(
-        Number(libraryID),
-        attachmentKey,
-      );
-      if (candidate) {
-        attachment = candidate;
-        break;
-      }
-    }
-  }
-  const attachmentID = Number(attachment?.id || fallbackAttachmentID);
-  const options = Number.isFinite(Number(reference.pageIndex))
-    ? { pageIndex: Math.max(0, Math.floor(Number(reference.pageIndex))) }
-    : {};
-  if (Zotero.Reader?.open) {
-    await Zotero.Reader.open(attachmentID, options);
-  } else {
-    await Zotero.getActiveZoteroPane?.()?.viewAttachment?.(attachmentID);
-  }
-}
-
 function renderOutput(
   root: HTMLElement,
   title: string,
   value: unknown,
-  fallbackAttachmentID: number,
+  _fallbackAttachmentID: number,
   generation: symbol,
 ) {
   if (!isCurrent(root, generation)) return;
@@ -280,17 +250,31 @@ function renderOutput(
   if (evidence.length) {
     const links = element(root.ownerDocument, "div", "pprw-evidence-links");
     for (const reference of evidence.slice(0, 40)) {
-      links.append(
-        button(
-          root.ownerDocument,
-          formatEvidenceLocator(reference),
-          () =>
-            guarded(root, "Opening evidence", async () => {
-              await openEvidence(reference, fallbackAttachmentID);
-            }),
-          "pprw-evidence pp-btn pp-btn--ghost",
-        ),
-      );
+      const status = String(reference.verification?.status || "unverified");
+      if (status === "verified") {
+        links.append(
+          button(
+            root.ownerDocument,
+            `Verified · ${formatEvidenceLocator(reference)}`,
+            () =>
+              guarded(root, "Opening evidence", async () => {
+                await openVerifiedResearchWorkspaceEvidence(
+                  reference as EvidenceReferenceV2,
+                );
+              }),
+            "pprw-evidence pp-btn pp-btn--ghost",
+          ),
+        );
+      } else {
+        links.append(
+          element(
+            root.ownerDocument,
+            "span",
+            "pprw-evidence pprw-evidence--unverified",
+            `${status} · ${formatEvidenceLocator(reference)}`,
+          ),
+        );
+      }
     }
     panel.append(links);
   }
@@ -398,12 +382,27 @@ async function renderResearchWorkspaceView(root: HTMLElement, item: any) {
           matches.map((entry: any) => ({
             score: entry.score,
             section: entry.chunk.sectionPath,
+            sourceID: paper.sourceID,
+            libraryID: paper.libraryID,
             pageIndex: entry.chunk.pageIndex,
             attachmentKey: entry.chunk.attachmentKey,
             elementId: entry.chunk.metadata?.elementId,
             elementType: entry.chunk.metadata?.elementType,
             text: entry.chunk.text.slice(0, 900),
             matchedTerms: entry.matchedTerms,
+            verification: entry.chunk.metadata?.elementId
+              ? {
+                  status: "verified",
+                  method: "structured-element",
+                  verifiedAt: new Date().toISOString(),
+                  verifierVersion: "paperpilot-evidence-v2",
+                }
+              : {
+                  status: "unverified",
+                  method: "metadata-only",
+                  verifierVersion: "paperpilot-evidence-v2",
+                  detail: "No page-level structured element is available.",
+                },
           })),
           paper.attachmentID,
           generation,

@@ -609,6 +609,9 @@ and the same fail-closed outcome.
 - [ ] Attach two different PDFs to one Zotero parent item, select the second attachment row, and confirm Research Workspace extracts and cites only that exact PDF rather than the first attachment
 - [ ] Use equivalent item and attachment keys in a personal library and a group library; confirm their Research Workspace records remain distinct through reload
 - [ ] Replace or modify an indexed PDF, reopen Research Workspace, and confirm the changed fingerprint marks prior outputs stale while preserving them for review
+- [ ] Run an evidence-producing action with one exact quote and one deliberately unmatched quote; confirm only the locally matched quote has a `Verified` Open in PDF button
+- [ ] Confirm a verified evidence button resolves only `libraryID + attachmentKey`, while the same attachment key in another library is never opened as a substitute
+- [ ] Remove or move the source PDF and reopen a historical result; confirm it is labelled `source-unavailable` and has no misleading navigation action
 - [ ] With OpenDataLoader available, confirm the paper summary reports `structured`; disable it and confirm the honest `zotero_text` fallback still loads
 - [ ] Search for an exact symbol and a conceptual mechanism; confirm hybrid search ranks relevant chunks without launching an AI CLI
 - [ ] Run claim extraction, profiled audit, reproducibility, and Paper-to-Code; confirm strict JSON is parsed, evidence links open the correct attachment/page, and parser failure permits one correction attempt
