@@ -1,10 +1,12 @@
 import type { ResearchWorkspacePaper } from "./paperSource";
 import type {
+  ResearchWorkspaceArtifactLineage,
   ResearchWorkspaceArtifactFile,
   ResearchWorkspaceArtifactStatus,
   ResearchWorkspaceArtifactType,
   ResearchWorkspaceEngineMode,
   ResearchWorkspaceRunFile,
+  ResearchWorkspaceSourceRecord,
 } from "./persistence/contracts";
 import type { ResearchWorkspaceProjectRepository } from "./persistence/projectRepository";
 import { ResearchWorkspaceProjectController } from "./projectController";
@@ -38,6 +40,26 @@ export interface RunResearchWorkspaceProjectOperation<T> {
   status?: ResearchWorkspaceArtifactStatus;
   sourcesPrepared?: boolean;
   contextProjectionFingerprints?: ReadonlyMap<string, string>;
+}
+
+export interface RunResearchWorkspaceDerivedOperation<T> {
+  projectID: string;
+  sources: readonly ResearchWorkspaceSourceRecord[];
+  artifactInputs: NonNullable<
+    ResearchWorkspaceArtifactLineage["artifactInputs"]
+  >;
+  membersRevision?: number;
+  operation: string;
+  operationVersion: string;
+  promptVersion: string;
+  parserVersion: string;
+  schemaVersion: string;
+  artifactType: ResearchWorkspaceArtifactType;
+  artifactTitle: string;
+  providerMode?: ResearchWorkspaceEngineMode | "local" | "unknown";
+  signal?: AbortSignal;
+  onStatus?: (status: string) => void;
+  execute: () => T | Promise<T>;
 }
 
 export interface ResearchWorkspaceIncrementalUnit {
@@ -229,6 +251,161 @@ export class ResearchWorkspaceOperationCoordinator {
           }
         } catch {
           // Preserve the operation failure even if diagnostic persistence fails.
+        }
+        throw error;
+      }
+    } finally {
+      releaseResearchWorkspaceOwner(owner, claim);
+    }
+  }
+
+  async runDerived<T>(
+    params: RunResearchWorkspaceDerivedOperation<T>,
+  ): Promise<ResearchWorkspaceOperationResult<T>> {
+    const sources = [
+      ...new Map(
+        params.sources.map((source) => [source.sourceID, source]),
+      ).values(),
+    ].sort((left, right) => left.sourceID.localeCompare(right.sourceID));
+    const artifactInputs = [
+      ...new Map(
+        params.artifactInputs.map((input) => [input.artifactID, input]),
+      ).values(),
+    ].sort((left, right) => left.artifactID.localeCompare(right.artifactID));
+    if (!sources.length) {
+      throw new Error("At least one included project source is required.");
+    }
+    if (!artifactInputs.length) {
+      throw new Error("At least one current upstream artifact is required.");
+    }
+    await this.repository.getProject(params.projectID);
+    const owner = {
+      kind: "project" as const,
+      projectID: params.projectID,
+    };
+    const claim = claimResearchWorkspaceOwner(owner);
+    if (!claim) {
+      throw new Error(
+        "Another Research Workspace run is active for this project.",
+      );
+    }
+    try {
+      const sourceSnapshot = sources.map((source) => ({
+        sourceID: source.sourceID,
+        contentFingerprint:
+          source.contentFingerprint?.value ?? "source-content-unavailable",
+      }));
+      const createdRun = await this.repository.createRun(params.projectID, {
+        owner,
+        operation: params.operation,
+        operationVersion: params.operationVersion,
+        sourceSnapshot,
+        status: "queued",
+        progress: { phase: "queued", completed: 0, total: 1 },
+      });
+      let run = await this.repository.updateRun(
+        params.projectID,
+        createdRun.run.runID,
+        createdRun.revision,
+        (current) => ({
+          ...current,
+          status: params.signal?.aborted ? "cancelled" : "running",
+          startedAt: current.startedAt ?? new Date().toISOString(),
+          progress: {
+            ...current.progress,
+            phase: params.signal?.aborted ? "cancelled" : "running",
+          },
+        }),
+      );
+      if (params.signal?.aborted) {
+        throw new DOMException("Cancelled", "AbortError");
+      }
+      params.onStatus?.(`Building ${params.artifactTitle} locally…`);
+      try {
+        const result = await params.execute();
+        if (
+          params.signal?.aborted ||
+          !isResearchWorkspaceOwnerClaimCurrent(owner, claim)
+        ) {
+          throw new DOMException("Cancelled", "AbortError");
+        }
+        const completedAt = new Date().toISOString();
+        const artifact = await this.repository.createArtifact(
+          params.projectID,
+          {
+            type: params.artifactType,
+            title: params.artifactTitle,
+            status: "complete",
+            sourceIDs: sources.map((source) => source.sourceID),
+            lineage: {
+              inputs: sources.map((source) => ({
+                sourceID: source.sourceID,
+                contentFingerprint:
+                  source.contentFingerprint?.value ??
+                  "source-content-unavailable",
+                contextProjectionFingerprint: "artifact-derived-v1",
+              })),
+              artifactInputs: artifactInputs.map((input) => ({
+                ...input,
+              })),
+              ...(params.membersRevision !== undefined
+                ? { membersRevision: params.membersRevision }
+                : {}),
+              operation: params.operation,
+              operationVersion: params.operationVersion,
+              promptVersion: params.promptVersion,
+              parserVersion: params.parserVersion,
+              schemaVersion: params.schemaVersion,
+              evidenceVerifierVersion: "paperpilot-evidence-v2",
+              providerMode: params.providerMode ?? "local",
+              runID: run.run.runID,
+            },
+            payload: result,
+            completedAt,
+          },
+        );
+        run = await this.repository.updateRun(
+          params.projectID,
+          run.run.runID,
+          run.revision,
+          (current) => ({
+            ...current,
+            status: "completed",
+            artifactID: artifact.artifact.artifactID,
+            completedAt,
+            progress: { ...current.progress, phase: "completed", completed: 1 },
+          }),
+        );
+        params.onStatus?.(`${params.artifactTitle} saved to the project.`);
+        return { projectID: params.projectID, result, artifact, run };
+      } catch (error) {
+        const interrupted = params.signal?.aborted;
+        try {
+          const latest = await this.repository.getRun(
+            params.projectID,
+            run.run.runID,
+          );
+          if (latest) {
+            run = await this.repository.updateRun(
+              params.projectID,
+              latest.run.runID,
+              latest.revision,
+              (current) => ({
+                ...current,
+                status: interrupted ? "cancelled" : "failed",
+                safeError: interrupted
+                  ? "Cancelled by the user."
+                  : safeError(error),
+                completedAt: new Date().toISOString(),
+                progress: {
+                  ...current.progress,
+                  phase: interrupted ? "cancelled" : "failed",
+                },
+              }),
+            );
+          }
+        } catch {
+          // Preserve the derived-operation failure if diagnostics cannot save.
         }
         throw error;
       }

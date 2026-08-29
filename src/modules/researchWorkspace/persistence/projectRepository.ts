@@ -721,6 +721,10 @@ export class ResearchWorkspaceProjectRepository {
           }),
           false,
         );
+        await this.markArtifactsStaleForArtifact({
+          projectID,
+          artifactID: previous.artifactID,
+        });
       }
     }
     await this.syncCatalogEntry(projectID);
@@ -828,6 +832,90 @@ export class ResearchWorkspaceProjectRepository {
               params.reason ?? `source-content-changed:${params.sourceID}`,
             ]),
           ],
+        }),
+        false,
+      );
+      changed.push(artifact.artifactID);
+    }
+    if (changed.length) await this.syncCatalogEntry(params.projectID);
+    return changed;
+  }
+
+  async markArtifactsStaleForArtifact(params: {
+    projectID: string;
+    artifactID: string;
+    reason?: string;
+  }) {
+    const listed = await this.listArtifacts(params.projectID);
+    const changed: string[] = [];
+    const reason =
+      params.reason ?? `upstream-artifact-changed:${params.artifactID}`;
+    for (const artifact of listed.artifacts) {
+      if (
+        artifact.status === "superseded" ||
+        artifact.status === "failed" ||
+        !artifact.lineage.artifactInputs?.some(
+          (input) => input.artifactID === params.artifactID,
+        ) ||
+        (artifact.status === "stale" && artifact.staleReasons?.includes(reason))
+      ) {
+        continue;
+      }
+      const file = await this.getArtifact(
+        params.projectID,
+        artifact.artifactID,
+      );
+      if (!file) continue;
+      await this.updateArtifact(
+        params.projectID,
+        artifact.artifactID,
+        file.revision,
+        (current) => ({
+          ...current,
+          status: "stale",
+          lastCurrentAt: current.lastCurrentAt ?? current.updatedAt,
+          staleReasons: [...new Set([...(current.staleReasons ?? []), reason])],
+        }),
+        false,
+      );
+      changed.push(artifact.artifactID);
+    }
+    if (changed.length) await this.syncCatalogEntry(params.projectID);
+    return changed;
+  }
+
+  async markArtifactsStaleForMembersRevision(params: {
+    projectID: string;
+    membersRevision: number;
+    reason?: string;
+  }) {
+    const listed = await this.listArtifacts(params.projectID);
+    const changed: string[] = [];
+    const reason = params.reason ?? "project-source-scope-changed";
+    for (const artifact of listed.artifacts) {
+      if (
+        artifact.status === "superseded" ||
+        artifact.status === "failed" ||
+        artifact.lineage.membersRevision === undefined ||
+        artifact.lineage.membersRevision === params.membersRevision ||
+        (artifact.status === "stale" && artifact.staleReasons?.includes(reason))
+      ) {
+        continue;
+      }
+      const file = await this.getArtifact(
+        params.projectID,
+        artifact.artifactID,
+      );
+      if (!file) continue;
+      await this.updateArtifact(
+        params.projectID,
+        artifact.artifactID,
+        file.revision,
+        (current) => ({
+          ...current,
+          status: "stale",
+          lastCurrentAt: current.lastCurrentAt ?? current.updatedAt,
+          staleReasons: [...new Set([...(current.staleReasons ?? []), reason])],
         }),
         false,
       );

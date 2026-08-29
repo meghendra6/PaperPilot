@@ -624,6 +624,13 @@ and the same fail-closed outcome.
 - [ ] Add papers with matching normalized DOI values and matching exact title plus year; confirm duplicate badges are advisory and never change review status automatically
 - [ ] Detach or remove a project PDF and confirm a missing-PDF badge appears without automatically excluding the paper
 - [ ] Export the Screening Log as JSON and CSV; confirm every historical event is present and spreadsheet-formula-leading titles, reasons, and notes are neutralized
+- [ ] With no live Zotero selection, open a project that already has current Claim Ledger, Evidence Matrix, or Synthesis artifacts and build Contradictions & Evidence Gaps
+- [ ] Confirm building the dashboard starts no PDF extraction, CLI/model process, or network request and records `local` in lineage
+- [ ] Verify opposite, locally verified outcome facts with two matching design dimensions appear as direct contradictions, while a population or method difference appears as non-comparable
+- [ ] Verify stale, partial, failed, fingerprint-mismatched, source-unavailable, and individually unverified evidence never becomes a dashboard fact
+- [ ] Confirm missing experiment, dataset, population, and replication coverage is described only as a gap in the current project snapshot
+- [ ] Confirm, reclassify with a reason, and dismiss with a reason; reopen Zotero and verify the append-only review history and deterministic rule result are both preserved
+- [ ] Replace an upstream artifact or change a paper's screening status and confirm the previous dashboard becomes stale without being deleted
 - [ ] Export JSON and Markdown; confirm both files are written below the Zotero profile's `paperpilot-research-workspace/exports` directory
 - [ ] Start with a former companion `workspace-v3.json`; confirm papers, reports, Mastery, matrices, graphs, cross-paper state, and citation state remain while provider/executable and Monitor state are removed
 - [ ] Cancel or close the pane during a run; confirm the process is stopped, its workspace is cleaned, and the paper reservation becomes available again

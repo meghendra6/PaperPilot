@@ -585,3 +585,80 @@ test("cache pruning cannot delete durable projects or sources", async () => {
     true,
   );
 });
+
+test("superseding an upstream artifact stales dependent derived artifacts", async () => {
+  const setup = repository();
+  const project = await setup.repository.createProject({
+    projectID: "project-derived-staleness",
+    name: "Derived staleness",
+  });
+  const sourceA = source("A");
+  await setup.repository.putSource(sourceA);
+  const members = await setup.repository.addMembers(
+    project.project.projectID,
+    project.membersRevision,
+    [{ sourceID: sourceA.sourceID }],
+  );
+  const upstream = await setup.repository.createArtifact(
+    project.project.projectID,
+    {
+      type: "claim-ledger",
+      title: "Claims",
+      status: "complete",
+      sourceIDs: [sourceA.sourceID],
+      lineage: lineage([sourceA], "run-upstream-1"),
+      payload: { claims: [{ text: "First" }] },
+      completedAt: "2026-08-29T00:00:01.000Z",
+    },
+  );
+  const dependent = await setup.repository.createArtifact(
+    project.project.projectID,
+    {
+      type: "contradiction-gap-dashboard",
+      title: "Contradictions & Evidence Gaps",
+      status: "complete",
+      sourceIDs: [sourceA.sourceID],
+      lineage: {
+        ...lineage([sourceA], "run-derived-1"),
+        operation: "contradiction-gap-dashboard",
+        providerMode: "local",
+        membersRevision: members.revision,
+        artifactInputs: [
+          {
+            artifactID: upstream.artifact.artifactID,
+            artifactType: upstream.artifact.type,
+            version: upstream.artifact.version,
+            updatedAt: upstream.artifact.updatedAt,
+            payloadFingerprint: "artifact-payload-12345678-10",
+          },
+        ],
+      },
+      payload: { kind: "research-workspace-contradiction-gap-dashboard" },
+      completedAt: "2026-08-29T00:00:02.000Z",
+    },
+  );
+
+  await setup.repository.createArtifact(project.project.projectID, {
+    type: "claim-ledger",
+    title: "Claims",
+    status: "complete",
+    sourceIDs: [sourceA.sourceID],
+    lineage: lineage([sourceA], "run-upstream-2"),
+    payload: { claims: [{ text: "Second" }] },
+    completedAt: "2026-08-29T00:00:03.000Z",
+  });
+
+  const stored = await setup.repository.getArtifact(
+    project.project.projectID,
+    dependent.artifact.artifactID,
+  );
+  assert.equal(stored?.artifact.status, "stale");
+  assert.deepEqual(stored?.artifact.staleReasons, [
+    `upstream-artifact-changed:${upstream.artifact.artifactID}`,
+  ]);
+  const replay = await setup.repository.markArtifactsStaleForArtifact({
+    projectID: project.project.projectID,
+    artifactID: upstream.artifact.artifactID,
+  });
+  assert.deepEqual(replay, []);
+});

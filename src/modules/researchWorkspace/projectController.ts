@@ -200,7 +200,10 @@ export class ResearchWorkspaceProjectController {
     }
     if (unique.length) {
       const bundle = await this.repository.getProject(projectID);
-      await this.repository.addMembers(
+      const existingSourceIDs = new Set(
+        bundle.members.map((member) => member.sourceID),
+      );
+      const membersFile = await this.repository.addMembers(
         projectID,
         bundle.membersRevision,
         unique.map((paper) => ({
@@ -208,6 +211,13 @@ export class ResearchWorkspaceProjectController {
           role: "candidate" as const,
         })),
       );
+      if (unique.some((paper) => !existingSourceIDs.has(paper.sourceID))) {
+        await this.repository.markArtifactsStaleForMembersRevision({
+          projectID,
+          membersRevision: membersFile.revision,
+          reason: "project-source-added",
+        });
+      }
     }
     return this.details(projectID);
   }
@@ -268,7 +278,10 @@ export class ResearchWorkspaceProjectController {
     userNote?: string;
   }) {
     const bundle = await this.repository.getProject(params.projectID);
-    await this.repository.updateMembers(
+    const previous = bundle.members.find(
+      (member) => member.sourceID === params.sourceID,
+    );
+    const membersFile = await this.repository.updateMembers(
       params.projectID,
       bundle.membersRevision,
       (members) =>
@@ -288,6 +301,13 @@ export class ResearchWorkspaceProjectController {
             : member,
         ),
     );
+    if (previous && previous.reviewStatus !== params.reviewStatus) {
+      await this.repository.markArtifactsStaleForMembersRevision({
+        projectID: params.projectID,
+        membersRevision: membersFile.revision,
+        reason: "project-review-scope-changed",
+      });
+    }
     return this.details(params.projectID);
   }
 
@@ -397,7 +417,7 @@ export class ResearchWorkspaceProjectController {
       eventID: this.screeningIDFactory("screening-event"),
       decidedAt: timestamp(this.now),
     });
-    await this.repository.updateMembers(
+    const membersFile = await this.repository.updateMembers(
       input.projectID,
       input.expectedMembersRevision,
       (members) =>
@@ -415,6 +435,13 @@ export class ResearchWorkspaceProjectController {
             : candidate,
         ),
     );
+    if (member.reviewStatus !== screeningReviewStatus(input.decision)) {
+      await this.repository.markArtifactsStaleForMembersRevision({
+        projectID: input.projectID,
+        membersRevision: membersFile.revision,
+        reason: "screening-decision-changed-project-scope",
+      });
+    }
     return this.details(input.projectID);
   }
 

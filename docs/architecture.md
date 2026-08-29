@@ -103,6 +103,19 @@ signals and missing-PDF signals are advisory only. The semantic review-log
 projection and JSON/CSV exports include the complete decision history; they do
 not invoke a model or silently finalize a decision.
 
+The contradiction and evidence-gap dashboard is a selection-independent local
+derivation over saved project artifacts. It admits only complete artifacts whose
+source fingerprints match the current non-excluded project scope, then checks
+each evidence reference for verified status and exact library/attachment
+identity. Direct contradiction requires opposite verified outcome directions
+from different sources plus at least two exactly matching stored design
+dimensions; explicit design differences are labelled non-comparable and missing
+comparability remains uncertain. Derived artifact lineage records upstream
+artifact payload fingerprints and the member revision. Superseding an upstream
+artifact or changing project membership marks dependent dashboards stale.
+User confirmation, reclassification, and dismissal are append-only review
+events and never overwrite the deterministic classification.
+
 ## Engine abstraction
 
 `src/modules/ai/` is the thin layer over the three engines.

@@ -176,6 +176,44 @@ export interface ResearchWorkspaceReviewLogView {
   limitations: string[];
 }
 
+export interface ResearchWorkspaceContradictionGapView {
+  kind: "contradiction-gap";
+  coverage: {
+    includedSources: number;
+    admittedArtifacts: number;
+    verifiedFactAtoms: number;
+    multiSourceSupport: number;
+    directContradictions: number;
+    nonComparable: number;
+    uncertain: number;
+    gaps: number;
+  };
+  supportGroups: Array<{
+    statement: string;
+    sourceIDs: string[];
+    evidence: ResearchWorkspaceEvidenceView[];
+  }>;
+  relationships: Array<{
+    relationshipID: string;
+    topic: string;
+    deterministicClassification: string;
+    effectiveClassification: string;
+    reviewState: string;
+    comparability: string;
+    sides: string[];
+    limitations: string[];
+    evidence: ResearchWorkspaceEvidenceView[];
+  }>;
+  gaps: Array<{
+    kind: string;
+    statement: string;
+    sourceIDs: string[];
+    nextSearchQuestion?: string;
+  }>;
+  nextSearchQuestions: string[];
+  limitations: string[];
+}
+
 export interface ResearchWorkspaceGenericView {
   kind: "generic";
   value: unknown;
@@ -188,6 +226,7 @@ export type ResearchWorkspaceArtifactView =
   | ResearchWorkspaceMasteryView
   | ResearchWorkspaceCitationView
   | ResearchWorkspaceReviewLogView
+  | ResearchWorkspaceContradictionGapView
   | ResearchWorkspaceGenericView;
 
 export interface ResearchWorkspaceArtifactRendererOptions {
@@ -670,12 +709,141 @@ function synthesisView(
   };
 }
 
+function contradictionGapView(
+  value: UnknownRecord,
+): ResearchWorkspaceContradictionGapView | undefined {
+  if (
+    value.kind !== "research-workspace-contradiction-gap-dashboard" ||
+    !Array.isArray(value.relationships) ||
+    !Array.isArray(value.gaps)
+  ) {
+    return undefined;
+  }
+  const atoms = new Map<string, UnknownRecord>();
+  if (Array.isArray(value.atoms)) {
+    for (const candidate of value.atoms) {
+      const atom = record(candidate);
+      const atomID = text(atom?.atomID, "");
+      if (atom && atomID) atoms.set(atomID, atom);
+    }
+  }
+  const evidenceForAtomIDs = (atomIDs: unknown) => {
+    if (!Array.isArray(atomIDs)) return [];
+    const seen = new Set<string>();
+    const evidence: ResearchWorkspaceEvidenceView[] = [];
+    for (const atomID of atomIDs.map((entry) => text(entry, ""))) {
+      for (const item of evidenceViews(atoms.get(atomID)?.evidence)) {
+        const key = `${item.locator}|${text(item.reference.sourceID, "")}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        evidence.push(item);
+      }
+    }
+    return evidence;
+  };
+  const coverage = record(value.coverage) ?? {};
+  const supportGroups = Array.isArray(value.supportGroups)
+    ? value.supportGroups
+        .map((candidate) => record(candidate))
+        .filter((candidate): candidate is UnknownRecord => Boolean(candidate))
+        .map((group) => ({
+          statement: text(group.statement, "Unlabelled support"),
+          sourceIDs: Array.isArray(group.sourceIDs)
+            ? group.sourceIDs.map((entry) => text(entry, "")).filter(Boolean)
+            : [],
+          evidence: evidenceForAtomIDs(group.atomIDs),
+        }))
+    : [];
+  const relationships = value.relationships
+    .map((candidate) => record(candidate))
+    .filter((candidate): candidate is UnknownRecord => Boolean(candidate))
+    .map((relationship) => {
+      const comparability = record(relationship.comparability);
+      const sides = Array.isArray(relationship.sides)
+        ? relationship.sides
+            .map((candidate) => record(candidate))
+            .filter((candidate): candidate is UnknownRecord =>
+              Boolean(candidate),
+            )
+        : [];
+      const atomIDs = sides.flatMap((side) =>
+        Array.isArray(side.atomIDs) ? side.atomIDs : [],
+      );
+      return {
+        relationshipID: text(relationship.relationshipID, ""),
+        topic: text(relationship.topic, "Unlabelled comparison"),
+        deterministicClassification: text(
+          relationship.classification,
+          "uncertain",
+        ),
+        effectiveClassification: text(
+          relationship.userClassification ?? relationship.classification,
+          "uncertain",
+        ),
+        reviewState: text(relationship.reviewState, "unreviewed"),
+        comparability: text(comparability?.status, "unknown"),
+        sides: sides.map((side) => text(side.position, "Unlabelled side")),
+        limitations: Array.isArray(relationship.limitations)
+          ? relationship.limitations
+              .map((entry) => text(entry, ""))
+              .filter(Boolean)
+          : [],
+        evidence: evidenceForAtomIDs(atomIDs),
+      };
+    });
+  const gaps = value.gaps
+    .map((candidate) => record(candidate))
+    .filter((candidate): candidate is UnknownRecord => Boolean(candidate))
+    .map((gap) => ({
+      kind: text(gap.kind, "unknown"),
+      statement: text(gap.statement, "Unlabelled evidence gap"),
+      sourceIDs: Array.isArray(gap.sourceIDs)
+        ? gap.sourceIDs.map((entry) => text(entry, "")).filter(Boolean)
+        : [],
+      ...(typeof gap.nextSearchQuestion === "string" &&
+      gap.nextSearchQuestion.trim()
+        ? { nextSearchQuestion: gap.nextSearchQuestion.trim() }
+        : {}),
+    }));
+  return {
+    kind: "contradiction-gap",
+    coverage: {
+      includedSources: finite(coverage.includedSources) ?? 0,
+      admittedArtifacts: finite(coverage.admittedArtifacts) ?? 0,
+      verifiedFactAtoms: finite(coverage.verifiedFactAtoms) ?? 0,
+      multiSourceSupport: finite(coverage.multiSourceSupport) ?? 0,
+      directContradictions: finite(coverage.directContradictions) ?? 0,
+      nonComparable: finite(coverage.nonComparable) ?? 0,
+      uncertain: finite(coverage.uncertain) ?? 0,
+      gaps: finite(coverage.gaps) ?? gaps.length,
+    },
+    supportGroups,
+    relationships,
+    gaps,
+    nextSearchQuestions: Array.isArray(value.nextSearchQuestions)
+      ? value.nextSearchQuestions
+          .map((entry) => text(entry, ""))
+          .filter(Boolean)
+      : [],
+    limitations: Array.isArray(value.limitations)
+      ? value.limitations.map((entry) => text(entry, "")).filter(Boolean)
+      : [],
+  };
+}
+
 export function createResearchWorkspaceArtifactView(
   value: unknown,
   artifactType?: ResearchWorkspaceArtifactType,
 ): ResearchWorkspaceArtifactView {
   const candidate = record(value);
   if (!candidate) return { kind: "generic", value };
+  if (
+    artifactType === "contradiction-gap-dashboard" ||
+    candidate.kind === "research-workspace-contradiction-gap-dashboard"
+  ) {
+    const dashboard = contradictionGapView(candidate);
+    if (dashboard) return dashboard;
+  }
   if (
     artifactType === "review-log" ||
     candidate.kind === "research-workspace-review-log"
@@ -994,6 +1162,166 @@ function renderSynthesis(
     );
     warnings.classList.add("pprw-render-section--warning");
     root.append(warnings);
+  }
+  return root;
+}
+
+function renderContradictionGap(
+  doc: Document,
+  view: ResearchWorkspaceContradictionGapView,
+  options: ResearchWorkspaceArtifactRendererOptions,
+) {
+  const root = element(
+    doc,
+    "div",
+    "pprw-render pprw-render--contradiction-gap",
+  );
+  const metrics = element(doc, "div", "pprw-render-metrics");
+  metrics.append(
+    metric(doc, "Project sources", String(view.coverage.includedSources)),
+    metric(doc, "Current inputs", String(view.coverage.admittedArtifacts)),
+    metric(doc, "Verified facts", String(view.coverage.verifiedFactAtoms)),
+    metric(
+      doc,
+      "Multi-source support",
+      String(view.coverage.multiSourceSupport),
+    ),
+    metric(
+      doc,
+      "Direct contradictions",
+      String(view.coverage.directContradictions),
+    ),
+    metric(doc, "Evidence gaps", String(view.coverage.gaps)),
+  );
+  root.append(metrics);
+
+  if (view.supportGroups.length) {
+    const section = element(doc, "section", "pprw-render-section");
+    section.append(element(doc, "h4", "", "Supported by multiple sources"));
+    const list = element(doc, "div", "pprw-render-card-list");
+    for (const group of view.supportGroups) {
+      const card = element(doc, "article", "pprw-render-card");
+      card.append(element(doc, "p", "pprw-render-statement", group.statement));
+      const metadata = element(doc, "div", "pprw-render-inline");
+      metadata.append(
+        badge(doc, `${group.sourceIDs.length} verified sources`, "success"),
+      );
+      card.append(metadata);
+      if (group.evidence.length) {
+        card.append(renderEvidence(doc, group.evidence, options));
+      }
+      list.append(card);
+    }
+    section.append(list);
+    root.append(section);
+  }
+
+  const relationshipGroups = [
+    ["direct-contradiction", "Direct contradictions"],
+    ["non-comparable", "Non-comparable designs"],
+    ["uncertain", "Uncertain comparisons"],
+  ] as const;
+  for (const [classification, title] of relationshipGroups) {
+    const entries = view.relationships.filter(
+      (relationship) => relationship.effectiveClassification === classification,
+    );
+    if (!entries.length) continue;
+    const section = element(doc, "section", "pprw-render-section");
+    section.append(element(doc, "h4", "", title));
+    const list = element(doc, "div", "pprw-render-card-list");
+    for (const relationship of entries) {
+      const card = element(doc, "article", "pprw-render-card");
+      card.dataset.relationshipId = relationship.relationshipID;
+      card.append(
+        element(doc, "p", "pprw-render-statement", relationship.topic),
+      );
+      const metadata = element(doc, "div", "pprw-render-inline");
+      metadata.append(
+        badge(doc, humanize(relationship.effectiveClassification), "accent"),
+        badge(doc, `Comparability: ${humanize(relationship.comparability)}`),
+        badge(doc, humanize(relationship.reviewState)),
+      );
+      if (
+        relationship.effectiveClassification !==
+        relationship.deterministicClassification
+      ) {
+        metadata.append(
+          badge(
+            doc,
+            `Rule result: ${humanize(
+              relationship.deterministicClassification,
+            )}`,
+            "warning",
+          ),
+        );
+      }
+      card.append(metadata);
+      if (relationship.sides.length) {
+        const sides = element(doc, "ul", "pprw-render-list");
+        for (const side of relationship.sides) {
+          sides.append(element(doc, "li", "", side));
+        }
+        card.append(sides);
+      }
+      if (relationship.evidence.length) {
+        card.append(renderEvidence(doc, relationship.evidence, options));
+      }
+      if (relationship.limitations.length) {
+        card.append(
+          element(
+            doc,
+            "p",
+            "pprw-render-note",
+            relationship.limitations.join(" "),
+          ),
+        );
+      }
+      list.append(card);
+    }
+    section.append(list);
+    root.append(section);
+  }
+
+  if (view.gaps.length) {
+    const section = element(doc, "section", "pprw-render-section");
+    section.append(element(doc, "h4", "", "Evidence gaps"));
+    const list = element(doc, "div", "pprw-render-card-list");
+    for (const gap of view.gaps) {
+      const card = element(doc, "article", "pprw-render-card");
+      const metadata = element(doc, "div", "pprw-render-inline");
+      metadata.append(badge(doc, humanize(gap.kind), "warning"));
+      card.append(
+        metadata,
+        element(doc, "p", "pprw-render-statement", gap.statement),
+      );
+      if (gap.nextSearchQuestion) {
+        card.append(
+          element(
+            doc,
+            "p",
+            "pprw-render-note",
+            `Next search: ${gap.nextSearchQuestion}`,
+          ),
+        );
+      }
+      list.append(card);
+    }
+    section.append(list);
+    root.append(section);
+  }
+  if (view.nextSearchQuestions.length) {
+    root.append(
+      renderStringList(doc, "Next search questions", view.nextSearchQuestions),
+    );
+  }
+  if (view.limitations.length) {
+    const limitations = renderStringList(
+      doc,
+      "Coverage and limits",
+      view.limitations,
+    );
+    limitations.classList.add("pprw-render-section--warning");
+    root.append(limitations);
   }
   return root;
 }
@@ -1414,6 +1742,9 @@ export function renderResearchWorkspaceArtifactValue(
   if (view.kind === "mastery") return renderMastery(doc, view, options);
   if (view.kind === "citation") return renderCitation(doc, view, options);
   if (view.kind === "review-log") return renderReviewLog(doc, view);
+  if (view.kind === "contradiction-gap") {
+    return renderContradictionGap(doc, view, options);
+  }
   const root = element(doc, "div", "pprw-render pprw-render--generic");
   root.append(renderGenericValue(doc, view.value, options));
   return root;

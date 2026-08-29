@@ -143,6 +143,7 @@ const ARTIFACT_TYPES = [
   "citation-context",
   "citation-stance",
   "synthesis",
+  "contradiction-gap-dashboard",
   "review-log",
 ] as const;
 const ARTIFACT_STATUSES = [
@@ -480,7 +481,7 @@ export function parseResearchWorkspaceArtifactFile(
   text(lineage.evidenceVerifierVersion, "lineage evidenceVerifierVersion");
   oneOf(
     lineage.providerMode,
-    [...ENGINE_MODES, "unknown"],
+    [...ENGINE_MODES, "local", "unknown"],
     "lineage providerMode",
   );
   assertResearchWorkspaceID(text(lineage.runID, "lineage runID"), "runID");
@@ -495,6 +496,36 @@ export function parseResearchWorkspaceArtifactFile(
       item.contextProjectionFingerprint,
       "lineage contextProjectionFingerprint",
     );
+  }
+  if (lineage.membersRevision !== undefined) {
+    revision(lineage.membersRevision, "lineage membersRevision");
+  }
+  if (lineage.artifactInputs !== undefined) {
+    if (
+      !Array.isArray(lineage.artifactInputs) ||
+      lineage.artifactInputs.length > 500
+    ) {
+      throw new Error("lineage artifactInputs must be a bounded array.");
+    }
+    const artifactInputIDs = new Set<string>();
+    for (const input of lineage.artifactInputs) {
+      const item = object(input, "lineage artifact input");
+      const artifactID = assertResearchWorkspaceID(
+        text(item.artifactID, "lineage artifact input ID"),
+        "artifactID",
+      );
+      if (artifactInputIDs.has(artifactID)) {
+        throw new Error(`Duplicate lineage artifact input ${artifactID}.`);
+      }
+      artifactInputIDs.add(artifactID);
+      oneOf(item.artifactType, ARTIFACT_TYPES, "lineage artifact input type");
+      revision(item.version, "lineage artifact input version");
+      text(item.updatedAt, "lineage artifact input updatedAt");
+      text(
+        item.payloadFingerprint,
+        "lineage artifact input payloadFingerprint",
+      );
+    }
   }
   return value as ResearchWorkspaceArtifactFile;
 }

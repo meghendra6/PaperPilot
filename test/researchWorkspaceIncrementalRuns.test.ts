@@ -491,3 +491,91 @@ test("project ownership rejects concurrency and ignores an aborted late result",
   const artifacts = await repository.listArtifacts(details.project.projectID);
   assert.equal(artifacts.artifacts.length, 0);
 });
+
+test("local derived operations run without a live selection and preserve dependencies", async () => {
+  const { repository } = createRepository();
+  const projects = new ResearchWorkspaceProjectController(repository);
+  const coordinator = new ResearchWorkspaceOperationCoordinator(repository);
+  const papers = [paper("B"), paper("A")];
+  const created = await projects.createProject({ name: "Derived" }, papers);
+  const upstream = await coordinator.run({
+    projectID: created.project.projectID,
+    papers,
+    sourcesPrepared: true,
+    operation: "claims",
+    operationVersion: "claims-v1",
+    artifactType: "claim-ledger",
+    artifactTitle: "Claims",
+    providerMode: "codex_cli",
+    execute: async () => ({ claims: [] }),
+  });
+  const details = await projects.details(created.project.projectID);
+  const input = {
+    artifactID: upstream.artifact.artifact.artifactID,
+    artifactType: upstream.artifact.artifact.type,
+    version: upstream.artifact.artifact.version,
+    updatedAt: upstream.artifact.artifact.updatedAt,
+    payloadFingerprint: "artifact-payload-12345678-10",
+  } as const;
+  const first = await coordinator.runDerived({
+    projectID: created.project.projectID,
+    sources: [...details.sources].reverse(),
+    artifactInputs: [input],
+    membersRevision: details.membersRevision,
+    operation: "contradiction-gap-dashboard",
+    operationVersion: "contradiction-gap-dashboard-v1",
+    promptVersion: "local-artifact-derivation-v1",
+    parserVersion: "contradiction-gap-parser-v1",
+    schemaVersion: "contradiction-gap-dashboard-v1",
+    artifactType: "contradiction-gap-dashboard",
+    artifactTitle: "Contradictions & Evidence Gaps",
+    execute: () => ({ kind: "research-workspace-contradiction-gap-dashboard" }),
+  });
+  assert.equal(first.run.run.status, "completed");
+  assert.equal(first.artifact.artifact.lineage.providerMode, "local");
+  assert.equal(
+    first.artifact.artifact.lineage.membersRevision,
+    details.membersRevision,
+  );
+  assert.deepEqual(first.artifact.artifact.lineage.artifactInputs, [input]);
+  assert.deepEqual(first.artifact.artifact.sourceIDs, [
+    papers[1].sourceID,
+    papers[0].sourceID,
+  ]);
+
+  await coordinator.runDerived({
+    projectID: created.project.projectID,
+    sources: details.sources,
+    artifactInputs: [input],
+    membersRevision: details.membersRevision,
+    operation: "contradiction-gap-dashboard",
+    operationVersion: "contradiction-gap-dashboard-v1",
+    promptVersion: "local-artifact-derivation-v1",
+    parserVersion: "contradiction-gap-parser-v1",
+    schemaVersion: "contradiction-gap-dashboard-v1",
+    artifactType: "contradiction-gap-dashboard",
+    artifactTitle: "Contradictions & Evidence Gaps",
+    execute: () => ({ kind: "research-workspace-contradiction-gap-dashboard" }),
+  });
+  const previous = await repository.getArtifact(
+    created.project.projectID,
+    first.artifact.artifact.artifactID,
+  );
+  assert.equal(previous?.artifact.status, "superseded");
+  await assert.rejects(
+    coordinator.runDerived({
+      projectID: created.project.projectID,
+      sources: details.sources,
+      artifactInputs: [],
+      operation: "empty-derived",
+      operationVersion: "v1",
+      promptVersion: "v1",
+      parserVersion: "v1",
+      schemaVersion: "v1",
+      artifactType: "contradiction-gap-dashboard",
+      artifactTitle: "Empty",
+      execute: () => ({}),
+    }),
+    /upstream artifact is required/,
+  );
+});

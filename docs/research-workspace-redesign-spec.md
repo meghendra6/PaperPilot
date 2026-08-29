@@ -1733,6 +1733,17 @@ the user explicitly enables a rule-based batch mode.
 
 ### 25.2 Priority P1: contradiction and evidence-gap view
 
+Implementation status: delivered as a versioned, project-scoped local artifact.
+The deterministic builder uses only current saved artifacts and individually
+verified exact-source evidence; it records upstream artifact fingerprints and
+member revision for stale propagation. Direct contradiction requires opposite
+verified outcomes and at least two matching design dimensions. Non-comparable
+and uncertain cases remain separate, gaps are explicitly limited to the current
+project snapshot, and user review is append-only and revision/idempotency
+guarded. The project UI runs without a live Zotero selection and starts no PDF
+extraction, model, CLI, or network request. Real-Zotero runtime checks remain in
+the release checklist.
+
 Build a dashboard from verified project artifacts:
 
 - claims supported by multiple papers;
