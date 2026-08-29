@@ -26,7 +26,6 @@ export interface ResearchWorkspacePaper {
   structuredContent?: unknown;
   structuredChunks?: ResearchWorkspaceStructuredChunk[];
 }
-
 export interface ResearchWorkspaceStructuredChunk {
   id: string;
   title?: string;
@@ -41,7 +40,6 @@ export interface ResearchWorkspaceStructuredChunk {
     boundingBox?: unknown;
   };
 }
-
 export interface ResearchWorkspaceResolvedSource {
   sourceID: string;
   libraryID: number;
@@ -258,22 +256,3 @@ export async function loadResearchWorkspacePaper(
   };
 }
 
-export async function loadSelectedResearchWorkspacePapers(
-  maxCharacters = 1_500_000,
-) {
-  const selected = Zotero.getActiveZoteroPane?.()?.getSelectedItems?.() ?? [];
-  const papers: ResearchWorkspacePaper[] = [];
-  const seen = new Set<string>();
-  for (const item of selected.slice(0, 12)) {
-    try {
-      const paper = await loadResearchWorkspacePaper(item, maxCharacters);
-      if (seen.has(paper.sourceID)) continue;
-      seen.add(paper.sourceID);
-      papers.push(paper);
-    } catch {
-      // Ignore selected rows without a readable PDF; the caller still enforces
-      // the two-paper minimum after loading.
-    }
-  }
-  return papers;
-}

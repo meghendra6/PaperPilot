@@ -1,5 +1,4 @@
 import { getZoteroProfilePath } from "../../utils/zoteroProfile";
-import { ResearchWorkspaceRepository } from "./core/researchWorkspace/repository";
 import { ResearchWorkspaceProjectRepository } from "./persistence/projectRepository";
 import { LegacyResearchWorkspaceImporter } from "./persistence/legacyMigration";
 
@@ -207,19 +206,8 @@ export async function exportResearchWorkspaceTextFile(
   return path;
 }
 
-let repository: InstanceType<typeof ResearchWorkspaceRepository> | undefined;
 let projectRepository: ResearchWorkspaceProjectRepository | undefined;
 let legacyImporter: LegacyResearchWorkspaceImporter | undefined;
-
-export function getResearchWorkspaceRepository() {
-  if (!repository) {
-    repository = new ResearchWorkspaceRepository(
-      getResearchWorkspaceStoragePath(),
-      createResearchWorkspaceStorage(),
-    );
-  }
-  return repository;
-}
 
 export function getResearchWorkspaceProjectRepository() {
   if (!projectRepository) {
@@ -252,7 +240,6 @@ export function migrateLegacyResearchWorkspace() {
 }
 
 export function resetResearchWorkspaceRepositoryForTests() {
-  repository = undefined;
   projectRepository = undefined;
   legacyImporter = undefined;
 }

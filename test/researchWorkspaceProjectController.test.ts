@@ -1,0 +1,283 @@
+import { test } from "node:test";
+import * as assert from "node:assert/strict";
+
+import { ResearchWorkspaceOperationCoordinator } from "../src/modules/researchWorkspace/operationCoordinator";
+import type { ResearchWorkspacePaper } from "../src/modules/researchWorkspace/paperSource";
+import type { ResearchWorkspaceFileOps } from "../src/modules/researchWorkspace/persistence/contracts";
+import { ResearchWorkspaceProjectRepository } from "../src/modules/researchWorkspace/persistence/projectRepository";
+import {
+  ResearchWorkspaceProjectController,
+  researchWorkspaceSourceRecordFromPaper,
+} from "../src/modules/researchWorkspace/projectController";
+
+class MemoryProjectFiles implements ResearchWorkspaceFileOps {
+  readonly files = new Map<string, string>();
+  readonly directories = new Set<string>();
+
+  async ensureDirectory(path: string) {
+    this.directories.add(path);
+  }
+
+  async exists(path: string) {
+    if (this.files.has(path) || this.directories.has(path)) return true;
+    const prefix = `${path.replace(/[\\/]+$/, "")}/`;
+    return [...this.files.keys()].some((entry) => entry.startsWith(prefix));
+  }
+
+  async readText(path: string) {
+    return this.files.get(path);
+  }
+
+  async writeTextAtomic(path: string, contents: string) {
+    this.files.set(path, contents);
+  }
+
+  async remove(path: string, options?: { recursive?: boolean }) {
+    if (!options?.recursive) {
+      this.files.delete(path);
+      this.directories.delete(path);
+      return;
+    }
+    const prefix = `${path.replace(/[\\/]+$/, "")}/`;
+    for (const entry of [...this.files.keys()]) {
+      if (entry === path || entry.startsWith(prefix)) this.files.delete(entry);
+    }
+    for (const entry of [...this.directories]) {
+      if (entry === path || entry.startsWith(prefix))
+        this.directories.delete(entry);
+    }
+  }
+
+  async listDirectory(path: string) {
+    const prefix = `${path.replace(/[\\/]+$/, "")}/`;
+    return [...this.files.keys()].filter((entry) => entry.startsWith(prefix));
+  }
+}
+
+function setup() {
+  let clock = Date.parse("2026-08-29T10:00:00.000Z");
+  const ids = new Map<string, number>();
+  const now = () => new Date(clock++);
+  const repository = new ResearchWorkspaceProjectRepository({
+    rootDir: "/profile/paperpilot-research-workspace",
+    fileOps: new MemoryProjectFiles(),
+    now,
+    idFactory: (prefix) => {
+      const id = (ids.get(prefix) ?? 0) + 1;
+      ids.set(prefix, id);
+      return `${prefix}-${id}`;
+    },
+  });
+  return {
+    repository,
+    projects: new ResearchWorkspaceProjectController(repository, { now }),
+    operations: new ResearchWorkspaceOperationCoordinator(repository, { now }),
+  };
+}
+
+function paper(
+  suffix: string,
+  fingerprint = `fingerprint-${suffix}`,
+): ResearchWorkspacePaper {
+  return {
+    sourceID: `zotero:1:ITEM-${suffix}:PDF-${suffix}`,
+    paperKey: `zotero:1:ITEM-${suffix}:PDF-${suffix}`,
+    libraryID: 1,
+    itemKey: `ITEM-${suffix}`,
+    itemID: 100 + suffix.charCodeAt(0),
+    attachmentID: 200 + suffix.charCodeAt(0),
+    attachmentKey: `PDF-${suffix}`,
+    contentFingerprint: {
+      algorithm: "zotero-version-mtime-size-v1",
+      value: fingerprint,
+      fileSize: 1_000,
+      modifiedTime: 2_000,
+      zoteroVersion: 3,
+    },
+    title: `Paper ${suffix}`,
+    context: `Full extracted content for paper ${suffix}.`,
+    extractionQuality: "structured",
+  };
+}
+
+test("paper conversion preserves exact Zotero identity and extraction lineage", () => {
+  const source = researchWorkspaceSourceRecordFromPaper(
+    paper("A"),
+    new Date("2026-08-29T00:00:00.000Z"),
+  );
+  assert.equal(source.sourceID, "zotero:1:ITEM-A:PDF-A");
+  assert.deepEqual(source.identity, {
+    libraryID: 1,
+    itemKey: "ITEM-A",
+    attachmentKey: "PDF-A",
+    standaloneAttachment: false,
+  });
+  assert.equal(source.contentFingerprint?.value, "fingerprint-A");
+  assert.equal(source.extractionFingerprint?.extractor, "opendataloader-pdf");
+  assert.equal(source.availability, "ready");
+});
+
+test("project creation registers sources and idempotent membership", async () => {
+  const { projects } = setup();
+  const created = await projects.createProject(
+    { projectID: "project-review", name: "Review" },
+    [paper("A"), paper("B"), paper("A")],
+  );
+  assert.equal(created.members.length, 2);
+  assert.deepEqual(
+    created.sources.map((source) => source.identity.attachmentKey).sort(),
+    ["PDF-A", "PDF-B"],
+  );
+
+  const again = await projects.addPapers("project-review", [paper("A")]);
+  assert.equal(again.members.length, 2);
+  assert.equal(again.members[0].reviewStatus, "unreviewed");
+});
+
+test("quick projects use a deterministic source-scoped identity", async () => {
+  const { projects } = setup();
+  const first = await projects.ensureQuickProject([paper("B"), paper("A")]);
+  const second = await projects.ensureQuickProject([paper("A"), paper("B")]);
+  assert.equal(first, second);
+  const home = await projects.home();
+  assert.equal(home.projects.length, 1);
+  assert.equal(home.projects[0].memberCount, 2);
+});
+
+test("successful project operations persist completed runs and scoped artifact history", async () => {
+  const { operations, repository } = setup();
+  const first = await operations.run({
+    papers: [paper("A")],
+    operation: "claim-ledger",
+    operationVersion: "claim-ledger-v1",
+    artifactType: "claim-ledger",
+    artifactTitle: "Claim–Evidence Ledger",
+    providerMode: "codex_cli",
+    execute: async () => ({ claims: [{ text: "Claim A" }] }),
+  });
+  assert.equal(first.artifact.artifact.version, 1);
+  assert.equal(first.artifact.artifact.status, "complete");
+  assert.equal(first.run.run.status, "completed");
+  assert.equal(first.run.run.artifactID, first.artifact.artifact.artifactID);
+  assert.equal(
+    first.artifact.artifact.lineage.inputs[0].contentFingerprint,
+    "fingerprint-A",
+  );
+
+  const second = await operations.run({
+    projectID: first.projectID,
+    papers: [paper("A")],
+    operation: "claim-ledger",
+    operationVersion: "claim-ledger-v1",
+    artifactType: "claim-ledger",
+    artifactTitle: "Claim–Evidence Ledger",
+    providerMode: "codex_cli",
+    execute: async () => ({ claims: [{ text: "Claim A2" }] }),
+  });
+  assert.equal(second.artifact.artifact.version, 2);
+  assert.equal(
+    second.artifact.artifact.supersedesArtifactID,
+    first.artifact.artifact.artifactID,
+  );
+  assert.equal(
+    (
+      await repository.getArtifact(
+        first.projectID,
+        first.artifact.artifact.artifactID,
+      )
+    )?.artifact.status,
+    "superseded",
+  );
+});
+
+test("artifact versions do not supersede the same operation for a different source", async () => {
+  const { operations, projects } = setup();
+  const created = await projects.createProject(
+    { projectID: "project-scope", name: "Scoped history" },
+    [paper("A"), paper("B")],
+  );
+  const first = await operations.run({
+    projectID: created.project.projectID,
+    sourcesPrepared: true,
+    papers: [paper("A")],
+    operation: "critical-read",
+    operationVersion: "critical-read-v1",
+    artifactType: "critical-read",
+    artifactTitle: "Critical Read",
+    providerMode: "codex_cli",
+    execute: async () => ({ paper: "A" }),
+  });
+  const second = await operations.run({
+    projectID: created.project.projectID,
+    sourcesPrepared: true,
+    papers: [paper("B")],
+    operation: "critical-read",
+    operationVersion: "critical-read-v1",
+    artifactType: "critical-read",
+    artifactTitle: "Critical Read",
+    providerMode: "codex_cli",
+    execute: async () => ({ paper: "B" }),
+  });
+  assert.equal(first.artifact.artifact.version, 1);
+  assert.equal(second.artifact.artifact.version, 1);
+  assert.equal(second.artifact.artifact.supersedesArtifactID, undefined);
+});
+
+test("operation failures retain a redacted failed run without a fake artifact", async () => {
+  const { operations, repository } = setup();
+  let projectID = "";
+  await assert.rejects(async () => {
+    try {
+      await operations.run({
+        papers: [paper("A")],
+        operation: "critical-read",
+        operationVersion: "critical-read-v1",
+        artifactType: "critical-read",
+        artifactTitle: "Critical Read",
+        providerMode: "claude_code",
+        execute: async () => {
+          throw new Error(
+            "Provider failed at /Users/example/private/paper.pdf",
+          );
+        },
+      });
+    } finally {
+      const projects = await repository.listProjects();
+      projectID = projects[0]?.projectID ?? "";
+    }
+  }, /Provider failed/);
+  const runs = await repository.listRuns(projectID);
+  const artifacts = await repository.listArtifacts(projectID);
+  assert.equal(runs.runs.length, 1);
+  assert.equal(runs.runs[0].status, "failed");
+  assert.match(runs.runs[0].safeError ?? "", /\[local-path\]/);
+  assert.equal(runs.runs[0].safeError?.includes("/Users/example"), false);
+  assert.equal(artifacts.artifacts.length, 0);
+});
+
+test("pre-cancelled operations are recorded as cancelled and never execute", async () => {
+  const { operations, repository } = setup();
+  const controller = new AbortController();
+  controller.abort();
+  let executed = false;
+  await assert.rejects(
+    operations.run({
+      papers: [paper("A")],
+      operation: "paper-to-code",
+      operationVersion: "paper-to-code-v1",
+      artifactType: "paper-to-code",
+      artifactTitle: "Paper-to-Code",
+      providerMode: "gemini_cli",
+      signal: controller.signal,
+      execute: async () => {
+        executed = true;
+        return {};
+      },
+    }),
+    /Cancelled/,
+  );
+  const project = (await repository.listProjects())[0];
+  const runs = await repository.listRuns(project.projectID);
+  assert.equal(executed, false);
+  assert.equal(runs.runs[0].status, "cancelled");
+});
