@@ -24,6 +24,7 @@ import {
   unregisterResearchWorkspaceLaunchersForWindow,
 } from "./modules/researchWorkspace/menu";
 import { closeResearchWorkspaceWindow } from "./modules/researchWorkspace/window";
+import { recoverResearchWorkspaceProjectPersistence } from "./modules/researchWorkspace/storage";
 
 async function onStartup() {
   await Promise.all([
@@ -33,6 +34,16 @@ async function onStartup() {
   ]);
 
   initLocale();
+  try {
+    const recovery = await recoverResearchWorkspaceProjectPersistence();
+    for (const warning of recovery.warnings) {
+      ztoolkit.log(`Research Workspace recovery: ${warning}`);
+    }
+  } catch (error) {
+    Zotero.logError?.(
+      error instanceof Error ? error : new Error(String(error)),
+    );
+  }
   await registerPreferencePane();
   registerPaperPilotPaneSection();
   registerResearchWorkspacePaneSection();

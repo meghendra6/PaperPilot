@@ -1,5 +1,6 @@
 import { getZoteroProfilePath } from "../../utils/zoteroProfile";
 import { ResearchWorkspaceRepository } from "./core/researchWorkspace/repository";
+import { ResearchWorkspaceProjectRepository } from "./persistence/projectRepository";
 
 declare const Zotero: any;
 declare const IOUtils: any;
@@ -36,15 +37,28 @@ function joinPath(...parts: string[]) {
 }
 
 export function getResearchWorkspaceStoragePath() {
+  return joinPath(getResearchWorkspaceStorageRoot(), STORAGE_FILE);
+}
+
+export function getResearchWorkspaceStorageRoot() {
   const profilePath = getZoteroProfilePath();
   if (!profilePath) {
     throw new Error("Could not resolve the Zotero profile directory.");
   }
-  return joinPath(profilePath, STORAGE_DIRECTORY, STORAGE_FILE);
+  return joinPath(profilePath, STORAGE_DIRECTORY);
 }
 
 export function createResearchWorkspaceStorage() {
   return {
+    async ensureDirectory(path: string) {
+      const zotero = getGlobalZotero();
+      if (!zotero?.File?.createDirectoryIfMissingAsync) {
+        throw new Error(
+          "Zotero file APIs are unavailable for Research Workspace storage.",
+        );
+      }
+      await zotero.File.createDirectoryIfMissingAsync(path);
+    },
     async exists(path: string) {
       const ioUtils = getGlobalIOUtils();
       if (ioUtils?.exists) return Boolean(await ioUtils.exists(path));
@@ -101,6 +115,69 @@ export function createResearchWorkspaceStorage() {
       }
       await zotero.File.putContentsAsync(path, contents, "utf-8");
     },
+    async remove(path: string, options?: { recursive?: boolean }) {
+      const ioUtils = getGlobalIOUtils();
+      if (ioUtils?.remove) {
+        await ioUtils.remove(path, {
+          recursive: Boolean(options?.recursive),
+          ignoreAbsent: true,
+        });
+        return;
+      }
+      const zotero = getGlobalZotero();
+      if (!zotero?.File?.removeIfExists) {
+        throw new Error(
+          "Zotero file APIs are unavailable for Research Workspace storage.",
+        );
+      }
+      await zotero.File.removeIfExists(path);
+    },
+    async listDirectory(path: string) {
+      const entries: string[] = [];
+      const ioUtils = getGlobalIOUtils();
+      if (ioUtils?.getChildren) {
+        const walk = async (directory: string): Promise<void> => {
+          let children: string[];
+          try {
+            children = await ioUtils.getChildren(directory);
+          } catch {
+            return;
+          }
+          for (const child of children) {
+            entries.push(child);
+            try {
+              const info = await ioUtils.stat?.(child);
+              if (info?.type === "directory") await walk(child);
+            } catch {
+              // Keep the readable path and continue the repair scan.
+            }
+          }
+        };
+        await walk(path);
+        return entries;
+      }
+      const zotero = getGlobalZotero();
+      if (!zotero?.File?.iterateDirectory) {
+        throw new Error(
+          "Zotero file APIs are unavailable for Research Workspace storage.",
+        );
+      }
+      const walk = async (directory: string): Promise<void> => {
+        try {
+          await zotero.File.iterateDirectory(
+            directory,
+            async (entry: { isDir?: boolean; path: string }) => {
+              entries.push(entry.path);
+              if (entry.isDir) await walk(entry.path);
+            },
+          );
+        } catch {
+          // A missing directory is an empty repository, not an error.
+        }
+      };
+      await walk(path);
+      return entries;
+    },
   };
 }
 
@@ -130,6 +207,7 @@ export async function exportResearchWorkspaceTextFile(
 }
 
 let repository: InstanceType<typeof ResearchWorkspaceRepository> | undefined;
+let projectRepository: ResearchWorkspaceProjectRepository | undefined;
 
 export function getResearchWorkspaceRepository() {
   if (!repository) {
@@ -141,6 +219,21 @@ export function getResearchWorkspaceRepository() {
   return repository;
 }
 
+export function getResearchWorkspaceProjectRepository() {
+  if (!projectRepository) {
+    projectRepository = new ResearchWorkspaceProjectRepository({
+      rootDir: getResearchWorkspaceStorageRoot(),
+      fileOps: createResearchWorkspaceStorage(),
+    });
+  }
+  return projectRepository;
+}
+
+export async function recoverResearchWorkspaceProjectPersistence() {
+  return getResearchWorkspaceProjectRepository().recoverStartup();
+}
+
 export function resetResearchWorkspaceRepositoryForTests() {
   repository = undefined;
+  projectRepository = undefined;
 }

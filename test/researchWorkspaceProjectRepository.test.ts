@@ -1,0 +1,518 @@
+import { test } from "node:test";
+import * as assert from "node:assert/strict";
+
+import {
+  ResearchWorkspaceRevisionConflictError,
+  type ResearchWorkspaceArtifactLineage,
+  type ResearchWorkspaceFileOps,
+  type ResearchWorkspaceSourceRecord,
+} from "../src/modules/researchWorkspace/persistence/contracts";
+import { ResearchWorkspaceProjectRepository } from "../src/modules/researchWorkspace/persistence/projectRepository";
+
+class MemoryWorkspaceFiles implements ResearchWorkspaceFileOps {
+  readonly files = new Map<string, string>();
+  readonly directories = new Set<string>();
+  readonly writes: string[] = [];
+  failWrite: ((path: string) => boolean) | undefined;
+
+  async ensureDirectory(path: string) {
+    this.directories.add(path);
+  }
+
+  async exists(path: string) {
+    if (this.files.has(path) || this.directories.has(path)) return true;
+    const prefix = `${path.replace(/[\\/]+$/, "")}/`;
+    return [...this.files.keys()].some((entry) => entry.startsWith(prefix));
+  }
+
+  async readText(path: string) {
+    return this.files.get(path);
+  }
+
+  async writeTextAtomic(path: string, contents: string) {
+    if (this.failWrite?.(path))
+      throw new Error(`Injected write failure: ${path}`);
+    this.writes.push(path);
+    this.files.set(path, contents);
+  }
+
+  async remove(path: string, options?: { recursive?: boolean }) {
+    if (!options?.recursive) {
+      this.files.delete(path);
+      this.directories.delete(path);
+      return;
+    }
+    const prefix = `${path.replace(/[\\/]+$/, "")}/`;
+    for (const key of [...this.files.keys()]) {
+      if (key === path || key.startsWith(prefix)) this.files.delete(key);
+    }
+    for (const key of [...this.directories]) {
+      if (key === path || key.startsWith(prefix)) this.directories.delete(key);
+    }
+  }
+
+  async listDirectory(path: string) {
+    const prefix = `${path.replace(/[\\/]+$/, "")}/`;
+    return [...this.files.keys()].filter((entry) => entry.startsWith(prefix));
+  }
+}
+
+function repository(files = new MemoryWorkspaceFiles()) {
+  let clock = Date.parse("2026-08-29T00:00:00.000Z");
+  const ids = new Map<string, number>();
+  return {
+    files,
+    repository: new ResearchWorkspaceProjectRepository({
+      rootDir: "/profile/paperpilot-research-workspace",
+      fileOps: files,
+      now: () => new Date(clock++),
+      idFactory: (prefix) => {
+        const value = (ids.get(prefix) ?? 0) + 1;
+        ids.set(prefix, value);
+        return `${prefix}-${value}`;
+      },
+    }),
+  };
+}
+
+function source(
+  suffix: string,
+  fingerprint = `fingerprint-${suffix}`,
+): ResearchWorkspaceSourceRecord {
+  return {
+    sourceID: `zotero:1:ITEM-${suffix}:PDF-${suffix}`,
+    identity: {
+      libraryID: 1,
+      itemKey: `ITEM-${suffix}`,
+      attachmentKey: `PDF-${suffix}`,
+      standaloneAttachment: false,
+    },
+    title: `Paper ${suffix}`,
+    runtimeItemID: 100 + suffix.charCodeAt(0),
+    runtimeAttachmentID: 200 + suffix.charCodeAt(0),
+    contentFingerprint: {
+      algorithm: "zotero-version-mtime-size-v1",
+      value: fingerprint,
+      zoteroVersion: 1,
+    },
+    extractionQuality: "structured",
+    extractionNotes: [],
+    availability: "ready",
+    lastResolvedAt: "2026-08-29T00:00:00.000Z",
+    lastExtractedAt: "2026-08-29T00:00:00.000Z",
+  };
+}
+
+function lineage(
+  sources: ResearchWorkspaceSourceRecord[],
+  runID = "run-1",
+): ResearchWorkspaceArtifactLineage {
+  return {
+    inputs: sources.map((entry) => ({
+      sourceID: entry.sourceID,
+      contentFingerprint: entry.contentFingerprint!.value,
+      contextProjectionFingerprint: `projection-${entry.identity.itemKey}`,
+    })),
+    operation: "claims",
+    operationVersion: "1",
+    promptVersion: "1",
+    parserVersion: "1",
+    evidenceVerifierVersion: "paperpilot-evidence-v2",
+    providerMode: "codex_cli",
+    model: "gpt-5.6-terra",
+    runID,
+  };
+}
+
+test("reading an empty project store performs no durable write", async () => {
+  const setup = repository();
+  assert.deepEqual(await setup.repository.listProjects(), []);
+  assert.equal((await setup.repository.getCatalog()).revision, 0);
+  assert.deepEqual(setup.files.writes, []);
+});
+
+test("project updates are revision guarded and catalog stays lightweight", async () => {
+  const setup = repository();
+  const created = await setup.repository.createProject({
+    projectID: "project-alpha",
+    name: "Alpha review",
+    researchQuestion: "Does A improve B?",
+  });
+  assert.equal(created.projectRevision, 1);
+  assert.equal(created.membersRevision, 1);
+  assert.deepEqual(await setup.repository.listProjects(), [
+    {
+      projectID: "project-alpha",
+      name: "Alpha review",
+      updatedAt: created.project.updatedAt,
+      memberCount: 0,
+      staleArtifactCount: 0,
+    },
+  ]);
+
+  const updated = await setup.repository.updateProject(
+    "project-alpha",
+    created.projectRevision,
+    (project) => ({ ...project, name: "Renamed review" }),
+  );
+  assert.equal(updated.revision, 2);
+  assert.equal(updated.project.name, "Renamed review");
+  await assert.rejects(
+    () =>
+      setup.repository.updateProject(
+        "project-alpha",
+        created.projectRevision,
+        (project) => project,
+      ),
+    ResearchWorkspaceRevisionConflictError,
+  );
+
+  const catalogText = setup.files.files.get(setup.repository.catalogPath)!;
+  assert.equal(catalogText.includes("artifactIDs"), false);
+  assert.equal(catalogText.includes("payload"), false);
+});
+
+test("member persistence requires known sources and exclusion reasons", async () => {
+  const setup = repository();
+  const created = await setup.repository.createProject({
+    projectID: "project-members",
+    name: "Member review",
+  });
+  const sourceA = source("A");
+  await setup.repository.putSource(sourceA);
+
+  const members = await setup.repository.addMembers(
+    "project-members",
+    created.membersRevision,
+    [{ sourceID: sourceA.sourceID, role: "seed" }],
+  );
+  assert.equal(members.revision, 2);
+  assert.equal(members.members[0].role, "seed");
+  assert.equal(members.members[0].reviewStatus, "unreviewed");
+
+  await assert.rejects(
+    () =>
+      setup.repository.addMembers("project-members", members.revision, [
+        { sourceID: "zotero:1:MISSING:PDF" },
+      ]),
+    /Source .* was not found/,
+  );
+  await assert.rejects(
+    () =>
+      setup.repository.addMembers("project-members", members.revision, [
+        {
+          sourceID: sourceA.sourceID,
+          reviewStatus: "excluded",
+        },
+      ]),
+    /exclusion reason/,
+  );
+  assert.equal(
+    (await setup.repository.getProject("project-members")).members[0]
+      .reviewStatus,
+    "unreviewed",
+  );
+});
+
+test("artifact history versions, supersedes, and marks source changes stale", async () => {
+  const setup = repository();
+  const project = await setup.repository.createProject({
+    projectID: "project-artifacts",
+    name: "Artifact review",
+  });
+  const sourceA = source("A");
+  await setup.repository.putSource(sourceA);
+  await setup.repository.addMembers(
+    "project-artifacts",
+    project.membersRevision,
+    [{ sourceID: sourceA.sourceID }],
+  );
+
+  const first = await setup.repository.createArtifact("project-artifacts", {
+    artifactID: "artifact-first",
+    type: "claim-ledger",
+    title: "Claims",
+    status: "complete",
+    sourceIDs: [sourceA.sourceID],
+    lineage: lineage([sourceA]),
+    payload: { claims: ["first"] },
+    completedAt: "2026-08-29T00:01:00.000Z",
+  });
+  const second = await setup.repository.createArtifact("project-artifacts", {
+    artifactID: "artifact-second",
+    type: "claim-ledger",
+    title: "Claims rerun",
+    status: "complete",
+    sourceIDs: [sourceA.sourceID],
+    lineage: lineage([sourceA], "run-2"),
+    payload: { claims: ["second"] },
+    completedAt: "2026-08-29T00:02:00.000Z",
+  });
+  assert.equal(first.artifact.version, 1);
+  assert.equal(second.artifact.version, 2);
+  assert.equal(second.artifact.supersedesArtifactID, "artifact-first");
+  assert.equal(
+    (await setup.repository.getArtifact("project-artifacts", "artifact-first"))!
+      .artifact.status,
+    "superseded",
+  );
+
+  const changed = await setup.repository.markArtifactsStaleForSource({
+    projectID: "project-artifacts",
+    sourceID: sourceA.sourceID,
+    contentFingerprint: "replacement-fingerprint",
+  });
+  assert.deepEqual(changed, ["artifact-second"]);
+  const latest = await setup.repository.getArtifact(
+    "project-artifacts",
+    "artifact-second",
+  );
+  assert.equal(latest!.artifact.status, "stale");
+  assert.match(latest!.artifact.staleReasons![0], /source-content-changed/);
+  assert.equal(
+    (await setup.repository.listProjects())[0].staleArtifactCount,
+    1,
+  );
+});
+
+test("an artifact update never rewrites another project's durable files", async () => {
+  const setup = repository();
+  await setup.repository.createProject({
+    projectID: "project-one",
+    name: "One",
+  });
+  await setup.repository.createProject({
+    projectID: "project-two",
+    name: "Two",
+  });
+  const sourceA = source("A");
+  await setup.repository.putSource(sourceA);
+  const one = await setup.repository.getProject("project-one");
+  await setup.repository.addMembers("project-one", one.membersRevision, [
+    { sourceID: sourceA.sourceID },
+  ]);
+  const artifact = await setup.repository.createArtifact("project-one", {
+    artifactID: "artifact-one",
+    type: "synthesis",
+    title: "Synthesis",
+    status: "complete",
+    sourceIDs: [sourceA.sourceID],
+    lineage: lineage([sourceA]),
+    payload: { text: "before" },
+  });
+
+  setup.files.writes.splice(0);
+  await setup.repository.updateArtifact(
+    "project-one",
+    "artifact-one",
+    artifact.revision,
+    (current) => ({ ...current, payload: { text: "after" } }),
+  );
+  assert.equal(
+    setup.files.writes.some((path) => path.includes("project-project-two")),
+    false,
+  );
+  assert.deepEqual(
+    setup.files.writes.map((path) => path.split("/").pop()).sort(),
+    ["artifact-artifact-one.json", "catalog-v1.json"],
+  );
+});
+
+test("startup recovery marks only active persisted runs interrupted", async () => {
+  const setup = repository();
+  await setup.repository.createProject({
+    projectID: "project-runs",
+    name: "Run recovery",
+  });
+  await setup.repository.createRun("project-runs", {
+    runID: "run-active",
+    owner: { kind: "project", projectID: "project-runs" },
+    projectID: "project-runs",
+    operation: "evidence-matrix",
+    operationVersion: "1",
+    sourceSnapshot: [],
+    status: "running",
+    progress: { phase: "rows", completed: 1, total: 3 },
+    startedAt: "2026-08-29T00:00:00.000Z",
+  });
+  await setup.repository.createRun("project-runs", {
+    runID: "run-complete",
+    owner: { kind: "project", projectID: "project-runs" },
+    projectID: "project-runs",
+    operation: "synthesis",
+    operationVersion: "1",
+    sourceSnapshot: [],
+    status: "completed",
+    progress: { phase: "done", completed: 1, total: 1 },
+    completedAt: "2026-08-29T00:00:01.000Z",
+  });
+
+  const recovered = await setup.repository.recoverInterruptedRuns();
+  assert.deepEqual(recovered.recovered, ["run-active"]);
+  assert.equal(
+    (await setup.repository.getRun("project-runs", "run-active"))!.run.status,
+    "interrupted",
+  );
+  assert.equal(
+    (await setup.repository.getRun("project-runs", "run-complete"))!.run.status,
+    "completed",
+  );
+});
+
+test("startup recovery repairs a missing catalog only when project data exists", async () => {
+  const empty = repository();
+  const emptyRecovery = await empty.repository.recoverStartup();
+  assert.equal(emptyRecovery.repairedCatalog, false);
+  assert.deepEqual(empty.files.writes, []);
+
+  const setup = repository();
+  await setup.repository.createProject({
+    projectID: "project-startup-repair",
+    name: "Startup repair",
+  });
+  setup.files.files.delete(setup.repository.catalogPath);
+  setup.files.writes.splice(0);
+  const recovery = await setup.repository.recoverStartup();
+  assert.equal(recovery.repairedCatalog, true);
+  assert.deepEqual(
+    (await setup.repository.listProjects()).map((entry) => entry.projectID),
+    ["project-startup-repair"],
+  );
+  assert.deepEqual(setup.files.writes, [setup.repository.catalogPath]);
+});
+
+test("catalog repair discovers a project left behind by a catalog failure", async () => {
+  const setup = repository();
+  setup.files.failWrite = (path) => path.endsWith("catalog-v1.json");
+  await assert.rejects(
+    () =>
+      setup.repository.createProject({
+        projectID: "project-repair",
+        name: "Recover me",
+      }),
+    /Injected write failure/,
+  );
+  assert.equal(
+    setup.files.files.has(setup.repository.getProjectPath("project-repair")),
+    true,
+  );
+  setup.files.failWrite = undefined;
+  const repaired = await setup.repository.repairCatalog();
+  assert.deepEqual(
+    repaired.catalog.projects.map((entry) => entry.projectID),
+    ["project-repair"],
+  );
+});
+
+test("a corrupt artifact is isolated and does not block another project", async () => {
+  const setup = repository();
+  await setup.repository.createProject({
+    projectID: "project-good",
+    name: "Good",
+  });
+  await setup.repository.createProject({
+    projectID: "project-bad",
+    name: "Bad",
+  });
+  const sourceA = source("A");
+  await setup.repository.putSource(sourceA);
+  const bad = await setup.repository.createArtifact("project-bad", {
+    artifactID: "artifact-corrupt",
+    type: "review-log",
+    title: "Review log",
+    status: "complete",
+    sourceIDs: [sourceA.sourceID],
+    lineage: lineage([sourceA]),
+    payload: {},
+  });
+  setup.files.files.set(
+    setup.repository.getArtifactPath("project-bad", bad.artifact.artifactID),
+    "{not-json",
+  );
+
+  const listed = await setup.repository.listArtifacts("project-bad");
+  assert.equal(listed.artifacts.length, 0);
+  assert.match(listed.warnings[0], /Invalid Research Workspace JSON/);
+  assert.equal(
+    (await setup.repository.getProject("project-good")).project.name,
+    "Good",
+  );
+});
+
+test("project export and deletion remain strictly project scoped", async () => {
+  const setup = repository();
+  const projectA = await setup.repository.createProject({
+    projectID: "project-export-a",
+    name: "Export A",
+  });
+  const projectB = await setup.repository.createProject({
+    projectID: "project-export-b",
+    name: "Export B",
+  });
+  const sourceA = source("A");
+  const sourceB = source("B");
+  await setup.repository.putSource(sourceA);
+  await setup.repository.putSource(sourceB);
+  await setup.repository.addMembers(
+    "project-export-a",
+    projectA.membersRevision,
+    [{ sourceID: sourceA.sourceID }],
+  );
+  await setup.repository.addMembers(
+    "project-export-b",
+    projectB.membersRevision,
+    [{ sourceID: sourceB.sourceID }],
+  );
+
+  const exported = await setup.repository.exportProject("project-export-a");
+  assert.deepEqual(
+    exported.sources.map((entry) => entry.sourceID),
+    [sourceA.sourceID],
+  );
+  assert.equal(JSON.stringify(exported).includes(sourceB.sourceID), false);
+  assert.equal(JSON.stringify(exported).includes("/profile/"), false);
+
+  await setup.repository.deleteProject("project-export-a");
+  assert.deepEqual(
+    (await setup.repository.listProjects()).map((entry) => entry.projectID),
+    ["project-export-b"],
+  );
+  assert.equal(
+    Boolean(await setup.repository.getSource(sourceA.sourceID)),
+    true,
+  );
+  assert.equal(
+    (await setup.repository.getProject("project-export-b")).project.name,
+    "Export B",
+  );
+});
+
+test("cache pruning cannot delete durable projects or sources", async () => {
+  const setup = repository();
+  await setup.repository.createProject({
+    projectID: "project-cache",
+    name: "Cache safety",
+  });
+  const sourceA = source("A");
+  await setup.repository.putSource(sourceA);
+  setup.files.files.set(
+    `${setup.repository.cacheRoot}/extraction/cache.json`,
+    "derived",
+  );
+
+  await setup.repository.pruneDerivedCache();
+  assert.equal(
+    setup.files.files.has(
+      `${setup.repository.cacheRoot}/extraction/cache.json`,
+    ),
+    false,
+  );
+  assert.equal(
+    (await setup.repository.getProject("project-cache")).project.name,
+    "Cache safety",
+  );
+  assert.equal(
+    Boolean(await setup.repository.getSource(sourceA.sourceID)),
+    true,
+  );
+});
