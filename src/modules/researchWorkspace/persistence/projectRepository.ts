@@ -523,12 +523,21 @@ export class ResearchWorkspaceProjectRepository {
             addition.reviewStatus ?? previous?.reviewStatus ?? "unreviewed",
           ...(addition.exclusionReason?.trim()
             ? { exclusionReason: addition.exclusionReason.trim() }
-            : {}),
+            : previous?.exclusionReason
+              ? { exclusionReason: previous.exclusionReason }
+              : {}),
           ...(addition.userNote?.trim()
             ? { userNote: addition.userNote.trim() }
             : previous?.userNote
               ? { userNote: previous.userNote }
               : {}),
+          ...(previous?.screeningEvents
+            ? {
+                screeningEvents: cloneResearchWorkspaceValue(
+                  previous.screeningEvents,
+                ),
+              }
+            : {}),
           addedAt: previous?.addedAt ?? timestamp,
           updatedAt: timestamp,
         };

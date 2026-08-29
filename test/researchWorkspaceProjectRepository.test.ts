@@ -2,12 +2,14 @@ import { test } from "node:test";
 import * as assert from "node:assert/strict";
 
 import {
+  RESEARCH_WORKSPACE_MEMBERS_SCHEMA_VERSION,
   ResearchWorkspaceRevisionConflictError,
   type ResearchWorkspaceArtifactLineage,
   type ResearchWorkspaceFileOps,
   type ResearchWorkspaceSourceRecord,
 } from "../src/modules/researchWorkspace/persistence/contracts";
 import { ResearchWorkspaceProjectRepository } from "../src/modules/researchWorkspace/persistence/projectRepository";
+import { parseResearchWorkspaceMembersFile } from "../src/modules/researchWorkspace/persistence/validation";
 
 class MemoryWorkspaceFiles implements ResearchWorkspaceFileOps {
   readonly files = new Map<string, string>();
@@ -129,6 +131,73 @@ test("reading an empty project store performs no durable write", async () => {
   assert.deepEqual(await setup.repository.listProjects(), []);
   assert.equal((await setup.repository.getCatalog()).revision, 0);
   assert.deepEqual(setup.files.writes, []);
+});
+
+test("screening histories round-trip and reject broken provenance", () => {
+  const valid = {
+    schemaVersion: RESEARCH_WORKSPACE_MEMBERS_SCHEMA_VERSION,
+    revision: 1,
+    projectID: "project-screening",
+    members: [
+      {
+        sourceID: "zotero:1:ITEM-A:PDF-A",
+        role: "candidate",
+        reviewStatus: "included",
+        addedAt: "2026-08-30T00:00:00.000Z",
+        updatedAt: "2026-08-30T01:00:00.000Z",
+        screeningEvents: [
+          {
+            eventID: "screening-event-1",
+            submissionID: "screening-submission-1",
+            sourceID: "zotero:1:ITEM-A:PDF-A",
+            stage: "full-text",
+            decision: "include",
+            actor: "local-user",
+            protocolFingerprint: "screening-protocol-12345678",
+            protocolSnapshot: [],
+            sourceSnapshot: {
+              title: "Paper A",
+              availability: "ready",
+              contentFingerprint: "fingerprint-A",
+            },
+            decidedAt: "2026-08-30T01:00:00.000Z",
+          },
+        ],
+      },
+    ],
+  };
+  const serialized = JSON.stringify(valid);
+  assert.deepEqual(
+    parseResearchWorkspaceMembersFile(JSON.parse(serialized)),
+    valid,
+  );
+
+  const foreignSource = JSON.parse(serialized);
+  foreignSource.members[0].screeningEvents[0].sourceID =
+    "zotero:1:ITEM-B:PDF-B";
+  assert.throws(
+    () => parseResearchWorkspaceMembersFile(foreignSource),
+    /does not match its member/,
+  );
+
+  const invalidSupersedes = JSON.parse(serialized);
+  invalidSupersedes.members[0].screeningEvents[0].supersedesEventID =
+    "screening-event-missing";
+  assert.throws(
+    () => parseResearchWorkspaceMembersFile(invalidSupersedes),
+    /not earlier in the history/,
+  );
+
+  const duplicateSubmission = JSON.parse(serialized);
+  const second = structuredClone(duplicateSubmission.members[0]);
+  second.sourceID = "zotero:1:ITEM-B:PDF-B";
+  second.screeningEvents[0].eventID = "screening-event-2";
+  second.screeningEvents[0].sourceID = second.sourceID;
+  duplicateSubmission.members.push(second);
+  assert.throws(
+    () => parseResearchWorkspaceMembersFile(duplicateSubmission),
+    /Duplicate submission/,
+  );
 });
 
 test("project updates are revision guarded and catalog stays lightweight", async () => {

@@ -61,6 +61,57 @@ function oneOf(value: unknown, allowed: readonly string[], label: string) {
   }
 }
 
+function isoDate(value: unknown, label: string) {
+  const candidate = text(value, label);
+  if (!Number.isFinite(Date.parse(candidate))) {
+    throw new Error(`${label} must be an ISO date.`);
+  }
+  return candidate;
+}
+
+function validateCriterion(value: unknown, label: string, seen: Set<string>) {
+  const criterion = object(value, label);
+  const criterionID = assertResearchWorkspaceID(
+    text(criterion.criterionID, `${label} ID`),
+    "criterionID",
+  );
+  if (seen.has(criterionID)) {
+    throw new Error(`Duplicate criterion ${criterionID}.`);
+  }
+  seen.add(criterionID);
+  const criterionText = text(criterion.text, `${label} text`);
+  if (criterionText.length > 500) throw new Error(`${label} text is too long.`);
+  if (typeof criterion.enabled !== "boolean") {
+    throw new Error(`${label} enabled must be a boolean.`);
+  }
+  oneOf(criterion.createdBy, ["user", "suggested"], `${label} createdBy`);
+  if (criterion.acceptedAt !== undefined) {
+    isoDate(criterion.acceptedAt, `${label} acceptedAt`);
+  }
+}
+
+function validateProjectScope(value: unknown) {
+  const scope = object(value, "project scope");
+  const seen = new Set<string>();
+  for (const key of ["inclusionCriteria", "exclusionCriteria"] as const) {
+    if (!Array.isArray(scope[key]) || scope[key].length > 100) {
+      throw new Error(`project scope ${key} must be an array of at most 100.`);
+    }
+    scope[key].forEach((criterion, index) =>
+      validateCriterion(criterion, `${key}[${index}]`, seen),
+    );
+  }
+  if (scope.pico !== undefined) {
+    const pico = object(scope.pico, "project PICO");
+    for (const key of ["population", "intervention", "comparison", "outcome"]) {
+      if (pico[key] === undefined) continue;
+      if (typeof pico[key] !== "string" || String(pico[key]).length > 1_000) {
+        throw new Error(`project PICO ${key} must be a bounded string.`);
+      }
+    }
+  }
+}
+
 const ENGINE_MODES = ["codex_cli", "claude_code", "gemini_cli"] as const;
 const MEMBER_ROLES = [
   "seed",
@@ -125,6 +176,7 @@ function validateProject(value: unknown) {
   if (project.defaultEngineMode !== undefined) {
     oneOf(project.defaultEngineMode, ENGINE_MODES, "project defaultEngineMode");
   }
+  if (project.scope !== undefined) validateProjectScope(project.scope);
   for (const id of project.artifactIDs as string[]) {
     assertResearchWorkspaceID(id, "artifactID");
   }
@@ -197,6 +249,8 @@ export function parseResearchWorkspaceMembersFile(
     throw new Error("members must be an array.");
   }
   const seen = new Set<string>();
+  const eventIDs = new Set<string>();
+  const submissionIDs = new Set<string>();
   for (const entry of root.members) {
     const member = object(entry, "project member");
     text(member.sourceID, "member sourceID");
@@ -207,6 +261,131 @@ export function parseResearchWorkspaceMembersFile(
     assertResearchWorkspaceMember(
       entry as ResearchWorkspaceMembersFile["members"][number],
     );
+    if (member.screeningEvents !== undefined) {
+      if (
+        !Array.isArray(member.screeningEvents) ||
+        member.screeningEvents.length > 500
+      ) {
+        throw new Error(
+          "member screeningEvents must be an array of at most 500.",
+        );
+      }
+      const priorEventIDs = new Set<string>();
+      for (const [index, value] of member.screeningEvents.entries()) {
+        const label = `screening event ${index + 1}`;
+        const event = object(value, label);
+        const eventID = assertResearchWorkspaceID(
+          text(event.eventID, `${label} eventID`),
+          "screening eventID",
+        );
+        const submissionID = assertResearchWorkspaceID(
+          text(event.submissionID, `${label} submissionID`),
+          "screening submissionID",
+        );
+        if (eventIDs.has(eventID))
+          throw new Error(`Duplicate event ${eventID}.`);
+        if (submissionIDs.has(submissionID)) {
+          throw new Error(`Duplicate submission ${submissionID}.`);
+        }
+        eventIDs.add(eventID);
+        submissionIDs.add(submissionID);
+        if (event.sourceID !== member.sourceID) {
+          throw new Error(`${label} sourceID does not match its member.`);
+        }
+        oneOf(event.stage, ["abstract", "full-text"], `${label} stage`);
+        oneOf(
+          event.decision,
+          ["include", "exclude", "maybe"],
+          `${label} decision`,
+        );
+        oneOf(event.actor, ["local-user"], `${label} actor`);
+        text(event.protocolFingerprint, `${label} protocolFingerprint`);
+        isoDate(event.decidedAt, `${label} decidedAt`);
+        if (
+          !Array.isArray(event.protocolSnapshot) ||
+          event.protocolSnapshot.length > 200
+        ) {
+          throw new Error(`${label} protocolSnapshot must be a bounded array.`);
+        }
+        const criterionIDs = new Set<string>();
+        for (const [
+          criterionIndex,
+          candidate,
+        ] of event.protocolSnapshot.entries()) {
+          const criterion = object(
+            candidate,
+            `${label} criterion ${criterionIndex + 1}`,
+          );
+          const criterionID = assertResearchWorkspaceID(
+            text(criterion.criterionID, `${label} criterionID`),
+            "screening criterionID",
+          );
+          if (criterionIDs.has(criterionID)) {
+            throw new Error(`${label} has duplicate criterion ${criterionID}.`);
+          }
+          criterionIDs.add(criterionID);
+          oneOf(
+            criterion.kind,
+            ["inclusion", "exclusion"],
+            `${label} criterion kind`,
+          );
+          text(criterion.text, `${label} criterion text`);
+        }
+        const sourceSnapshot = object(
+          event.sourceSnapshot,
+          `${label} sourceSnapshot`,
+        );
+        text(sourceSnapshot.title, `${label} source title`);
+        oneOf(
+          sourceSnapshot.availability,
+          ["ready", "missing-file", "unreadable", "detached"],
+          `${label} source availability`,
+        );
+        if (
+          sourceSnapshot.year !== undefined &&
+          (!Number.isInteger(sourceSnapshot.year) ||
+            Number(sourceSnapshot.year) < 0)
+        ) {
+          throw new Error(
+            `${label} source year must be a non-negative integer.`,
+          );
+        }
+        if (event.reason !== undefined) {
+          const reason = object(event.reason, `${label} reason`);
+          oneOf(
+            reason.code,
+            ["criterion", "duplicate", "missing-pdf", "other"],
+            `${label} reason code`,
+          );
+          text(reason.text, `${label} reason text`);
+          if (reason.criterionIDs !== undefined) {
+            stringArray(reason.criterionIDs, `${label} criterionIDs`);
+            for (const criterionID of reason.criterionIDs as string[]) {
+              if (!criterionIDs.has(criterionID)) {
+                throw new Error(
+                  `${label} references unknown criterion ${criterionID}.`,
+                );
+              }
+            }
+          }
+        }
+        if (event.decision === "exclude" && event.reason === undefined) {
+          throw new Error(`${label} exclusion requires a reason.`);
+        }
+        if (event.supersedesEventID !== undefined) {
+          const priorID = text(
+            event.supersedesEventID,
+            `${label} supersedesEventID`,
+          );
+          if (!priorEventIDs.has(priorID)) {
+            throw new Error(
+              `${label} supersedes an event that is not earlier in the history.`,
+            );
+          }
+        }
+        priorEventIDs.add(eventID);
+      }
+    }
     const sourceID = String(member.sourceID);
     if (seen.has(sourceID)) throw new Error(`Duplicate member ${sourceID}.`);
     seen.add(sourceID);

@@ -3,11 +3,14 @@ import {
   archiveResearchWorkspaceProject,
   createResearchWorkspaceProject,
   deleteResearchWorkspaceProject,
+  exportResearchWorkspaceScreeningLog,
   exportIntegratedResearchWorkspace,
   loadResearchWorkspaceHome,
   loadResearchWorkspaceProject,
+  recordResearchWorkspaceScreeningDecision,
   updateResearchWorkspaceMember,
   updateResearchWorkspaceProject,
+  updateResearchWorkspaceScreeningProtocol,
 } from "./facade";
 import { renderResearchWorkspaceArtifactEnvelope } from "./artifactRenderer";
 import { openVerifiedResearchWorkspaceEvidence } from "./evidenceNavigation";
@@ -22,6 +25,10 @@ import {
   disposeResearchWorkspaceView,
   renderResearchWorkspaceView,
 } from "./view";
+import {
+  buildResearchWorkspaceScreeningLog,
+  currentScreeningEvent,
+} from "./screeningLog";
 
 const HTML_NS = "http://www.w3.org/1999/xhtml";
 const generations = new WeakMap<HTMLElement, symbol>();
@@ -240,6 +247,7 @@ async function renderProject(
   }
 
   root.append(
+    renderScreeningLog(doc, root, details, capturedPapers, generation),
     renderProjectPapers(doc, root, details, capturedPapers, generation),
   );
   root.append(renderArtifactHistory(doc, root, details));
@@ -267,6 +275,360 @@ async function renderProject(
     );
     root.append(empty);
   }
+}
+
+function renderScreeningLog(
+  doc: Document,
+  root: HTMLElement,
+  details: ResearchWorkspaceProjectDetails,
+  capturedPapers: readonly ResearchWorkspacePaper[],
+  generation: symbol,
+) {
+  const section = element(doc, "section", "pprw-project-panel pprw-screening");
+  section.append(
+    element(doc, "h3", "", "Screening & exclusion log"),
+    element(
+      doc,
+      "p",
+      "pprw-muted",
+      "Abstract and full-text decisions are explicit local user actions. Duplicate and missing-PDF checks are signals only; this workflow sends no paper text to a model.",
+    ),
+  );
+  const log = buildResearchWorkspaceScreeningLog({
+    project: details.project,
+    members: details.members,
+    sources: details.sources,
+    generatedAt: new Date().toISOString(),
+  });
+  const metrics = element(doc, "div", "pprw-home-metrics");
+  metrics.append(
+    metric(doc, log.summary.include, "included"),
+    metric(doc, log.summary.exclude, "excluded"),
+    metric(doc, log.summary.maybe, "maybe"),
+    metric(doc, log.summary.unreviewed, "unreviewed"),
+    metric(
+      doc,
+      log.summary.duplicateSignals + log.summary.missingPDFSignals,
+      "local signals",
+    ),
+  );
+  section.append(metrics);
+
+  const protocol = element(doc, "details", "pprw-screening-protocol");
+  protocol.append(element(doc, "summary", "", "Screening protocol"));
+  const protocolForm = element(doc, "div", "pprw-screening-protocol-grid");
+  const inclusionLabel = element(doc, "label", "pprw-field");
+  inclusionLabel.append(element(doc, "span", "", "Inclusion criteria"));
+  const inclusion = element(
+    doc,
+    "textarea",
+    "pprw-input pprw-screening-textarea",
+  );
+  inclusion.value = (details.project.scope?.inclusionCriteria ?? [])
+    .map((criterion) => criterion.text)
+    .join("\n");
+  inclusion.setAttribute("aria-label", "Inclusion criteria, one per line");
+  inclusionLabel.append(inclusion);
+  const exclusionLabel = element(doc, "label", "pprw-field");
+  exclusionLabel.append(element(doc, "span", "", "Exclusion criteria"));
+  const exclusion = element(
+    doc,
+    "textarea",
+    "pprw-input pprw-screening-textarea",
+  );
+  exclusion.value = (details.project.scope?.exclusionCriteria ?? [])
+    .map((criterion) => criterion.text)
+    .join("\n");
+  exclusion.setAttribute("aria-label", "Exclusion criteria, one per line");
+  exclusionLabel.append(exclusion);
+  protocolForm.append(inclusionLabel, exclusionLabel);
+  protocol.append(
+    protocolForm,
+    button(doc, "Save screening protocol", async () => {
+      try {
+        setMessage(root, "Saving screening protocol…");
+        await updateResearchWorkspaceScreeningProtocol({
+          projectID: details.project.projectID,
+          expectedProjectRevision: details.projectRevision,
+          inclusionCriteria: inclusion.value.split(/\r?\n/),
+          exclusionCriteria: exclusion.value.split(/\r?\n/),
+        });
+        await renderProject(
+          root,
+          details.project.projectID,
+          capturedPapers,
+          generation,
+        );
+      } catch (error) {
+        setMessage(
+          root,
+          error instanceof Error ? error.message : String(error),
+          "error",
+        );
+      }
+    }),
+  );
+  section.append(protocol);
+
+  const actions = element(doc, "div", "pprw-row");
+  const filter = element(doc, "select", "pprw-select");
+  filter.setAttribute("aria-label", "Filter screening rows");
+  for (const [value, label] of [
+    ["all", "All papers"],
+    ["unreviewed", "Unreviewed"],
+    ["include", "Included"],
+    ["exclude", "Excluded"],
+    ["maybe", "Maybe"],
+    ["issues", "Local signals"],
+  ]) {
+    const option = element(doc, "option", "", label);
+    option.value = value;
+    filter.append(option);
+  }
+  actions.append(
+    filter,
+    button(doc, "Export screening JSON + CSV", async () => {
+      try {
+        setMessage(root, "Exporting screening log…");
+        const exported = await exportResearchWorkspaceScreeningLog(
+          details.project.projectID,
+        );
+        setMessage(
+          root,
+          `Exported to ${exported.jsonPath} and ${exported.csvPath}.`,
+          "success",
+        );
+      } catch (error) {
+        setMessage(
+          root,
+          error instanceof Error ? error.message : String(error),
+          "error",
+        );
+      }
+    }),
+  );
+  section.append(actions);
+
+  const sourceByID = new Map(
+    details.sources.map((source) => [source.sourceID, source]),
+  );
+  const list = element(doc, "div", "pprw-screening-list");
+  const criteria = [
+    ...(details.project.scope?.inclusionCriteria ?? []).map((criterion) => ({
+      ...criterion,
+      kind: "Inclusion",
+    })),
+    ...(details.project.scope?.exclusionCriteria ?? []).map((criterion) => ({
+      ...criterion,
+      kind: "Exclusion",
+    })),
+  ].filter((criterion) => criterion.enabled);
+  for (const rowView of log.rows) {
+    const member = details.members.find(
+      (candidate) => candidate.sourceID === rowView.sourceID,
+    )!;
+    const source = sourceByID.get(rowView.sourceID);
+    const current = currentScreeningEvent(member);
+    const row = element(doc, "article", "pprw-screening-row");
+    row.dataset.screeningDecision =
+      current?.decision ?? rowView.legacyDecision ?? "unreviewed";
+    row.dataset.screeningIssues = rowView.issues.length ? "true" : "false";
+    const heading = element(doc, "div", "pprw-screening-heading");
+    heading.append(
+      element(doc, "strong", "", rowView.title),
+      element(
+        doc,
+        "span",
+        "pprw-muted",
+        current
+          ? `${current.stage} · ${current.decision} · ${current.decidedAt}`
+          : rowView.legacyDecision
+            ? `Legacy ${rowView.legacyDecision} state · no event history`
+            : "Not screened",
+      ),
+    );
+    const badges = element(doc, "div", "pprw-row");
+    for (const issue of rowView.issues) {
+      badges.append(
+        element(
+          doc,
+          "span",
+          "pprw-render-badge pprw-render-badge--warning",
+          issue.kind === "duplicate" ? "Possible duplicate" : "Missing PDF",
+        ),
+      );
+    }
+    heading.append(badges);
+
+    const form = element(doc, "div", "pprw-screening-controls");
+    const stage = element(doc, "select", "pprw-select");
+    stage.setAttribute("aria-label", `Screening stage for ${rowView.title}`);
+    for (const [value, label] of [
+      ["abstract", "Abstract"],
+      ["full-text", "Full text"],
+    ]) {
+      const option = element(doc, "option", "", label);
+      option.value = value;
+      option.selected = (current?.stage ?? "abstract") === value;
+      if (value === "full-text" && source?.availability !== "ready") {
+        option.disabled = true;
+      }
+      stage.append(option);
+    }
+    const decision = element(doc, "select", "pprw-select");
+    decision.setAttribute(
+      "aria-label",
+      `Screening decision for ${rowView.title}`,
+    );
+    for (const [value, label] of [
+      ["maybe", "Maybe"],
+      ["include", "Include"],
+      ["exclude", "Exclude"],
+    ]) {
+      const option = element(doc, "option", "", label);
+      option.value = value;
+      option.selected =
+        (current?.decision ?? rowView.legacyDecision ?? "maybe") === value;
+      decision.append(option);
+    }
+    const reasonCode = element(doc, "select", "pprw-select");
+    reasonCode.setAttribute("aria-label", `Reason type for ${rowView.title}`);
+    for (const [value, label] of [
+      ["other", "Other reason"],
+      ["criterion", "Protocol criterion"],
+      ["duplicate", "Duplicate"],
+      ["missing-pdf", "Missing PDF"],
+    ]) {
+      const option = element(doc, "option", "", label);
+      option.value = value;
+      option.selected = (current?.reason?.code ?? "other") === value;
+      reasonCode.append(option);
+    }
+    const criterion = element(doc, "select", "pprw-select");
+    criterion.setAttribute(
+      "aria-label",
+      `Protocol criterion for ${rowView.title}`,
+    );
+    criterion.append(element(doc, "option", "", "No criterion selected"));
+    for (const entry of criteria) {
+      const option = element(doc, "option", "", `${entry.kind}: ${entry.text}`);
+      option.value = entry.criterionID;
+      option.selected =
+        current?.reason?.criterionIDs?.includes(entry.criterionID) ?? false;
+      criterion.append(option);
+    }
+    const reason = textInput(
+      doc,
+      "Reason (required for exclusion)",
+      current?.reason?.text ?? "",
+    );
+    reason.setAttribute("aria-label", `Screening reason for ${rowView.title}`);
+    const note = textInput(doc, "Optional reviewer note", current?.note ?? "");
+    note.setAttribute("aria-label", `Reviewer note for ${rowView.title}`);
+    let submissionID: string | undefined;
+    const recordButton = button(
+      doc,
+      "Record decision",
+      async () => {
+        try {
+          submissionID ??= `screening-submission-${Date.now().toString(36)}-${Math.random()
+            .toString(36)
+            .slice(2, 10)}`;
+          setMessage(root, `Recording decision for ${rowView.title}…`);
+          await recordResearchWorkspaceScreeningDecision({
+            projectID: details.project.projectID,
+            sourceID: rowView.sourceID,
+            stage: stage.value as "abstract" | "full-text",
+            decision: decision.value as "include" | "exclude" | "maybe",
+            ...(reason.value.trim()
+              ? {
+                  reasonCode: reasonCode.value as
+                    | "criterion"
+                    | "duplicate"
+                    | "missing-pdf"
+                    | "other",
+                  reason: reason.value,
+                }
+              : {}),
+            ...(reasonCode.value === "criterion" && criterion.value
+              ? { criterionIDs: [criterion.value] }
+              : {}),
+            ...(note.value.trim() ? { note: note.value } : {}),
+            submissionID,
+            expectedProjectRevision: details.projectRevision,
+            expectedMembersRevision: details.membersRevision,
+          });
+          submissionID = undefined;
+          await renderProject(
+            root,
+            details.project.projectID,
+            capturedPapers,
+            generation,
+          );
+        } catch (error) {
+          setMessage(
+            root,
+            error instanceof Error ? error.message : String(error),
+            "error",
+          );
+        }
+      },
+      true,
+    );
+    form.append(
+      stage,
+      decision,
+      reasonCode,
+      criterion,
+      reason,
+      note,
+      recordButton,
+    );
+    row.append(heading, form);
+    if (rowView.history.length) {
+      const history = element(doc, "details", "pprw-screening-history");
+      history.append(
+        element(
+          doc,
+          "summary",
+          "",
+          `${rowView.history.length} immutable decision event${rowView.history.length === 1 ? "" : "s"}`,
+        ),
+      );
+      const historyList = element(doc, "ol", "");
+      for (const event of [...rowView.history].reverse()) {
+        historyList.append(
+          element(
+            doc,
+            "li",
+            "",
+            `${event.decidedAt} · ${event.stage} · ${event.decision}${
+              event.reason?.text ? ` · ${event.reason.text}` : ""
+            }`,
+          ),
+        );
+      }
+      history.append(historyList);
+      row.append(history);
+    }
+    list.append(row);
+  }
+  filter.addEventListener("change", () => {
+    for (const row of Array.from(list.children) as HTMLElement[]) {
+      row.hidden =
+        filter.value !== "all" &&
+        (filter.value === "issues"
+          ? row.dataset.screeningIssues !== "true"
+          : row.dataset.screeningDecision !== filter.value);
+    }
+  });
+  if (!log.rows.length) {
+    list.append(
+      element(doc, "p", "pprw-muted", "Add papers to begin screening."),
+    );
+  }
+  section.append(list);
+  return section;
 }
 
 function renderProjectPapers(
@@ -302,16 +664,25 @@ function renderProjectPapers(
       ),
     );
     const select = element(doc, "select", "pprw-select");
-    for (const status of [
+    const progressStatuses = [
       "unreviewed",
-      "maybe",
       "up-next",
       "skimmed",
       "read",
       "understood",
-      "included",
-      "excluded",
-    ] as const) {
+    ] as const;
+    if (!progressStatuses.includes(member.reviewStatus as any)) {
+      const current = element(
+        doc,
+        "option",
+        "",
+        `Screened: ${member.reviewStatus}`,
+      );
+      current.value = member.reviewStatus;
+      current.selected = true;
+      select.append(current);
+    }
+    for (const status of progressStatuses) {
       const option = element(doc, "option", "", status);
       option.value = status;
       option.selected = member.reviewStatus === status;
@@ -319,28 +690,22 @@ function renderProjectPapers(
     }
     select.setAttribute(
       "aria-label",
-      `Review status for ${source?.title ?? member.sourceID}`,
+      `Reading progress for ${source?.title ?? member.sourceID}`,
     );
+    if (
+      member.screeningEvents?.length ||
+      !progressStatuses.includes(member.reviewStatus as any)
+    ) {
+      select.disabled = true;
+      select.title = "Use Screening & exclusion log to change this decision.";
+    }
     select.addEventListener("change", () => {
       void (async () => {
-        let exclusionReason: string | undefined;
-        if (select.value === "excluded") {
-          exclusionReason =
-            doc.defaultView?.prompt(
-              "Reason for exclusion",
-              member.exclusionReason ?? "",
-            ) ?? undefined;
-          if (!exclusionReason?.trim()) {
-            select.value = member.reviewStatus;
-            return;
-          }
-        }
         try {
           await updateResearchWorkspaceMember({
             projectID: details.project.projectID,
             sourceID: member.sourceID,
             reviewStatus: select.value as any,
-            exclusionReason,
           });
           await renderProject(
             root,

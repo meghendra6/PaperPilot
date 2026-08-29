@@ -618,6 +618,12 @@ and the same fail-closed outcome.
 - [ ] Start and resume Mastery 2.0, submit an answer with confidence, and confirm criterion scores, misconceptions, calibration, and the next review survive a Zotero restart
 - [ ] Select at least two library papers and build an Evidence Matrix and Literature Graph; confirm persisted coverage and graph integrity, then create and grade a cross-paper mastery question
 - [ ] Classify citation contexts and confirm unknown attachment evidence is discarded rather than made navigable
+- [ ] Open the modeless project window, select several items in the Zotero library, then change the live selection; confirm the captured project papers and screening rows do not drift
+- [ ] Add inclusion and exclusion criteria, record abstract and full-text include/maybe/exclude decisions, and confirm an exclusion cannot be saved without a visible reason
+- [ ] Change a prior screening decision and confirm the original event remains in History with its original protocol/source snapshot and the new event points to it as superseded
+- [ ] Add papers with matching normalized DOI values and matching exact title plus year; confirm duplicate badges are advisory and never change review status automatically
+- [ ] Detach or remove a project PDF and confirm a missing-PDF badge appears without automatically excluding the paper
+- [ ] Export the Screening Log as JSON and CSV; confirm every historical event is present and spreadsheet-formula-leading titles, reasons, and notes are neutralized
 - [ ] Export JSON and Markdown; confirm both files are written below the Zotero profile's `paperpilot-research-workspace/exports` directory
 - [ ] Start with a former companion `workspace-v3.json`; confirm papers, reports, Mastery, matrices, graphs, cross-paper state, and citation state remain while provider/executable and Monitor state are removed
 - [ ] Cancel or close the pane during a run; confirm the process is stopped, its workspace is cleaned, and the paper reservation becomes available again

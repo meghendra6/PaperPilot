@@ -166,6 +166,53 @@ test("Relationship Graph view distinguishes verified and inferred edges", () => 
   assert.equal(view.edges[0].source, "Paper A");
 });
 
+test("Screening review log renders semantic metrics and history", () => {
+  const payload = {
+    kind: "research-workspace-review-log",
+    summary: {
+      total: 1,
+      include: 1,
+      exclude: 0,
+      maybe: 0,
+      unreviewed: 0,
+      decisions: 2,
+      duplicateSignals: 1,
+      missingPDFSignals: 0,
+    },
+    rows: [
+      {
+        sourceID: "SOURCE-1",
+        title: "Paper One",
+        current: {
+          decision: "include",
+          stage: "full-text",
+          decidedAt: "2026-08-30T01:00:00.000Z",
+          reason: { text: "Meets the protocol" },
+        },
+        history: [{ eventID: "event-1" }, { eventID: "event-2" }],
+        issues: [{ kind: "duplicate" }],
+      },
+    ],
+    limitations: ["Signals require reviewer confirmation."],
+  };
+  const view = createResearchWorkspaceArtifactView(payload, "review-log");
+  assert.equal(view.kind, "review-log");
+  if (view.kind !== "review-log") return;
+  assert.equal(view.rows[0].decision, "include");
+  assert.equal(view.rows[0].historyCount, 2);
+  assert.equal(view.summary.decisions, 2);
+
+  const rendered = renderResearchWorkspaceArtifactValue(
+    new FakeDocument() as unknown as Document,
+    payload,
+    { artifactType: "review-log" },
+  ) as unknown as FakeElement;
+  assert(tags(rendered).includes("table"));
+  assert(!tags(rendered).includes("pre"));
+  assert.match(renderedText(rendered), /Meets the protocol/);
+  assert.match(renderedText(rendered), /Signals require reviewer confirmation/);
+});
+
 test("Project synthesis view exposes coverage, evidence groups, and warnings", () => {
   const view = createResearchWorkspaceArtifactView(
     {

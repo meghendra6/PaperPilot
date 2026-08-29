@@ -1714,6 +1714,11 @@ These features extend the workspace after the core redesign.
 
 ### 25.1 Priority P1: review triage
 
+Implementation status: delivered in the integrated project window with a local,
+append-only decision log, revision/idempotency guards, semantic rendering, and
+project-scoped JSON/CSV export. Real-Zotero runtime checks remain part of the
+release checklist.
+
 Add protocol-based paper triage:
 
 - abstract and full-text screening;

@@ -68,9 +68,13 @@ function setup() {
       return `${prefix}-${id}`;
     },
   });
+  let screeningID = 0;
   return {
     repository,
-    projects: new ResearchWorkspaceProjectController(repository, { now }),
+    projects: new ResearchWorkspaceProjectController(repository, {
+      now,
+      screeningIDFactory: (prefix) => `${prefix}-${++screeningID}`,
+    }),
     operations: new ResearchWorkspaceOperationCoordinator(repository, { now }),
   };
 }
@@ -95,6 +99,9 @@ function paper(
       zoteroVersion: 3,
     },
     title: `Paper ${suffix}`,
+    creators: [`Author ${suffix}`],
+    year: 2025,
+    doi: `10.1000/${suffix.toLowerCase()}`,
     context: `Full extracted content for paper ${suffix}.`,
     extractionQuality: "structured",
   };
@@ -115,6 +122,9 @@ test("paper conversion preserves exact Zotero identity and extraction lineage", 
   assert.equal(source.contentFingerprint?.value, "fingerprint-A");
   assert.equal(source.extractionFingerprint?.extractor, "opendataloader-pdf");
   assert.equal(source.availability, "ready");
+  assert.deepEqual(source.creators, ["Author A"]);
+  assert.equal(source.year, 2025);
+  assert.equal(source.doi, "10.1000/a");
 });
 
 test("project creation registers sources and idempotent membership", async () => {
@@ -142,6 +152,112 @@ test("quick projects use a deterministic source-scoped identity", async () => {
   const home = await projects.home();
   assert.equal(home.projects.length, 1);
   assert.equal(home.projects[0].memberCount, 2);
+});
+
+test("screening decisions append history, guard revisions, and replay idempotently", async () => {
+  const { projects } = setup();
+  let details = await projects.createProject(
+    { projectID: "project-screening", name: "Screening" },
+    [paper("A")],
+  );
+  details = await projects.updateScreeningProtocol({
+    projectID: details.project.projectID,
+    expectedProjectRevision: details.projectRevision,
+    inclusionCriteria: ["Relevant population"],
+    exclusionCriteria: ["Duplicate report"],
+  });
+  const criterionID = details.project.scope!.exclusionCriteria[0].criterionID;
+  const firstInput = {
+    projectID: details.project.projectID,
+    sourceID: details.members[0].sourceID,
+    stage: "abstract" as const,
+    decision: "exclude" as const,
+    reasonCode: "criterion" as const,
+    reason: "Duplicate report",
+    criterionIDs: [criterionID],
+    submissionID: "screening-submission-1",
+    expectedProjectRevision: details.projectRevision,
+    expectedMembersRevision: details.membersRevision,
+  };
+  const excluded = await projects.recordScreeningDecision(firstInput);
+  assert.equal(excluded.members[0].reviewStatus, "excluded");
+  assert.equal(excluded.members[0].screeningEvents?.length, 1);
+  assert.equal(
+    excluded.members[0].screeningEvents?.[0].protocolSnapshot[1].text,
+    "Duplicate report",
+  );
+
+  const replayed = await projects.recordScreeningDecision(firstInput);
+  assert.equal(replayed.membersRevision, excluded.membersRevision);
+  assert.equal(replayed.members[0].screeningEvents?.length, 1);
+  await assert.rejects(
+    () =>
+      projects.recordScreeningDecision({
+        ...firstInput,
+        decision: "include",
+      }),
+    /idempotency conflict/,
+  );
+
+  const included = await projects.recordScreeningDecision({
+    projectID: excluded.project.projectID,
+    sourceID: excluded.members[0].sourceID,
+    stage: "full-text",
+    decision: "include",
+    note: "Eligible after full-text review",
+    submissionID: "screening-submission-2",
+    expectedProjectRevision: excluded.projectRevision,
+    expectedMembersRevision: excluded.membersRevision,
+  });
+  assert.equal(included.members[0].reviewStatus, "included");
+  assert.equal(included.members[0].exclusionReason, undefined);
+  assert.equal(included.members[0].screeningEvents?.length, 2);
+  assert.equal(
+    included.members[0].screeningEvents?.[1].supersedesEventID,
+    included.members[0].screeningEvents?.[0].eventID,
+  );
+
+  const readded = await projects.addPapers("project-screening", [paper("A")]);
+  assert.equal(readded.members[0].reviewStatus, "included");
+  assert.equal(readded.members[0].screeningEvents?.length, 2);
+});
+
+test("screening rejects exclusions without reasons and unknown criteria", async () => {
+  const { projects } = setup();
+  const details = await projects.createProject(
+    { projectID: "project-screening-errors", name: "Screening errors" },
+    [paper("A")],
+  );
+  const base = {
+    projectID: details.project.projectID,
+    sourceID: details.members[0].sourceID,
+    stage: "abstract" as const,
+    submissionID: "screening-submission-error",
+    expectedProjectRevision: details.projectRevision,
+    expectedMembersRevision: details.membersRevision,
+  };
+  await assert.rejects(
+    () =>
+      projects.recordScreeningDecision({
+        ...base,
+        decision: "exclude",
+      }),
+    /requires a reason/,
+  );
+  await assert.rejects(
+    () =>
+      projects.recordScreeningDecision({
+        ...base,
+        decision: "exclude",
+        reasonCode: "criterion",
+        reason: "Unknown criterion",
+        criterionIDs: ["criterion-unknown"],
+      }),
+    /Unknown or disabled screening criterion/,
+  );
+  const unchanged = await projects.details(details.project.projectID);
+  assert.equal(unchanged.membersRevision, details.membersRevision);
+  assert.equal(unchanged.members[0].screeningEvents, undefined);
 });
 
 test("successful project operations persist completed runs and scoped artifact history", async () => {
