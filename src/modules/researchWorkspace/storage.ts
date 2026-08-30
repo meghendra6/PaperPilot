@@ -2,6 +2,7 @@ import { getZoteroProfilePath } from "../../utils/zoteroProfile";
 import { ResearchWorkspaceProjectRepository } from "./persistence/projectRepository";
 import { LegacyResearchWorkspaceImporter } from "./persistence/legacyMigration";
 import { ResearchWorkspaceLivingReviewService } from "./livingReviewService";
+import { ResearchWorkspaceZoteroSyncService } from "./zoteroSyncService";
 
 declare const Zotero: any;
 declare const IOUtils: any;
@@ -210,6 +211,7 @@ export async function exportResearchWorkspaceTextFile(
 let projectRepository: ResearchWorkspaceProjectRepository | undefined;
 let legacyImporter: LegacyResearchWorkspaceImporter | undefined;
 let livingReviewService: ResearchWorkspaceLivingReviewService | undefined;
+let zoteroSyncService: ResearchWorkspaceZoteroSyncService | undefined;
 
 export function getResearchWorkspaceProjectRepository() {
   if (!projectRepository) {
@@ -228,6 +230,15 @@ export function getResearchWorkspaceLivingReviewService() {
     );
   }
   return livingReviewService;
+}
+
+export function getResearchWorkspaceZoteroSyncService() {
+  if (!zoteroSyncService) {
+    zoteroSyncService = new ResearchWorkspaceZoteroSyncService(
+      getResearchWorkspaceProjectRepository(),
+    );
+  }
+  return zoteroSyncService;
 }
 
 export async function recoverResearchWorkspaceProjectPersistence() {
@@ -254,4 +265,5 @@ export function resetResearchWorkspaceRepositoryForTests() {
   projectRepository = undefined;
   legacyImporter = undefined;
   livingReviewService = undefined;
+  zoteroSyncService = undefined;
 }

@@ -44,6 +44,12 @@ import {
   parseResearchWorkspaceRunFile,
   parseResearchWorkspaceSourceFile,
 } from "./validation";
+import {
+  RESEARCH_WORKSPACE_ZOTERO_SYNC_SCHEMA_VERSION,
+  parseResearchWorkspaceZoteroSyncReceiptFile,
+  type ResearchWorkspaceZoteroSyncReceipt,
+  type ResearchWorkspaceZoteroSyncReceiptFile,
+} from "../zoteroSync";
 
 function joinPath(...parts: string[]) {
   const separator = parts.some((part) => part.includes("\\")) ? "\\" : "/";
@@ -229,6 +235,17 @@ export class ResearchWorkspaceProjectRepository {
     return joinPath(this.getProjectRoot(projectID), "change-inbox.json");
   }
 
+  getSyncReceiptsRoot(projectID: string) {
+    return joinPath(this.getProjectRoot(projectID), "sync-receipts");
+  }
+
+  getSyncReceiptPath(projectID: string, receiptID: string) {
+    return joinPath(
+      this.getSyncReceiptsRoot(projectID),
+      `receipt-${assertResearchWorkspaceID(receiptID, "receiptID")}.json`,
+    );
+  }
+
   getArtifactPath(projectID: string, artifactID: string) {
     return joinPath(
       this.getProjectRoot(projectID),
@@ -257,6 +274,7 @@ export class ResearchWorkspaceProjectRepository {
     await this.files.ensureDirectory(root);
     await this.files.ensureDirectory(joinPath(root, "artifacts"));
     await this.files.ensureDirectory(joinPath(root, "runs"));
+    await this.files.ensureDirectory(this.getSyncReceiptsRoot(projectID));
   }
 
   async getCatalog() {
@@ -546,6 +564,104 @@ export class ResearchWorkspaceProjectRepository {
       },
     });
     return parseResearchWorkspaceChangeInboxFile(next);
+  }
+
+  async createZoteroSyncReceipt(
+    projectID: string,
+    receipt: ResearchWorkspaceZoteroSyncReceipt,
+  ) {
+    await this.getProject(projectID);
+    if (receipt.projectID !== projectID) {
+      throw new Error("A Zotero sync receipt must match its projectID.");
+    }
+    await this.files.ensureDirectory(this.getSyncReceiptsRoot(projectID));
+    const candidate: ResearchWorkspaceZoteroSyncReceiptFile = {
+      schemaVersion: RESEARCH_WORKSPACE_ZOTERO_SYNC_SCHEMA_VERSION,
+      revision: 0,
+      receipt: cloneResearchWorkspaceValue(receipt),
+    };
+    parseResearchWorkspaceZoteroSyncReceiptFile(candidate);
+    const created = await this.files.writeNew(
+      this.getSyncReceiptPath(projectID, receipt.receiptID),
+      candidate,
+    );
+    return parseResearchWorkspaceZoteroSyncReceiptFile(created);
+  }
+
+  async getZoteroSyncReceipt(projectID: string, receiptID: string) {
+    await this.getProject(projectID);
+    const file = await this.files.read(
+      this.getSyncReceiptPath(projectID, receiptID),
+      parseResearchWorkspaceZoteroSyncReceiptFile,
+    );
+    if (file && file.receipt.projectID !== projectID) {
+      throw new Error(
+        `Zotero sync receipt ${receiptID} is bound to another project.`,
+      );
+    }
+    return file;
+  }
+
+  async updateZoteroSyncReceipt(
+    projectID: string,
+    receiptID: string,
+    expectedRevision: number,
+    mutate: (
+      receipt: ResearchWorkspaceZoteroSyncReceipt,
+    ) => ResearchWorkspaceZoteroSyncReceipt,
+  ) {
+    await this.getProject(projectID);
+    const next = await this.files.mutate({
+      path: this.getSyncReceiptPath(projectID, receiptID),
+      parser: parseResearchWorkspaceZoteroSyncReceiptFile,
+      expectedRevision,
+      mutate: (file) => {
+        const receipt = mutate(cloneResearchWorkspaceValue(file.receipt));
+        if (
+          receipt.receiptID !== receiptID ||
+          receipt.projectID !== projectID
+        ) {
+          throw new Error(
+            "A Zotero sync receipt update cannot change identity.",
+          );
+        }
+        const candidate: ResearchWorkspaceZoteroSyncReceiptFile = {
+          ...file,
+          receipt,
+        };
+        parseResearchWorkspaceZoteroSyncReceiptFile(candidate);
+        return candidate;
+      },
+    });
+    return parseResearchWorkspaceZoteroSyncReceiptFile(next);
+  }
+
+  async listZoteroSyncReceipts(projectID: string) {
+    await this.getProject(projectID);
+    const root = this.getSyncReceiptsRoot(projectID);
+    const paths = (await this.files.listDirectory(root))
+      .filter((path) => /[\\/]receipt-[^\\/]+\.json$/i.test(path))
+      .sort();
+    const receipts: ResearchWorkspaceZoteroSyncReceiptFile[] = [];
+    for (const path of paths) {
+      const file = await this.files.read(
+        path,
+        parseResearchWorkspaceZoteroSyncReceiptFile,
+      );
+      if (!file) continue;
+      if (file.receipt.projectID !== projectID) {
+        throw new Error(
+          `Zotero sync receipt ${file.receipt.receiptID} is bound to another project.`,
+        );
+      }
+      receipts.push(file);
+    }
+    return receipts.sort((left, right) => {
+      if (left.receipt.createdAt !== right.receipt.createdAt) {
+        return left.receipt.createdAt > right.receipt.createdAt ? -1 : 1;
+      }
+      return left.receipt.receiptID.localeCompare(right.receipt.receiptID);
+    });
   }
 
   async updateProject(

@@ -74,7 +74,12 @@ import {
   exportResearchWorkspaceTextFile,
   getResearchWorkspaceLivingReviewService,
   getResearchWorkspaceProjectRepository,
+  getResearchWorkspaceZoteroSyncService,
 } from "./storage";
+import type {
+  ResearchWorkspaceZoteroSyncPreview,
+  ResearchWorkspaceZoteroSyncSelection,
+} from "./zoteroSync";
 
 export type ResearchWorkspaceSingleOperation =
   | "claims"
@@ -1422,6 +1427,36 @@ export function refreshResearchWorkspaceSource(params: {
     params.projectID,
     params.sourceID,
   );
+}
+
+export function listResearchWorkspaceZoteroSyncTargets(projectID: string) {
+  return getResearchWorkspaceZoteroSyncService().listTargets(projectID);
+}
+
+export function previewResearchWorkspaceZoteroSync(params: {
+  projectID: string;
+  selection: ResearchWorkspaceZoteroSyncSelection;
+}) {
+  return getResearchWorkspaceZoteroSyncService().preview(params);
+}
+
+export function applyResearchWorkspaceZoteroSync(params: {
+  preview: ResearchWorkspaceZoteroSyncPreview;
+  approvalToken: string;
+}) {
+  return getResearchWorkspaceZoteroSyncService().apply(params);
+}
+
+export function listResearchWorkspaceZoteroSyncReceipts(projectID: string) {
+  return getResearchWorkspaceZoteroSyncService().listReceipts(projectID);
+}
+
+export function undoResearchWorkspaceZoteroSync(params: {
+  projectID: string;
+  receiptID: string;
+  expectedRevision: number;
+}) {
+  return getResearchWorkspaceZoteroSyncService().undo(params);
 }
 
 export async function loadResearchWorkspaceState() {

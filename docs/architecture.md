@@ -161,6 +161,24 @@ remove another capability, or change its permission boundary. JSON and Markdown
 project exports retain both the original template snapshot and the current
 editable settings.
 
+Safe Zotero collection and tag sync is a separate project-scoped write path,
+not a Research Workspace artifact. It resolves only stable `(libraryID,
+itemKey)` bibliographic identities and an optional stable `(libraryID,
+collectionKey)` target, lists existing collections and tags, and produces a
+complete additive-only preview. The approval token is derived from the exact
+preview, including project member revision and observed Zotero state; any
+project or library drift rejects the preview. Before the first Zotero mutation,
+Paper Pilot writes a revisioned receipt under the project `sync-receipts/`
+directory. Apply and undo both require `Zotero.DB.executeTransaction`; missing
+transaction support fails closed. The runtime never creates or deletes items,
+collections, tags, attachments, notes, or annotations and never writes
+bibliographic fields, PDF data, or annotation data. Per-item results record the
+collection/tag additions actually made and include PaperPilot-originated
+notifier data where the Zotero API accepts it. Undo may remove only additions
+recorded as owned by that receipt and preserves pre-existing and later unrelated
+collection/tag state. A prepared receipt without committed ownership results is
+shown as unresolved and is not eligible for undo or reapplication.
+
 ## Engine abstraction
 
 `src/modules/ai/` is the thin layer over the three engines.

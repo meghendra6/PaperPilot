@@ -1900,6 +1900,27 @@ No single confidence number may collapse these provenance classes.
 
 ## 27. Safe Zotero writes
 
+Implementation status: safe Zotero collection and tag sync is delivered as a
+project-scoped one-way additive workflow. It accepts only existing Zotero
+collections and existing tags, addresses bibliographic items by stable
+`(libraryID, itemKey)` and collections by stable `(libraryID, collectionKey)`,
+and displays a complete per-item preview before any write. An approval token is
+bound to that exact preview, member revision, and observed Zotero state; stale
+previews are rejected both before and inside the database transaction. The
+workflow fails closed when `Zotero.DB.executeTransaction` is unavailable. It
+does not create or delete items, collections, or tags, and it does not write
+bibliographic fields, PDFs, notes, attachments, or annotations.
+
+Each approved apply writes a revisioned project-local write-ahead receipt before
+the Zotero transaction. The receipt is stored separately from Research
+Workspace artifacts and records the planned before/additive-after boundary plus
+one result per item. PaperPilot-originated notifier data is supplied where the
+Zotero API accepts notifier options. Undo is available only for committed
+receipts and removes only collection/tag associations recorded as additions by
+that receipt; pre-existing and later unrelated state is preserved. A prepared
+receipt without committed ownership results is retained as unresolved and fails
+closed rather than enabling an unsafe retry or undo.
+
 The following actions require preview and confirmation:
 
 - create or update a Zotero note;
