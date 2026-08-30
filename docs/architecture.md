@@ -136,6 +136,20 @@ fingerprints. The path reads no PDF or annotation text and starts no model,
 CLI, or network request. Review and dismissal are revision-guarded and
 submission-idempotent.
 
+Citation & Reference Health is a project-local deterministic derivation over
+current, complete Citation Context, Citation Stance, Methodology Audit, and
+Reproducibility artifacts. It rechecks reference identity against bounded local
+Zotero bibliographic metadata, surfaces local correction/retraction terms only
+as non-authoritative signals, groups contrasting citation purposes, and carries
+saved method/reproduction risks forward with their existing evidence boundary.
+An optional imported text/Markdown draft is reduced to a bounded fingerprint
+and bounded excerpt before persistence; unsupported-statement candidates are a
+lexical coverage check against admitted saved artifacts, not entailment or a
+truth judgment. Optional external-provider snapshots are supplementary and
+their coverage/limitations remain explicit. The derived artifact records every
+upstream payload fingerprint and the current members revision through
+`runDerived`; no aggregate truth or scientific-quality score is produced.
+
 ## Engine abstraction
 
 `src/modules/ai/` is the thin layer over the three engines.

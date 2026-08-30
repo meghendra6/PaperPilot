@@ -21,7 +21,7 @@ Paper Pilot 是一个面向 Zotero 7-10 PDF 阅读器的 AI 阅读工作台。�
 
 ## 集成式 Research Workspace
 
-Research Workspace 已内置于 Paper Pilot，并复用同一套本地引擎选择、论文提取和运行生命周期。无论选择零篇、一篇还是多篇条目，持久的非模态项目窗口都可继续使用，并提供筛选、claim–evidence ledger、比较、审计、mastery、引用工作流、矛盾/缺口审阅、项目级导出和本地 Living Review 变更收件箱。Living Review 只检查 Zotero 附件与批注元数据，不读取正文，也不调用模型或网络服务。只需安装一个 Paper Pilot XPI；不再提供 companion 插件或 Research Monitor。
+Research Workspace 已内置于 Paper Pilot，并复用同一套本地引擎选择、论文提取和运行生命周期。无论选择零篇、一篇还是多篇条目，持久的非模态项目窗口都可继续使用，并提供筛选、claim–evidence ledger、比较、审计、mastery、引用工作流、引用/参考文献健康检查、矛盾/缺口审阅、项目级导出和本地 Living Review 变更收件箱。Citation & Reference Health 根据当前保存的引用、方法学和可复现性 artifact、本地 Zotero 更正/撤稿元数据信号以及可选的有界草稿摘录生成本地检查清单，并且不会生成汇总 truth score。Living Review 只检查 Zotero 附件与批注元数据，不读取正文，也不调用模型或网络服务。只需安装一个 Paper Pilot XPI；不再提供 companion 插件或 Research Monitor。
 
 ## 截图与演示
 

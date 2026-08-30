@@ -22,7 +22,7 @@ Paper Pilot is an AI reading workbench for the Zotero 7-10 PDF reader. It adds a
 
 ## Integrated Research Workspace
 
-Research Workspace is built into Paper Pilot and uses the same selected local engine, paper extraction, and run lifecycle. A persistent modeless project window stays available with zero, one, or multiple selected items and provides screening, claim–evidence ledgers, comparisons, audits, mastery, citation workflows, contradiction/gap review, scoped export, and a local Living Review change inbox. Living Review checks Zotero attachment and annotation metadata without reading their text or calling a model or network service. Install only the Paper Pilot XPI; there is no companion add-on or Research Monitor.
+Research Workspace is built into Paper Pilot and uses the same selected local engine, paper extraction, and run lifecycle. A persistent modeless project window stays available with zero, one, or multiple selected items and provides screening, claim–evidence ledgers, comparisons, audits, mastery, citation workflows, citation/reference health, contradiction/gap review, scoped export, and a local Living Review change inbox. Citation & Reference Health derives a local checklist from current saved citation, methodology, and reproducibility artifacts, local Zotero correction/retraction metadata signals, and an optional bounded draft excerpt; it never produces an aggregate truth score. Living Review checks Zotero attachment and annotation metadata without reading their text or calling a model or network service. Install only the Paper Pilot XPI; there is no companion add-on or Research Monitor.
 
 ## Screenshots and demo
 

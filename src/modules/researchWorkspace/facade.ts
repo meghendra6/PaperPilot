@@ -55,6 +55,13 @@ import {
   type ContradictionClassification,
   type ContradictionGapDashboard,
 } from "./contradictionGap";
+import {
+  buildCitationHealthReport,
+  citationHealthDerivedLineage,
+  collectCitationHealthLocalLibrarySnapshot,
+  type CitationHealthDraftInput,
+  type CitationHealthExternalProviderSnapshot,
+} from "./citationHealth";
 import type { WorkspaceSupplementalFiles } from "../workspace/supplementalFiles";
 import {
   exportResearchWorkspaceTextFile,
@@ -1128,6 +1135,74 @@ export async function runResearchWorkspaceContradictionGapDashboard(params: {
     signal: params.signal,
     onStatus: params.onStatus,
     execute: () => dashboard,
+  });
+}
+
+export async function runResearchWorkspaceCitationHealth(params: {
+  projectID: string;
+  draft?: CitationHealthDraftInput;
+  externalProvider?: CitationHealthExternalProviderSnapshot;
+  signal?: AbortSignal;
+  onStatus?: (status: string) => void;
+}) {
+  if (params.signal?.aborted) throw params.signal.reason;
+  const details = await projectController().details(params.projectID);
+  const includedSourceIDs = new Set(
+    details.members
+      .filter((member) => member.reviewStatus !== "excluded")
+      .map((member) => member.sourceID),
+  );
+  const includedSources = details.sources
+    .filter((source) => includedSourceIDs.has(source.sourceID))
+    .sort((left, right) => left.sourceID.localeCompare(right.sourceID));
+  if (!includedSources.length) {
+    throw new Error(
+      "This project has no non-excluded sources for citation health review.",
+    );
+  }
+  params.onStatus?.("Reading current local Zotero reference metadata…");
+  const localLibrary = await collectCitationHealthLocalLibrarySnapshot(
+    includedSources.map((source) => source.identity.libraryID),
+  );
+  if (params.signal?.aborted) throw params.signal.reason;
+  params.onStatus?.("Building the local citation and reference checklist…");
+  const report = buildCitationHealthReport({
+    details,
+    localLibrary,
+    generatedAt: new Date().toISOString(),
+    ...(params.draft ? { draft: params.draft } : {}),
+    ...(params.externalProvider
+      ? { externalProvider: params.externalProvider }
+      : {}),
+  });
+  if (!report.inputArtifacts.length) {
+    throw new Error(
+      "Build a current Citation Context, Citation Stance, Methodology Audit, or Reproducibility artifact first.",
+    );
+  }
+  const derivedLineage = citationHealthDerivedLineage(report);
+  const sourceByID = new Map(
+    includedSources.map((source) => [source.sourceID, source]),
+  );
+  const derivedSources = derivedLineage.sourceIDs
+    .map((sourceID) => sourceByID.get(sourceID))
+    .filter((source): source is NonNullable<typeof source> => Boolean(source));
+  return operationCoordinator().runDerived({
+    projectID: params.projectID,
+    sources: derivedSources,
+    artifactInputs: derivedLineage.artifactInputs,
+    membersRevision: derivedLineage.membersRevision,
+    operation: "citation-reference-health",
+    operationVersion: "citation-reference-health-v1",
+    promptVersion: "local-artifact-derivation-v1",
+    parserVersion: "citation-reference-health-parser-v1",
+    schemaVersion: "citation-reference-health-v1",
+    artifactType: "citation-health",
+    artifactTitle: "Citation & Reference Health",
+    providerMode: "local",
+    signal: params.signal,
+    onStatus: params.onStatus,
+    execute: () => report,
   });
 }
 

@@ -445,6 +445,99 @@ test("Citation view exposes exact sentence, local page, resolution, and stance l
   assert.match(renderedText(rendered), /review signal, not a verdict/i);
 });
 
+test("Citation Health renders a semantic checklist without an aggregate score or raw JSON", () => {
+  const value = {
+    kind: "research-workspace-citation-health",
+    localMetadata: {
+      version: "zotero-citation-health-metadata-v1",
+      observedAt: "2026-08-30T03:00:00.000Z",
+      fingerprint: "citation-health-local-metadata-12345678-20",
+      libraryIDs: [1],
+      itemCount: 120,
+      truncated: false,
+    },
+    findings: [
+      {
+        findingID: "citation-health-1",
+        kind: "local-correction-retraction-signal",
+        severity: "high",
+        title: "Local Zotero metadata contains a retraction signal",
+        summary: "Retraction notice recorded in Extra.",
+        sourceIDs: ["SOURCE-1"],
+        contextIDs: ["CONTEXT-1"],
+        referenceIdentity: "doi:10.1000/example",
+        localItem: {
+          libraryID: 1,
+          itemKey: "ITEM-1",
+          title: "Example paper",
+        },
+        evidence: [],
+        limitations: ["Verify the publisher record."],
+      },
+      {
+        findingID: "citation-health-2",
+        kind: "unsupported-draft-statement",
+        severity: "review",
+        title: "No matching support was found",
+        summary: "The draft claims a 99% improvement [7].",
+        sourceIDs: [],
+        contextIDs: [],
+        draftStatement: {
+          excerpt: "The draft claims a 99% improvement [7].",
+          offset: 10,
+        },
+        evidence: [],
+        limitations: ["Bounded lexical coverage check only."],
+      },
+    ],
+    draft: {
+      name: "draft.md",
+      fingerprint: "draft-12345678-20",
+      excerpt: "The draft claims a 99% improvement [7].",
+      sourceCharacters: 42,
+      analyzedCharacters: 42,
+      statementCount: 1,
+      truncated: false,
+    },
+    coverage: {
+      admittedArtifacts: 4,
+      citationContexts: 3,
+      citationStances: 3,
+      localLibraryItems: 120,
+      localMetadataSignals: 1,
+      methodologyArtifacts: 1,
+      reproducibilityArtifacts: 1,
+      draftStatements: 1,
+      unsupportedDraftCandidates: 1,
+      externalProvider: { status: "not-configured" },
+    },
+    limitations: ["Not an aggregate truth score."],
+  };
+  const view = createResearchWorkspaceArtifactView(value, "citation-health");
+  assert.equal(view.kind, "citation-health");
+  if (view.kind !== "citation-health") return;
+  assert.equal(view.findings.length, 2);
+  assert.equal(view.coverage.localLibraryItems, 120);
+  assert.equal(view.draft?.fingerprint, "draft-12345678-20");
+  assert.equal(
+    view.provenance.localMetadataFingerprint,
+    "citation-health-local-metadata-12345678-20",
+  );
+
+  const rendered = renderResearchWorkspaceArtifactValue(
+    new FakeDocument() as unknown as Document,
+    value,
+    { artifactType: "citation-health" },
+  ) as unknown as FakeElement;
+  const visible = renderedText(rendered);
+  assert(!tags(rendered).includes("pre"));
+  assert.match(visible, /review checklist/i);
+  assert.match(visible, /not an aggregate truth/i);
+  assert.match(visible, /Retraction notice recorded in Extra/);
+  assert.match(visible, /draft-12345678-20/);
+  assert.match(visible, /citation-health-local-metadata-12345678-20/);
+});
+
 test("Research Workspace result surfaces no longer render raw JSON", () => {
   const viewSource = readFileSync(
     join(process.cwd(), "src/modules/researchWorkspace/view.ts"),

@@ -234,3 +234,45 @@ test("Living Review is a local metadata-only project workflow", () => {
   assert.match(source, /Mark reviewed/);
   assert.match(source, /Dismiss/);
 });
+
+test("Citation and Reference Health is a local derived project capability", () => {
+  const capability = getResearchWorkspaceCapability(
+    "citation-reference-health",
+  );
+  assert.equal(capability.sourceScope, "project");
+  assert.equal(capability.entrypoint, "research-workspace");
+  assert.equal(capability.operation, "citation-reference-health");
+  assert.equal(capability.artifactType, "citation-health");
+  assert.equal(capability.renderer, "citation-health");
+  assert.equal(capability.promptVersion, "local-artifact-derivation-v1");
+  assert.equal(capability.exportable, true);
+
+  const source = readFileSync(
+    join(
+      process.cwd(),
+      "src",
+      "modules",
+      "researchWorkspace",
+      "projectWindowView.ts",
+    ),
+    "utf8",
+  );
+  assert.match(source, /Citation & Reference Health/);
+  assert.match(source, /does not create an aggregate truth score/i);
+  assert.match(source, /Import a local draft text file/);
+  assert.match(source, /bounded fingerprint and bounded excerpt/i);
+  assert.match(source, /Build \/ refresh citation health checklist/);
+
+  const facadeSource = readFileSync(
+    join(process.cwd(), "src", "modules", "researchWorkspace", "facade.ts"),
+    "utf8",
+  );
+  assert.match(facadeSource, /runResearchWorkspaceCitationHealth/);
+  assert.match(facadeSource, /operationCoordinator\(\)\.runDerived/);
+  assert.match(facadeSource, /citationHealthDerivedLineage\(report\)/);
+  assert.match(
+    facadeSource,
+    /membersRevision: derivedLineage\.membersRevision/,
+  );
+  assert.match(facadeSource, /artifactInputs: derivedLineage\.artifactInputs/);
+});

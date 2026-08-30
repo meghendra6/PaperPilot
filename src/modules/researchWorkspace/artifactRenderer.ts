@@ -150,6 +150,60 @@ export interface ResearchWorkspaceCitationView {
   correctionCount: number;
 }
 
+export interface ResearchWorkspaceCitationHealthView {
+  kind: "citation-health";
+  provenance: {
+    localMetadataVersion: string;
+    localMetadataObservedAt: string;
+    localMetadataFingerprint: string;
+    localMetadataTruncated: boolean;
+    externalProvider?: {
+      provider: string;
+      observedAt: string;
+      fingerprint: string;
+      identifiersChecked: number;
+      identifiersCovered: number;
+      signalCount: number;
+    };
+  };
+  coverage: {
+    admittedArtifacts: number;
+    citationContexts: number;
+    citationStances: number;
+    localLibraryItems: number;
+    localMetadataSignals: number;
+    methodologyArtifacts: number;
+    reproducibilityArtifacts: number;
+    draftStatements: number;
+    unsupportedDraftCandidates: number;
+    externalProviderStatus: string;
+  };
+  findings: Array<{
+    findingID: string;
+    kind: string;
+    severity: string;
+    title: string;
+    summary: string;
+    sourceCount: number;
+    contextCount: number;
+    referenceIdentity?: string;
+    localItem?: string;
+    draftExcerpt?: string;
+    evidence: ResearchWorkspaceEvidenceView[];
+    limitations: string[];
+  }>;
+  draft?: {
+    name?: string;
+    fingerprint: string;
+    excerpt: string;
+    sourceCharacters: number;
+    analyzedCharacters: number;
+    statementCount: number;
+    truncated: boolean;
+  };
+  limitations: string[];
+}
+
 export interface ResearchWorkspaceReviewLogView {
   kind: "review-log";
   rows: Array<{
@@ -225,6 +279,7 @@ export type ResearchWorkspaceArtifactView =
   | ResearchWorkspaceSynthesisView
   | ResearchWorkspaceMasteryView
   | ResearchWorkspaceCitationView
+  | ResearchWorkspaceCitationHealthView
   | ResearchWorkspaceReviewLogView
   | ResearchWorkspaceContradictionGapView
   | ResearchWorkspaceGenericView;
@@ -458,6 +513,110 @@ function citationView(
     correctionCount: Array.isArray(value.corrections)
       ? value.corrections.length
       : 0,
+  };
+}
+
+function citationHealthView(
+  value: UnknownRecord,
+): ResearchWorkspaceCitationHealthView | undefined {
+  if (
+    value.kind !== "research-workspace-citation-health" ||
+    !Array.isArray(value.findings)
+  ) {
+    return undefined;
+  }
+  const coverage = record(value.coverage) ?? {};
+  const external = record(coverage.externalProvider) ?? {};
+  const localMetadata = record(value.localMetadata) ?? {};
+  const externalProvenance = record(value.externalProvider);
+  const draft = record(value.draft);
+  return {
+    kind: "citation-health",
+    provenance: {
+      localMetadataVersion: text(localMetadata.version, "unknown"),
+      localMetadataObservedAt: text(localMetadata.observedAt, "unknown"),
+      localMetadataFingerprint: text(localMetadata.fingerprint, "unavailable"),
+      localMetadataTruncated: localMetadata.truncated === true,
+      ...(externalProvenance
+        ? {
+            externalProvider: {
+              provider: text(externalProvenance.provider, "Unknown provider"),
+              observedAt: text(externalProvenance.observedAt, "unknown"),
+              fingerprint: text(externalProvenance.fingerprint, "unavailable"),
+              identifiersChecked:
+                finite(externalProvenance.identifiersChecked) ?? 0,
+              identifiersCovered:
+                finite(externalProvenance.identifiersCovered) ?? 0,
+              signalCount: finite(externalProvenance.signalCount) ?? 0,
+            },
+          }
+        : {}),
+    },
+    coverage: {
+      admittedArtifacts: finite(coverage.admittedArtifacts) ?? 0,
+      citationContexts: finite(coverage.citationContexts) ?? 0,
+      citationStances: finite(coverage.citationStances) ?? 0,
+      localLibraryItems: finite(coverage.localLibraryItems) ?? 0,
+      localMetadataSignals: finite(coverage.localMetadataSignals) ?? 0,
+      methodologyArtifacts: finite(coverage.methodologyArtifacts) ?? 0,
+      reproducibilityArtifacts: finite(coverage.reproducibilityArtifacts) ?? 0,
+      draftStatements: finite(coverage.draftStatements) ?? 0,
+      unsupportedDraftCandidates:
+        finite(coverage.unsupportedDraftCandidates) ?? 0,
+      externalProviderStatus: text(external.status, "not-configured"),
+    },
+    findings: value.findings
+      .map((entry) => record(entry))
+      .filter((entry): entry is UnknownRecord => Boolean(entry))
+      .map((entry) => {
+        const localItem = record(entry.localItem);
+        const draftStatement = record(entry.draftStatement);
+        return {
+          findingID: text(entry.findingID, ""),
+          kind: text(entry.kind, "unknown"),
+          severity: text(entry.severity, "review"),
+          title: text(entry.title, "Unlabelled citation health finding"),
+          summary: text(entry.summary),
+          sourceCount: Array.isArray(entry.sourceIDs)
+            ? entry.sourceIDs.length
+            : 0,
+          contextCount: Array.isArray(entry.contextIDs)
+            ? entry.contextIDs.length
+            : 0,
+          ...(typeof entry.referenceIdentity === "string" &&
+          entry.referenceIdentity.trim()
+            ? { referenceIdentity: entry.referenceIdentity.trim() }
+            : {}),
+          ...(localItem
+            ? {
+                localItem: `${text(localItem.title, "Local item")} · Library ${text(localItem.libraryID)} · ${text(localItem.itemKey)}`,
+              }
+            : {}),
+          ...(draftStatement &&
+          typeof draftStatement.excerpt === "string" &&
+          draftStatement.excerpt.trim()
+            ? { draftExcerpt: draftStatement.excerpt.trim() }
+            : {}),
+          evidence: evidenceViews(entry.evidence),
+          limitations: stringList(entry.limitations),
+        };
+      }),
+    ...(draft
+      ? {
+          draft: {
+            ...(typeof draft.name === "string" && draft.name.trim()
+              ? { name: draft.name.trim() }
+              : {}),
+            fingerprint: text(draft.fingerprint, "unavailable"),
+            excerpt: text(draft.excerpt, ""),
+            sourceCharacters: finite(draft.sourceCharacters) ?? 0,
+            analyzedCharacters: finite(draft.analyzedCharacters) ?? 0,
+            statementCount: finite(draft.statementCount) ?? 0,
+            truncated: draft.truncated === true,
+          },
+        }
+      : {}),
+    limitations: stringList(value.limitations),
   };
 }
 
@@ -869,6 +1028,13 @@ export function createResearchWorkspaceArtifactView(
   if (artifactType === "cross-paper-mastery" || candidate.session) {
     const mastery = masteryView(candidate);
     if (mastery) return mastery;
+  }
+  if (
+    artifactType === "citation-health" ||
+    candidate.kind === "research-workspace-citation-health"
+  ) {
+    const health = citationHealthView(candidate);
+    if (health) return health;
   }
   if (
     artifactType === "citation-context" ||
@@ -1566,6 +1732,172 @@ function renderCitation(
   return root;
 }
 
+function renderCitationHealth(
+  doc: Document,
+  view: ResearchWorkspaceCitationHealthView,
+  options: ResearchWorkspaceArtifactRendererOptions,
+) {
+  const root = element(doc, "div", "pprw-render pprw-render--citation-health");
+  const metrics = element(doc, "div", "pprw-render-metrics");
+  metrics.append(
+    metric(doc, "Current inputs", String(view.coverage.admittedArtifacts)),
+    metric(doc, "Citation contexts", String(view.coverage.citationContexts)),
+    metric(doc, "Stance results", String(view.coverage.citationStances)),
+    metric(doc, "Local library items", String(view.coverage.localLibraryItems)),
+    metric(doc, "Metadata signals", String(view.coverage.localMetadataSignals)),
+    metric(
+      doc,
+      "Draft coverage candidates",
+      `${view.coverage.unsupportedDraftCandidates}/${view.coverage.draftStatements}`,
+    ),
+  );
+  root.append(
+    metrics,
+    element(
+      doc,
+      "p",
+      "pprw-render-note",
+      "This is a review checklist, not an aggregate truth or scientific-quality score. Local and optional external signals require inspection of the cited work and primary metadata.",
+    ),
+    element(
+      doc,
+      "p",
+      "pprw-render-note",
+      `Local metadata ${view.provenance.localMetadataVersion} observed ${view.provenance.localMetadataObservedAt} · fingerprint ${view.provenance.localMetadataFingerprint}${view.provenance.localMetadataTruncated ? " · bounded item scan" : ""}`,
+    ),
+  );
+  if (view.provenance.externalProvider) {
+    const provider = view.provenance.externalProvider;
+    root.append(
+      element(
+        doc,
+        "p",
+        "pprw-render-note",
+        `${provider.provider} observed ${provider.observedAt} · ${provider.identifiersCovered}/${provider.identifiersChecked} identifiers covered · ${provider.signalCount} signals · fingerprint ${provider.fingerprint}`,
+      ),
+    );
+  }
+
+  if (view.draft) {
+    const section = element(doc, "section", "pprw-render-section");
+    section.append(
+      element(
+        doc,
+        "h4",
+        "",
+        view.draft.name
+          ? `Imported draft · ${view.draft.name}`
+          : "Imported draft",
+      ),
+      element(
+        doc,
+        "p",
+        "pprw-render-note",
+        `${view.draft.analyzedCharacters.toLocaleString()} of ${view.draft.sourceCharacters.toLocaleString()} characters analyzed · fingerprint ${view.draft.fingerprint}${view.draft.truncated ? " · bounded" : ""}`,
+      ),
+    );
+    if (view.draft.excerpt) {
+      section.append(
+        element(doc, "p", "pprw-render-statement", view.draft.excerpt),
+      );
+    }
+    root.append(section);
+  }
+
+  const groups = new Map<string, typeof view.findings>();
+  for (const item of view.findings) {
+    const entries = groups.get(item.kind) ?? [];
+    entries.push(item);
+    groups.set(item.kind, entries);
+  }
+  for (const kind of [...groups.keys()].sort()) {
+    const section = element(doc, "section", "pprw-render-section");
+    section.append(element(doc, "h4", "", humanize(kind)));
+    const list = element(doc, "div", "pprw-render-card-list");
+    for (const item of groups.get(kind) ?? []) {
+      const card = element(doc, "article", "pprw-render-card");
+      card.dataset.findingId = item.findingID;
+      const metadata = element(doc, "div", "pprw-render-inline");
+      metadata.append(
+        badge(
+          doc,
+          humanize(item.severity),
+          item.severity === "high"
+            ? "warning"
+            : item.severity === "info"
+              ? "success"
+              : "accent",
+        ),
+        badge(
+          doc,
+          `${item.sourceCount} source${item.sourceCount === 1 ? "" : "s"}`,
+        ),
+        badge(
+          doc,
+          `${item.contextCount} context${item.contextCount === 1 ? "" : "s"}`,
+        ),
+      );
+      card.append(
+        metadata,
+        element(doc, "h5", "", item.title),
+        element(doc, "p", "pprw-render-statement", item.summary),
+      );
+      if (item.referenceIdentity) {
+        card.append(
+          element(
+            doc,
+            "p",
+            "pprw-render-note",
+            `Reference identity: ${item.referenceIdentity}`,
+          ),
+        );
+      }
+      if (item.localItem) {
+        card.append(element(doc, "p", "pprw-render-note", item.localItem));
+      }
+      if (item.draftExcerpt && item.draftExcerpt !== item.summary) {
+        card.append(
+          element(
+            doc,
+            "p",
+            "pprw-render-note",
+            `Draft excerpt: ${item.draftExcerpt}`,
+          ),
+        );
+      }
+      if (item.evidence.length) {
+        card.append(renderEvidence(doc, item.evidence, options));
+      }
+      if (item.limitations.length) {
+        card.append(renderStringList(doc, "Review boundary", item.limitations));
+      }
+      list.append(card);
+    }
+    section.append(list);
+    root.append(section);
+  }
+  if (!view.findings.length) {
+    root.append(
+      element(
+        doc,
+        "p",
+        "pprw-muted",
+        "No checklist finding was produced from the admitted saved artifacts and local metadata. This does not prove that no citation or reference issue exists.",
+      ),
+    );
+  }
+  if (view.limitations.length) {
+    const limitations = renderStringList(
+      doc,
+      "Coverage and interpretation limits",
+      view.limitations,
+    );
+    limitations.classList.add("pprw-render-section--warning");
+    root.append(limitations);
+  }
+  return root;
+}
+
 function renderReviewLog(doc: Document, view: ResearchWorkspaceReviewLogView) {
   const root = element(doc, "div", "pprw-render pprw-render--review-log");
   const metrics = element(doc, "div", "pprw-render-metrics");
@@ -1745,6 +2077,9 @@ export function renderResearchWorkspaceArtifactValue(
   if (view.kind === "synthesis") return renderSynthesis(doc, view, options);
   if (view.kind === "mastery") return renderMastery(doc, view, options);
   if (view.kind === "citation") return renderCitation(doc, view, options);
+  if (view.kind === "citation-health") {
+    return renderCitationHealth(doc, view, options);
+  }
   if (view.kind === "review-log") return renderReviewLog(doc, view);
   if (view.kind === "contradiction-gap") {
     return renderContradictionGap(doc, view, options);

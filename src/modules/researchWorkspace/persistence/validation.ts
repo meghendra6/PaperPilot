@@ -21,6 +21,7 @@ import {
   type ResearchWorkspaceSourceFile,
 } from "./contracts";
 import { parseZoteroSourceID } from "../sourceIdentity";
+import { parseCitationHealthReport } from "../citationHealth";
 
 function object(value: unknown, label: string): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -184,6 +185,7 @@ const ARTIFACT_TYPES = [
   "cross-paper-mastery",
   "citation-context",
   "citation-stance",
+  "citation-health",
   "synthesis",
   "contradiction-gap-dashboard",
   "review-log",
@@ -725,6 +727,55 @@ export function parseResearchWorkspaceArtifactFile(
     }
     if (artifactInputIDs.has(artifactID)) {
       throw new Error("An artifact cannot depend on itself.");
+    }
+  }
+  if (artifact.type === "citation-health") {
+    const report = parseCitationHealthReport(artifact.payload);
+    if (report.projectID !== artifact.projectID) {
+      throw new Error(
+        "Citation Health payload projectID must match its artifact projectID.",
+      );
+    }
+    if (report.scope.membersRevision !== lineage.membersRevision) {
+      throw new Error(
+        "Citation Health members revision must match artifact lineage.",
+      );
+    }
+    if (
+      JSON.stringify([...report.scope.includedSourceIDs].sort()) !==
+      JSON.stringify([...sourceIDs].sort())
+    ) {
+      throw new Error(
+        "Citation Health included sources must match artifact sourceIDs.",
+      );
+    }
+    const reportedInputs = report.inputArtifacts
+      .map((input) => [
+        input.artifactID,
+        input.artifactType,
+        input.version,
+        input.updatedAt,
+        input.payloadFingerprint,
+      ])
+      .sort((left, right) => String(left[0]).localeCompare(String(right[0])));
+    const lineageInputs = (
+      Array.isArray(lineage.artifactInputs) ? lineage.artifactInputs : []
+    )
+      .map((input) => {
+        const item = input as Record<string, unknown>;
+        return [
+          item.artifactID,
+          item.artifactType,
+          item.version,
+          item.updatedAt,
+          item.payloadFingerprint,
+        ];
+      })
+      .sort((left, right) => String(left[0]).localeCompare(String(right[0])));
+    if (JSON.stringify(reportedInputs) !== JSON.stringify(lineageInputs)) {
+      throw new Error(
+        "Citation Health payload inputs must match artifact lineage inputs.",
+      );
     }
   }
   return value as ResearchWorkspaceArtifactFile;
