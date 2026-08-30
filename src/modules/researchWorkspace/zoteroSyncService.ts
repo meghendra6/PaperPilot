@@ -154,6 +154,38 @@ export class ResearchWorkspaceZoteroSyncService {
     return { bundle, sources };
   }
 
+  private async assertPreviewProjectCurrent(
+    preview: ResearchWorkspaceZoteroSyncPreview,
+  ) {
+    const { bundle, sources } = await this.projectSources(preview.projectID);
+    if (bundle.membersRevision !== preview.membersRevision) {
+      throw new Error(
+        "The project membership changed after this sync preview. Review a new preview.",
+      );
+    }
+    const currentIdentityKeys = [
+      ...new Set(
+        sources.map((source) =>
+          identityKey({
+            libraryID: source.identity.libraryID,
+            itemKey: source.identity.itemKey,
+          }),
+        ),
+      ),
+    ].sort();
+    const previewIdentityKeys = preview.items
+      .map((item) => identityKey(item))
+      .sort();
+    if (
+      JSON.stringify(currentIdentityKeys) !==
+      JSON.stringify(previewIdentityKeys)
+    ) {
+      throw new Error(
+        "A stable Zotero source identity changed after this sync preview. Review a new preview.",
+      );
+    }
+  }
+
   async listTargets(projectID: string) {
     const { sources } = await this.projectSources(projectID);
     const libraryIDs = [
@@ -237,33 +269,12 @@ export class ResearchWorkspaceZoteroSyncService {
       preview,
       params.approvalToken,
     );
-    const { bundle, sources } = await this.projectSources(preview.projectID);
-    if (bundle.membersRevision !== preview.membersRevision) {
+    if (!preview.summary.additiveItems) {
       throw new Error(
-        "The project membership changed after this sync preview. Review a new preview.",
+        "This sync preview contains no additive changes. Nothing was written.",
       );
     }
-    const currentIdentityKeys = [
-      ...new Set(
-        sources.map((source) =>
-          identityKey({
-            libraryID: source.identity.libraryID,
-            itemKey: source.identity.itemKey,
-          }),
-        ),
-      ),
-    ].sort();
-    const previewIdentityKeys = preview.items
-      .map((item) => identityKey(item))
-      .sort();
-    if (
-      JSON.stringify(currentIdentityKeys) !==
-      JSON.stringify(previewIdentityKeys)
-    ) {
-      throw new Error(
-        "A stable Zotero source identity changed after this sync preview. Review a new preview.",
-      );
-    }
+    await this.assertPreviewProjectCurrent(preview);
     const currentState = await this.runtime.observe(
       preview.selection,
       preview.items.map((item) => ({
@@ -317,12 +328,25 @@ export class ResearchWorkspaceZoteroSyncService {
     try {
       applyResults = await this.runtime.apply(preview, receiptID);
     } catch (error) {
-      await this.markReceiptFailed(preview.projectID, receiptID, error);
+      try {
+        await this.markReceiptFailed(preview.projectID, receiptID, error);
+      } catch (receiptError) {
+        throw new Error(
+          `The Zotero transaction failed, and prepared receipt ${receiptID} could not be updated. Do not reapply this preview until the receipt is inspected. Transaction: ${safeError(
+            error,
+          )} Receipt: ${safeError(receiptError)}`,
+        );
+      }
       throw error;
     }
 
     const committedAt = this.timestamp();
     try {
+      // A project membership update can race with the external Zotero
+      // transaction even after the initial preview check. Recheck the exact
+      // member revision and stable identities before committing ownership. A
+      // conflict follows the same receipt-backed compensation path below.
+      await this.assertPreviewProjectCurrent(preview);
       return await this.updateReceiptWithRetry(
         preview.projectID,
         receiptID,

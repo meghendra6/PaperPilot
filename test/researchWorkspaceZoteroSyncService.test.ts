@@ -307,6 +307,45 @@ test("service normalizes the exact target selection before observing Zotero", as
   assert.deepEqual(result.selection, observedSelection);
 });
 
+test("service does not create a receipt for an all-no-op preview", async () => {
+  const state = runtimeState();
+  state.setObserved({
+    libraryID: 1,
+    collection: {
+      libraryID: 1,
+      collectionKey: "COLLECTION-A",
+      name: "Existing collection",
+      version: 2,
+    },
+    existingTagNames: ["reviewed"],
+    items: [
+      {
+        libraryID: 1,
+        itemKey: "ITEM-A",
+        itemKind: "regular-item",
+        eligibleForAdditiveSync: true,
+        available: true,
+        version: 4,
+        collectionKeys: ["COLLECTION-A"],
+        tagNames: ["reviewed"],
+      },
+    ],
+  });
+  const { repository, service } = setup({
+    runtimeFactory: () => state.runtime,
+  });
+  await createProject(repository, "project-no-op-sync");
+  const noOp = await preview(service, "project-no-op-sync");
+  assert.equal(noOp.summary.additiveItems, 0);
+
+  await assert.rejects(
+    service.apply({ preview: noOp, approvalToken: noOp.approvalToken }),
+    /contains no additive changes/,
+  );
+  assert.equal(state.applyCalls, 0);
+  assert.equal((await service.listReceipts(noOp.projectID)).length, 0);
+});
+
 test("service rejects project and Zotero drift before invoking apply", async () => {
   const state = runtimeState();
   const { repository, service } = setup({
@@ -344,6 +383,48 @@ test("service rejects project and Zotero drift before invoking apply", async () 
   assert.equal(state.applyCalls, 0);
 });
 
+test("membership drift during the Zotero transaction is compensated before ownership commits", async () => {
+  const state = runtimeState();
+  const { repository, service } = setup({
+    runtimeFactory: (repo) => ({
+      ...state.runtime,
+      async apply(syncPreview, receiptID) {
+        const results = await state.runtime.apply(syncPreview, receiptID);
+        const bundle = await repo.getProject(syncPreview.projectID);
+        await repo.updateMembers(
+          syncPreview.projectID,
+          bundle.membersRevision,
+          (members) =>
+            members.map((member) => ({
+              ...member,
+              userNote: "changed while the Zotero transaction completed",
+            })),
+        );
+        return results;
+      },
+    }),
+  });
+  await createProject(repository, "project-membership-transaction-race");
+  const approved = await preview(
+    service,
+    "project-membership-transaction-race",
+  );
+
+  await assert.rejects(
+    service.apply({
+      preview: approved,
+      approvalToken: approved.approvalToken,
+    }),
+    /rolled back the approved additions[\s\S]*membership changed/,
+  );
+  assert.equal(state.applyCalls, 1);
+  assert.equal(state.undoCalls, 1);
+  const [receipt] = await service.listReceipts(approved.projectID);
+  assert.equal(receipt.receipt.status, "undone");
+  assert.equal(receipt.receipt.applyResults?.[0].status, "applied");
+  assert.equal(receipt.receipt.undoResults?.[0].status, "undone");
+});
+
 test("runtime failure leaves a failed receipt without fabricated ownership", async () => {
   const state = runtimeState();
   const { repository, service } = setup({
@@ -368,6 +449,36 @@ test("runtime failure leaves a failed receipt without fabricated ownership", asy
   assert.equal(receipts[0].receipt.status, "failed");
   assert.equal(receipts[0].receipt.applyResults, undefined);
   assert.match(receipts[0].receipt.error ?? "", /executeTransaction/);
+});
+
+test("receipt-update failure after a transaction error leaves an explicit unresolved receipt", async () => {
+  const state = runtimeState();
+  const { repository, service } = setup({
+    runtimeFactory: () => ({
+      ...state.runtime,
+      async apply() {
+        throw new Error("simulated Zotero transaction failure");
+      },
+    }),
+  });
+  await createProject(repository, "project-runtime-receipt-failure");
+  const approved = await preview(service, "project-runtime-receipt-failure");
+  repository.updateZoteroSyncReceipt = (async () => {
+    throw new Error("simulated receipt persistence failure");
+  }) as typeof repository.updateZoteroSyncReceipt;
+
+  await assert.rejects(
+    service.apply({
+      preview: approved,
+      approvalToken: approved.approvalToken,
+    }),
+    /prepared receipt[\s\S]*could not be updated[\s\S]*Do not reapply/,
+  );
+  const [unresolved] = await repository.listZoteroSyncReceipts(
+    approved.projectID,
+  );
+  assert.equal(unresolved.receipt.status, "prepared");
+  assert.equal(unresolved.receipt.applyResults, undefined);
 });
 
 test("partial undo remains retryable and becomes undone only after every owned addition clears", async () => {
