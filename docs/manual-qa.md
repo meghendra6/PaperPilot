@@ -647,6 +647,16 @@ and the same fail-closed outcome.
 - [ ] In the created project, confirm recommended capabilities are visibly emphasized while non-recommended capabilities remain present and runnable
 - [ ] Edit assumptions and capability presets in Project template settings, restart Zotero, and confirm the immutable original template snapshot is unchanged while the edited values persist
 - [ ] Export the template project as JSON and Markdown; confirm both contain the original template snapshot, current assumptions, and current capability preset IDs
+- [ ] Open Safe Zotero collection and tag sync, load targets, and confirm only existing collections and existing tags from the project source libraries are offered
+- [ ] Build a full preview for a project containing regular items, an attachment or standalone PDF identity, a missing item, and an item from another library; confirm only same-library regular bibliographic items receive additive changes and every blocked/no-op item is shown
+- [ ] Copy the preview-bound approval token, alter the collection or tag selection, and confirm the prior token cannot approve the changed preview; then change project membership or Zotero collection/tag state and confirm the stale preview is rejected before writing
+- [ ] Disable or simulate absence of `Zotero.DB.executeTransaction`; confirm apply and undo fail closed and no collection membership or tag association changes
+- [ ] Approve one collection addition and one existing-tag association; confirm a prepared write-ahead receipt exists before the transaction, the committed receipt contains one result per preview item, and the receipt is stored outside Research Workspace artifact history
+- [ ] Confirm the approved sync creates no Zotero item, collection, tag, note, attachment, annotation, or PDF and changes no bibliographic field; only the previewed collection membership and tag associations may change
+- [ ] Inspect Zotero notifier events where supported and confirm PaperPilot-originated receipt/action data is attached to collection/tag changes without being treated as proof for unrelated events
+- [ ] After apply, add a different collection and tag manually, then run Undo receipt-owned additions; confirm only the receipt-owned collection/tag additions are removed and both pre-existing and later unrelated state remain
+- [ ] Interrupt or force a failure between receipt preparation, Zotero apply, and receipt finalization; confirm failed or unresolved receipts never fabricate ownership, the exact preview cannot be blindly reapplied, and unsafe undo remains disabled
+- [ ] Restart Zotero and reopen the project; confirm committed, failed, partially undone, undone, and unresolved prepared receipt states remain visible with their revisions and per-item results
 - [ ] Export JSON and Markdown; confirm both files are written below the Zotero profile's `paperpilot-research-workspace/exports` directory
 - [ ] Start with a former companion `workspace-v3.json`; confirm papers, reports, Mastery, matrices, graphs, cross-paper state, and citation state remain while provider/executable and Monitor state are removed
 - [ ] Cancel or close the pane during a run; confirm the process is stopped, its workspace is cleaned, and the paper reservation becomes available again
