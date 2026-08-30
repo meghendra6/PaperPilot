@@ -21,7 +21,7 @@ Paper Pilot는 Zotero 7-10 PDF 리더를 위한 AI 읽기 워크벤치입니다.
 
 ## 통합 Research Workspace
 
-Research Workspace는 Paper Pilot 본체에 포함되며 동일한 로컬 엔진 선택·논문 추출·실행 생명주기를 사용합니다. 선택 항목이 0개·1개·여러 개여도 유지되는 모델리스 프로젝트 창에서 screening, claim–evidence ledger, 비교·감사·mastery·citation workflow, citation/reference health, contradiction/gap 검토, 프로젝트별 export와 로컬 Living Review 변경 인박스를 제공합니다. Citation & Reference Health는 현재 저장된 citation·methodology·reproducibility artifact, 로컬 Zotero correction/retraction 메타데이터 신호, 선택적인 제한된 초안 excerpt를 이용해 로컬 체크리스트를 만들며 종합 truth score는 만들지 않습니다. Living Review는 Zotero 첨부파일과 annotation의 메타데이터만 확인하며 본문을 읽거나 모델·네트워크를 호출하지 않습니다. Paper Pilot XPI 하나만 설치하면 되며 companion add-on과 Research Monitor는 없습니다.
+Research Workspace는 Paper Pilot 본체에 포함되며 동일한 로컬 엔진 선택·논문 추출·실행 생명주기를 사용합니다. 선택 항목이 0개·1개·여러 개여도 유지되는 모델리스 프로젝트 창에서 screening, claim–evidence ledger, 비교·감사·mastery·citation workflow, citation/reference health, contradiction/gap 검토, 프로젝트별 export, 로컬 Living Review 변경 인박스와 편집 가능한 다섯 가지 프로젝트 템플릿을 제공합니다. 프로젝트 템플릿 preset은 추천 capability만 강조하며 분석을 자동 실행하거나 다른 capability를 숨기지 않습니다. export에는 변경 불가능한 템플릿 snapshot과 현재 assumptions가 함께 포함됩니다. Citation & Reference Health는 현재 저장된 citation·methodology·reproducibility artifact, 로컬 Zotero correction/retraction 메타데이터 신호, 선택적인 제한된 초안 excerpt를 이용해 로컬 체크리스트를 만들며 종합 truth score는 만들지 않습니다. Living Review는 Zotero 첨부파일과 annotation의 메타데이터만 확인하며 본문을 읽거나 모델·네트워크를 호출하지 않습니다. Paper Pilot XPI 하나만 설치하면 되며 companion add-on과 Research Monitor는 없습니다.
 
 ## 스크린샷과 데모
 

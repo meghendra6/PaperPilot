@@ -2,13 +2,17 @@ import {
   addPapersToResearchWorkspaceProject,
   archiveResearchWorkspaceProject,
   checkResearchWorkspaceChanges,
+  createResearchWorkspaceProjectFromTemplate,
   createResearchWorkspaceProject,
   deleteResearchWorkspaceProject,
+  exportResearchWorkspaceProjectTemplateState,
   exportResearchWorkspaceScreeningLog,
   exportIntegratedResearchWorkspace,
+  listResearchWorkspaceProjectTemplateOptions,
   loadResearchWorkspaceHome,
   loadResearchWorkspaceChangeInbox,
   loadResearchWorkspaceProject,
+  previewResearchWorkspaceProjectTemplate,
   recordResearchWorkspaceScreeningDecision,
   refreshResearchWorkspaceSource,
   resolveResearchWorkspaceChange,
@@ -17,6 +21,7 @@ import {
   runResearchWorkspaceContradictionGapDashboard,
   updateResearchWorkspaceMember,
   updateResearchWorkspaceProject,
+  updateResearchWorkspaceProjectTemplateSettings,
   updateResearchWorkspaceScreeningProtocol,
 } from "./facade";
 import { renderResearchWorkspaceArtifactEnvelope } from "./artifactRenderer";
@@ -41,6 +46,7 @@ import type {
   ContradictionClassification,
   ContradictionGapDashboard,
 } from "./contradictionGap";
+import type { ResearchWorkspaceProjectTemplatePreview } from "./projectTemplates";
 
 const HTML_NS = "http://www.w3.org/1999/xhtml";
 const generations = new WeakMap<HTMLElement, symbol>();
@@ -117,6 +123,28 @@ function metric(doc: Document, value: number, label: string) {
   return node;
 }
 
+function capabilityPresetIDs(value: string) {
+  return value
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
+function markTemplateRecommendation(
+  doc: Document,
+  section: HTMLElement,
+  details: ResearchWorkspaceProjectDetails,
+  capabilityID: string,
+) {
+  if (!details.project.capabilityPresetIDs?.includes(capabilityID)) return;
+  section.classList.add("pprw-template-recommended");
+  section.dataset.recommendedCapability = capabilityID;
+  const heading = section.querySelector("h3");
+  heading?.append(
+    element(doc, "span", "pprw-template-recommended-badge", "Recommended"),
+  );
+}
+
 function renderSelectionReview(
   doc: Document,
   papers: readonly ResearchWorkspacePaper[],
@@ -146,6 +174,269 @@ function renderSelectionReview(
     list.append(row);
   }
   section.append(list);
+  return section;
+}
+
+function renderProjectTemplateCreator(
+  doc: Document,
+  root: HTMLElement,
+  capturedPapers: readonly ResearchWorkspacePaper[],
+  generation: symbol,
+) {
+  const section = element(
+    doc,
+    "section",
+    "pprw-project-panel pprw-template-creator",
+  );
+  section.append(
+    element(doc, "h2", "", "Create from a research project template"),
+    element(
+      doc,
+      "p",
+      "pprw-muted",
+      "Choose a template, edit its preview, and create explicitly. Presets only highlight recommendations; no capability runs automatically and no other capability is hidden.",
+    ),
+  );
+  const templates = listResearchWorkspaceProjectTemplateOptions();
+  const selector = element(doc, "select", "pprw-input");
+  selector.setAttribute("aria-label", "Research project template");
+  for (const template of templates) {
+    const option = element(doc, "option", "", template.name);
+    option.value = template.templateID;
+    selector.append(option);
+  }
+  const previewHost = element(doc, "div", "pprw-template-preview");
+  const status = element(doc, "p", "pprw-muted", "");
+  let preview: ResearchWorkspaceProjectTemplatePreview | undefined;
+
+  const renderPreview = () => {
+    preview = previewResearchWorkspaceProjectTemplate(selector.value);
+    previewHost.replaceChildren();
+    const projectName = textInput(doc, "Project name", preview.projectName);
+    const description = textArea(
+      doc,
+      "Project description",
+      preview.description,
+    );
+    description.rows = 4;
+    const researchQuestion = textArea(
+      doc,
+      "Research question",
+      preview.researchQuestion,
+    );
+    researchQuestion.rows = 3;
+    projectName.addEventListener("input", () => {
+      if (preview) preview.projectName = projectName.value;
+    });
+    description.addEventListener("input", () => {
+      if (preview) preview.description = description.value;
+    });
+    researchQuestion.addEventListener("input", () => {
+      if (preview) preview.researchQuestion = researchQuestion.value;
+    });
+    previewHost.append(
+      element(doc, "h3", "", "Editable preview"),
+      element(doc, "label", "pprw-field-label", "Project name"),
+      projectName,
+      element(doc, "label", "pprw-field-label", "Description"),
+      description,
+      element(doc, "label", "pprw-field-label", "Research question"),
+      researchQuestion,
+      element(doc, "h4", "", "Editable assumptions"),
+    );
+    for (const assumption of preview.assumptions) {
+      const input = textArea(doc, assumption.label, assumption.value);
+      input.rows = 2;
+      input.setAttribute("aria-label", assumption.label);
+      input.addEventListener("input", () => {
+        assumption.value = input.value;
+      });
+      previewHost.append(
+        element(doc, "label", "pprw-field-label", assumption.label),
+        input,
+      );
+    }
+    const presets = textInput(
+      doc,
+      "Capability preset IDs",
+      preview.capabilityPresetIDs.join(", "),
+    );
+    presets.setAttribute("aria-label", "Recommended capability preset IDs");
+    presets.addEventListener("input", () => {
+      if (preview) {
+        preview.capabilityPresetIDs = capabilityPresetIDs(presets.value);
+      }
+    });
+    previewHost.append(
+      element(doc, "h4", "", "Recommended capability presets"),
+      presets,
+      element(
+        doc,
+        "p",
+        "pprw-muted",
+        "Recommendations change visual emphasis only. All capabilities remain available, and choosing a template never starts analysis.",
+      ),
+      button(
+        doc,
+        "Create project from template",
+        async () => {
+          if (!preview) return;
+          try {
+            status.textContent =
+              "Creating the project without running capabilities…";
+            const created = await createResearchWorkspaceProjectFromTemplate(
+              preview,
+              capturedPapers,
+            );
+            await renderProject(
+              root,
+              created.project.projectID,
+              capturedPapers,
+              generation,
+            );
+          } catch (error) {
+            status.textContent =
+              error instanceof Error ? error.message : String(error);
+            status.className = "pprw-project-warning";
+          }
+        },
+        true,
+      ),
+    );
+  };
+  selector.addEventListener("change", renderPreview);
+  section.append(selector, previewHost, status);
+  if (templates[0]) {
+    selector.value = templates[0].templateID;
+    renderPreview();
+  }
+  return section;
+}
+
+function renderProjectTemplateSettings(
+  doc: Document,
+  root: HTMLElement,
+  details: ResearchWorkspaceProjectDetails,
+  capturedPapers: readonly ResearchWorkspacePaper[],
+  generation: symbol,
+) {
+  const snapshot = details.project.templateSnapshot;
+  if (!snapshot) return undefined;
+  const section = element(
+    doc,
+    "section",
+    "pprw-project-panel pprw-template-settings",
+  );
+  section.append(
+    element(doc, "h3", "", "Project template settings"),
+    element(
+      doc,
+      "p",
+      "pprw-muted",
+      `${snapshot.templateName} · ${snapshot.templateID} v${snapshot.templateVersion} · applied ${new Date(snapshot.appliedAt).toLocaleString()}`,
+    ),
+  );
+  const assumptions = (details.project.templateAssumptions ?? []).map(
+    (assumption) => ({ ...assumption }),
+  );
+  for (const assumption of assumptions) {
+    const input = textArea(doc, assumption.label, assumption.value);
+    input.rows = 2;
+    input.setAttribute("aria-label", assumption.label);
+    input.addEventListener("input", () => {
+      assumption.value = input.value;
+    });
+    section.append(
+      element(doc, "label", "pprw-field-label", assumption.label),
+      input,
+    );
+  }
+  const presets = textInput(
+    doc,
+    "Capability preset IDs",
+    (details.project.capabilityPresetIDs ?? []).join(", "),
+  );
+  presets.setAttribute("aria-label", "Recommended capability preset IDs");
+  const original = element(doc, "details", "pprw-section");
+  original.append(
+    element(doc, "summary", "pprw-section-title", "Original template snapshot"),
+  );
+  const originalList = element(doc, "ul", "pprw-render-list");
+  for (const assumption of snapshot.registryAssumptions) {
+    originalList.append(
+      element(doc, "li", "", `${assumption.label}: ${assumption.value}`),
+    );
+  }
+  original.append(
+    originalList,
+    element(
+      doc,
+      "p",
+      "pprw-muted",
+      `Original presets: ${snapshot.registryCapabilityPresetIDs.join(", ") || "None"}`,
+    ),
+  );
+  const actions = element(doc, "div", "pprw-row");
+  actions.append(
+    button(
+      doc,
+      "Save template settings",
+      async () => {
+        try {
+          setMessage(root, "Saving editable template settings…");
+          await updateResearchWorkspaceProjectTemplateSettings({
+            projectID: details.project.projectID,
+            expectedProjectRevision: details.projectRevision,
+            assumptions,
+            capabilityPresetIDs: capabilityPresetIDs(presets.value),
+          });
+          await renderProject(
+            root,
+            details.project.projectID,
+            capturedPapers,
+            generation,
+          );
+        } catch (error) {
+          setMessage(
+            root,
+            error instanceof Error ? error.message : String(error),
+            "error",
+          );
+        }
+      },
+      true,
+    ),
+    button(doc, "Verify template export", async () => {
+      try {
+        const exported = await exportResearchWorkspaceProjectTemplateState(
+          details.project.projectID,
+        );
+        setMessage(
+          root,
+          `Template snapshot is present in JSON (${exported.json.length.toLocaleString()} characters) and Markdown (${exported.markdown.length.toLocaleString()} characters).`,
+          "success",
+        );
+      } catch (error) {
+        setMessage(
+          root,
+          error instanceof Error ? error.message : String(error),
+          "error",
+        );
+      }
+    }),
+  );
+  section.append(
+    element(doc, "label", "pprw-field-label", "Recommended capability presets"),
+    presets,
+    element(
+      doc,
+      "p",
+      "pprw-muted",
+      "Editing presets changes recommendations only. It does not run capabilities or hide any capability from the project.",
+    ),
+    original,
+    actions,
+  );
   return section;
 }
 
@@ -244,6 +535,14 @@ async function renderProject(
   );
   settings.append(name, question, settingsActions);
   root.append(settings);
+  const templateSettings = renderProjectTemplateSettings(
+    doc,
+    root,
+    details,
+    capturedPapers,
+    generation,
+  );
+  if (templateSettings) root.append(templateSettings);
 
   if (capturedPapers.length) {
     const captured = element(doc, "section", "pprw-project-panel");
@@ -300,6 +599,7 @@ async function renderProject(
       capturedPapers,
       standalone: true,
       projectID,
+      recommendedCapabilityIDs: details.project.capabilityPresetIDs,
     });
   } else {
     const empty = element(doc, "section", "pprw-project-panel");
@@ -336,6 +636,12 @@ function renderCitationHealthPanel(
       "pprw-muted",
       "Builds a deterministic local review checklist from current saved citation, methodology, and reproducibility artifacts plus local Zotero metadata. It does not create an aggregate truth score, call a model, or use the network.",
     ),
+  );
+  markTemplateRecommendation(
+    doc,
+    section,
+    details,
+    "citation-reference-health",
   );
   const eligibleTypes = new Set([
     "citation-context",
@@ -538,6 +844,7 @@ function renderLivingReviewPanel(
       "Checks local Zotero attachment and annotation metadata only. It does not read PDF or annotation text, call a model or CLI, or use the network.",
     ),
   );
+  markTemplateRecommendation(doc, section, details, "living-review");
   const actions = element(doc, "div", "pprw-row");
   actions.append(
     button(
@@ -714,6 +1021,12 @@ function renderContradictionGapPanel(
       "pprw-muted",
       "Local evidence map, not a truth verdict. It reads current saved artifacts only—no PDF extraction, model, CLI, or network request.",
     ),
+  );
+  markTemplateRecommendation(
+    doc,
+    section,
+    details,
+    "contradiction-gap-dashboard",
   );
   const includedSources = details.members.filter(
     (member) => member.reviewStatus !== "excluded",
@@ -938,6 +1251,7 @@ function renderScreeningLog(
       "Abstract and full-text decisions are explicit local user actions. Duplicate and missing-PDF checks are signals only; this workflow sends no paper text to a model.",
     ),
   );
+  markTemplateRecommendation(doc, section, details, "screening-log");
   const log = buildResearchWorkspaceScreeningLog({
     project: details.project,
     members: details.members,
@@ -1549,9 +1863,12 @@ export async function renderResearchWorkspaceProjectSurface(
     if (capturedPapers.length) {
       root.append(renderSelectionReview(doc, capturedPapers));
     }
+    root.append(
+      renderProjectTemplateCreator(doc, root, capturedPapers, generation),
+    );
 
     const create = element(doc, "section", "pprw-project-panel");
-    create.append(element(doc, "h2", "", "Create project"));
+    create.append(element(doc, "h2", "", "Create blank project"));
     const name = textInput(
       doc,
       "Project name",

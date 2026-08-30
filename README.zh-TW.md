@@ -27,7 +27,7 @@ Paper Pilot 是一個面向 Zotero 7-10 PDF 閱讀器的 AI 閱讀工作台。�
 
 ## 整合式 Research Workspace
 
-Research Workspace 已內建於 Paper Pilot，並共用同一套本機引擎選擇、論文擷取與執行生命週期。無論選取零篇、一篇或多篇項目，持久的非模態專案視窗都可繼續使用，並提供篩選、claim–evidence ledger、比較、稽核、mastery、引用工作流程、引用/參考文獻健康檢查、矛盾/缺口審閱、專案級匯出與本機 Living Review 變更收件匣。Citation & Reference Health 會根據目前儲存的引用、方法學與可重現性 artifact、本機 Zotero 更正/撤稿中繼資料訊號，以及可選的有界草稿摘錄建立本機檢查清單，且不會產生彙總 truth score。Living Review 僅檢查 Zotero 附件與註解中繼資料，不讀取正文，也不呼叫模型或網路服務。只需安裝一個 Paper Pilot XPI；不再提供 companion 外掛或 Research Monitor。
+Research Workspace 已內建於 Paper Pilot，並共用同一套本機引擎選擇、論文擷取與執行生命週期。無論選取零篇、一篇或多篇項目，持久的非模態專案視窗都可繼續使用，並提供篩選、claim–evidence ledger、比較、稽核、mastery、引用工作流程、引用/參考文獻健康檢查、矛盾/缺口審閱、專案級匯出、本機 Living Review 變更收件匣，以及五種可編輯的專案範本。專案範本 preset 只會強調建議的 capability，不會自動執行分析或隱藏其他 capability；匯出會保留不可變的範本快照與目前 assumptions。Citation & Reference Health 會根據目前儲存的引用、方法學與可重現性 artifact、本機 Zotero 更正/撤稿中繼資料訊號，以及可選的有界草稿摘錄建立本機檢查清單，且不會產生彙總 truth score。Living Review 僅檢查 Zotero 附件與註解中繼資料，不讀取正文，也不呼叫模型或網路服務。只需安裝一個 Paper Pilot XPI；不再提供 companion 外掛或 Research Monitor。
 
 ## 截圖與示範
 

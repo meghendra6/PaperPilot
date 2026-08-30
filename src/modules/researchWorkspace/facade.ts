@@ -31,6 +31,13 @@ import type {
   ResearchWorkspaceReviewStatus,
 } from "./persistence/contracts";
 import { ResearchWorkspaceProjectController } from "./projectController";
+import {
+  createResearchWorkspaceProjectTemplatePreview,
+  listResearchWorkspaceProjectTemplates,
+  renderResearchWorkspaceProjectTemplateMarkdown,
+  serializeResearchWorkspaceProjectTemplateJSON,
+  type ResearchWorkspaceProjectTemplatePreview,
+} from "./projectTemplates";
 import { buildResearchWorkspaceProjectWorkspace } from "./projectWorkspaceBuilder";
 import {
   crossPaperMasterySnapshotMatches,
@@ -984,6 +991,14 @@ function projectMarkdown(
     `Artifacts: ${value.artifacts.length}`,
     "",
   ];
+  if (value.project.templateSnapshot) {
+    lines.push(
+      ...renderResearchWorkspaceProjectTemplateMarkdown(value.project)
+        .trimEnd()
+        .split("\n"),
+      "",
+    );
+  }
   if (value.reviewLog) {
     lines.push(
       "## Screening & exclusion log",
@@ -1310,6 +1325,40 @@ export function createResearchWorkspaceProject(params: {
     },
     params.papers,
   );
+}
+
+export function listResearchWorkspaceProjectTemplateOptions() {
+  return listResearchWorkspaceProjectTemplates();
+}
+
+export function previewResearchWorkspaceProjectTemplate(templateID: string) {
+  return createResearchWorkspaceProjectTemplatePreview(templateID);
+}
+
+export function createResearchWorkspaceProjectFromTemplate(
+  preview: ResearchWorkspaceProjectTemplatePreview,
+  papers?: readonly ResearchWorkspacePaper[],
+) {
+  return projectController().createProjectFromTemplate(preview, papers);
+}
+
+export function updateResearchWorkspaceProjectTemplateSettings(params: {
+  projectID: string;
+  expectedProjectRevision: number;
+  assumptions: ResearchWorkspaceProjectTemplatePreview["assumptions"];
+  capabilityPresetIDs: string[];
+}) {
+  return projectController().updateTemplateSettings(params);
+}
+
+export async function exportResearchWorkspaceProjectTemplateState(
+  projectID: string,
+) {
+  const details = await projectController().details(projectID);
+  return {
+    json: serializeResearchWorkspaceProjectTemplateJSON(details.project),
+    markdown: renderResearchWorkspaceProjectTemplateMarkdown(details.project),
+  };
 }
 
 export function addPapersToResearchWorkspaceProject(
