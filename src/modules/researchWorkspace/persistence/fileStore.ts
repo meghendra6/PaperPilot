@@ -58,7 +58,7 @@ export class SerializedResearchWorkspaceFiles {
     parser: (value: unknown) => T;
     expectedRevision?: number;
     create?: () => T;
-    mutate: (current: T) => T;
+    mutate: (current: T) => T | undefined;
   }) {
     return this.exclusive(params.path, async () => {
       let current: T | undefined;
@@ -82,6 +82,7 @@ export class SerializedResearchWorkspaceFiles {
         );
       }
       const candidate = params.mutate(clone(current));
+      if (candidate === undefined) return clone(current);
       const next = {
         ...clone(candidate),
         revision: current.revision + 1,

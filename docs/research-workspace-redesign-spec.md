@@ -1759,6 +1759,18 @@ The dashboard must distinguish contradiction from non-comparable study design.
 
 ### 25.3 Priority P1: living review
 
+Implementation status: delivered as a project-local, revisioned change inbox
+backed by one lifecycle-owned Zotero item observer. The first scan establishes
+a baseline without alerts; a project member added afterward becomes an explicit
+inbox event. Subsequent local metadata scans detect PDF fingerprint, annotation
+metadata, unavailable, and restored transitions with deterministic deduplication. PDF changes and
+unavailable sources invalidate linked artifacts across every sharing project;
+annotation-only changes remain visible without claiming unsupported lineage.
+Review and dismissal are revision/idempotency guarded. This path reads no PDF
+or annotation text and starts no model, CLI, or network request. Discovery-run
+monitoring and external monitoring remain unsupported; real-Zotero runtime
+checks remain in the release checklist.
+
 Use Zotero item notifications and attachment fingerprints to identify:
 
 - newly added project papers;

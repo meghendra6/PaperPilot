@@ -706,7 +706,27 @@ test("local derived operations stale a result when an input changes during artif
         }),
       );
     }
-    return originalCreateArtifact(projectID, artifactInput);
+    const createdArtifact = await originalCreateArtifact(
+      projectID,
+      artifactInput,
+    );
+    if (artifactInput.type === "contradiction-gap-dashboard") {
+      const latest = await repository.getArtifact(
+        projectID,
+        createdArtifact.artifact.artifactID,
+      );
+      assert(latest);
+      await repository.updateArtifact(
+        projectID,
+        latest.artifact.artifactID,
+        latest.revision,
+        (artifact) => ({
+          ...artifact,
+          payload: { reviewedDuringSave: true },
+        }),
+      );
+    }
+    return createdArtifact;
   }) as typeof repository.createArtifact;
 
   await assert.rejects(

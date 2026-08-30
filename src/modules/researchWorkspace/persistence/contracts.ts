@@ -6,6 +6,7 @@ export const RESEARCH_WORKSPACE_ARTIFACT_SCHEMA_VERSION = 1 as const;
 export const RESEARCH_WORKSPACE_RUN_SCHEMA_VERSION = 1 as const;
 export const RESEARCH_WORKSPACE_PREFERENCES_SCHEMA_VERSION = 1 as const;
 export const RESEARCH_WORKSPACE_MIGRATION_SCHEMA_VERSION = 1 as const;
+export const RESEARCH_WORKSPACE_CHANGE_INBOX_SCHEMA_VERSION = 1 as const;
 
 export type ResearchWorkspaceEngineMode =
   | "codex_cli"
@@ -162,6 +163,60 @@ export interface ResearchWorkspaceSourceRecord {
     attachmentKey?: string;
     resolution: "resolved" | "detached" | "ambiguous";
   };
+}
+
+export type ResearchWorkspaceSourceAvailability =
+  ResearchWorkspaceSourceRecord["availability"];
+
+export interface ResearchWorkspaceAnnotationFingerprint {
+  algorithm: "zotero-annotation-keys-version-date-v1";
+  value: string;
+  count: number;
+}
+
+export interface ResearchWorkspaceLivingReviewState {
+  availability: ResearchWorkspaceSourceAvailability;
+  contentFingerprint?: string;
+  annotationFingerprint?: string;
+}
+
+export interface ResearchWorkspaceLivingReviewSnapshot
+  extends ResearchWorkspaceLivingReviewState {
+  sourceID: string;
+  observedAt: string;
+  annotation?: ResearchWorkspaceAnnotationFingerprint;
+}
+
+export type ResearchWorkspaceLivingReviewChangeKind =
+  | "project-source-added"
+  | "pdf-content-changed"
+  | "annotations-changed"
+  | "source-unavailable"
+  | "source-restored";
+
+export interface ResearchWorkspaceLivingReviewChange {
+  changeID: string;
+  dedupeKey: string;
+  sourceID: string;
+  kind: ResearchWorkspaceLivingReviewChangeKind;
+  before: ResearchWorkspaceLivingReviewState;
+  after: ResearchWorkspaceLivingReviewState;
+  detectedAt: string;
+  resolution?: {
+    action: "reviewed" | "dismissed";
+    submissionID: string;
+    actedAt: string;
+  };
+}
+
+export interface ResearchWorkspaceChangeInboxFile {
+  schemaVersion: typeof RESEARCH_WORKSPACE_CHANGE_INBOX_SCHEMA_VERSION;
+  revision: number;
+  projectID: string;
+  initializedAt?: string;
+  lastCheckedAt?: string;
+  snapshots: ResearchWorkspaceLivingReviewSnapshot[];
+  changes: ResearchWorkspaceLivingReviewChange[];
 }
 
 export type ResearchWorkspaceArtifactType =

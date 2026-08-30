@@ -202,6 +202,69 @@ test("updating a shared source stales artifacts in every project that uses it", 
   );
 });
 
+test("source refresh invalidates an artifact admitted across the source write boundary", async () => {
+  const { projects, repository } = setup();
+  const original = paper("A", "fingerprint-boundary-v1");
+  const created = await projects.createProject(
+    { projectID: "project-source-boundary", name: "Source boundary" },
+    [original],
+  );
+  const originalPutSource = repository.putSource.bind(repository);
+  let admittedArtifactID: string | undefined;
+  repository.putSource = (async (source, expectedRevision) => {
+    const stored = await originalPutSource(source, expectedRevision);
+    if (
+      !admittedArtifactID &&
+      source.contentFingerprint?.value === "fingerprint-boundary-v2"
+    ) {
+      const admitted = await repository.createArtifact(
+        created.project.projectID,
+        {
+          type: "claim-ledger",
+          title: "Admitted at source boundary",
+          status: "complete",
+          sourceIDs: [original.sourceID],
+          lineage: {
+            inputs: [
+              {
+                sourceID: original.sourceID,
+                contentFingerprint: "fingerprint-boundary-v1",
+                contextProjectionFingerprint: "projection-v1",
+              },
+            ],
+            operation: "claims",
+            operationVersion: "claims-v1",
+            promptVersion: "claims-prompt-v1",
+            parserVersion: "claims-parser-v1",
+            schemaVersion: "claim-ledger-v1",
+            evidenceVerifierVersion: "paperpilot-evidence-v2",
+            providerMode: "local",
+            runID: "run-source-boundary",
+          },
+          payload: { claims: [] },
+        },
+      );
+      admittedArtifactID = admitted.artifact.artifactID;
+    }
+    return stored;
+  }) as typeof repository.putSource;
+
+  await projects.addPapers(created.project.projectID, [
+    paper("A", "fingerprint-boundary-v2"),
+  ]);
+
+  assert(admittedArtifactID);
+  assert.equal(
+    (
+      await repository.getArtifact(
+        created.project.projectID,
+        admittedArtifactID,
+      )
+    )?.artifact.status,
+    "stale",
+  );
+});
+
 test("quick projects use a deterministic source-scoped identity", async () => {
   const { projects } = setup();
   const first = await projects.ensureQuickProject([paper("B"), paper("A")]);

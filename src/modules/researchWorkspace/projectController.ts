@@ -182,11 +182,12 @@ export class ResearchWorkspaceProjectController {
     ];
     for (const paper of unique) {
       const current = await this.repository.getSource(paper.sourceID);
-      if (
+      const contentChanged = Boolean(
         current?.source.contentFingerprint?.value &&
-        current.source.contentFingerprint.value !==
-          paper.contentFingerprint.value
-      ) {
+          current.source.contentFingerprint.value !==
+            paper.contentFingerprint.value,
+      );
+      const invalidateAffectedProjects = async () => {
         const projectIDs = await this.repository.listProjectIDsForSource(
           paper.sourceID,
           { includeArchived: true },
@@ -198,11 +199,16 @@ export class ResearchWorkspaceProjectController {
             contentFingerprint: paper.contentFingerprint.value,
           });
         }
-      }
+      };
+      if (contentChanged) await invalidateAffectedProjects();
       await this.repository.putSource(
         researchWorkspaceSourceRecordFromPaper(paper, this.now()),
         current?.revision,
       );
+      // A derived artifact can be admitted while the source write is in flight.
+      // Re-scan project membership after the write so that result is also made
+      // stale against the newly persisted fingerprint.
+      if (contentChanged) await invalidateAffectedProjects();
     }
     if (unique.length) {
       const bundle = await this.repository.getProject(projectID);

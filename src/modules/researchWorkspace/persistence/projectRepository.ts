@@ -1,6 +1,7 @@
 import {
   RESEARCH_WORKSPACE_ARTIFACT_SCHEMA_VERSION,
   RESEARCH_WORKSPACE_CATALOG_SCHEMA_VERSION,
+  RESEARCH_WORKSPACE_CHANGE_INBOX_SCHEMA_VERSION,
   RESEARCH_WORKSPACE_MEMBERS_SCHEMA_VERSION,
   RESEARCH_WORKSPACE_PROJECT_SCHEMA_VERSION,
   RESEARCH_WORKSPACE_PREFERENCES_SCHEMA_VERSION,
@@ -15,6 +16,7 @@ import {
   type ResearchWorkspaceArtifactList,
   type ResearchWorkspaceCatalog,
   type ResearchWorkspaceCatalogEntry,
+  type ResearchWorkspaceChangeInboxFile,
   type ResearchWorkspaceMembersFile,
   type ResearchWorkspacePortableExport,
   type ResearchWorkspaceProjectBundle,
@@ -35,6 +37,7 @@ import {
 import {
   parseResearchWorkspaceArtifactFile,
   parseResearchWorkspaceCatalog,
+  parseResearchWorkspaceChangeInboxFile,
   parseResearchWorkspaceMembersFile,
   parseResearchWorkspaceProjectFile,
   parseResearchWorkspacePreferencesFile,
@@ -147,6 +150,26 @@ const ACTIVE_RUN_STATUSES = new Set([
   "cancelling",
 ]);
 
+const MAX_ARTIFACT_STALE_PROPAGATION_ROUNDS = 32;
+
+function artifactPropagationSignature(
+  artifacts: readonly ResearchWorkspaceArtifact[],
+) {
+  return JSON.stringify(
+    [...artifacts]
+      .sort((left, right) => left.artifactID.localeCompare(right.artifactID))
+      .map((artifact) => [
+        artifact.artifactID,
+        artifact.updatedAt,
+        artifact.status,
+        artifact.staleReasons ?? [],
+        artifact.lineage.inputs,
+        artifact.lineage.artifactInputs ?? [],
+        artifact.lineage.membersRevision,
+      ]),
+  );
+}
+
 export class ResearchWorkspaceProjectRepository {
   private readonly files: SerializedResearchWorkspaceFiles;
   private readonly rootDir: string;
@@ -197,6 +220,10 @@ export class ResearchWorkspaceProjectRepository {
 
   getMembersPath(projectID: string) {
     return joinPath(this.getProjectRoot(projectID), "members.json");
+  }
+
+  getChangeInboxPath(projectID: string) {
+    return joinPath(this.getProjectRoot(projectID), "change-inbox.json");
   }
 
   getArtifactPath(projectID: string, artifactID: string) {
@@ -435,6 +462,72 @@ export class ResearchWorkspaceProjectRepository {
     };
   }
 
+  async getChangeInbox(
+    projectID: string,
+  ): Promise<ResearchWorkspaceChangeInboxFile> {
+    await this.getProject(projectID);
+    const inbox = await this.files.read(
+      this.getChangeInboxPath(projectID),
+      parseResearchWorkspaceChangeInboxFile,
+    );
+    if (inbox && inbox.projectID !== projectID) {
+      throw new Error(
+        `Project ${projectID} change inbox is bound to another project.`,
+      );
+    }
+    return (
+      inbox ?? {
+        schemaVersion: RESEARCH_WORKSPACE_CHANGE_INBOX_SCHEMA_VERSION,
+        revision: 0,
+        projectID,
+        snapshots: [],
+        changes: [],
+      }
+    );
+  }
+
+  async updateChangeInbox(
+    projectID: string,
+    expectedRevision: number | undefined,
+    mutate: (
+      inbox: ResearchWorkspaceChangeInboxFile,
+    ) => ResearchWorkspaceChangeInboxFile,
+  ): Promise<ResearchWorkspaceChangeInboxFile> {
+    await this.getProject(projectID);
+    const next = await this.files.mutate({
+      path: this.getChangeInboxPath(projectID),
+      parser: parseResearchWorkspaceChangeInboxFile,
+      expectedRevision,
+      create: () => ({
+        schemaVersion: RESEARCH_WORKSPACE_CHANGE_INBOX_SCHEMA_VERSION,
+        revision: 0,
+        projectID,
+        snapshots: [],
+        changes: [],
+      }),
+      mutate: (file) => {
+        if (file.projectID !== projectID) {
+          throw new Error(
+            `Project ${projectID} change inbox is bound to another project.`,
+          );
+        }
+        const changed = mutate(cloneResearchWorkspaceValue(file));
+        if (changed.projectID !== projectID) {
+          throw new Error("A change inbox update cannot change projectID.");
+        }
+        const candidate = {
+          ...changed,
+          schemaVersion: RESEARCH_WORKSPACE_CHANGE_INBOX_SCHEMA_VERSION,
+          revision: file.revision,
+          projectID,
+        };
+        parseResearchWorkspaceChangeInboxFile(candidate);
+        return candidate;
+      },
+    });
+    return parseResearchWorkspaceChangeInboxFile(next);
+  }
+
   async updateProject(
     projectID: string,
     expectedRevision: number,
@@ -599,6 +692,41 @@ export class ResearchWorkspaceProjectRepository {
         return candidate;
       },
     });
+  }
+
+  async mutateSourceAtRevision(
+    sourceID: string,
+    expectedRevision: number,
+    mutate: (
+      source: ResearchWorkspaceSourceRecord,
+    ) => ResearchWorkspaceSourceRecord | undefined,
+  ) {
+    let changed = false;
+    const file = await this.files.mutate({
+      path: this.getSourcePath(sourceID),
+      parser: parseResearchWorkspaceSourceFile,
+      expectedRevision,
+      mutate: (current) => {
+        if (current.source.sourceID !== sourceID) {
+          throw new Error(
+            "Source path digest collision detected; existing source was preserved.",
+          );
+        }
+        const source = mutate(cloneResearchWorkspaceValue(current.source));
+        if (!source) return undefined;
+        if (source.sourceID !== sourceID) {
+          throw new Error("A source update cannot change sourceID.");
+        }
+        const candidate = {
+          ...current,
+          source: cloneResearchWorkspaceValue(source),
+        };
+        parseResearchWorkspaceSourceFile(candidate);
+        changed = true;
+        return candidate;
+      },
+    });
+    return { file, changed };
   }
 
   async getSource(sourceID: string) {
@@ -805,6 +933,197 @@ export class ResearchWorkspaceProjectRepository {
     return next as ResearchWorkspaceArtifactFile<T>;
   }
 
+  private async markArtifactStaleConditionally(params: {
+    projectID: string;
+    artifactID: string;
+    reason: string;
+    matches: (artifact: ResearchWorkspaceArtifact) => boolean;
+  }) {
+    let matched = false;
+    let changed = false;
+    try {
+      await this.files.mutate({
+        path: this.getArtifactPath(params.projectID, params.artifactID),
+        parser: parseResearchWorkspaceArtifactFile,
+        mutate: (file) => {
+          if (file.artifact.projectID !== params.projectID) {
+            throw new Error(
+              `Artifact ${params.artifactID} belongs to another project.`,
+            );
+          }
+          if (!params.matches(file.artifact)) return undefined;
+          if (
+            file.artifact.status === "superseded" ||
+            file.artifact.status === "failed"
+          ) {
+            return undefined;
+          }
+          matched = true;
+          if (
+            file.artifact.status === "stale" &&
+            file.artifact.staleReasons?.includes(params.reason)
+          ) {
+            return undefined;
+          }
+          changed = true;
+          const timestamp = this.timestamp();
+          const candidate = {
+            ...file,
+            artifact: {
+              ...file.artifact,
+              status: "stale" as const,
+              lastCurrentAt:
+                file.artifact.lastCurrentAt ?? file.artifact.updatedAt,
+              staleReasons: [
+                ...new Set([
+                  ...(file.artifact.staleReasons ?? []),
+                  params.reason,
+                ]),
+              ],
+              updatedAt: timestamp,
+            },
+          };
+          parseResearchWorkspaceArtifactFile(candidate);
+          return candidate;
+        },
+      });
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message ===
+          `Research Workspace file is missing: ${this.getArtifactPath(
+            params.projectID,
+            params.artifactID,
+          )}`
+      ) {
+        return { matched: false, changed: false };
+      }
+      throw error;
+    }
+    return { matched, changed };
+  }
+
+  private async propagateArtifactStaleness(params: {
+    projectID: string;
+    reason: string;
+    seedArtifactIDs?: readonly string[];
+    directMatch?: (artifact: ResearchWorkspaceArtifact) => boolean;
+  }) {
+    const seeds = new Set(params.seedArtifactIDs ?? []);
+    const affected = new Set(seeds);
+    const changed = new Set<string>();
+    let converged = false;
+
+    for (
+      let round = 0;
+      round < MAX_ARTIFACT_STALE_PROPAGATION_ROUNDS;
+      round += 1
+    ) {
+      const before = await this.listArtifacts(params.projectID);
+      const beforeSignature = artifactPropagationSignature(before.artifacts);
+      const affectedAtRoundStart = affected.size;
+      const ordered = [...before.artifacts].sort((left, right) =>
+        left.artifactID.localeCompare(right.artifactID),
+      );
+      let changedThisRound = false;
+
+      // A snapshot schedules artifact IDs only. A direct source or membership
+      // match becomes an affected root only after the serialized file mutation
+      // has re-read and confirmed the current lineage.
+      for (const artifact of ordered) {
+        if (
+          seeds.has(artifact.artifactID) ||
+          affected.has(artifact.artifactID) ||
+          !params.directMatch
+        ) {
+          continue;
+        }
+        const result = await this.markArtifactStaleConditionally({
+          projectID: params.projectID,
+          artifactID: artifact.artifactID,
+          reason: params.reason,
+          matches: params.directMatch,
+        });
+        if (result.matched) affected.add(artifact.artifactID);
+        if (result.changed) {
+          changed.add(artifact.artifactID);
+          changedThisRound = true;
+        }
+      }
+
+      // Resolve the dependency closure against current file contents. Multiple
+      // passes handle reverse-sorted chains in one bounded outer round; newly
+      // created artifact IDs are discovered by the next outer round.
+      for (let expansion = 0; expansion <= ordered.length; expansion += 1) {
+        let expanded = false;
+        for (const artifact of ordered) {
+          if (
+            seeds.has(artifact.artifactID) ||
+            affected.has(artifact.artifactID)
+          ) {
+            continue;
+          }
+          const result = await this.markArtifactStaleConditionally({
+            projectID: params.projectID,
+            artifactID: artifact.artifactID,
+            reason: params.reason,
+            matches: (current) =>
+              Boolean(
+                current.lineage.artifactInputs?.some((input) =>
+                  affected.has(input.artifactID),
+                ),
+              ),
+          });
+          if (!result.matched) continue;
+          affected.add(artifact.artifactID);
+          expanded = true;
+          if (result.changed) {
+            changed.add(artifact.artifactID);
+            changedThisRound = true;
+          }
+        }
+        if (!expanded) break;
+      }
+
+      const after = await this.listArtifacts(params.projectID);
+      const afterSignature = artifactPropagationSignature(after.artifacts);
+      if (
+        !changedThisRound &&
+        affected.size === affectedAtRoundStart &&
+        beforeSignature === afterSignature
+      ) {
+        converged = true;
+        break;
+      }
+    }
+
+    if (changed.size) await this.syncCatalogEntry(params.projectID);
+    if (!converged) {
+      throw new Error(
+        `Artifact stale propagation for project ${params.projectID} did not converge within ${MAX_ARTIFACT_STALE_PROPAGATION_ROUNDS} rounds.`,
+      );
+    }
+    return [...changed].sort();
+  }
+
+  async markArtifactStaleAtomically(params: {
+    projectID: string;
+    artifactID: string;
+    reason: string;
+  }) {
+    const changed = await this.propagateArtifactStaleness({
+      projectID: params.projectID,
+      reason: params.reason,
+      directMatch: (artifact) => artifact.artifactID === params.artifactID,
+    });
+    return this.getArtifact(params.projectID, params.artifactID).then(
+      (file) => ({
+        file,
+        changed: changed.includes(params.artifactID),
+      }),
+    );
+  }
+
   async ensureArtifactReference(projectID: string, artifactID: string) {
     const [bundle, artifact] = await Promise.all([
       this.getProject(projectID),
@@ -838,55 +1157,19 @@ export class ResearchWorkspaceProjectRepository {
     contentFingerprint: string;
     reason?: string;
   }) {
-    const listed = await this.listArtifacts(params.projectID);
-    const changed: string[] = [];
-    for (const artifact of listed.artifacts) {
-      const input = artifact.lineage.inputs.find(
-        (entry) => entry.sourceID === params.sourceID,
-      );
-      if (
-        !input ||
-        input.contentFingerprint === params.contentFingerprint ||
-        artifact.status === "superseded"
-      ) {
-        continue;
-      }
-      const file = await this.getArtifact(
-        params.projectID,
-        artifact.artifactID,
-      );
-      const currentInput = file?.artifact.lineage.inputs.find(
-        (entry) => entry.sourceID === params.sourceID,
-      );
-      const reason =
-        params.reason ?? `source-content-changed:${params.sourceID}`;
-      if (
-        !file ||
-        !currentInput ||
-        currentInput.contentFingerprint === params.contentFingerprint ||
-        file.artifact.status === "superseded" ||
-        file.artifact.status === "failed" ||
-        (file.artifact.status === "stale" &&
-          file.artifact.staleReasons?.includes(reason))
-      ) {
-        continue;
-      }
-      await this.updateArtifact(
-        params.projectID,
-        artifact.artifactID,
-        file.revision,
-        (current) => ({
-          ...current,
-          status: "stale",
-          lastCurrentAt: current.lastCurrentAt ?? current.updatedAt,
-          staleReasons: [...new Set([...(current.staleReasons ?? []), reason])],
-        }),
-        false,
-      );
-      changed.push(artifact.artifactID);
-    }
-    if (changed.length) await this.syncCatalogEntry(params.projectID);
-    return changed;
+    const reason = params.reason ?? `source-content-changed:${params.sourceID}`;
+    return this.propagateArtifactStaleness({
+      projectID: params.projectID,
+      reason,
+      directMatch: (artifact) => {
+        const input = artifact.lineage.inputs.find(
+          (entry) => entry.sourceID === params.sourceID,
+        );
+        return Boolean(
+          input && input.contentFingerprint !== params.contentFingerprint,
+        );
+      },
+    });
   }
 
   async markArtifactsStaleForArtifact(params: {
@@ -894,62 +1177,13 @@ export class ResearchWorkspaceProjectRepository {
     artifactID: string;
     reason?: string;
   }) {
-    const listed = await this.listArtifacts(params.projectID);
-    const changed: string[] = [];
     const reason =
       params.reason ?? `upstream-artifact-changed:${params.artifactID}`;
-    const queue = [params.artifactID];
-    const visited = new Set<string>();
-    while (queue.length) {
-      const upstreamArtifactID = queue.shift()!;
-      if (visited.has(upstreamArtifactID)) continue;
-      visited.add(upstreamArtifactID);
-      const dependents = listed.artifacts
-        .filter(
-          (artifact) =>
-            !visited.has(artifact.artifactID) &&
-            artifact.lineage.artifactInputs?.some(
-              (input) => input.artifactID === upstreamArtifactID,
-            ),
-        )
-        .sort((left, right) => left.artifactID.localeCompare(right.artifactID));
-      for (const dependent of dependents) {
-        queue.push(dependent.artifactID);
-        const file = await this.getArtifact(
-          params.projectID,
-          dependent.artifactID,
-        );
-        if (
-          !file ||
-          file.artifact.status === "superseded" ||
-          file.artifact.status === "failed" ||
-          !file.artifact.lineage.artifactInputs?.some(
-            (input) => input.artifactID === upstreamArtifactID,
-          ) ||
-          (file.artifact.status === "stale" &&
-            file.artifact.staleReasons?.includes(reason))
-        ) {
-          continue;
-        }
-        await this.updateArtifact(
-          params.projectID,
-          dependent.artifactID,
-          file.revision,
-          (current) => ({
-            ...current,
-            status: "stale",
-            lastCurrentAt: current.lastCurrentAt ?? current.updatedAt,
-            staleReasons: [
-              ...new Set([...(current.staleReasons ?? []), reason]),
-            ],
-          }),
-          false,
-        );
-        changed.push(dependent.artifactID);
-      }
-    }
-    if (changed.length) await this.syncCatalogEntry(params.projectID);
-    return changed.sort();
+    return this.propagateArtifactStaleness({
+      projectID: params.projectID,
+      reason,
+      seedArtifactIDs: [params.artifactID],
+    });
   }
 
   async markArtifactsStaleForMembersRevision(params: {
@@ -957,50 +1191,14 @@ export class ResearchWorkspaceProjectRepository {
     membersRevision: number;
     reason?: string;
   }) {
-    const listed = await this.listArtifacts(params.projectID);
-    const changed: string[] = [];
     const reason = params.reason ?? "project-source-scope-changed";
-    for (const artifact of listed.artifacts) {
-      if (
-        artifact.status === "superseded" ||
-        artifact.status === "failed" ||
-        artifact.lineage.membersRevision === undefined ||
-        artifact.lineage.membersRevision === params.membersRevision ||
-        (artifact.status === "stale" && artifact.staleReasons?.includes(reason))
-      ) {
-        continue;
-      }
-      const file = await this.getArtifact(
-        params.projectID,
-        artifact.artifactID,
-      );
-      if (
-        !file ||
-        file.artifact.status === "superseded" ||
-        file.artifact.status === "failed" ||
-        file.artifact.lineage.membersRevision === undefined ||
-        file.artifact.lineage.membersRevision === params.membersRevision ||
-        (file.artifact.status === "stale" &&
-          file.artifact.staleReasons?.includes(reason))
-      ) {
-        continue;
-      }
-      await this.updateArtifact(
-        params.projectID,
-        artifact.artifactID,
-        file.revision,
-        (current) => ({
-          ...current,
-          status: "stale",
-          lastCurrentAt: current.lastCurrentAt ?? current.updatedAt,
-          staleReasons: [...new Set([...(current.staleReasons ?? []), reason])],
-        }),
-        false,
-      );
-      changed.push(artifact.artifactID);
-    }
-    if (changed.length) await this.syncCatalogEntry(params.projectID);
-    return changed;
+    return this.propagateArtifactStaleness({
+      projectID: params.projectID,
+      reason,
+      directMatch: (artifact) =>
+        artifact.lineage.membersRevision !== undefined &&
+        artifact.lineage.membersRevision !== params.membersRevision,
+    });
   }
 
   async deleteArtifact(projectID: string, artifactID: string) {

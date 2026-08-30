@@ -89,8 +89,9 @@ references remain labelled but have no Open in PDF action.
 Research Workspace durable state remains separate from transient run
 workspaces under `<Zotero profile>/paperpilot-research-workspace/`. The current
 store uses a revisioned `catalog-v1.json`, shared source records, and one
-directory per project containing `project.json`, `members.json`, artifacts, and
-runs. Writes are atomic and revision guarded. The legacy `workspace-v3.json`
+directory per project containing `project.json`, `members.json`,
+`change-inbox.json`, artifacts, and runs. Writes are atomic and revision
+guarded. The legacy `workspace-v3.json`
 is read only by the migration adapter, which preserves supported papers and
 artifacts while dropping companion provider settings and Research Monitor
 state.
@@ -119,6 +120,21 @@ dependent artifacts stale; source changes invalidate every project sharing that
 source.
 User confirmation, reclassification, and dismissal are append-only review
 events and never overwrite the deterministic classification.
+
+Living Review is a project-local, metadata-only freshness boundary. One Zotero
+item observer is registered after persistence recovery and unregistered with
+its exact handle at add-on shutdown. Notification bursts wake a serialized,
+coalesced scan of active projects; notifier item IDs are not trusted as the
+source set. Stable library and attachment keys resolve each source, PDF
+version/mtime/size and annotation key/version/date metadata produce snapshots,
+and the first scan is baselined without false alerts. A member added after that
+baseline becomes an explicit `project-source-added` inbox event. PDF changes
+and unavailable sources invalidate dependent artifacts in
+every project sharing the source, while annotation-only changes remain visible
+without invalidation because artifact lineage does not yet admit annotation
+fingerprints. The path reads no PDF or annotation text and starts no model,
+CLI, or network request. Review and dismissal are revision-guarded and
+submission-idempotent.
 
 ## Engine abstraction
 
