@@ -58,6 +58,7 @@ import {
 import type { WorkspaceSupplementalFiles } from "../workspace/supplementalFiles";
 import {
   exportResearchWorkspaceTextFile,
+  getResearchWorkspaceLivingReviewService,
   getResearchWorkspaceProjectRepository,
 } from "./storage";
 
@@ -1269,6 +1270,34 @@ export function archiveResearchWorkspaceProject(projectID: string) {
 
 export function deleteResearchWorkspaceProject(projectID: string) {
   return projectController().deleteProject(projectID);
+}
+
+export function loadResearchWorkspaceChangeInbox(projectID: string) {
+  return getResearchWorkspaceLivingReviewService().load(projectID);
+}
+
+export function checkResearchWorkspaceChanges(projectID: string) {
+  return getResearchWorkspaceLivingReviewService().checkProject(projectID);
+}
+
+export function resolveResearchWorkspaceChange(params: {
+  projectID: string;
+  changeID: string;
+  action: "reviewed" | "dismissed";
+  submissionID: string;
+  expectedRevision: number;
+}) {
+  return getResearchWorkspaceLivingReviewService().resolveChange(params);
+}
+
+export function refreshResearchWorkspaceSource(params: {
+  projectID: string;
+  sourceID: string;
+}) {
+  return getResearchWorkspaceLivingReviewService().refreshSource(
+    params.projectID,
+    params.sourceID,
+  );
 }
 
 export async function loadResearchWorkspaceState() {

@@ -28,6 +28,10 @@ import {
   migrateLegacyResearchWorkspace,
   recoverResearchWorkspaceProjectPersistence,
 } from "./modules/researchWorkspace/storage";
+import {
+  registerResearchWorkspaceLivingReviewNotifier,
+  unregisterResearchWorkspaceLivingReviewNotifier,
+} from "./modules/researchWorkspace/livingReviewIntegration";
 
 async function onStartup() {
   await Promise.all([
@@ -51,6 +55,13 @@ async function onStartup() {
         ztoolkit.log(`Research Workspace migration: ${warning}`);
       }
     }
+  } catch (error) {
+    Zotero.logError?.(
+      error instanceof Error ? error : new Error(String(error)),
+    );
+  }
+  try {
+    registerResearchWorkspaceLivingReviewNotifier();
   } catch (error) {
     Zotero.logError?.(
       error instanceof Error ? error : new Error(String(error)),
@@ -123,6 +134,7 @@ function onShutdown(): void {
   addon.data.pendingEngineCompletions?.clear();
   addon.data.runProgressStates?.clear();
   unregisterReaderActionPlaceholders();
+  unregisterResearchWorkspaceLivingReviewNotifier();
   unregisterResearchWorkspacePaneSection();
   unregisterResearchWorkspaceLaunchers();
   closeResearchWorkspaceWindow();

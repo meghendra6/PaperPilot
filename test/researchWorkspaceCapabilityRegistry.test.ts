@@ -208,3 +208,29 @@ test("Contradictions and Evidence Gaps is a local project capability", () => {
   assert.match(source, /Save reclassification/);
   assert.match(source, /Dismiss candidate/);
 });
+
+test("Living Review is a local metadata-only project workflow", () => {
+  const capability = getResearchWorkspaceCapability("living-review");
+  assert.equal(capability.sourceScope, "project");
+  assert.equal(capability.entrypoint, "research-workspace");
+  assert.equal(capability.operation, "living-review");
+  assert.equal(capability.promptVersion, "local-zotero-metadata-v1");
+  assert.equal(capability.artifactType, undefined);
+  assert.equal(capability.exportable, false);
+
+  const source = readFileSync(
+    join(
+      process.cwd(),
+      "src",
+      "modules",
+      "researchWorkspace",
+      "projectWindowView.ts",
+    ),
+    "utf8",
+  );
+  assert.match(source, /Living review/);
+  assert.match(source, /does not read PDF or annotation text/i);
+  assert.match(source, /Check now/);
+  assert.match(source, /Mark reviewed/);
+  assert.match(source, /Dismiss/);
+});

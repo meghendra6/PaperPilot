@@ -1,13 +1,17 @@
 import {
   addPapersToResearchWorkspaceProject,
   archiveResearchWorkspaceProject,
+  checkResearchWorkspaceChanges,
   createResearchWorkspaceProject,
   deleteResearchWorkspaceProject,
   exportResearchWorkspaceScreeningLog,
   exportIntegratedResearchWorkspace,
   loadResearchWorkspaceHome,
+  loadResearchWorkspaceChangeInbox,
   loadResearchWorkspaceProject,
   recordResearchWorkspaceScreeningDecision,
+  refreshResearchWorkspaceSource,
+  resolveResearchWorkspaceChange,
   reviewResearchWorkspaceContradictionGap,
   runResearchWorkspaceContradictionGapDashboard,
   updateResearchWorkspaceMember,
@@ -19,6 +23,7 @@ import { openVerifiedResearchWorkspaceEvidence } from "./evidenceNavigation";
 import type { EvidenceReferenceV2 } from "./evidenceVerification";
 import { readResearchWorkspaceArtifact } from "./legacyCapabilityAdapters";
 import type { ResearchWorkspacePaper } from "./paperSource";
+import type { ResearchWorkspaceChangeInboxFile } from "./persistence/contracts";
 import type {
   ResearchWorkspaceProjectDetails,
   ResearchWorkspaceProjectHome,
@@ -141,7 +146,10 @@ async function renderProject(
   capturedPapers: readonly ResearchWorkspacePaper[],
   generation: symbol,
 ) {
-  const details = await loadResearchWorkspaceProject(projectID);
+  const [details, changeInbox] = await Promise.all([
+    loadResearchWorkspaceProject(projectID),
+    loadResearchWorkspaceChangeInbox(projectID),
+  ]);
   if (!isCurrent(root, generation)) return;
   const doc = root.ownerDocument;
   disposeOperations(root);
@@ -257,6 +265,16 @@ async function renderProject(
     renderProjectPapers(doc, root, details, capturedPapers, generation),
   );
   root.append(
+    renderLivingReviewPanel(
+      doc,
+      root,
+      details,
+      changeInbox,
+      capturedPapers,
+      generation,
+    ),
+  );
+  root.append(
     renderContradictionGapPanel(doc, root, details, capturedPapers, generation),
   );
   root.append(renderArtifactHistory(doc, root, details));
@@ -284,6 +302,197 @@ async function renderProject(
     );
     root.append(empty);
   }
+}
+
+function livingReviewStateLabel(
+  state: ResearchWorkspaceChangeInboxFile["changes"][number]["after"],
+) {
+  const fingerprint = state.contentFingerprint
+    ? ` · PDF ${state.contentFingerprint.slice(0, 18)}${state.contentFingerprint.length > 18 ? "…" : ""}`
+    : "";
+  const annotations = state.annotationFingerprint
+    ? ` · annotations ${state.annotationFingerprint.slice(0, 14)}${state.annotationFingerprint.length > 14 ? "…" : ""}`
+    : "";
+  return `${state.availability}${fingerprint}${annotations}`;
+}
+
+function renderLivingReviewPanel(
+  doc: Document,
+  root: HTMLElement,
+  details: ResearchWorkspaceProjectDetails,
+  inbox: ResearchWorkspaceChangeInboxFile,
+  capturedPapers: readonly ResearchWorkspacePaper[],
+  generation: symbol,
+) {
+  const section = element(
+    doc,
+    "section",
+    "pprw-project-panel pprw-living-review-panel",
+  );
+  const pending = inbox.changes.filter((change) => !change.resolution).length;
+  section.append(
+    element(doc, "h3", "", `Living review · ${pending} pending`),
+    element(
+      doc,
+      "p",
+      "pprw-muted",
+      "Checks local Zotero attachment and annotation metadata only. It does not read PDF or annotation text, call a model or CLI, or use the network.",
+    ),
+  );
+  const actions = element(doc, "div", "pprw-row");
+  actions.append(
+    button(
+      doc,
+      "Check now",
+      async () => {
+        try {
+          setMessage(root, "Checking local Zotero changes…");
+          await checkResearchWorkspaceChanges(details.project.projectID);
+          await renderProject(
+            root,
+            details.project.projectID,
+            capturedPapers,
+            generation,
+          );
+        } catch (error) {
+          setMessage(
+            root,
+            error instanceof Error ? error.message : String(error),
+            "error",
+          );
+        }
+      },
+      true,
+    ),
+    element(
+      doc,
+      "span",
+      "pprw-muted",
+      inbox.lastCheckedAt
+        ? `Last checked ${new Date(inbox.lastCheckedAt).toLocaleString()}`
+        : "Not checked yet — the first check records a baseline without alerts.",
+    ),
+  );
+  section.append(actions);
+
+  const filter = element(doc, "select", "pprw-select");
+  filter.setAttribute("aria-label", "Filter living-review changes");
+  for (const [value, label] of [
+    ["pending", "Pending"],
+    ["all", "All changes"],
+    ["reviewed", "Reviewed"],
+    ["dismissed", "Dismissed"],
+  ] as const) {
+    const option = element(doc, "option", "", label);
+    option.value = value;
+    filter.append(option);
+  }
+  section.append(filter);
+  const sourceByID = new Map(
+    details.sources.map((source) => [source.sourceID, source]),
+  );
+  const list = element(doc, "div", "pprw-artifact-history");
+  for (const change of [...inbox.changes].reverse()) {
+    const status = change.resolution?.action ?? "pending";
+    const card = element(doc, "article", "pprw-artifact-card");
+    card.dataset.livingReviewStatus = status;
+    card.hidden = status !== "pending";
+    const kind = change.kind.replace(/-/g, " ");
+    card.append(
+      element(
+        doc,
+        "strong",
+        "",
+        sourceByID.get(change.sourceID)?.title ?? change.sourceID,
+      ),
+      element(doc, "span", "pprw-artifact-status", `${kind} · ${status}`),
+      element(
+        doc,
+        "p",
+        "pprw-muted",
+        `${livingReviewStateLabel(change.before)} → ${livingReviewStateLabel(change.after)}`,
+      ),
+      element(
+        doc,
+        "p",
+        "pprw-muted",
+        `Detected ${new Date(change.detectedAt).toLocaleString()}`,
+      ),
+    );
+    if (!change.resolution) {
+      const changeActions = element(doc, "div", "pprw-row");
+      const resolve = async (action: "reviewed" | "dismissed") => {
+        try {
+          await resolveResearchWorkspaceChange({
+            projectID: details.project.projectID,
+            changeID: change.changeID,
+            action,
+            submissionID: `living-review-${action}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+            expectedRevision: inbox.revision,
+          });
+          await renderProject(
+            root,
+            details.project.projectID,
+            capturedPapers,
+            generation,
+          );
+        } catch (error) {
+          setMessage(
+            root,
+            error instanceof Error ? error.message : String(error),
+            "error",
+          );
+        }
+      };
+      changeActions.append(
+        button(doc, "Mark reviewed", () => resolve("reviewed"), true),
+        button(doc, "Dismiss", () => resolve("dismissed")),
+        button(doc, "Refresh source", async () => {
+          try {
+            setMessage(root, "Refreshing the local source snapshot…");
+            await refreshResearchWorkspaceSource({
+              projectID: details.project.projectID,
+              sourceID: change.sourceID,
+            });
+            await renderProject(
+              root,
+              details.project.projectID,
+              capturedPapers,
+              generation,
+            );
+          } catch (error) {
+            setMessage(
+              root,
+              error instanceof Error ? error.message : String(error),
+              "error",
+            );
+          }
+        }),
+      );
+      card.append(changeActions);
+    }
+    list.append(card);
+  }
+  filter.addEventListener("change", () => {
+    for (const card of Array.from(list.children) as HTMLElement[]) {
+      const status = card.dataset.livingReviewStatus;
+      card.hidden = filter.value !== "all" && status !== filter.value;
+    }
+  });
+  if (!inbox.changes.length) {
+    list.append(
+      element(
+        doc,
+        "p",
+        "pprw-muted",
+        inbox.initializedAt
+          ? "No changes have been detected since the local baseline."
+          : "Run Check now to establish a local baseline.",
+      ),
+    );
+  }
+  section.append(list);
+  return section;
 }
 
 function renderContradictionGapPanel(

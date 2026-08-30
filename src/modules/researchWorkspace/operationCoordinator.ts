@@ -480,28 +480,11 @@ export class ResearchWorkspaceOperationCoordinator {
             artifactInputs,
           );
         } catch (error) {
-          const stored = await this.repository.getArtifact(
-            params.projectID,
-            artifact.artifact.artifactID,
-          );
-          if (stored && stored.artifact.status === "complete") {
-            await this.repository.updateArtifact(
-              params.projectID,
-              stored.artifact.artifactID,
-              stored.revision,
-              (current) => ({
-                ...current,
-                status: "stale",
-                lastCurrentAt: current.updatedAt,
-                staleReasons: [
-                  ...new Set([
-                    ...(current.staleReasons ?? []),
-                    "derived-inputs-changed-during-save",
-                  ]),
-                ],
-              }),
-            );
-          }
+          await this.repository.markArtifactStaleAtomically({
+            projectID: params.projectID,
+            artifactID: artifact.artifact.artifactID,
+            reason: "derived-inputs-changed-during-save",
+          });
           throw error;
         }
         run = await this.repository.updateRun(

@@ -631,6 +631,11 @@ and the same fail-closed outcome.
 - [ ] Confirm missing experiment, dataset, population, and replication coverage is described only as a gap in the current project snapshot
 - [ ] Confirm, reclassify with a reason, and dismiss with a reason; reopen Zotero and verify the append-only review history and deterministic rule result are both preserved
 - [ ] Replace an upstream artifact or change a paper's screening status and confirm the previous dashboard becomes stale without being deleted
+- [ ] Open Living Review and run Check now; confirm the first scan creates a baseline with no change alert and does not start PDF extraction, a CLI/model process, or a network request
+- [ ] After that baseline, add another paper to the project and confirm one `project-source-added` inbox event appears without fabricating a PDF or annotation change
+- [ ] Add, edit, and delete a Zotero annotation; confirm one metadata-only annotation change appears, can be marked reviewed or dismissed, and does not stale artifacts that have no annotation lineage
+- [ ] Replace a PDF, delete or move its local file, and restore it; confirm PDF changed, source unavailable, and source restored events appear and affected artifacts in every project sharing the source become stale
+- [ ] Trigger a burst of Zotero item notifications, disable and re-enable the add-on, and confirm scans remain serialized and the observer is neither leaked nor registered twice
 - [ ] Export JSON and Markdown; confirm both files are written below the Zotero profile's `paperpilot-research-workspace/exports` directory
 - [ ] Start with a former companion `workspace-v3.json`; confirm papers, reports, Mastery, matrices, graphs, cross-paper state, and citation state remain while provider/executable and Monitor state are removed
 - [ ] Cancel or close the pane during a run; confirm the process is stopped, its workspace is cleaned, and the paper reservation becomes available again

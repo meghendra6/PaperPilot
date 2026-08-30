@@ -1,6 +1,7 @@
 import {
   RESEARCH_WORKSPACE_ARTIFACT_SCHEMA_VERSION,
   RESEARCH_WORKSPACE_CATALOG_SCHEMA_VERSION,
+  RESEARCH_WORKSPACE_CHANGE_INBOX_SCHEMA_VERSION,
   RESEARCH_WORKSPACE_MEMBERS_SCHEMA_VERSION,
   RESEARCH_WORKSPACE_MIGRATION_SCHEMA_VERSION,
   RESEARCH_WORKSPACE_PROJECT_SCHEMA_VERSION,
@@ -11,6 +12,7 @@ import {
   assertResearchWorkspaceMember,
   type ResearchWorkspaceArtifactFile,
   type ResearchWorkspaceCatalog,
+  type ResearchWorkspaceChangeInboxFile,
   type ResearchWorkspaceMembersFile,
   type ResearchWorkspaceLegacyMigrationFile,
   type ResearchWorkspaceProjectFile,
@@ -18,6 +20,7 @@ import {
   type ResearchWorkspaceRunFile,
   type ResearchWorkspaceSourceFile,
 } from "./contracts";
+import { parseZoteroSourceID } from "../sourceIdentity";
 
 function object(value: unknown, label: string): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -67,6 +70,45 @@ function isoDate(value: unknown, label: string) {
     throw new Error(`${label} must be an ISO date.`);
   }
   return candidate;
+}
+
+function livingReviewSourceID(value: unknown, label: string) {
+  const candidate = text(value, label);
+  if (
+    candidate.length > 512 ||
+    (parseZoteroSourceID(candidate) === undefined &&
+      !/^legacy:[0-9a-f]{20}$/.test(candidate))
+  ) {
+    throw new Error(`${label} is not a supported Research Workspace sourceID.`);
+  }
+  return candidate;
+}
+
+function boundedFingerprint(value: unknown, label: string) {
+  const candidate = text(value, label);
+  if (candidate.length > 2_048) {
+    throw new Error(`${label} is too long.`);
+  }
+  return candidate;
+}
+
+function validateLivingReviewState(value: unknown, label: string) {
+  const state = object(value, label);
+  oneOf(
+    state.availability,
+    ["ready", "missing-file", "unreadable", "detached"],
+    `${label} availability`,
+  );
+  if (state.contentFingerprint !== undefined) {
+    boundedFingerprint(state.contentFingerprint, `${label} contentFingerprint`);
+  }
+  if (state.annotationFingerprint !== undefined) {
+    boundedFingerprint(
+      state.annotationFingerprint,
+      `${label} annotationFingerprint`,
+    );
+  }
+  return state;
 }
 
 function validateCriterion(value: unknown, label: string, seen: Set<string>) {
@@ -445,6 +487,142 @@ export function parseResearchWorkspaceSourceFile(
     throw new Error("source standaloneAttachment must be boolean.");
   }
   return value as ResearchWorkspaceSourceFile;
+}
+
+export function parseResearchWorkspaceChangeInboxFile(
+  value: unknown,
+): ResearchWorkspaceChangeInboxFile {
+  const root = object(value, "change inbox file");
+  schema(
+    root.schemaVersion,
+    RESEARCH_WORKSPACE_CHANGE_INBOX_SCHEMA_VERSION,
+    "change inbox file",
+  );
+  revision(root.revision, "change inbox revision");
+  assertResearchWorkspaceID(
+    text(root.projectID, "change inbox projectID"),
+    "projectID",
+  );
+  if (root.initializedAt !== undefined) {
+    isoDate(root.initializedAt, "change inbox initializedAt");
+  }
+  if (root.lastCheckedAt !== undefined) {
+    isoDate(root.lastCheckedAt, "change inbox lastCheckedAt");
+  }
+  if (!Array.isArray(root.snapshots) || root.snapshots.length > 10_000) {
+    throw new Error(
+      "change inbox snapshots must be an array of at most 10000.",
+    );
+  }
+  if (!Array.isArray(root.changes) || root.changes.length > 10_000) {
+    throw new Error("change inbox changes must be an array of at most 10000.");
+  }
+
+  const snapshotSourceIDs = new Set<string>();
+  for (const [index, value] of root.snapshots.entries()) {
+    const label = `change inbox snapshot ${index + 1}`;
+    const snapshot = validateLivingReviewState(value, label);
+    const sourceID = livingReviewSourceID(
+      snapshot.sourceID,
+      `${label} sourceID`,
+    );
+    if (snapshotSourceIDs.has(sourceID)) {
+      throw new Error(`Duplicate change inbox snapshot for ${sourceID}.`);
+    }
+    snapshotSourceIDs.add(sourceID);
+    isoDate(snapshot.observedAt, `${label} observedAt`);
+
+    const hasFingerprint = snapshot.annotationFingerprint !== undefined;
+    const hasAnnotation = snapshot.annotation !== undefined;
+    if (hasFingerprint !== hasAnnotation) {
+      throw new Error(
+        `${label} annotationFingerprint and annotation metadata must both be present.`,
+      );
+    }
+    if (hasAnnotation) {
+      const annotation = object(snapshot.annotation, `${label} annotation`);
+      oneOf(
+        annotation.algorithm,
+        ["zotero-annotation-keys-version-date-v1"],
+        `${label} annotation algorithm`,
+      );
+      const annotationValue = boundedFingerprint(
+        annotation.value,
+        `${label} annotation value`,
+      );
+      const annotationCount = revision(
+        annotation.count,
+        `${label} annotation count`,
+      );
+      if (annotationCount > 1_000_000) {
+        throw new Error(`${label} annotation count is too large.`);
+      }
+      if (annotationValue !== snapshot.annotationFingerprint) {
+        throw new Error(
+          `${label} annotation value does not match annotationFingerprint.`,
+        );
+      }
+    }
+  }
+
+  const changeIDs = new Set<string>();
+  const dedupeKeys = new Set<string>();
+  const submissionIDs = new Set<string>();
+  for (const [index, value] of root.changes.entries()) {
+    const label = `change inbox change ${index + 1}`;
+    const change = object(value, label);
+    const changeID = assertResearchWorkspaceID(
+      text(change.changeID, `${label} changeID`),
+      "changeID",
+    );
+    if (changeIDs.has(changeID)) {
+      throw new Error(`Duplicate change inbox changeID ${changeID}.`);
+    }
+    changeIDs.add(changeID);
+    const dedupeKey = boundedFingerprint(
+      change.dedupeKey,
+      `${label} dedupeKey`,
+    );
+    if (dedupeKeys.has(dedupeKey)) {
+      throw new Error(`Duplicate change inbox dedupeKey ${dedupeKey}.`);
+    }
+    dedupeKeys.add(dedupeKey);
+    livingReviewSourceID(change.sourceID, `${label} sourceID`);
+    oneOf(
+      change.kind,
+      [
+        "project-source-added",
+        "pdf-content-changed",
+        "annotations-changed",
+        "source-unavailable",
+        "source-restored",
+      ],
+      `${label} kind`,
+    );
+    validateLivingReviewState(change.before, `${label} before`);
+    validateLivingReviewState(change.after, `${label} after`);
+    isoDate(change.detectedAt, `${label} detectedAt`);
+    if (change.resolution !== undefined) {
+      const resolutionValue = object(change.resolution, `${label} resolution`);
+      oneOf(
+        resolutionValue.action,
+        ["reviewed", "dismissed"],
+        `${label} resolution action`,
+      );
+      const submissionID = assertResearchWorkspaceID(
+        text(resolutionValue.submissionID, `${label} resolution submissionID`),
+        "submissionID",
+      );
+      if (submissionIDs.has(submissionID)) {
+        throw new Error(
+          `Duplicate change inbox resolution submissionID ${submissionID}.`,
+        );
+      }
+      submissionIDs.add(submissionID);
+      isoDate(resolutionValue.actedAt, `${label} resolution actedAt`);
+    }
+  }
+  return value as ResearchWorkspaceChangeInboxFile;
 }
 
 export function parseResearchWorkspaceArtifactFile(

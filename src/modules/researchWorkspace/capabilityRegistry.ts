@@ -15,7 +15,8 @@ export type ResearchWorkspaceCapabilityID =
   | "citation-context"
   | "citation-stance"
   | "screening-log"
-  | "contradiction-gap-dashboard";
+  | "contradiction-gap-dashboard"
+  | "living-review";
 
 export type ResearchWorkspaceSourceScope =
   | "single-source"
@@ -267,6 +268,21 @@ const definitions: readonly ResearchWorkspaceCapabilityDefinition[] = [
     reviewable: true,
     editable: true,
     exportable: true,
+  },
+  {
+    id: "living-review",
+    label: "Living Review",
+    sourceScope: "project",
+    entrypoint: "research-workspace",
+    operation: "living-review",
+    operationVersion: "living-review-v1",
+    promptVersion: "local-zotero-metadata-v1",
+    parserVersion: "living-review-parser-v1",
+    schemaVersion: "living-review-inbox-v1",
+    renderer: "generic",
+    reviewable: true,
+    editable: true,
+    exportable: false,
   },
   {
     id: "citation-context",

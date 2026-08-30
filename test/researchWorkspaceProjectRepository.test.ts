@@ -4,6 +4,7 @@ import * as assert from "node:assert/strict";
 import {
   RESEARCH_WORKSPACE_MEMBERS_SCHEMA_VERSION,
   ResearchWorkspaceRevisionConflictError,
+  type ResearchWorkspaceArtifact,
   type ResearchWorkspaceArtifactLineage,
   type ResearchWorkspaceFileOps,
   type ResearchWorkspaceSourceRecord,
@@ -124,6 +125,72 @@ function lineage(
     model: "gpt-5.6-terra",
     runID,
   };
+}
+
+function injectConcurrentArtifactRevision(
+  setup: ReturnType<typeof repository>,
+  projectID: string,
+  artifactID: string,
+  payload: unknown,
+) {
+  const originalList = setup.repository.listArtifacts.bind(setup.repository);
+  const originalUpdate = setup.repository.updateArtifact.bind(setup.repository);
+  let injectedAfterList = false;
+  let injectedBeforeLegacyUpdate = false;
+
+  setup.repository.listArtifacts = (async (requestedProjectID: string) => {
+    const listed = await originalList(requestedProjectID);
+    if (!injectedAfterList && requestedProjectID === projectID) {
+      injectedAfterList = true;
+      const current = await setup.repository.getArtifact(projectID, artifactID);
+      assert(current);
+      await originalUpdate(
+        projectID,
+        artifactID,
+        current.revision,
+        (artifact: ResearchWorkspaceArtifact) => ({
+          ...artifact,
+          payload: structuredClone(payload),
+        }),
+        false,
+      );
+    }
+    return listed;
+  }) as typeof setup.repository.listArtifacts;
+
+  setup.repository.updateArtifact = (async (
+    requestedProjectID: string,
+    requestedArtifactID: string,
+    expectedRevision: number,
+    mutate: (artifact: ResearchWorkspaceArtifact) => ResearchWorkspaceArtifact,
+    syncCatalog = true,
+  ) => {
+    if (
+      injectedAfterList &&
+      !injectedBeforeLegacyUpdate &&
+      requestedProjectID === projectID &&
+      requestedArtifactID === artifactID
+    ) {
+      injectedBeforeLegacyUpdate = true;
+      await originalUpdate(
+        projectID,
+        artifactID,
+        expectedRevision,
+        (artifact: ResearchWorkspaceArtifact) => ({
+          ...artifact,
+          payload: { concurrentReview: "newer-than-stale-snapshot" },
+        }),
+        false,
+      );
+    }
+    return originalUpdate(
+      requestedProjectID,
+      requestedArtifactID,
+      expectedRevision,
+      mutate,
+      syncCatalog,
+    );
+  }) as typeof setup.repository.updateArtifact;
 }
 
 test("reading an empty project store performs no durable write", async () => {
@@ -880,4 +947,275 @@ test("deleting an upstream artifact leaves its dependents stale", async () => {
   assert.deepEqual(stored?.artifact.staleReasons, [
     `upstream-artifact-deleted:${upstream.artifact.artifactID}`,
   ]);
+});
+
+test("source staleness survives a concurrent artifact revision and preserves its payload", async () => {
+  const setup = repository();
+  const project = await setup.repository.createProject({
+    projectID: "project-source-stale-race",
+    name: "Source stale race",
+  });
+  const sourceA = source("RACE-SOURCE");
+  await setup.repository.putSource(sourceA);
+  await setup.repository.addMembers(
+    project.project.projectID,
+    project.membersRevision,
+    [{ sourceID: sourceA.sourceID }],
+  );
+  const artifact = await setup.repository.createArtifact(
+    project.project.projectID,
+    {
+      artifactID: "artifact-source-stale-race",
+      type: "claim-ledger",
+      title: "Concurrent source review",
+      status: "complete",
+      sourceIDs: [sourceA.sourceID],
+      lineage: lineage([sourceA], "run-source-stale-race"),
+      payload: { review: { decision: "before" } },
+    },
+  );
+  const concurrentPayload = {
+    review: { decision: "accepted", note: "preserve me" },
+    claims: ["concurrent payload"],
+  };
+  injectConcurrentArtifactRevision(
+    setup,
+    project.project.projectID,
+    artifact.artifact.artifactID,
+    concurrentPayload,
+  );
+
+  const changed = await setup.repository.markArtifactsStaleForSource({
+    projectID: project.project.projectID,
+    sourceID: sourceA.sourceID,
+    contentFingerprint: "fingerprint-RACE-SOURCE-v2",
+  });
+
+  assert.deepEqual(changed, [artifact.artifact.artifactID]);
+  const stored = await setup.repository.getArtifact(
+    project.project.projectID,
+    artifact.artifact.artifactID,
+  );
+  assert.equal(stored?.artifact.status, "stale");
+  assert.deepEqual(stored?.artifact.payload, concurrentPayload);
+  assert(
+    stored?.artifact.staleReasons?.includes(
+      `source-content-changed:${sourceA.sourceID}`,
+    ),
+  );
+});
+
+test("membership staleness survives a concurrent artifact revision", async () => {
+  const setup = repository();
+  const project = await setup.repository.createProject({
+    projectID: "project-members-stale-race",
+    name: "Members stale race",
+  });
+  const sourceA = source("RACE-MEMBERS");
+  await setup.repository.putSource(sourceA);
+  const members = await setup.repository.addMembers(
+    project.project.projectID,
+    project.membersRevision,
+    [{ sourceID: sourceA.sourceID }],
+  );
+  const artifact = await setup.repository.createArtifact(
+    project.project.projectID,
+    {
+      artifactID: "artifact-members-stale-race",
+      type: "review-log",
+      title: "Concurrent membership review",
+      status: "complete",
+      sourceIDs: [sourceA.sourceID],
+      lineage: {
+        ...lineage([sourceA], "run-members-stale-race"),
+        membersRevision: members.revision,
+      },
+      payload: { reviewEvents: [] },
+    },
+  );
+  const concurrentPayload = {
+    reviewEvents: [{ action: "confirmed", submissionID: "submission-race" }],
+  };
+  injectConcurrentArtifactRevision(
+    setup,
+    project.project.projectID,
+    artifact.artifact.artifactID,
+    concurrentPayload,
+  );
+
+  const changed = await setup.repository.markArtifactsStaleForMembersRevision({
+    projectID: project.project.projectID,
+    membersRevision: members.revision + 1,
+  });
+
+  assert.deepEqual(changed, [artifact.artifact.artifactID]);
+  const stored = await setup.repository.getArtifact(
+    project.project.projectID,
+    artifact.artifact.artifactID,
+  );
+  assert.equal(stored?.artifact.status, "stale");
+  assert.deepEqual(stored?.artifact.payload, concurrentPayload);
+  assert(
+    stored?.artifact.staleReasons?.includes("project-source-scope-changed"),
+  );
+});
+
+test("upstream propagation survives a concurrent dependent revision", async () => {
+  const setup = repository();
+  const project = await setup.repository.createProject({
+    projectID: "project-upstream-stale-race",
+    name: "Upstream stale race",
+  });
+  const sourceA = source("RACE-UPSTREAM");
+  await setup.repository.putSource(sourceA);
+  await setup.repository.addMembers(
+    project.project.projectID,
+    project.membersRevision,
+    [{ sourceID: sourceA.sourceID }],
+  );
+  const upstream = await setup.repository.createArtifact(
+    project.project.projectID,
+    {
+      artifactID: "artifact-race-upstream",
+      type: "claim-ledger",
+      title: "Race upstream",
+      status: "complete",
+      sourceIDs: [sourceA.sourceID],
+      lineage: lineage([sourceA], "run-race-upstream"),
+      payload: { claims: [] },
+    },
+  );
+  const dependent = await setup.repository.createArtifact(
+    project.project.projectID,
+    {
+      artifactID: "artifact-race-dependent",
+      type: "contradiction-gap-dashboard",
+      title: "Race dependent",
+      status: "complete",
+      sourceIDs: [sourceA.sourceID],
+      lineage: {
+        ...lineage([sourceA], "run-race-dependent"),
+        artifactInputs: [
+          {
+            artifactID: upstream.artifact.artifactID,
+            artifactType: upstream.artifact.type,
+            version: upstream.artifact.version,
+            updatedAt: upstream.artifact.updatedAt,
+            payloadFingerprint: "artifact-payload-race-upstream",
+          },
+        ],
+      },
+      payload: { review: "before" },
+    },
+  );
+  const concurrentPayload = {
+    review: "confirmed concurrently",
+    notes: ["must survive stale propagation"],
+  };
+  injectConcurrentArtifactRevision(
+    setup,
+    project.project.projectID,
+    dependent.artifact.artifactID,
+    concurrentPayload,
+  );
+
+  const changed = await setup.repository.markArtifactsStaleForArtifact({
+    projectID: project.project.projectID,
+    artifactID: upstream.artifact.artifactID,
+  });
+
+  assert.deepEqual(changed, [dependent.artifact.artifactID]);
+  const stored = await setup.repository.getArtifact(
+    project.project.projectID,
+    dependent.artifact.artifactID,
+  );
+  assert.equal(stored?.artifact.status, "stale");
+  assert.deepEqual(stored?.artifact.payload, concurrentPayload);
+  assert(
+    stored?.artifact.staleReasons?.includes(
+      `upstream-artifact-changed:${upstream.artifact.artifactID}`,
+    ),
+  );
+});
+
+test("stale propagation discovers a dependent created after its initial snapshot", async () => {
+  const setup = repository();
+  const project = await setup.repository.createProject({
+    projectID: "project-dynamic-stale-traversal",
+    name: "Dynamic stale traversal",
+  });
+  const sourceA = source("DYNAMIC-TRAVERSAL");
+  await setup.repository.putSource(sourceA);
+  await setup.repository.addMembers(
+    project.project.projectID,
+    project.membersRevision,
+    [{ sourceID: sourceA.sourceID }],
+  );
+  const upstream = await setup.repository.createArtifact(
+    project.project.projectID,
+    {
+      artifactID: "artifact-dynamic-upstream",
+      type: "claim-ledger",
+      title: "Dynamic upstream",
+      status: "complete",
+      sourceIDs: [sourceA.sourceID],
+      lineage: lineage([sourceA], "run-dynamic-upstream"),
+      payload: { claims: [] },
+    },
+  );
+
+  const originalList = setup.repository.listArtifacts.bind(setup.repository);
+  const originalCreate = setup.repository.createArtifact.bind(setup.repository);
+  let injected = false;
+  let dependentArtifactID: string | undefined;
+  let patchedList: typeof setup.repository.listArtifacts;
+  patchedList = (async (projectID: string) => {
+    const listed = await originalList(projectID);
+    if (!injected && projectID === project.project.projectID) {
+      injected = true;
+      setup.repository.listArtifacts =
+        originalList as typeof setup.repository.listArtifacts;
+      const dependent = await originalCreate(projectID, {
+        artifactID: "artifact-dynamic-dependent",
+        type: "contradiction-gap-dashboard",
+        title: "Dynamic dependent",
+        status: "complete",
+        sourceIDs: [sourceA.sourceID],
+        lineage: {
+          ...lineage([sourceA], "run-dynamic-dependent"),
+          artifactInputs: [
+            {
+              artifactID: upstream.artifact.artifactID,
+              artifactType: upstream.artifact.type,
+              version: upstream.artifact.version,
+              updatedAt: upstream.artifact.updatedAt,
+              payloadFingerprint: "artifact-payload-dynamic-upstream",
+            },
+          ],
+        },
+        payload: { createdDuringPropagation: true },
+      });
+      dependentArtifactID = dependent.artifact.artifactID;
+      setup.repository.listArtifacts = patchedList;
+    }
+    return listed;
+  }) as typeof setup.repository.listArtifacts;
+  setup.repository.listArtifacts = patchedList;
+
+  const changed = await setup.repository.markArtifactsStaleForArtifact({
+    projectID: project.project.projectID,
+    artifactID: upstream.artifact.artifactID,
+  });
+
+  assert(dependentArtifactID);
+  assert.deepEqual(changed, [dependentArtifactID]);
+  assert.equal(
+    (
+      await setup.repository.getArtifact(
+        project.project.projectID,
+        dependentArtifactID,
+      )
+    )?.artifact.status,
+    "stale",
+  );
 });
