@@ -14,6 +14,7 @@ export type ResearchWorkspaceCapabilityID =
   | "cross-paper-mastery"
   | "citation-context"
   | "citation-stance"
+  | "citation-reference-health"
   | "screening-log"
   | "contradiction-gap-dashboard"
   | "living-review";
@@ -34,6 +35,7 @@ export type ResearchWorkspaceRendererID =
   | "synthesis"
   | "mastery"
   | "review-log"
+  | "citation-health"
   | "contradiction-gap-dashboard";
 
 export interface ResearchWorkspaceCapabilityDefinition {
@@ -314,6 +316,22 @@ const definitions: readonly ResearchWorkspaceCapabilityDefinition[] = [
     renderer: "generic",
     reviewable: true,
     editable: true,
+    exportable: true,
+  },
+  {
+    id: "citation-reference-health",
+    label: "Citation & Reference Health",
+    sourceScope: "project",
+    entrypoint: "research-workspace",
+    operation: "citation-reference-health",
+    operationVersion: "citation-reference-health-v1",
+    promptVersion: "local-artifact-derivation-v1",
+    parserVersion: "citation-reference-health-parser-v1",
+    schemaVersion: "citation-reference-health-v1",
+    artifactType: "citation-health",
+    renderer: "citation-health",
+    reviewable: true,
+    editable: false,
     exportable: true,
   },
 ] as const;

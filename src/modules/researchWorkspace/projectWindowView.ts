@@ -13,6 +13,7 @@ import {
   refreshResearchWorkspaceSource,
   resolveResearchWorkspaceChange,
   reviewResearchWorkspaceContradictionGap,
+  runResearchWorkspaceCitationHealth,
   runResearchWorkspaceContradictionGapDashboard,
   updateResearchWorkspaceMember,
   updateResearchWorkspaceProject,
@@ -85,6 +86,14 @@ function textInput(doc: Document, placeholder: string, value = "") {
   node.type = "text";
   node.placeholder = placeholder;
   node.value = value;
+  return node;
+}
+
+function textArea(doc: Document, placeholder: string, value = "") {
+  const node = element(doc, "textarea", "pprw-input pprw-textarea");
+  node.placeholder = placeholder;
+  node.value = value;
+  node.rows = 7;
   return node;
 }
 
@@ -275,6 +284,9 @@ async function renderProject(
     ),
   );
   root.append(
+    renderCitationHealthPanel(doc, root, details, capturedPapers, generation),
+  );
+  root.append(
     renderContradictionGapPanel(doc, root, details, capturedPapers, generation),
   );
   root.append(renderArtifactHistory(doc, root, details));
@@ -302,6 +314,193 @@ async function renderProject(
     );
     root.append(empty);
   }
+}
+
+function renderCitationHealthPanel(
+  doc: Document,
+  root: HTMLElement,
+  details: ResearchWorkspaceProjectDetails,
+  capturedPapers: readonly ResearchWorkspacePaper[],
+  generation: symbol,
+) {
+  const section = element(
+    doc,
+    "section",
+    "pprw-project-panel pprw-citation-health-panel",
+  );
+  section.append(
+    element(doc, "h3", "", "Citation & Reference Health"),
+    element(
+      doc,
+      "p",
+      "pprw-muted",
+      "Builds a deterministic local review checklist from current saved citation, methodology, and reproducibility artifacts plus local Zotero metadata. It does not create an aggregate truth score, call a model, or use the network.",
+    ),
+  );
+  const eligibleTypes = new Set([
+    "citation-context",
+    "citation-stance",
+    "methodology-audit",
+    "reproducibility",
+  ]);
+  const hasCurrentInput = details.artifacts.some(
+    (artifact) =>
+      artifact.status === "complete" && eligibleTypes.has(artifact.type),
+  );
+  const hasIncludedSource = details.members.some(
+    (member) => member.reviewStatus !== "excluded",
+  );
+
+  const draftName = element(doc, "input", "pprw-input");
+  draftName.type = "text";
+  draftName.placeholder = "Imported draft name (optional)";
+  const draftText = textArea(
+    doc,
+    "Optional imported or pasted draft text. Only a bounded fingerprint and bounded excerpt are saved.",
+  );
+  const draftFile = element(doc, "input", "pprw-input");
+  draftFile.type = "file";
+  draftFile.accept = ".txt,.md,.markdown,text/plain,text/markdown";
+  draftFile.setAttribute("aria-label", "Import a local draft text file");
+  draftFile.addEventListener("change", () => {
+    void (async () => {
+      const file = draftFile.files?.[0];
+      if (!file) return;
+      try {
+        // Bound the UI read as defense in depth. The report builder applies a
+        // second, smaller source and persisted-excerpt bound.
+        draftText.value = await file.slice(0, 500_000).text();
+        draftName.value = file.name;
+        setMessage(
+          root,
+          file.size > 500_000
+            ? "Imported the first bounded portion of the draft."
+            : "Imported the local draft text.",
+          "success",
+        );
+      } catch (error) {
+        setMessage(
+          root,
+          error instanceof Error ? error.message : String(error),
+          "error",
+        );
+      }
+    })();
+  });
+  section.append(
+    element(doc, "label", "pprw-muted", "Optional local draft (.txt or .md)"),
+    draftFile,
+    draftName,
+    draftText,
+  );
+
+  const build = button(
+    doc,
+    "Build / refresh citation health checklist",
+    async () => {
+      try {
+        setMessage(root, "Building the local citation health checklist…");
+        await runResearchWorkspaceCitationHealth({
+          projectID: details.project.projectID,
+          ...(draftText.value.trim()
+            ? {
+                draft: {
+                  ...(draftName.value.trim()
+                    ? { name: draftName.value.trim() }
+                    : {}),
+                  text: draftText.value,
+                },
+              }
+            : {}),
+          onStatus: (status) => setMessage(root, status),
+        });
+        await renderProject(
+          root,
+          details.project.projectID,
+          capturedPapers,
+          generation,
+        );
+      } catch (error) {
+        setMessage(
+          root,
+          error instanceof Error ? error.message : String(error),
+          "error",
+        );
+      }
+    },
+    true,
+  );
+  build.disabled = !hasIncludedSource || !hasCurrentInput;
+  section.append(build);
+  if (!hasIncludedSource) {
+    section.append(
+      element(
+        doc,
+        "p",
+        "pprw-project-warning",
+        "Include or retain at least one project source before building this checklist.",
+      ),
+    );
+  } else if (!hasCurrentInput) {
+    section.append(
+      element(
+        doc,
+        "p",
+        "pprw-project-warning",
+        "Create a current Citation Context, Citation Stance, Methodology Audit, or Reproducibility artifact first.",
+      ),
+    );
+  }
+
+  const latest = details.artifacts.find(
+    (artifact) => artifact.type === "citation-health",
+  );
+  if (!latest) {
+    section.append(
+      element(
+        doc,
+        "p",
+        "pprw-muted",
+        "No citation health checklist has been saved for this project yet.",
+      ),
+    );
+    return section;
+  }
+  const payload = latest.payload as {
+    findings?: unknown[];
+    coverage?: {
+      citationContexts?: number;
+      localMetadataSignals?: number;
+      unsupportedDraftCandidates?: number;
+    };
+  };
+  const metrics = element(doc, "div", "pprw-home-metrics");
+  metrics.append(
+    metric(doc, payload.findings?.length ?? 0, "review findings"),
+    metric(doc, payload.coverage?.citationContexts ?? 0, "citation contexts"),
+    metric(
+      doc,
+      payload.coverage?.localMetadataSignals ?? 0,
+      "local metadata signals",
+    ),
+    metric(
+      doc,
+      payload.coverage?.unsupportedDraftCandidates ?? 0,
+      "draft coverage candidates",
+    ),
+  );
+  section.append(metrics);
+  if (latest.status !== "complete") {
+    section.append(
+      element(
+        doc,
+        "p",
+        "pprw-project-warning",
+        `This checklist is ${latest.status}. Refresh it before relying on its review signals.`,
+      ),
+    );
+  }
+  return section;
 }
 
 function livingReviewStateLabel(

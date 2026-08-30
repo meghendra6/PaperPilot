@@ -1787,6 +1787,22 @@ chooses otherwise.
 
 ### 25.4 Priority P1: citation and reference health
 
+Implementation status: delivered as the project-local `citation-health`
+artifact and `citation-reference-health` capability. The deterministic builder
+admits only current, complete Citation Context, Citation Stance, Methodology
+Audit, and Reproducibility artifacts whose source fingerprints still match the
+non-excluded project scope. It records those upstream payload fingerprints and
+the current members revision through `runDerived`. The report covers unresolved
+or ambiguous citation identity, references absent from the scanned local Zotero
+libraries, contrasting saved contexts/stances, local correction/retraction
+metadata terms, and inherited method/reproducibility risks. A local text or
+Markdown draft may be imported, but only a bounded fingerprint and bounded
+excerpt are persisted; unsupported-statement findings mean that no lexical
+match was found in the admitted saved artifacts, not that the statement is
+false. Optional external-provider snapshots are explicitly supplementary and
+must publish their coverage and limitations. No aggregate truth or quality
+score is generated.
+
 Add a review checklist for:
 
 - retraction or correction metadata;

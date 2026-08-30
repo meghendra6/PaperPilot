@@ -231,6 +231,7 @@ export type ResearchWorkspaceArtifactType =
   | "cross-paper-mastery"
   | "citation-context"
   | "citation-stance"
+  | "citation-health"
   | "synthesis"
   | "contradiction-gap-dashboard"
   | "review-log";
