@@ -478,7 +478,10 @@ export function createResearchWorkspaceZoteroSyncRuntime(
         if (preview.selection.collectionKey && !collection) {
           throw new Error("The selected Zotero collection no longer exists.");
         }
-        const options = { notifierData: notifierData(receiptID, "apply") };
+        const options = {
+          skipDateModifiedUpdate: true,
+          notifierData: notifierData(receiptID, "apply"),
+        };
         for (const plan of preview.items) {
           if (plan.status !== "additive") continue;
           const item = await resolveItem(runtime, plan);
@@ -580,6 +583,7 @@ export function createResearchWorkspaceZoteroSyncRuntime(
       const executeTransaction = transactionExecutor(runtime);
       return executeTransaction(async () => {
         const options = {
+          skipDateModifiedUpdate: true,
           notifierData: notifierData(receipt.receiptID, "undo"),
         };
         const priorUndoByIdentity = new Map(

@@ -285,6 +285,7 @@ test("runtime apply and undo use transactions, notifier data, and only receipt-o
     assert.deepEqual(applyResults[0].tagNamesAdded, ["reviewed"]);
     assert.equal(applyResults[0].notifierDataIncluded, true);
     assert.deepEqual(fake.collectionOptions[0], {
+      skipDateModifiedUpdate: true,
       notifierData: {
         paperPilotOrigin: "research-workspace-zotero-sync",
         paperPilotSyncReceiptID: "zotero-sync-receipt-runtime",
@@ -313,6 +314,7 @@ test("runtime apply and undo use transactions, notifier data, and only receipt-o
       "preexisting-tag",
     ]);
     assert.deepEqual(fake.regular.saveOptions.at(-1), {
+      skipDateModifiedUpdate: true,
       notifierData: {
         paperPilotOrigin: "research-workspace-zotero-sync",
         paperPilotSyncReceiptID: "zotero-sync-receipt-runtime",
@@ -376,14 +378,15 @@ test("a previously settled receipt item never removes a later user re-add", asyn
     fake.regular.collections.push(fake.selectedCollectionID);
     fake.regular.tags.push("reviewed");
     fake.regular.version += 1;
-    const partiallyUndone: ResearchWorkspaceZoteroSyncReceipt = {
+    const settledReceipt: ResearchWorkspaceZoteroSyncReceipt = {
       ...receipt,
-      status: "partially-undone",
+      status: "undone",
       undoResults: firstUndo,
       updatedAt: "2026-08-30T04:04:00.000Z",
+      undoneAt: "2026-08-30T04:04:00.000Z",
     };
 
-    const retried = await runtime.undo(partiallyUndone);
+    const retried = await runtime.undo(settledReceipt);
     assert.deepEqual(retried, firstUndo);
     assert(fake.regular.collections.includes(fake.selectedCollectionID));
     assert(fake.regular.tags.includes("reviewed"));

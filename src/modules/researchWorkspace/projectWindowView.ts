@@ -460,7 +460,10 @@ async function renderProject(
     loadResearchWorkspaceProject(projectID),
     loadResearchWorkspaceChangeInbox(projectID),
     listResearchWorkspaceZoteroSyncReceipts(projectID)
-      .then((receipts) => ({ receipts }))
+      .then((receipts) => ({
+        receipts,
+        warning: undefined as string | undefined,
+      }))
       .catch(() => ({
         receipts: [] as ResearchWorkspaceZoteroSyncReceiptFile[],
         warning:
@@ -791,7 +794,9 @@ function renderZoteroSyncPreview(
   );
   const updateApproval = () => {
     applyButton.disabled =
-      !approval.checked || tokenInput.value.trim() !== preview.approvalToken;
+      !preview.summary.additiveItems ||
+      !approval.checked ||
+      tokenInput.value.trim() !== preview.approvalToken;
   };
   applyButton.disabled = true;
   approval.addEventListener("change", updateApproval);
@@ -804,6 +809,16 @@ function renderZoteroSyncPreview(
     approvalLabel,
     applyButton,
   );
+  if (!preview.summary.additiveItems) {
+    container.append(
+      element(
+        doc,
+        "p",
+        "pprw-muted",
+        "This preview contains no additive changes, so apply remains disabled.",
+      ),
+    );
+  }
   return container;
 }
 
@@ -932,10 +947,7 @@ function renderZoteroSyncTargets(
     for (const limitation of targets.limitations) {
       limitations.append(element(doc, "li", "", limitation));
     }
-    container.append(
-      element(doc, "h4", "", "Safety boundaries"),
-      limitations,
-    );
+    container.append(element(doc, "h4", "", "Safety boundaries"), limitations);
   }
   return container;
 }
@@ -970,9 +982,7 @@ function renderSafeZoteroSyncPanel(
     ),
   );
   if (receiptWarning) {
-    section.append(
-      element(doc, "p", "pprw-project-warning", receiptWarning),
-    );
+    section.append(element(doc, "p", "pprw-project-warning", receiptWarning));
   }
   const targetsHost = element(doc, "div", "pprw-template-preview");
   const loadTargets = button(
@@ -1006,6 +1016,7 @@ function renderSafeZoteroSyncPanel(
     true,
   );
   loadTargets.disabled = Boolean(receiptWarning);
+  if (receiptWarning) loadTargets.dataset.disabled = "true";
   section.append(
     loadTargets,
     targetsHost,

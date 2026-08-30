@@ -17,11 +17,13 @@ test("safe Zotero sync UI exposes full preview, exact approval, receipts, and ow
     "Existing tags (optional)",
     "Build full sync preview",
     "Full additive sync preview",
+    "Safety boundaries",
     "Preview-bound approval token",
     "Enter the preview-bound approval token",
     "Apply approved additive sync",
     "Write-ahead receipts",
     "Undo receipt-owned additions",
+    "Sync receipt history could not be read",
   ]) {
     assert.match(
       view,
