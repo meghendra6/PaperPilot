@@ -47,12 +47,34 @@ export interface ResearchWorkspaceProjectScope {
   exclusionCriteria: ResearchWorkspaceCriterion[];
 }
 
+export interface ResearchWorkspaceProjectTemplateAssumption {
+  assumptionID: string;
+  label: string;
+  value: string;
+  description?: string;
+}
+
+export interface ResearchWorkspaceProjectTemplateSnapshot {
+  registryVersion: 1;
+  templateID: string;
+  templateVersion: number;
+  templateName: string;
+  description: string;
+  suggestedResearchQuestion: string;
+  registryAssumptions: ResearchWorkspaceProjectTemplateAssumption[];
+  registryCapabilityPresetIDs: string[];
+  appliedAt: string;
+}
+
 export interface ResearchProject {
   projectID: string;
   name: string;
   description?: string;
   researchQuestion?: string;
   scope?: ResearchWorkspaceProjectScope;
+  templateSnapshot?: ResearchWorkspaceProjectTemplateSnapshot;
+  templateAssumptions?: ResearchWorkspaceProjectTemplateAssumption[];
+  capabilityPresetIDs?: string[];
   defaultEngineMode?: ResearchWorkspaceEngineMode;
   activeArtifactID?: string;
   artifactIDs: string[];

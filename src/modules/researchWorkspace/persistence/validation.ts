@@ -15,6 +15,7 @@ import {
   type ResearchWorkspaceChangeInboxFile,
   type ResearchWorkspaceMembersFile,
   type ResearchWorkspaceLegacyMigrationFile,
+  type ResearchProject,
   type ResearchWorkspaceProjectFile,
   type ResearchWorkspacePreferencesFile,
   type ResearchWorkspaceRunFile,
@@ -22,6 +23,7 @@ import {
 } from "./contracts";
 import { parseZoteroSourceID } from "../sourceIdentity";
 import { parseCitationHealthReport } from "../citationHealth";
+import { validateResearchWorkspaceProjectTemplateState } from "../projectTemplates";
 
 function object(value: unknown, label: string): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -222,6 +224,9 @@ function validateProject(value: unknown) {
     oneOf(project.defaultEngineMode, ENGINE_MODES, "project defaultEngineMode");
   }
   if (project.scope !== undefined) validateProjectScope(project.scope);
+  validateResearchWorkspaceProjectTemplateState(
+    project as unknown as ResearchProject,
+  );
   for (const id of project.artifactIDs as string[]) {
     assertResearchWorkspaceID(id, "artifactID");
   }

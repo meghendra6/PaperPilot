@@ -56,6 +56,7 @@ export interface ResearchWorkspaceViewOptions {
   capturedPapers?: readonly ResearchWorkspacePaper[];
   standalone?: boolean;
   projectID?: string;
+  recommendedCapabilityIDs?: readonly string[];
 }
 
 const runtime = new WeakMap<HTMLElement, ViewRuntime>();
@@ -84,6 +85,44 @@ function button(
   node.type = "button";
   node.addEventListener("click", () => void action());
   return node;
+}
+
+const CAPABILITY_BUTTON_LABELS = new Map<string, string>([
+  ["Extract claims", "claim-ledger"],
+  ["Open Critical Read", "critical-read"],
+  ["Methodology Audit", "methodology-audit"],
+  ["Reproducibility", "reproducibility-audit"],
+  ["Paper-to-Code", "paper-to-code"],
+  ["Open Paper Mastery", "paper-mastery"],
+  ["Quick Compare", "quick-compare"],
+  ["Evidence Matrix", "evidence-matrix"],
+  ["Literature Graph", "relationship-graph"],
+  ["Project synthesis", "project-synthesis"],
+  ["Cross-paper question", "cross-paper-mastery"],
+  ["Grade cross-paper answer", "cross-paper-mastery"],
+  ["Extract citation contexts locally", "citation-context"],
+  ["Analyze approved snippets", "citation-stance"],
+  ["Save stance correction", "citation-stance"],
+]);
+
+function markRecommendedCapabilityButtons(
+  root: HTMLElement,
+  recommendedCapabilityIDs: ReadonlySet<string>,
+) {
+  for (const node of Array.from(
+    root.querySelectorAll("button"),
+  ) as HTMLButtonElement[]) {
+    const label = node.textContent?.trim() ?? "";
+    const capabilityID = CAPABILITY_BUTTON_LABELS.get(label);
+    if (!capabilityID || !recommendedCapabilityIDs.has(capabilityID)) continue;
+    node.classList.add("pp-btn--recommended");
+    node.dataset.recommendedCapability = capabilityID;
+    node.title = `${label} is recommended by the current project template.`;
+    node.setAttribute(
+      "aria-label",
+      `${label} (recommended by the current project template)`,
+    );
+  }
 }
 
 function input(doc: Document, placeholder: string, value = "") {
@@ -267,6 +306,9 @@ export async function renderResearchWorkspaceView(
   const generation = Symbol("research-workspace-render");
   runtime.set(root, { itemID: item?.id, generation, busy: false });
   const doc = root.ownerDocument;
+  const recommendedCapabilityIDs = new Set(
+    options.recommendedCapabilityIDs ?? [],
+  );
   root.className = "paperpilot-research-workspace";
   root.replaceChildren();
 
@@ -926,6 +968,7 @@ export async function renderResearchWorkspaceView(
     ),
   );
   root.insertBefore(exportSection.root, result);
+  markRecommendedCapabilityButtons(root, recommendedCapabilityIDs);
 }
 
 export function registerResearchWorkspacePaneSection() {

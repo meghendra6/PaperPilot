@@ -1815,7 +1815,18 @@ Add a review checklist for:
 Third-party corpora such as scite MAY be optional providers. Their classification
 must not become Paper Pilot's only source of truth.
 
-### 25.5 Priority P2: project templates
+### 25.5 Priority P2: Research project templates
+
+Implementation status: delivered as an immutable, defensively cloned registry
+with five templates: exploratory literature review, systematic review,
+reproduction project, technology comparison, and paper reading group. The
+modeless project home presents a selector and editable preview before explicit
+creation. The project stores an immutable provenance snapshot and separately
+editable assumptions and capability preset IDs in additive schema-v1 fields.
+Template selection never runs a capability. Recommended capabilities receive
+visual emphasis while every other capability remains available. Project
+settings can edit assumptions and presets without rewriting provenance, and
+JSON/Markdown exports include the original snapshot and current editable state.
 
 Optional templates MAY initialize criteria and artifact presets for:
 

@@ -150,6 +150,17 @@ their coverage/limitations remain explicit. The derived artifact records every
 upstream payload fingerprint and the current members revision through
 `runDerived`; no aggregate truth or scientific-quality score is produced.
 
+Research project templates are an immutable local registry with five starting
+points: exploratory literature review, systematic review, reproduction project,
+technology comparison, and paper reading group. The creation surface shows an
+editable preview before any project is written. A project stores an immutable
+snapshot of the registry definition plus separately editable assumptions and
+capability preset IDs in additive schema-v1 fields. Presets only add visible
+recommendation emphasis to existing controls; they never start a capability,
+remove another capability, or change its permission boundary. JSON and Markdown
+project exports retain both the original template snapshot and the current
+editable settings.
+
 ## Engine abstraction
 
 `src/modules/ai/` is the thin layer over the three engines.

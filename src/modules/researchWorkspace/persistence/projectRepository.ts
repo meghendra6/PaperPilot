@@ -121,6 +121,9 @@ export interface CreateResearchWorkspaceProjectInput {
   description?: string;
   researchQuestion?: string;
   scope?: ResearchProject["scope"];
+  templateSnapshot?: ResearchProject["templateSnapshot"];
+  templateAssumptions?: ResearchProject["templateAssumptions"];
+  capabilityPresetIDs?: ResearchProject["capabilityPresetIDs"];
   defaultEngineMode?: ResearchProject["defaultEngineMode"];
 }
 
@@ -398,6 +401,23 @@ export class ResearchWorkspaceProjectRepository {
       ...(input.scope
         ? { scope: cloneResearchWorkspaceValue(input.scope) }
         : {}),
+      ...(input.templateSnapshot
+        ? {
+            templateSnapshot: cloneResearchWorkspaceValue(
+              input.templateSnapshot,
+            ),
+          }
+        : {}),
+      ...(input.templateAssumptions !== undefined
+        ? {
+            templateAssumptions: cloneResearchWorkspaceValue(
+              input.templateAssumptions,
+            ),
+          }
+        : {}),
+      ...(input.capabilityPresetIDs !== undefined
+        ? { capabilityPresetIDs: [...input.capabilityPresetIDs] }
+        : {}),
       ...(input.defaultEngineMode
         ? { defaultEngineMode: input.defaultEngineMode }
         : {}),
@@ -542,6 +562,14 @@ export class ResearchWorkspaceProjectRepository {
         const project = mutate(cloneResearchWorkspaceValue(file.project));
         if (project.projectID !== projectID) {
           throw new Error("A project update cannot change projectID.");
+        }
+        if (
+          JSON.stringify(project.templateSnapshot ?? null) !==
+          JSON.stringify(file.project.templateSnapshot ?? null)
+        ) {
+          throw new Error(
+            "A project update cannot change its template provenance snapshot.",
+          );
         }
         project.name = project.name.trim();
         if (!project.name) throw new Error("Project name is required.");

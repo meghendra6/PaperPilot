@@ -23,6 +23,11 @@ import {
   researchWorkspaceSourcePathID,
   type CreateResearchWorkspaceProjectInput,
 } from "./persistence/projectRepository";
+import {
+  instantiateResearchWorkspaceProjectTemplate,
+  updateResearchWorkspaceProjectTemplateSettings,
+  type ResearchWorkspaceProjectTemplatePreview,
+} from "./projectTemplates";
 
 export interface ResearchWorkspaceProjectDetails {
   project: ResearchProject;
@@ -154,6 +159,45 @@ export class ResearchWorkspaceProjectController {
     const created = await this.repository.createProject(input);
     if (papers.length) await this.addPapers(created.project.projectID, papers);
     return this.details(created.project.projectID);
+  }
+
+  async createProjectFromTemplate(
+    preview: ResearchWorkspaceProjectTemplatePreview,
+    papers: readonly ResearchWorkspacePaper[] = [],
+  ) {
+    const instantiated = instantiateResearchWorkspaceProjectTemplate({
+      preview,
+      appliedAt: timestamp(this.now),
+    });
+    return this.createProject(
+      {
+        name: instantiated.projectName,
+        description: instantiated.description,
+        researchQuestion: instantiated.researchQuestion,
+        templateSnapshot: instantiated.templateSnapshot,
+        templateAssumptions: instantiated.templateAssumptions,
+        capabilityPresetIDs: instantiated.capabilityPresetIDs,
+      },
+      papers,
+    );
+  }
+
+  async updateTemplateSettings(params: {
+    projectID: string;
+    expectedProjectRevision: number;
+    assumptions: NonNullable<ResearchProject["templateAssumptions"]>;
+    capabilityPresetIDs: string[];
+  }) {
+    await this.repository.updateProject(
+      params.projectID,
+      params.expectedProjectRevision,
+      (project) =>
+        updateResearchWorkspaceProjectTemplateSettings(project, {
+          assumptions: params.assumptions,
+          capabilityPresetIDs: params.capabilityPresetIDs,
+        }),
+    );
+    return this.details(params.projectID);
   }
 
   async ensureQuickProject(papers: readonly ResearchWorkspacePaper[]) {

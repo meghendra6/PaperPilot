@@ -642,6 +642,11 @@ and the same fail-closed outcome.
 - [ ] Import a local `.txt` or `.md` draft containing one supported statement and one unsupported empirical statement; confirm the saved artifact contains only a bounded fingerprint/excerpt, labels unmatched text as a bounded lexical coverage candidate, and never displays an aggregate truth score
 - [ ] Confirm Citation & Reference Health starts no model/CLI or network request, records `local` provider lineage, includes all admitted upstream artifact payload fingerprints plus the current members revision, and becomes stale when an input artifact or project membership changes
 - [ ] If an optional external citation-status provider is integrated, disconnect it and test partial coverage; confirm provider coverage/limitations remain visible and no external signal is treated as the sole source of truth
+- [ ] Open the Research project templates selector and inspect all five templates: Exploratory literature review, Systematic review, Reproduction project, Technology comparison, and Paper reading group
+- [ ] Edit the template name, description, research question, assumptions, and capability preset IDs in the preview; create the project and confirm no capability, model, CLI, or network action starts automatically
+- [ ] In the created project, confirm recommended capabilities are visibly emphasized while non-recommended capabilities remain present and runnable
+- [ ] Edit assumptions and capability presets in Project template settings, restart Zotero, and confirm the immutable original template snapshot is unchanged while the edited values persist
+- [ ] Export the template project as JSON and Markdown; confirm both contain the original template snapshot, current assumptions, and current capability preset IDs
 - [ ] Export JSON and Markdown; confirm both files are written below the Zotero profile's `paperpilot-research-workspace/exports` directory
 - [ ] Start with a former companion `workspace-v3.json`; confirm papers, reports, Mastery, matrices, graphs, cross-paper state, and citation state remain while provider/executable and Monitor state are removed
 - [ ] Cancel or close the pane during a run; confirm the process is stopped, its workspace is cleaned, and the paper reservation becomes available again
