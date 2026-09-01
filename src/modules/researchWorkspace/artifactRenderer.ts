@@ -14,6 +14,144 @@ export interface ResearchWorkspaceEvidenceView {
   status: string;
 }
 
+export interface ResearchWorkspaceClaimLedgerView {
+  kind: "claim-ledger";
+  summary: {
+    total: number;
+    verified: number;
+    partiallyVerified: number;
+    unverified: number;
+    conflicting: number;
+  };
+  claims: Array<{
+    id: string;
+    text: string;
+    claimKind: string;
+    confidence?: number;
+    verificationStatus: string;
+    support: ResearchWorkspaceEvidenceView[];
+    contradictions: ResearchWorkspaceEvidenceView[];
+  }>;
+}
+
+export interface ResearchWorkspaceMethodologyView {
+  kind: "methodology";
+  profile: string;
+  executiveSummary: string;
+  strengths: string[];
+  checks: Array<{
+    checkID: string;
+    status: string;
+    severity: string;
+    finding: string;
+    implication: string;
+    confidence?: number;
+    evidence: ResearchWorkspaceEvidenceView[];
+  }>;
+  experiments: Array<{
+    hypothesis: string;
+    experiment: string;
+    expectedOutcomes: string[];
+    evidence: ResearchWorkspaceEvidenceView[];
+  }>;
+  residualUncertainty: string[];
+}
+
+export interface ResearchWorkspaceReproducibilityView {
+  kind: "reproducibility";
+  summary: string;
+  estimatedEffort: string;
+  availability: {
+    available: number;
+    partial: number;
+    missing: number;
+    unclear: number;
+  };
+  artifacts: Array<{
+    label: string;
+    artifactKind: string;
+    availability: string;
+    value?: string;
+    url?: string;
+    version?: string;
+    notes?: string;
+    confidence?: number;
+    evidence: ResearchWorkspaceEvidenceView[];
+  }>;
+  blockers: Array<{
+    severity: string;
+    description: string;
+    mitigation: string;
+    evidence: ResearchWorkspaceEvidenceView[];
+  }>;
+  steps: Array<{
+    order: number;
+    title: string;
+    inputs: string[];
+    outputs: string[];
+    assumptions: string[];
+    unresolved: string[];
+    evidence: ResearchWorkspaceEvidenceView[];
+  }>;
+  minimalReproductionSteps: string[];
+  verificationCommands: string[];
+}
+
+export interface ResearchWorkspacePaperToCodeView {
+  kind: "paper-to-code";
+  objective: string;
+  summary: string;
+  inputs: string[];
+  outputs: string[];
+  pseudocode: string;
+  trace: Array<{
+    order: number;
+    name: string;
+    operation: string;
+    inputShapes: string[];
+    outputShapes: string[];
+    stateChanges: string[];
+    memoryOrCommunication: string[];
+    invariants: string[];
+    ambiguity: string[];
+    evidence: ResearchWorkspaceEvidenceView[];
+  }>;
+  invariants: Array<{
+    statement: string;
+    consequence: string;
+    evidence: ResearchWorkspaceEvidenceView[];
+  }>;
+  complexity: {
+    compute: string;
+    memory: string;
+    communication?: string;
+    bottleneck?: string;
+    assumptions: string[];
+    evidence: ResearchWorkspaceEvidenceView[];
+  };
+  ambiguities: Array<{
+    question: string;
+    impact: string;
+    likelyChoices: string[];
+    proposedExperiment: string;
+    evidence: ResearchWorkspaceEvidenceView[];
+  }>;
+  divergences: Array<{
+    area: string;
+    paperStatement: string;
+    codeBehavior: string;
+    impact: string;
+    evidence: ResearchWorkspaceEvidenceView[];
+  }>;
+  checklist: string[];
+  tests: Array<{
+    name: string;
+    purpose: string;
+    setup: string;
+    expected: string;
+  }>;
+}
+
 export interface ResearchWorkspaceMatrixCellView {
   columnID: string;
   value: string;
@@ -274,6 +412,10 @@ export interface ResearchWorkspaceGenericView {
 }
 
 export type ResearchWorkspaceArtifactView =
+  | ResearchWorkspaceClaimLedgerView
+  | ResearchWorkspaceMethodologyView
+  | ResearchWorkspaceReproducibilityView
+  | ResearchWorkspacePaperToCodeView
   | ResearchWorkspaceMatrixView
   | ResearchWorkspaceGraphView
   | ResearchWorkspaceSynthesisView
@@ -346,6 +488,282 @@ function stringList(value: unknown) {
         .map((entry) => entry.trim())
         .filter(Boolean)
     : [];
+}
+
+function claimLedgerView(
+  value: UnknownRecord,
+): ResearchWorkspaceClaimLedgerView | undefined {
+  if (!Array.isArray(value.claims)) return undefined;
+  const claims = value.claims
+    .map((entry) => record(entry))
+    .filter((entry): entry is UnknownRecord => Boolean(entry))
+    .filter((entry) => typeof entry.text === "string")
+    .map((claim) => ({
+      id: text(claim.id, ""),
+      text: text(claim.text, "Unlabelled claim"),
+      claimKind: text(claim.kind, "claim"),
+      confidence: finite(claim.confidence),
+      verificationStatus: text(claim.verificationStatus, "unverified"),
+      support: evidenceViews(claim.support),
+      contradictions: evidenceViews(claim.contradictions),
+    }));
+  if (value.claims.length && !claims.length) return undefined;
+  const count = (status: string) =>
+    claims.filter((claim) => claim.verificationStatus === status).length;
+  return {
+    kind: "claim-ledger",
+    summary: {
+      total: claims.length,
+      verified: count("verified"),
+      partiallyVerified: count("partially_verified"),
+      unverified: count("unverified"),
+      conflicting: count("conflicting"),
+    },
+    claims,
+  };
+}
+
+function methodologyView(
+  value: UnknownRecord,
+): ResearchWorkspaceMethodologyView | undefined {
+  const report = record(value.report) ?? value;
+  if (!Array.isArray(report.checks)) return undefined;
+  const detection = record(value.detection);
+  return {
+    kind: "methodology",
+    profile: text(report.profile ?? detection?.primary, "general"),
+    executiveSummary: text(
+      report.executiveSummary,
+      "No methodology summary was returned.",
+    ),
+    strengths: stringList(report.strengths),
+    checks: report.checks
+      .map((entry) => record(entry))
+      .filter((entry): entry is UnknownRecord => Boolean(entry))
+      .map((check) => ({
+        checkID: text(check.checkId ?? check.checkID, "methodology check"),
+        status: text(check.status, "unclear"),
+        severity: text(check.severity, "none"),
+        finding: text(check.finding, "No finding reported"),
+        implication: text(check.implication, "No implication reported"),
+        confidence: finite(check.confidence),
+        evidence: evidenceViews(check.evidence),
+      })),
+    experiments: (Array.isArray(report.discriminatingExperiments)
+      ? report.discriminatingExperiments
+      : []
+    )
+      .map((entry) => record(entry))
+      .filter((entry): entry is UnknownRecord => Boolean(entry))
+      .map((experiment) => ({
+        hypothesis: text(experiment.hypothesis, "Unlabelled hypothesis"),
+        experiment: text(experiment.experiment, "No experiment reported"),
+        expectedOutcomes: stringList(experiment.expectedOutcomes),
+        evidence: evidenceViews(experiment.evidence),
+      })),
+    residualUncertainty: stringList(report.residualUncertainty),
+  };
+}
+
+function reproducibilityView(
+  value: UnknownRecord,
+): ResearchWorkspaceReproducibilityView | undefined {
+  if (!Array.isArray(value.artifacts) || !Array.isArray(value.blockers)) {
+    return undefined;
+  }
+  const artifacts = value.artifacts
+    .map((entry) => record(entry))
+    .filter((entry): entry is UnknownRecord => Boolean(entry))
+    .map((artifact) => ({
+      label: text(artifact.label, humanize(text(artifact.kind, "artifact"))),
+      artifactKind: text(artifact.kind ?? artifact.category, "other"),
+      availability: text(artifact.availability ?? artifact.status, "unclear"),
+      ...(typeof artifact.value === "string" && artifact.value.trim()
+        ? { value: artifact.value.trim() }
+        : {}),
+      ...(typeof artifact.url === "string" && artifact.url.trim()
+        ? { url: artifact.url.trim() }
+        : {}),
+      ...(typeof artifact.version === "string" && artifact.version.trim()
+        ? { version: artifact.version.trim() }
+        : {}),
+      ...(typeof artifact.notes === "string" && artifact.notes.trim()
+        ? { notes: artifact.notes.trim() }
+        : {}),
+      confidence: finite(artifact.confidence),
+      evidence: evidenceViews(artifact.evidence),
+    }));
+  const count = (availability: string) =>
+    artifacts.filter((artifact) => artifact.availability === availability)
+      .length;
+  return {
+    kind: "reproducibility",
+    summary: text(value.summary, "No reproducibility summary was returned."),
+    estimatedEffort: text(value.estimatedEffort, "unknown"),
+    availability: {
+      available: count("available"),
+      partial: count("partial"),
+      missing: count("missing"),
+      unclear: count("unclear"),
+    },
+    artifacts,
+    blockers: value.blockers
+      .map((entry) => record(entry))
+      .filter((entry): entry is UnknownRecord => Boolean(entry))
+      .map((blocker) => ({
+        severity: text(blocker.severity, "major"),
+        description: text(blocker.description, "Unspecified blocker"),
+        mitigation: text(blocker.mitigation, "No mitigation reported"),
+        evidence: evidenceViews(blocker.evidence),
+      })),
+    steps: (Array.isArray(value.steps) ? value.steps : [])
+      .map((entry) => record(entry))
+      .filter((entry): entry is UnknownRecord => Boolean(entry))
+      .map((step, index) => ({
+        order: finite(step.order) ?? index + 1,
+        title: text(step.title, `Step ${index + 1}`),
+        inputs: stringList(step.inputs),
+        outputs: stringList(step.outputs),
+        assumptions: stringList(step.assumptions),
+        unresolved: stringList(step.unresolved),
+        evidence: evidenceViews(step.evidence),
+      })),
+    minimalReproductionSteps: stringList(
+      value.minimumViableReproduction ?? value.minimalReproductionSteps,
+    ),
+    verificationCommands: stringList(
+      value.verificationChecks ?? value.verificationCommands,
+    ),
+  };
+}
+
+function paperToCodeView(
+  value: UnknownRecord,
+): ResearchWorkspacePaperToCodeView | undefined {
+  const rawTrace = Array.isArray(value.trace)
+    ? value.trace
+    : Array.isArray(value.tensorTrace)
+      ? value.tensorTrace
+      : undefined;
+  const complexity = record(value.complexity);
+  if (!rawTrace || !complexity || typeof value.pseudocode !== "string") {
+    return undefined;
+  }
+  const trace = rawTrace
+    .map((entry) => record(entry))
+    .filter((entry): entry is UnknownRecord => Boolean(entry))
+    .map((step, index) => ({
+      order: finite(step.order) ?? index + 1,
+      name: text(step.name ?? step.stage, `Step ${index + 1}`),
+      operation: text(step.operation, "Unspecified operation"),
+      inputShapes: Array.isArray(step.inputShapes)
+        ? stringList(step.inputShapes)
+        : stringList(
+            typeof step.inputShape === "string" ? [step.inputShape] : [],
+          ),
+      outputShapes: Array.isArray(step.outputShapes)
+        ? stringList(step.outputShapes)
+        : stringList(
+            typeof step.outputShape === "string" ? [step.outputShape] : [],
+          ),
+      stateChanges: [
+        ...stringList(step.stateReads).map((entry) => `Read: ${entry}`),
+        ...stringList(step.stateWrites ?? step.stateChanges).map(
+          (entry) => `Write: ${entry}`,
+        ),
+      ],
+      memoryOrCommunication: stringList(
+        step.memoryOrCommunication ?? step.memoryAccess,
+      ),
+      invariants: stringList(step.invariants),
+      ambiguity: stringList(step.ambiguity),
+      evidence: evidenceViews(step.evidence),
+    }));
+  const tests = (
+    Array.isArray(value.tests)
+      ? value.tests
+      : Array.isArray(value.validationTests)
+        ? value.validationTests
+        : []
+  ).map((entry, index) => {
+    const candidate = record(entry);
+    return candidate
+      ? {
+          name: text(candidate.name, `Test ${index + 1}`),
+          purpose: text(candidate.purpose, "Validation test"),
+          setup: text(candidate.setup, ""),
+          expected: text(candidate.expected, ""),
+        }
+      : {
+          name: `Test ${index + 1}`,
+          purpose: text(entry, "Validation test"),
+          setup: "",
+          expected: "",
+        };
+  });
+  return {
+    kind: "paper-to-code",
+    objective: text(value.objective, "Implementation objective not reported"),
+    summary: text(value.summary, "No implementation summary was returned."),
+    inputs: stringList(value.inputs),
+    outputs: stringList(value.outputs),
+    pseudocode: value.pseudocode.trim(),
+    trace,
+    invariants: (Array.isArray(value.invariants) ? value.invariants : [])
+      .map((entry) => record(entry))
+      .filter((entry): entry is UnknownRecord => Boolean(entry))
+      .map((invariant) => ({
+        statement: text(invariant.statement, "Unspecified invariant"),
+        consequence: text(invariant.consequence, ""),
+        evidence: evidenceViews(invariant.evidence),
+      })),
+    complexity: {
+      compute: text(complexity.compute ?? complexity.time, "Unspecified"),
+      memory: text(complexity.memory, "Unspecified"),
+      ...(typeof complexity.communication === "string" &&
+      complexity.communication.trim()
+        ? { communication: complexity.communication.trim() }
+        : {}),
+      ...(typeof complexity.bottleneck === "string" &&
+      complexity.bottleneck.trim()
+        ? { bottleneck: complexity.bottleneck.trim() }
+        : {}),
+      assumptions: stringList(complexity.assumptions),
+      evidence: evidenceViews(complexity.evidence),
+    },
+    ambiguities: (Array.isArray(value.ambiguities) ? value.ambiguities : [])
+      .map((entry) => record(entry))
+      .filter((entry): entry is UnknownRecord => Boolean(entry))
+      .map((ambiguity) => ({
+        question: text(ambiguity.question, "Unspecified ambiguity"),
+        impact: text(ambiguity.impact ?? ambiguity.risk, "unknown"),
+        likelyChoices: stringList(ambiguity.likelyChoices),
+        proposedExperiment: text(
+          ambiguity.proposedExperiment ?? ambiguity.suggestedResolution,
+          "No resolution reported",
+        ),
+        evidence: evidenceViews(ambiguity.evidence),
+      })),
+    divergences: (Array.isArray(value.paperCodeDivergences)
+      ? value.paperCodeDivergences
+      : []
+    )
+      .map((entry) => record(entry))
+      .filter((entry): entry is UnknownRecord => Boolean(entry))
+      .map((divergence) => ({
+        area: text(divergence.area, "Unlabelled divergence"),
+        paperStatement: text(divergence.paperStatement, "Not reported"),
+        codeBehavior: text(divergence.codeBehavior, "Not reported"),
+        impact: text(divergence.impact, "Not reported"),
+        evidence: evidenceViews(divergence.evidence),
+      })),
+    checklist: stringList(
+      value.minimalReproduction ??
+        value.implementationChecklist ??
+        value.minimalReproductionSteps,
+    ),
+    tests,
+  };
 }
 
 function masteryView(
@@ -997,6 +1415,35 @@ export function createResearchWorkspaceArtifactView(
   const candidate = record(value);
   if (!candidate) return { kind: "generic", value };
   if (
+    artifactType === "claim-ledger" ||
+    (typeof candidate.paperKey === "string" && Array.isArray(candidate.claims))
+  ) {
+    const ledger = claimLedgerView(candidate);
+    if (ledger) return ledger;
+  }
+  if (
+    artifactType === "methodology-audit" ||
+    candidate.kind === "methodology-audit"
+  ) {
+    const methodology = methodologyView(candidate);
+    if (methodology) return methodology;
+  }
+  if (
+    artifactType === "reproducibility" ||
+    (Array.isArray(candidate.artifacts) && Array.isArray(candidate.blockers))
+  ) {
+    const reproducibility = reproducibilityView(candidate);
+    if (reproducibility) return reproducibility;
+  }
+  if (
+    artifactType === "paper-to-code" ||
+    (typeof candidate.pseudocode === "string" &&
+      (Array.isArray(candidate.trace) || Array.isArray(candidate.tensorTrace)))
+  ) {
+    const implementation = paperToCodeView(candidate);
+    if (implementation) return implementation;
+  }
+  if (
     artifactType === "contradiction-gap-dashboard" ||
     candidate.kind === "research-workspace-contradiction-gap-dashboard"
   ) {
@@ -1115,6 +1562,564 @@ function metric(doc: Document, label: string, value: string) {
     element(doc, "span", "", label),
   );
   return node;
+}
+
+function statusTone(status: string) {
+  if (
+    ["verified", "supported", "available", "none", "not_applicable"].includes(
+      status,
+    )
+  ) {
+    return "success";
+  }
+  if (
+    [
+      "conflicting",
+      "unverified",
+      "unsupported",
+      "missing",
+      "major",
+      "critical",
+      "high",
+    ].includes(status)
+  ) {
+    return "warning";
+  }
+  return "accent";
+}
+
+function renderLabeledEvidence(
+  doc: Document,
+  title: string,
+  evidence: ResearchWorkspaceEvidenceView[],
+  options: ResearchWorkspaceArtifactRendererOptions,
+) {
+  const group = element(doc, "div", "pprw-render-evidence-group");
+  group.append(element(doc, "h5", "", `${title} (${evidence.length})`));
+  group.append(
+    evidence.length
+      ? renderEvidence(doc, evidence, options)
+      : element(doc, "span", "pprw-render-empty", "None reported"),
+  );
+  return group;
+}
+
+function renderClaimLedger(
+  doc: Document,
+  view: ResearchWorkspaceClaimLedgerView,
+  options: ResearchWorkspaceArtifactRendererOptions,
+) {
+  const root = element(doc, "div", "pprw-render pprw-render--claim-ledger");
+  const metrics = element(doc, "div", "pprw-render-metrics");
+  metrics.append(
+    metric(doc, "Claims", String(view.summary.total)),
+    metric(doc, "Verified", String(view.summary.verified)),
+    metric(doc, "Partially verified", String(view.summary.partiallyVerified)),
+    metric(doc, "Unverified", String(view.summary.unverified)),
+    metric(doc, "Conflicting", String(view.summary.conflicting)),
+  );
+  root.append(
+    metrics,
+    element(
+      doc,
+      "p",
+      "pprw-render-note",
+      "Verification labels summarize the saved claim ledger. Each evidence chip shows whether its exact local source could be opened and checked.",
+    ),
+  );
+  const list = element(doc, "div", "pprw-render-card-list");
+  for (const claim of view.claims) {
+    const card = element(doc, "article", "pprw-render-card");
+    const metadata = element(doc, "div", "pprw-render-inline");
+    metadata.append(
+      badge(doc, humanize(claim.claimKind), "accent"),
+      badge(
+        doc,
+        humanize(claim.verificationStatus),
+        statusTone(claim.verificationStatus),
+      ),
+    );
+    if (claim.confidence !== undefined) {
+      metadata.append(badge(doc, `Confidence ${percentage(claim.confidence)}`));
+    }
+    if (claim.id) metadata.append(badge(doc, claim.id));
+    card.append(
+      metadata,
+      element(doc, "p", "pprw-render-statement", claim.text),
+      renderLabeledEvidence(doc, "Supporting evidence", claim.support, options),
+    );
+    if (claim.contradictions.length) {
+      card.append(
+        renderLabeledEvidence(
+          doc,
+          "Contradicting evidence",
+          claim.contradictions,
+          options,
+        ),
+      );
+    }
+    list.append(card);
+  }
+  if (!view.claims.length) {
+    list.append(element(doc, "p", "pprw-muted", "No claims were extracted."));
+  }
+  root.append(list);
+  return root;
+}
+
+function renderMethodology(
+  doc: Document,
+  view: ResearchWorkspaceMethodologyView,
+  options: ResearchWorkspaceArtifactRendererOptions,
+) {
+  const root = element(doc, "div", "pprw-render pprw-render--methodology");
+  const concerning = view.checks.filter((check) =>
+    ["major", "critical"].includes(check.severity),
+  ).length;
+  const unclear = view.checks.filter((check) =>
+    ["unsupported", "unclear"].includes(check.status),
+  ).length;
+  const metrics = element(doc, "div", "pprw-render-metrics");
+  metrics.append(
+    metric(doc, "Profile", humanize(view.profile)),
+    metric(doc, "Checks", String(view.checks.length)),
+    metric(doc, "Major or critical", String(concerning)),
+    metric(doc, "Unsupported or unclear", String(unclear)),
+  );
+  root.append(
+    metrics,
+    element(doc, "p", "pprw-synthesis-answer", view.executiveSummary),
+  );
+  if (view.strengths.length) {
+    root.append(renderStringList(doc, "Strengths", view.strengths));
+  }
+  const checks = element(doc, "section", "pprw-render-section");
+  checks.append(element(doc, "h4", "", "Methodology checks"));
+  const checkList = element(doc, "div", "pprw-render-card-list");
+  for (const check of view.checks) {
+    const card = element(doc, "article", "pprw-render-card");
+    const metadata = element(doc, "div", "pprw-render-inline");
+    metadata.append(
+      badge(doc, humanize(check.status), statusTone(check.status)),
+      badge(doc, humanize(check.severity), statusTone(check.severity)),
+    );
+    if (check.confidence !== undefined) {
+      metadata.append(badge(doc, `Confidence ${percentage(check.confidence)}`));
+    }
+    card.append(
+      element(doc, "h5", "", humanize(check.checkID)),
+      metadata,
+      element(doc, "p", "pprw-render-statement", check.finding),
+      element(
+        doc,
+        "p",
+        "pprw-render-note",
+        `Why it matters: ${check.implication}`,
+      ),
+    );
+    if (check.evidence.length) {
+      card.append(renderEvidence(doc, check.evidence, options));
+    }
+    checkList.append(card);
+  }
+  checks.append(checkList);
+  root.append(checks);
+  if (view.experiments.length) {
+    const section = element(doc, "section", "pprw-render-section");
+    section.append(element(doc, "h4", "", "Discriminating experiments"));
+    const list = element(doc, "div", "pprw-render-card-list");
+    for (const experiment of view.experiments) {
+      const card = element(doc, "article", "pprw-render-card");
+      card.append(
+        element(doc, "h5", "", experiment.hypothesis),
+        element(doc, "p", "pprw-render-statement", experiment.experiment),
+      );
+      if (experiment.expectedOutcomes.length) {
+        card.append(
+          renderStringList(
+            doc,
+            "Expected outcomes",
+            experiment.expectedOutcomes,
+          ),
+        );
+      }
+      if (experiment.evidence.length) {
+        card.append(renderEvidence(doc, experiment.evidence, options));
+      }
+      list.append(card);
+    }
+    section.append(list);
+    root.append(section);
+  }
+  if (view.residualUncertainty.length) {
+    const uncertainty = renderStringList(
+      doc,
+      "Residual uncertainty",
+      view.residualUncertainty,
+    );
+    uncertainty.classList.add("pprw-render-section--warning");
+    root.append(uncertainty);
+  }
+  return root;
+}
+
+function renderReproducibility(
+  doc: Document,
+  view: ResearchWorkspaceReproducibilityView,
+  options: ResearchWorkspaceArtifactRendererOptions,
+) {
+  const root = element(doc, "div", "pprw-render pprw-render--reproducibility");
+  const metrics = element(doc, "div", "pprw-render-metrics");
+  metrics.append(
+    metric(doc, "Available", String(view.availability.available)),
+    metric(doc, "Partial", String(view.availability.partial)),
+    metric(doc, "Missing", String(view.availability.missing)),
+    metric(doc, "Blockers", String(view.blockers.length)),
+    metric(doc, "Estimated effort", humanize(view.estimatedEffort)),
+  );
+  root.append(
+    metrics,
+    element(doc, "p", "pprw-synthesis-answer", view.summary),
+  );
+  const artifactSection = element(doc, "section", "pprw-render-section");
+  artifactSection.append(element(doc, "h4", "", "Required artifacts"));
+  const artifactList = element(doc, "div", "pprw-render-card-list");
+  for (const artifact of view.artifacts) {
+    const card = element(doc, "article", "pprw-render-card");
+    const metadata = element(doc, "div", "pprw-render-inline");
+    metadata.append(
+      badge(
+        doc,
+        humanize(artifact.availability),
+        statusTone(artifact.availability),
+      ),
+      badge(doc, humanize(artifact.artifactKind), "accent"),
+    );
+    if (artifact.confidence !== undefined) {
+      metadata.append(
+        badge(doc, `Confidence ${percentage(artifact.confidence)}`),
+      );
+    }
+    card.append(element(doc, "h5", "", artifact.label), metadata);
+    for (const [label, value] of [
+      ["Value", artifact.value],
+      ["Version", artifact.version],
+      ["Location", artifact.url],
+      ["Notes", artifact.notes],
+    ] as const) {
+      if (value) {
+        card.append(
+          element(doc, "p", "pprw-render-note", `${label}: ${value}`),
+        );
+      }
+    }
+    if (artifact.evidence.length) {
+      card.append(renderEvidence(doc, artifact.evidence, options));
+    }
+    artifactList.append(card);
+  }
+  artifactSection.append(artifactList);
+  root.append(artifactSection);
+  if (view.blockers.length) {
+    const section = element(
+      doc,
+      "section",
+      "pprw-render-section pprw-render-section--warning",
+    );
+    section.append(element(doc, "h4", "", "Reproduction blockers"));
+    const list = element(doc, "div", "pprw-render-card-list");
+    for (const blocker of view.blockers) {
+      const card = element(doc, "article", "pprw-render-card");
+      card.append(
+        badge(doc, humanize(blocker.severity), statusTone(blocker.severity)),
+        element(doc, "p", "pprw-render-statement", blocker.description),
+        element(
+          doc,
+          "p",
+          "pprw-render-note",
+          `Mitigation: ${blocker.mitigation}`,
+        ),
+      );
+      if (blocker.evidence.length) {
+        card.append(renderEvidence(doc, blocker.evidence, options));
+      }
+      list.append(card);
+    }
+    section.append(list);
+    root.append(section);
+  }
+  if (view.steps.length) {
+    const section = element(doc, "section", "pprw-render-section");
+    section.append(element(doc, "h4", "", "Reproduction workflow"));
+    const list = element(doc, "div", "pprw-render-card-list");
+    for (const step of view.steps) {
+      const card = element(doc, "article", "pprw-render-card");
+      card.append(element(doc, "h5", "", `${step.order}. ${step.title}`));
+      if (step.inputs.length)
+        card.append(renderStringList(doc, "Inputs", step.inputs));
+      if (step.outputs.length)
+        card.append(renderStringList(doc, "Outputs", step.outputs));
+      if (step.assumptions.length)
+        card.append(renderStringList(doc, "Assumptions", step.assumptions));
+      if (step.unresolved.length)
+        card.append(renderStringList(doc, "Unresolved", step.unresolved));
+      if (step.evidence.length) {
+        card.append(renderEvidence(doc, step.evidence, options));
+      }
+      list.append(card);
+    }
+    section.append(list);
+    root.append(section);
+  }
+  if (view.minimalReproductionSteps.length) {
+    root.append(
+      renderStringList(
+        doc,
+        "Minimum viable reproduction",
+        view.minimalReproductionSteps,
+      ),
+    );
+  }
+  if (view.verificationCommands.length) {
+    const section = element(doc, "section", "pprw-render-section");
+    section.append(
+      element(doc, "h4", "", "Verification commands"),
+      element(
+        doc,
+        "pre",
+        "pprw-render-code",
+        view.verificationCommands.join("\n"),
+      ),
+    );
+    root.append(section);
+  }
+  return root;
+}
+
+function renderPaperToCode(
+  doc: Document,
+  view: ResearchWorkspacePaperToCodeView,
+  options: ResearchWorkspaceArtifactRendererOptions,
+) {
+  const root = element(doc, "div", "pprw-render pprw-render--paper-to-code");
+  root.append(
+    element(doc, "p", "pprw-synthesis-answer", view.summary),
+    element(doc, "p", "pprw-render-note", `Objective: ${view.objective}`),
+  );
+  if (view.inputs.length)
+    root.append(renderStringList(doc, "Inputs", view.inputs));
+  if (view.outputs.length)
+    root.append(renderStringList(doc, "Outputs", view.outputs));
+  const pseudocode = element(doc, "section", "pprw-render-section");
+  pseudocode.append(
+    element(doc, "h4", "", "Pseudocode"),
+    element(doc, "pre", "pprw-render-code", view.pseudocode),
+  );
+  root.append(pseudocode);
+  if (view.trace.length) {
+    const section = element(doc, "section", "pprw-render-section");
+    section.append(element(doc, "h4", "", "Execution trace"));
+    const list = element(doc, "div", "pprw-render-card-list");
+    for (const step of view.trace) {
+      const card = element(doc, "article", "pprw-render-card");
+      card.append(
+        element(doc, "h5", "", `${step.order}. ${step.name}`),
+        element(doc, "p", "pprw-render-statement", step.operation),
+      );
+      if (step.inputShapes.length || step.outputShapes.length) {
+        const metadata = element(doc, "div", "pprw-render-inline");
+        if (step.inputShapes.length) {
+          metadata.append(badge(doc, `Input ${step.inputShapes.join(", ")}`));
+        }
+        if (step.outputShapes.length) {
+          metadata.append(badge(doc, `Output ${step.outputShapes.join(", ")}`));
+        }
+        card.append(metadata);
+      }
+      if (step.stateChanges.length)
+        card.append(renderStringList(doc, "State changes", step.stateChanges));
+      if (step.memoryOrCommunication.length) {
+        card.append(
+          renderStringList(
+            doc,
+            "Memory and communication",
+            step.memoryOrCommunication,
+          ),
+        );
+      }
+      if (step.invariants.length)
+        card.append(renderStringList(doc, "Invariants", step.invariants));
+      if (step.ambiguity.length)
+        card.append(renderStringList(doc, "Ambiguity", step.ambiguity));
+      if (step.evidence.length) {
+        card.append(renderEvidence(doc, step.evidence, options));
+      }
+      list.append(card);
+    }
+    section.append(list);
+    root.append(section);
+  }
+  const complexity = element(doc, "section", "pprw-render-section");
+  complexity.append(element(doc, "h4", "", "Complexity"));
+  const complexityMetrics = element(doc, "div", "pprw-render-metrics");
+  complexityMetrics.append(
+    metric(doc, "Compute", view.complexity.compute),
+    metric(doc, "Memory", view.complexity.memory),
+  );
+  if (view.complexity.communication) {
+    complexityMetrics.append(
+      metric(doc, "Communication", view.complexity.communication),
+    );
+  }
+  complexity.append(complexityMetrics);
+  if (view.complexity.bottleneck) {
+    complexity.append(
+      element(
+        doc,
+        "p",
+        "pprw-render-note",
+        `Bottleneck: ${view.complexity.bottleneck}`,
+      ),
+    );
+  }
+  if (view.complexity.assumptions.length) {
+    complexity.append(
+      renderStringList(doc, "Assumptions", view.complexity.assumptions),
+    );
+  }
+  if (view.complexity.evidence.length) {
+    complexity.append(renderEvidence(doc, view.complexity.evidence, options));
+  }
+  root.append(complexity);
+  if (view.invariants.length) {
+    const section = element(doc, "section", "pprw-render-section");
+    section.append(element(doc, "h4", "", "Implementation invariants"));
+    const list = element(doc, "div", "pprw-render-card-list");
+    for (const invariant of view.invariants) {
+      const card = element(doc, "article", "pprw-render-card");
+      card.append(
+        element(doc, "p", "pprw-render-statement", invariant.statement),
+      );
+      if (invariant.consequence) {
+        card.append(
+          element(
+            doc,
+            "p",
+            "pprw-render-note",
+            `Consequence: ${invariant.consequence}`,
+          ),
+        );
+      }
+      if (invariant.evidence.length) {
+        card.append(renderEvidence(doc, invariant.evidence, options));
+      }
+      list.append(card);
+    }
+    section.append(list);
+    root.append(section);
+  }
+  if (view.ambiguities.length) {
+    const section = element(
+      doc,
+      "section",
+      "pprw-render-section pprw-render-section--warning",
+    );
+    section.append(element(doc, "h4", "", "Implementation ambiguities"));
+    const list = element(doc, "div", "pprw-render-card-list");
+    for (const ambiguity of view.ambiguities) {
+      const card = element(doc, "article", "pprw-render-card");
+      card.append(
+        badge(
+          doc,
+          `${humanize(ambiguity.impact)} impact`,
+          statusTone(ambiguity.impact),
+        ),
+        element(doc, "p", "pprw-render-statement", ambiguity.question),
+        element(
+          doc,
+          "p",
+          "pprw-render-note",
+          `How to resolve: ${ambiguity.proposedExperiment}`,
+        ),
+      );
+      if (ambiguity.likelyChoices.length) {
+        card.append(
+          renderStringList(doc, "Likely choices", ambiguity.likelyChoices),
+        );
+      }
+      if (ambiguity.evidence.length) {
+        card.append(renderEvidence(doc, ambiguity.evidence, options));
+      }
+      list.append(card);
+    }
+    section.append(list);
+    root.append(section);
+  }
+  if (view.divergences.length) {
+    const section = element(doc, "section", "pprw-render-section");
+    section.append(element(doc, "h4", "", "Paper–code divergences"));
+    const list = element(doc, "div", "pprw-render-card-list");
+    for (const divergence of view.divergences) {
+      const card = element(doc, "article", "pprw-render-card");
+      card.append(
+        element(doc, "h5", "", divergence.area),
+        element(
+          doc,
+          "p",
+          "pprw-render-note",
+          `Paper: ${divergence.paperStatement}`,
+        ),
+        element(
+          doc,
+          "p",
+          "pprw-render-note",
+          `Code: ${divergence.codeBehavior}`,
+        ),
+        element(
+          doc,
+          "p",
+          "pprw-render-statement",
+          `Impact: ${divergence.impact}`,
+        ),
+      );
+      if (divergence.evidence.length) {
+        card.append(renderEvidence(doc, divergence.evidence, options));
+      }
+      list.append(card);
+    }
+    section.append(list);
+    root.append(section);
+  }
+  if (view.checklist.length) {
+    root.append(
+      renderStringList(doc, "Implementation checklist", view.checklist),
+    );
+  }
+  if (view.tests.length) {
+    const section = element(doc, "section", "pprw-render-section");
+    section.append(element(doc, "h4", "", "Validation tests"));
+    const list = element(doc, "div", "pprw-render-card-list");
+    for (const test of view.tests) {
+      const card = element(doc, "article", "pprw-render-card");
+      card.append(
+        element(doc, "h5", "", test.name),
+        element(doc, "p", "pprw-render-statement", test.purpose),
+      );
+      if (test.setup)
+        card.append(
+          element(doc, "p", "pprw-render-note", `Setup: ${test.setup}`),
+        );
+      if (test.expected) {
+        card.append(
+          element(doc, "p", "pprw-render-note", `Expected: ${test.expected}`),
+        );
+      }
+      list.append(card);
+    }
+    section.append(list);
+    root.append(section);
+  }
+  return root;
 }
 
 function renderMatrix(
@@ -2072,6 +3077,18 @@ export function renderResearchWorkspaceArtifactValue(
   options: ResearchWorkspaceArtifactRendererOptions = {},
 ) {
   const view = createResearchWorkspaceArtifactView(value, options.artifactType);
+  if (view.kind === "claim-ledger") {
+    return renderClaimLedger(doc, view, options);
+  }
+  if (view.kind === "methodology") {
+    return renderMethodology(doc, view, options);
+  }
+  if (view.kind === "reproducibility") {
+    return renderReproducibility(doc, view, options);
+  }
+  if (view.kind === "paper-to-code") {
+    return renderPaperToCode(doc, view, options);
+  }
   if (view.kind === "matrix") return renderMatrix(doc, view, options);
   if (view.kind === "graph") return renderGraph(doc, view, options);
   if (view.kind === "synthesis") return renderSynthesis(doc, view, options);
