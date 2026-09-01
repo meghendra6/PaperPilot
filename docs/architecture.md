@@ -195,7 +195,7 @@ shown as unresolved and is not eligible for undo or reapplication.
 | `runPresentation.ts`    | item-scoped active-run events that reconnect rebuilt pane DOM            |
 | `runProgress.ts`        | pure phase transitions and absolute-deadline calculation                 |
 | `runProfile.ts`         | explicit `chat`, `analysis`, and `discovery` capability/session boundary |
-| `structuredOutput.ts`   | native-schema capability probe with parser-only fallback                 |
+| `structuredOutput.ts`   | native-schema validation and capability probe with parser fallback       |
 | `runTimeout.ts`         | one watchdog and timeout completion path shared by all engines           |
 | `retryEngineRequest.ts` | engine-neutral retry dispatch for the last normal chat request           |
 | `workspaceRun.ts`       | mode-dispatching helpers: start a run, read progress, extract text       |
@@ -251,10 +251,13 @@ polled**:
    - chunks and retrieves top-K passages (`context/indexStore.ts`,
      `context/retriever.ts`)
    - writes the workspace artifacts (see below)
-   - for a structured workflow, probes the installed CLI help once and supplies
-     the workflow JSON Schema through Codex `--output-schema` or Claude
-     `--json-schema` when supported; a missing flag or failed probe falls back
-     to the validating parser without blocking the run
+   - for a structured workflow, first verifies that the JSON Schema uses
+     explicit types and a closed, fully-required object shape, then probes the
+     installed CLI help
+     once and supplies it through Codex `--output-schema` or Claude
+     `--json-schema` when supported; an incompatible schema, missing flag, or
+     failed probe falls back to the prompt plus validating parser without
+     blocking the run
    - builds the CLI argv and wraps it in a **detached background shell script**
      (`codex/shell.ts` for Codex; inline in the runner for Claude and Gemini)
    - runs `Zotero.Utilities.Internal.exec("/bin/zsh", ["-lc", script])`

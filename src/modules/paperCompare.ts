@@ -94,7 +94,13 @@ export const PAPER_COMPARE_OUTPUT_SCHEMA: StructuredOutputSchema = {
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["title", "relationship", "strengths", "tradeoffs"],
+        required: [
+          "title",
+          "relationship",
+          "strengths",
+          "tradeoffs",
+          "bestUseCase",
+        ],
         properties: {
           title: { type: "string", minLength: 1, maxLength: 500 },
           relationship: { type: "string", minLength: 1, maxLength: 1_500 },
@@ -108,7 +114,9 @@ export const PAPER_COMPARE_OUTPUT_SCHEMA: StructuredOutputSchema = {
             maxItems: MAX_COMPARE_LIST_ITEMS,
             items: { type: "string", minLength: 1, maxLength: 1_000 },
           },
-          bestUseCase: { type: "string", maxLength: 1_000 },
+          bestUseCase: {
+            anyOf: [{ type: "string", maxLength: 1_000 }, { type: "null" }],
+          },
         },
       },
     },

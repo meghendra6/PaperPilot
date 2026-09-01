@@ -151,9 +151,10 @@ export function getCriticalReadOutputSchema(
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["areaCode", "area", "status", "finding"],
+        required: ["areaCode", "area", "status", "finding", "sourceLocator"],
         properties: {
           areaCode: {
+            type: "string",
             enum: [
               "data_provenance",
               "data_splits",
@@ -168,10 +169,13 @@ export function getCriticalReadOutputSchema(
           },
           area: { type: "string", minLength: 1, maxLength: 500 },
           status: {
+            type: "string",
             enum: ["supported", "concern", "unclear", "not_applicable"],
           },
           finding: { type: "string", minLength: 1, maxLength: 2_000 },
-          sourceLocator: { type: "string", maxLength: 500 },
+          sourceLocator: {
+            anyOf: [{ type: "string", maxLength: 500 }, { type: "null" }],
+          },
         },
       },
     };
@@ -202,7 +206,10 @@ export function getCriticalReadOutputSchema(
         doesNotSupport: STRING_LIST_SCHEMA,
         strongestResult: { type: "string", minLength: 1, maxLength: 2_000 },
         weakestResult: { type: "string", minLength: 1, maxLength: 2_000 },
-        confidence: { enum: ["high", "medium", "low", "unclear"] },
+        confidence: {
+          type: "string",
+          enum: ["high", "medium", "low", "unclear"],
+        },
       },
     };
   } else if (stepID === 6) {
@@ -212,6 +219,7 @@ export function getCriticalReadOutputSchema(
       additionalProperties: false,
       required: [
         "authorConclusionStatus",
+        "unavailableReason",
         "agreements",
         "readerOmissions",
         "strongerAuthorClaims",
@@ -219,8 +227,13 @@ export function getCriticalReadOutputSchema(
         "interpretiveDifferences",
       ],
       properties: {
-        authorConclusionStatus: { enum: ["available", "unavailable"] },
-        unavailableReason: { type: "string", maxLength: 2_000 },
+        authorConclusionStatus: {
+          type: "string",
+          enum: ["available", "unavailable"],
+        },
+        unavailableReason: {
+          anyOf: [{ type: "string", maxLength: 2_000 }, { type: "null" }],
+        },
         agreements: STRING_LIST_SCHEMA,
         readerOmissions: STRING_LIST_SCHEMA,
         strongerAuthorClaims: STRING_LIST_SCHEMA,
@@ -235,11 +248,16 @@ export function getCriticalReadOutputSchema(
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["source", "text"],
+        required: ["source", "text", "sourceLocator"],
         properties: {
-          source: { enum: ["paper_claim", "agent_inference"] },
+          source: {
+            type: "string",
+            enum: ["paper_claim", "agent_inference"],
+          },
           text: { type: "string", minLength: 1, maxLength: 2_000 },
-          sourceLocator: { type: "string", maxLength: 500 },
+          sourceLocator: {
+            anyOf: [{ type: "string", maxLength: 500 }, { type: "null" }],
+          },
         },
       },
     };
@@ -258,6 +276,7 @@ export function getCriticalReadOutputSchema(
           "challengedAssumption",
           "discriminatingExperiment",
           "addressedByPaper",
+          "sourceLocator",
         ],
         properties: {
           explanation: { type: "string", minLength: 1, maxLength: 2_000 },
@@ -272,8 +291,13 @@ export function getCriticalReadOutputSchema(
             minLength: 1,
             maxLength: 2_000,
           },
-          addressedByPaper: { enum: ["yes", "partly", "no", "unclear"] },
-          sourceLocator: { type: "string", maxLength: 500 },
+          addressedByPaper: {
+            type: "string",
+            enum: ["yes", "partly", "no", "unclear"],
+          },
+          sourceLocator: {
+            anyOf: [{ type: "string", maxLength: 500 }, { type: "null" }],
+          },
         },
       },
     };
@@ -340,7 +364,7 @@ function responseShape(stepID: Exclude<CriticalReadStepID, 3>) {
             area: "localized display label",
             status: "supported|concern|unclear|not_applicable",
             finding: "...",
-            sourceLocator: "optional",
+            sourceLocator: null,
           },
         ],
         methodComparison: {
@@ -365,7 +389,7 @@ function responseShape(stepID: Exclude<CriticalReadStepID, 3>) {
         ...COMMON_RESPONSE_SHAPE,
         authorComparison: {
           authorConclusionStatus: "available|unavailable",
-          unavailableReason: "required when unavailable",
+          unavailableReason: null,
           agreements: ["..."],
           readerOmissions: ["..."],
           strongerAuthorClaims: ["..."],
@@ -376,7 +400,7 @@ function responseShape(stepID: Exclude<CriticalReadStepID, 3>) {
           {
             source: "paper_claim|agent_inference",
             text: "...",
-            sourceLocator: "optional",
+            sourceLocator: null,
           },
         ],
       };
@@ -390,7 +414,7 @@ function responseShape(stepID: Exclude<CriticalReadStepID, 3>) {
             challengedAssumption: "...",
             discriminatingExperiment: "...",
             addressedByPaper: "yes|partly|no|unclear",
-            sourceLocator: "optional",
+            sourceLocator: null,
           },
         ],
         finalSynthesis: {

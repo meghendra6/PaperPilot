@@ -103,6 +103,23 @@ function result(papers: unknown[]) {
   });
 }
 
+test("discovery normalizes strict-schema provider ID entries", () => {
+  const parsed = parseDiscoveryResult(
+    result([
+      paper({
+        providerIDs: [
+          { provider: "openalex", id: "W123" },
+          { provider: "semantic-scholar", id: "S456" },
+        ],
+      }),
+    ]),
+  );
+  assert.deepEqual(parsed.verifiedMain[0]?.providerIDs, {
+    openalex: "W123",
+    "semantic-scholar": "S456",
+  });
+});
+
 function openReviewNotes(params: {
   forumID: string;
   decision?: string;

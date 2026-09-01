@@ -19,6 +19,7 @@ import {
 } from "../ai/runProfile";
 import {
   cliSupportsFlag,
+  compatibleNativeOutputSchema,
   type StructuredOutputSchema,
 } from "../ai/structuredOutput";
 import {
@@ -343,15 +344,18 @@ export async function startClaudeRunForQuestion(params: {
     );
   }
 
+  const compatibleOutputSchema = compatibleNativeOutputSchema(
+    params.outputSchema,
+  );
   const nativeOutputSchema =
-    params.outputSchema &&
+    compatibleOutputSchema &&
     (await cliSupportsFlag({
       executablePath,
       helpArgs: ["--help"],
       flag: "--json-schema",
       environment: buildClaudeShellEnvironment(),
     }))
-      ? params.outputSchema
+      ? compatibleOutputSchema
       : undefined;
 
   const script = buildClaudeCommand({

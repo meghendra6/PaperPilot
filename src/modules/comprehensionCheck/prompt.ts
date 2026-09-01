@@ -26,7 +26,7 @@ export const MASTERY_QUESTION_OUTPUT_SCHEMA: StructuredOutputSchema = {
       maxLength: MAX_QUESTION_LENGTH,
     },
     topic: { type: "string", minLength: 1, maxLength: MAX_TOPIC_LENGTH },
-    difficulty: { enum: MASTERY_DIFFICULTIES },
+    difficulty: { type: "string", enum: MASTERY_DIFFICULTIES },
   },
 };
 
@@ -56,6 +56,7 @@ export const MASTERY_EVALUATION_OUTPUT_SCHEMA: StructuredOutputSchema = {
         required: ["criterionID", "score", "feedback"],
         properties: {
           criterionID: {
+            type: "string",
             enum: ["accuracy", "completeness", "evidence", "reasoning"],
           },
           score: { type: "number", minimum: 0, maximum: 2 },
@@ -80,7 +81,7 @@ export const MASTERY_EVALUATION_OUTPUT_SCHEMA: StructuredOutputSchema = {
         { type: "string", minLength: 1, maxLength: MAX_TOPIC_LENGTH },
       ],
     },
-    nextDifficulty: { enum: MASTERY_DIFFICULTIES },
+    nextDifficulty: { type: "string", enum: MASTERY_DIFFICULTIES },
   },
 };
 
