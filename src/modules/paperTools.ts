@@ -47,7 +47,10 @@ export const PAPER_TOOL_OUTPUT_SCHEMA: StructuredOutputSchema = {
             maxItems: MAX_BULLETS_PER_SECTION,
             items: { type: "string", minLength: 1, maxLength: 1_000 },
           },
-          evidence: { enum: ["explicit", "inference", "mixed"] },
+          evidence: {
+            type: "string",
+            enum: ["explicit", "inference", "mixed"],
+          },
         },
       },
     },

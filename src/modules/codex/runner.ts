@@ -7,6 +7,7 @@ import {
 } from "../ai/runProfile";
 import {
   cliSupportsFlag,
+  compatibleNativeOutputSchema,
   type StructuredOutputSchema,
 } from "../ai/structuredOutput";
 import { getCurrentReaderContext } from "../context/readerContext";
@@ -291,15 +292,18 @@ export async function startCodexRunForQuestion(params: {
     );
   }
 
+  const compatibleOutputSchema = compatibleNativeOutputSchema(
+    params.outputSchema,
+  );
   const nativeOutputSchema =
-    params.outputSchema &&
+    compatibleOutputSchema &&
     (await cliSupportsFlag({
       executablePath,
       helpArgs: ["exec", "--help"],
       flag: "--output-schema",
       environment: buildCodexCommandEnvironment(executablePath),
     }))
-      ? params.outputSchema
+      ? compatibleOutputSchema
       : undefined;
   if (nativeOutputSchema) {
     await Zotero.File.putContentsAsync(

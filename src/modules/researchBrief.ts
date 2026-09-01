@@ -56,10 +56,12 @@ export const RESEARCH_BRIEF_OUTPUT_SCHEMA: StructuredOutputSchema = {
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["query"],
+        required: ["query", "rationale"],
         properties: {
           query: { type: "string", minLength: 1, maxLength: 500 },
-          rationale: { type: "string", maxLength: 1_000 },
+          rationale: {
+            anyOf: [{ type: "string", maxLength: 1_000 }, { type: "null" }],
+          },
         },
       },
     },

@@ -703,7 +703,7 @@ test("Research Workspace service retries one parser-rejected response", async ()
   });
   const parsed = await service.runParsed(
     "Return JSON.",
-    "test-purpose",
+    "claim-extraction",
     (response: string) => {
       const value = JSON.parse(response);
       if (value.ok !== true) throw new Error("ok must be true");

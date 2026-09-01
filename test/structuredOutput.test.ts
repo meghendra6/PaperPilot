@@ -2,7 +2,9 @@ import { test } from "node:test";
 import * as assert from "node:assert/strict";
 import {
   cliSupportsFlag,
+  compatibleNativeOutputSchema,
   helpSupportsFlag,
+  nativeStructuredOutputSchemaIssue,
 } from "../src/modules/ai/structuredOutput";
 
 test("helpSupportsFlag detects exact CLI capability flags", () => {
@@ -20,6 +22,63 @@ test("helpSupportsFlag detects exact CLI capability flags", () => {
     ),
     false,
   );
+});
+
+test("native structured output validation enforces closed, fully-required objects", () => {
+  const valid = {
+    type: "object",
+    additionalProperties: false,
+    required: ["value", "details"],
+    properties: {
+      value: { type: "string" },
+      details: {
+        anyOf: [
+          {
+            type: "object",
+            additionalProperties: false,
+            required: ["note"],
+            properties: { note: { type: "string" } },
+          },
+          { type: "null" },
+        ],
+      },
+    },
+  };
+  assert.equal(nativeStructuredOutputSchemaIssue(valid), undefined);
+  assert.equal(compatibleNativeOutputSchema(valid), valid);
+
+  const openObject = {
+    ...valid,
+    properties: {
+      ...valid.properties,
+      details: { type: "object", properties: {}, required: [] },
+    },
+  };
+  assert.equal(
+    nativeStructuredOutputSchemaIssue(openObject),
+    "root.properties.details.additionalProperties must be false",
+  );
+  assert.equal(compatibleNativeOutputSchema(openObject), undefined);
+
+  const optionalProperty = { ...valid, required: ["value"] };
+  assert.equal(
+    nativeStructuredOutputSchemaIssue(optionalProperty),
+    "root.required must list every property exactly once",
+  );
+  assert.equal(compatibleNativeOutputSchema(optionalProperty), undefined);
+
+  const typelessEnum = {
+    ...valid,
+    properties: {
+      ...valid.properties,
+      value: { enum: ["one", "two"] },
+    },
+  };
+  assert.equal(
+    nativeStructuredOutputSchemaIssue(typelessEnum),
+    "root.properties.value.type is required",
+  );
+  assert.equal(compatibleNativeOutputSchema(typelessEnum), undefined);
 });
 
 test("cliSupportsFlag falls back without failing when help probing fails", async () => {

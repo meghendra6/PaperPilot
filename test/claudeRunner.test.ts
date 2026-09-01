@@ -100,6 +100,8 @@ test("buildClaudeCommand shell-escapes the native JSON schema", () => {
     permissionMode: "plan",
     outputSchema: {
       type: "object",
+      additionalProperties: false,
+      required: ["quote"],
       properties: { quote: { type: "string" } },
     },
   });

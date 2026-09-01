@@ -491,7 +491,14 @@ function parsePaper(
           .map(([key, entry]) => [text(key), text(entry)] as const)
           .filter(([key, entry]) => key && entry),
       )
-    : {};
+    : Array.isArray(value.providerIDs)
+      ? Object.fromEntries(
+          value.providerIDs
+            .filter(isRecord)
+            .map((entry) => [text(entry.provider), text(entry.id)] as const)
+            .filter(([provider, id]) => provider && id),
+        )
+      : {};
   const year =
     typeof value.year === "number" && Number.isFinite(value.year)
       ? Math.trunc(value.year)

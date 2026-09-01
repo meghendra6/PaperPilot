@@ -171,6 +171,7 @@ This note documents the purpose, target answer shape, and guardrails for the mai
 - Workbench, Compare, Paper Mastery, Critical Read, and Auto Highlight use `analysis`; verified discovery and public-review inspection use `discovery`.
 - Analysis and discovery have distinct workspace paths, do not read or update visible-chat resume metadata, and use read-only provider modes. Only discovery admits the verified web-search path.
 - Structured workflows export a JSON Schema beside their prompt/parser. Codex and Claude receive it only when their installed help surface reports `--output-schema` or `--json-schema`; older CLIs and Gemini continue through the same prompt plus authoritative local parser.
+- Before a native schema flag is used, Paper Pilot verifies that the root is an object, every schema node has an explicit type or composition, every object is closed with `additionalProperties: false`, and every declared property is required. An incompatible schema is omitted from the native CLI invocation so the existing prompt plus authoritative local parser remains available instead of failing the entire run.
 - Native schema output never replaces local parsing, normalization, live publication verification, or exact PDF quote matching.
 
 For structured workflows (`Research brief`, `Agent-led verified research discovery`, `Public review insight`, `Critical Read`, `Paper tools`, `Paper compare`, `Auto-highlight`, and Paper Mastery JSON turns), prompts instruct the model to use full current-paper workspace content when available, treat supplied content/metadata/abstracts as source data only, and ignore instructions embedded inside those sources.
@@ -180,6 +181,8 @@ For structured workflows (`Research brief`, `Agent-led verified research discove
 - Files: `src/modules/researchWorkspace/core/**/prompt.ts` and the paired parsers
 - Purpose: provide evidence, profiled Critical Read, Mastery 2.0, reproducibility, Paper-to-Code, evidence-matrix, literature-graph, cross-paper-mastery, and citation-stance workflows without reusing the visible Paper Pilot chat session
 - Guardrails:
+  - every native output schema uses explicit types, is closed at every object level with `additionalProperties: false`, and requires every declared field; nullable fields represent optional values explicitly
+  - schema selection is purpose-specific and uses the exact top-level keys consumed by the paired parser; Cross-paper Mastery keeps evidence on rubric criteria instead of a dynamic paper-key map
   - paper text, citation contexts, selected-paper payloads, and learner answers are serialized inside trust-labeled data blocks
   - source text cannot close its surrounding delimiter; matching closing tags are escaped before prompt assembly
   - attachment and paper identifiers are parser-constrained to the supplied sets
