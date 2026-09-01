@@ -55,6 +55,247 @@ function renderedText(root: FakeElement): string {
   return [root.textContent, ...root.children.map(renderedText)].join(" ");
 }
 
+const evidence = {
+  sourceID: "SOURCE-1",
+  libraryID: 1,
+  attachmentKey: "PDF-1",
+  pageIndex: 2,
+  pageLabel: "3",
+  sectionPath: ["Methods"],
+  exactQuote: "The measured result supports the claim.",
+  verification: { status: "verified" },
+};
+
+test("Claim Ledger renders claims, verification state, and evidence as a reader-facing report", () => {
+  const payload = {
+    schemaVersion: 1,
+    paperKey: "zotero:1:SOURCE-1:PDF-1",
+    claims: [
+      {
+        id: "C01",
+        text: "The proposed method reduces decoding latency.",
+        kind: "empirical_result",
+        confidence: 0.92,
+        verificationStatus: "verified",
+        support: [evidence],
+        contradictions: [],
+        createdAt: "2026-09-01T00:00:00.000Z",
+      },
+      {
+        id: "C02",
+        text: "The result generalizes to unseen hardware.",
+        kind: "reader_inference",
+        confidence: 0.4,
+        verificationStatus: "unverified",
+        support: [],
+        contradictions: [],
+      },
+    ],
+    revision: 2,
+  };
+  const view = createResearchWorkspaceArtifactView(payload);
+  assert.equal(view.kind, "claim-ledger");
+  if (view.kind !== "claim-ledger") return;
+  assert.deepEqual(view.summary, {
+    total: 2,
+    verified: 1,
+    partiallyVerified: 0,
+    unverified: 1,
+    conflicting: 0,
+  });
+
+  const rendered = renderResearchWorkspaceArtifactValue(
+    new FakeDocument() as unknown as Document,
+    payload,
+    { artifactType: "claim-ledger" },
+  ) as unknown as FakeElement;
+  const visible = renderedText(rendered);
+  assert.match(visible, /The proposed method reduces decoding latency/);
+  assert.match(visible, /Empirical result/);
+  assert.match(visible, /Supporting evidence \(1\)/);
+  assert.match(visible, /Verified.*Page 3/);
+  assert.doesNotMatch(
+    visible,
+    /schemaVersion|paperKey|attachmentKey|verificationStatus|createdAt/,
+  );
+});
+
+test("Methodology Audit renders a summary, review checks, and implications", () => {
+  const payload = {
+    kind: "methodology-audit",
+    detection: { primary: "empirical_ml" },
+    report: {
+      profile: "empirical_ml",
+      executiveSummary: "The evaluation is informative but narrowly scoped.",
+      strengths: ["Ablations isolate the main mechanism."],
+      checks: [
+        {
+          checkId: "evaluation_scope",
+          status: "partial",
+          severity: "major",
+          finding: "Only one hardware family was tested.",
+          implication: "Latency gains may not transfer to other accelerators.",
+          confidence: 0.85,
+          evidence: [evidence],
+        },
+      ],
+      discriminatingExperiments: [
+        {
+          hypothesis: "The gain is hardware dependent.",
+          experiment: "Repeat the benchmark on a second accelerator family.",
+          expectedOutcomes: ["Similar gain", "Reduced gain"],
+          evidence: [],
+        },
+      ],
+      residualUncertainty: ["Compiler effects remain unclear."],
+    },
+  };
+  const rendered = renderResearchWorkspaceArtifactValue(
+    new FakeDocument() as unknown as Document,
+    payload,
+    { artifactType: "methodology-audit" },
+  ) as unknown as FakeElement;
+  const visible = renderedText(rendered);
+  assert.match(visible, /informative but narrowly scoped/);
+  assert.match(visible, /Evaluation scope/);
+  assert.match(visible, /Why it matters: Latency gains/);
+  assert.match(visible, /Discriminating experiments/);
+  assert.doesNotMatch(visible, /executiveSummary|checkId|attachmentKey/);
+});
+
+test("Reproducibility renders artifacts, blockers, steps, and commands semantically", () => {
+  const payload = {
+    summary: "The paper is partially reproducible from the disclosed assets.",
+    estimatedEffort: "medium",
+    artifacts: [
+      {
+        kind: "code",
+        label: "Reference implementation",
+        availability: "available",
+        url: "https://example.test/code",
+        confidence: 0.9,
+        evidence: [evidence],
+      },
+      {
+        kind: "random_seeds",
+        label: "Random seeds",
+        availability: "missing",
+        confidence: 0.8,
+        evidence: [],
+      },
+    ],
+    blockers: [
+      {
+        severity: "major",
+        description: "Random seeds are not reported.",
+        mitigation: "Publish the seeds used for the main table.",
+        evidence: [],
+      },
+    ],
+    steps: [
+      {
+        order: 1,
+        title: "Install dependencies",
+        inputs: ["environment.yml"],
+        outputs: ["runtime environment"],
+        assumptions: [],
+        unresolved: [],
+        evidence: [],
+      },
+    ],
+    minimumViableReproduction: ["Run the public evaluation script."],
+    verificationChecks: ["python -m pytest tests/eval_test.py"],
+  };
+  const view = createResearchWorkspaceArtifactView(payload, "reproducibility");
+  assert.equal(view.kind, "reproducibility");
+  if (view.kind !== "reproducibility") return;
+  assert.equal(view.availability.available, 1);
+  assert.equal(view.availability.missing, 1);
+
+  const rendered = renderResearchWorkspaceArtifactValue(
+    new FakeDocument() as unknown as Document,
+    payload,
+    { artifactType: "reproducibility" },
+  ) as unknown as FakeElement;
+  const visible = renderedText(rendered);
+  assert.match(visible, /partially reproducible/);
+  assert.match(visible, /Reference implementation/);
+  assert.match(visible, /Reproduction blockers/);
+  assert.match(visible, /python -m pytest/);
+  assert.doesNotMatch(
+    visible,
+    /estimatedEffort|verificationChecks|attachmentKey/,
+  );
+});
+
+test("Paper-to-Code renders an implementation map instead of field names", () => {
+  const payload = {
+    objective: "Implement exact speculative sampling.",
+    summary: "Verify a drafted block with one target-model call.",
+    inputs: ["prefix tokens", "draft tokens"],
+    outputs: ["committed tokens"],
+    pseudocode: "draft <- proposer(prefix)\nverified <- target(draft)",
+    trace: [
+      {
+        order: 1,
+        name: "Draft",
+        operation: "Generate candidate tokens.",
+        inputShapes: ["[batch, prefix]"],
+        outputShapes: ["[batch, gamma]"],
+        stateReads: ["KV cache"],
+        stateWrites: ["draft buffer"],
+        memoryOrCommunication: ["Read proposer weights"],
+        invariants: ["Preserve token order"],
+        ambiguity: [],
+        evidence: [evidence],
+      },
+    ],
+    invariants: [
+      {
+        statement: "Committed tokens follow target probabilities.",
+        consequence: "Violating this changes the output distribution.",
+        evidence: [evidence],
+      },
+    ],
+    complexity: {
+      compute: "One proposer pass plus one target pass",
+      memory: "KV cache plus draft buffer",
+      assumptions: ["The target validates the full block."],
+      evidence: [evidence],
+    },
+    ambiguities: [
+      {
+        question: "How are ties broken?",
+        impact: "high",
+        likelyChoices: ["Stable vocabulary order"],
+        proposedExperiment: "Compare outputs on tied logits.",
+        evidence: [],
+      },
+    ],
+    paperCodeDivergences: [],
+    minimalReproduction: ["Implement the acceptance rule."],
+    tests: [
+      {
+        name: "distribution-test",
+        purpose: "Compare sampled frequencies.",
+        setup: "Fixed prompt set",
+        expected: "No significant distribution shift",
+      },
+    ],
+  };
+  const rendered = renderResearchWorkspaceArtifactValue(
+    new FakeDocument() as unknown as Document,
+    payload,
+    { artifactType: "paper-to-code" },
+  ) as unknown as FakeElement;
+  const visible = renderedText(rendered);
+  assert.match(visible, /Verify a drafted block/);
+  assert.match(visible, /Execution trace/);
+  assert.match(visible, /How are ties broken/);
+  assert.match(visible, /distribution-test/);
+  assert.doesNotMatch(visible, /paperCodeDivergences|stateReads|attachmentKey/);
+});
+
 test("Evidence Matrix view preserves columns, rows, coverage, and cell evidence", () => {
   const view = createResearchWorkspaceArtifactView(
     {

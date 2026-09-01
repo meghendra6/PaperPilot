@@ -2799,6 +2799,18 @@
   align-items: center;
 }
 
+.pprw-render-evidence-group {
+  display: grid;
+  gap: 4px;
+}
+
+.pprw-render-evidence-group h5 {
+  margin: 0;
+  color: var(--pp-text-muted);
+  font-size: var(--pp-font-size-xs);
+  font-weight: 600;
+}
+
 .pprw-render-badge,
 .pprw-render-evidence-link {
   display: inline-flex;
@@ -2958,6 +2970,18 @@ button.pprw-render-evidence-link {
 
 .pprw-render-note {
   font-size: var(--pp-font-size-sm);
+}
+
+.pprw-render-code {
+  max-height: 360px;
+  margin: 0;
+  overflow: auto;
+  color: var(--pp-text-primary);
+  font-family: var(--pp-font-mono);
+  font-size: var(--pp-font-size-xs);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
 }
 
 .pprw-render-note--warning,

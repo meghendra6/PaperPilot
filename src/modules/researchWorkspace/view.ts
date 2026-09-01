@@ -25,6 +25,7 @@ import {
 } from "./facade";
 import type { CitationContextExtractionResult } from "./citationContextExtraction";
 import type { CitationStanceValue } from "./core/citationStance/corrections";
+import type { ResearchWorkspaceArtifactType } from "./persistence/contracts";
 import {
   loadResearchWorkspacePaper,
   type ResearchWorkspacePaper,
@@ -104,6 +105,16 @@ const CAPABILITY_BUTTON_LABELS = new Map<string, string>([
   ["Analyze approved snippets", "citation-stance"],
   ["Save stance correction", "citation-stance"],
 ]);
+
+const SINGLE_RESULT_ARTIFACT_TYPES: Record<
+  ResearchWorkspaceSingleOperation,
+  ResearchWorkspaceArtifactType
+> = {
+  claims: "claim-ledger",
+  "methodology-audit": "methodology-audit",
+  reproducibility: "reproducibility",
+  "paper-to-code": "paper-to-code",
+};
 
 function markRecommendedCapabilityButtons(
   root: HTMLElement,
@@ -264,6 +275,7 @@ function renderOutput(
   value: unknown,
   _fallbackAttachmentID: number,
   generation: symbol,
+  artifactType?: ResearchWorkspaceArtifactType,
 ) {
   if (!isCurrent(root, generation)) return;
   const panel = root.querySelector<HTMLElement>(".pprw-result");
@@ -273,6 +285,7 @@ function renderOutput(
   );
   panel.append(
     renderResearchWorkspaceArtifactValue(root.ownerDocument, value, {
+      artifactType,
       onOpenEvidence: (reference) =>
         guarded(root, "Opening evidence", async () => {
           await openVerifiedResearchWorkspaceEvidence(
@@ -460,7 +473,14 @@ export async function renderResearchWorkspaceView(
         operation === "reproducibility"
           ? `${resultTitle} · readiness ${formatPercent(calculateReproducibilityReadiness(value as any).score)}`
           : resultTitle;
-      renderOutput(root, title, value, paper.attachmentID, generation);
+      renderOutput(
+        root,
+        title,
+        value,
+        paper.attachmentID,
+        generation,
+        SINGLE_RESULT_ARTIFACT_TYPES[operation],
+      );
     });
   const actionRow = row(doc);
   const openCanonical = (

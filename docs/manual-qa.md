@@ -614,7 +614,7 @@ and the same fail-closed outcome.
 - [ ] Remove or move the source PDF and reopen a historical result; confirm it is labelled `source-unavailable` and has no misleading navigation action
 - [ ] With OpenDataLoader available, confirm the paper summary reports `structured`; disable it and confirm the honest `zotero_text` fallback still loads
 - [ ] Search for an exact symbol and a conceptual mechanism; confirm hybrid search ranks relevant chunks without launching an AI CLI
-- [ ] Run claim extraction, profiled audit, reproducibility, and Paper-to-Code; confirm strict JSON is parsed, evidence links open the correct attachment/page, and parser failure permits one correction attempt
+- [ ] Run claim extraction, profiled audit, reproducibility, and Paper-to-Code; confirm each result renders as a labelled human-readable report rather than a raw JSON field tree, evidence links open the correct attachment/page, and parser failure permits one correction attempt
 - [ ] Start and resume Mastery 2.0, submit an answer with confidence, and confirm criterion scores, misconceptions, calibration, and the next review survive a Zotero restart
 - [ ] Select at least two library papers and build an Evidence Matrix and Literature Graph; confirm persisted coverage and graph integrity, then create and grade a cross-paper mastery question
 - [ ] Classify citation contexts and confirm unknown attachment evidence is discarded rather than made navigable
