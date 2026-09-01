@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import {
+  createResearchWorkspaceClaimLedgerMarkdown,
   createResearchWorkspaceArtifactView,
   createResearchWorkspacePublicPayload,
   renderResearchWorkspaceArtifactValue,
@@ -22,10 +23,16 @@ class FakeClassList {
 class FakeElement {
   readonly children: FakeElement[] = [];
   readonly classList = new FakeClassList(this);
+  private readonly attributes = new Map<string, string>();
+  private readonly listeners = new Map<string, Array<() => void>>();
   className = "";
   textContent = "";
   type = "";
   scope = "";
+  value = "";
+  lang = "";
+  hidden = false;
+  disabled = false;
   readonly dataset: Record<string, string> = {};
 
   constructor(readonly tagName: string) {}
@@ -38,7 +45,27 @@ class FakeElement {
     this.children.push(...nodes);
   }
 
-  addEventListener() {}
+  setAttribute(name: string, value: string) {
+    this.attributes.set(name, value);
+  }
+
+  getAttribute(name: string) {
+    return this.attributes.get(name) ?? null;
+  }
+
+  addEventListener(name: string, listener: () => void) {
+    const listeners = this.listeners.get(name) ?? [];
+    listeners.push(listener);
+    this.listeners.set(name, listeners);
+  }
+
+  dispatch(name: string) {
+    for (const listener of this.listeners.get(name) ?? []) listener();
+  }
+
+  click() {
+    this.dispatch("click");
+  }
 }
 
 class FakeDocument {
@@ -55,6 +82,14 @@ function renderedText(root: FakeElement): string {
   return [root.textContent, ...root.children.map(renderedText)].join(" ");
 }
 
+function withClass(root: FakeElement, className: string): FakeElement[] {
+  const matches = root.className.split(/\s+/).includes(className) ? [root] : [];
+  return [
+    ...matches,
+    ...root.children.flatMap((child) => withClass(child, className)),
+  ];
+}
+
 const evidence = {
   sourceID: "SOURCE-1",
   libraryID: 1,
@@ -66,7 +101,7 @@ const evidence = {
   verification: { status: "verified" },
 };
 
-test("Claim Ledger renders claims, verification state, and evidence as a reader-facing report", () => {
+test("Claim Ledger prioritizes locally checked evidence over the model-reported status", () => {
   const payload = {
     schemaVersion: 1,
     paperKey: "zotero:1:SOURCE-1:PDF-1",
@@ -86,8 +121,19 @@ test("Claim Ledger renders claims, verification state, and evidence as a reader-
         text: "The result generalizes to unseen hardware.",
         kind: "reader_inference",
         confidence: 0.4,
-        verificationStatus: "unverified",
-        support: [],
+        verificationStatus: "verified",
+        support: [
+          {
+            ...evidence,
+            pageIndex: 4,
+            pageLabel: "5",
+            exactQuote: "Generalization was not evaluated.",
+            verification: {
+              status: "source-unavailable",
+              detail: "The exact local PDF source could not be loaded.",
+            },
+          },
+        ],
         contradictions: [],
       },
     ],
@@ -98,11 +144,13 @@ test("Claim Ledger renders claims, verification state, and evidence as a reader-
   if (view.kind !== "claim-ledger") return;
   assert.deepEqual(view.summary, {
     total: 2,
-    verified: 1,
-    partiallyVerified: 0,
-    unverified: 1,
+    readyToCite: 1,
+    needsReview: 1,
     conflicting: 0,
+    evidenceTotal: 2,
+    evidenceVerified: 1,
   });
+  assert.equal(view.claims[1].reviewStatus, "needs-review");
 
   const rendered = renderResearchWorkspaceArtifactValue(
     new FakeDocument() as unknown as Document,
@@ -112,12 +160,87 @@ test("Claim Ledger renders claims, verification state, and evidence as a reader-
   const visible = renderedText(rendered);
   assert.match(visible, /The proposed method reduces decoding latency/);
   assert.match(visible, /Empirical result/);
-  assert.match(visible, /Supporting evidence \(1\)/);
-  assert.match(visible, /Verified.*Page 3/);
+  assert.match(visible, /Ready to cite/);
+  assert.match(visible, /Supporting evidence.*1/);
+  assert.match(visible, /Locally checked.*Page 3/);
+  assert.match(visible, /The measured result supports the claim/);
+  assert.match(visible, /Source unavailable.*Page 5/);
+  assert(tags(rendered).includes("details"));
+  assert(tags(rendered).includes("summary"));
+  assert(tags(rendered).includes("blockquote"));
+  assert.doesNotMatch(visible, /Confidence 92%|Confidence 40%/);
   assert.doesNotMatch(
     visible,
     /schemaVersion|paperKey|attachmentKey|verificationStatus|createdAt/,
   );
+
+  const reviewFilter = withClass(rendered, "pprw-claim-filter").find(
+    (node) => node.textContent === "Review needed",
+  );
+  assert(reviewFilter);
+  reviewFilter.click();
+  const claims = withClass(rendered, "pprw-claim");
+  assert.equal(claims[0].hidden, true);
+  assert.equal(claims[1].hidden, false);
+});
+
+test("Claim Ledger localizes Korean review labels and copies readable Markdown", async () => {
+  const payload = {
+    paperKey: "zotero:1:SOURCE-1:PDF-1",
+    claims: [
+      {
+        id: "C01",
+        text: "Speculative decoding은 target model의 최종 결정권을 유지한다.",
+        kind: "author_claim",
+        confidence: 0.99,
+        verificationStatus: "verified",
+        support: [
+          {
+            ...evidence,
+            verification: {
+              status: "source-unavailable",
+              detail: "The exact local PDF source could not be loaded.",
+            },
+          },
+        ],
+        contradictions: [],
+      },
+    ],
+  };
+  let copied = "";
+  const rendered = renderResearchWorkspaceArtifactValue(
+    new FakeDocument() as unknown as Document,
+    payload,
+    {
+      artifactType: "claim-ledger",
+      onCopyText: (value) => {
+        copied = value;
+      },
+    },
+  ) as unknown as FakeElement;
+  const visible = renderedText(rendered);
+  assert.equal(rendered.lang, "ko");
+  assert.match(visible, /전체 주장/);
+  assert.match(visible, /확인 필요/);
+  assert.match(visible, /원본 접근 불가/);
+  assert.match(visible, /정확한 로컬 PDF 원본을 불러오지 못했습니다/);
+  assert.doesNotMatch(
+    visible,
+    /The exact local PDF source could not be loaded/,
+  );
+  assert.doesNotMatch(visible, /Verified|Confidence 99%/);
+
+  const copy = withClass(rendered, "pprw-claim-copy")[0];
+  assert(copy);
+  copy.click();
+  await Promise.resolve();
+  assert.match(copied, /^# 주장–근거 검토표/m);
+  assert.match(copied, /## 1\. Speculative decoding/);
+  assert.match(copied, /> The measured result supports the claim/);
+  assert.match(copied, /정확한 로컬 PDF 원본을 불러오지 못했습니다/);
+  assert.doesNotMatch(copied, /schemaVersion|attachmentKey|confidence/);
+
+  assert.equal(createResearchWorkspaceClaimLedgerMarkdown(payload), copied);
 });
 
 test("Methodology Audit renders a summary, review checks, and implications", () => {

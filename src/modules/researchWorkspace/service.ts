@@ -2,6 +2,7 @@
 import { researchWorkspaceOutputSchemaForPurpose } from "./outputSchemas";
 import * as indexExports_1 from "./core/context/hybrid/indexExports";
 import * as claimExtraction_1 from "./core/evidence/claimExtraction";
+import * as claimLedger_1 from "./core/evidence/claimLedger";
 import * as detector_1 from "./core/criticalRead/profiled/detector";
 import * as profiles_1 from "./core/criticalRead/profiled/profiles";
 import * as prompt_1 from "./core/criticalRead/profiled/prompt";
@@ -215,7 +216,10 @@ class ResearchWorkspaceService {
           attachmentKey: paper.attachmentKey,
         }),
     );
-    const ledger = await this.verifyEvidence(parsedLedger, [paper]);
+    const verifiedLedger = await this.verifyEvidence(parsedLedger, [paper]);
+    const ledger = (0, claimLedger_1.reconcileClaimLedgerEvidenceStatus)(
+      verifiedLedger,
+    );
     await this.env.repository.update((next) => {
       const record = next.papers[paper.paperKey];
       if (!record) throw new Error("Paper is not registered.");

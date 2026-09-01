@@ -615,6 +615,8 @@ and the same fail-closed outcome.
 - [ ] With OpenDataLoader available, confirm the paper summary reports `structured`; disable it and confirm the honest `zotero_text` fallback still loads
 - [ ] Search for an exact symbol and a conceptual mechanism; confirm hybrid search ranks relevant chunks without launching an AI CLI
 - [ ] Run claim extraction, profiled audit, reproducibility, and Paper-to-Code; confirm each result renders as a labelled human-readable report rather than a raw JSON field tree, evidence links open the correct attachment/page, and parser failure permits one correction attempt
+- [ ] In Claim Ledger, confirm claims start as a compact review list; status and type filters work; expanding a claim exposes quote, locator, and verifier detail; only locally verified evidence offers `Open in PDF`; model confidence is not presented as truth confidence; and `Copy readable Markdown` produces headings, prose, quotes, and review status without internal IDs
+- [ ] Force all Claim Ledger evidence to `unverified`, `not-found`, or `source-unavailable`; confirm the overview reports zero ready-to-cite claims even when the model returned `verificationStatus: verified`
 - [ ] Start and resume Mastery 2.0, submit an answer with confidence, and confirm criterion scores, misconceptions, calibration, and the next review survive a Zotero restart
 - [ ] Select at least two library papers and build an Evidence Matrix and Literature Graph; confirm persisted coverage and graph integrity, then create and grade a cross-paper mastery question
 - [ ] Classify citation contexts and confirm unknown attachment evidence is discarded rather than made navigable

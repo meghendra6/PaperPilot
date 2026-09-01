@@ -13,6 +13,10 @@ import {
   normalizeEvidenceReferences,
 } from "../src/modules/researchWorkspace/core/evidence/types";
 import {
+  inferLocalEvidenceVerificationStatus,
+  reconcileClaimLedgerEvidenceStatus,
+} from "../src/modules/researchWorkspace/core/evidence/claimLedger";
+import {
   applyMasteryGrade,
   calculateMasteryMetrics,
   createMasterySession,
@@ -69,6 +73,55 @@ test("integrated Research Workspace sources contain no CommonJS runtime residue"
     assert.doesNotMatch(source, /\bmodule\.exports\b/);
     assert.doesNotMatch(source, /\brequire\s*\(/);
   }
+});
+
+test("claim verification is reconciled from local evidence checks", () => {
+  const reference = (status: string) => ({
+    attachmentKey: "ATTACH",
+    pageIndex: 0,
+    confidence: 0.99,
+    verification: { status },
+  });
+  assert.equal(
+    inferLocalEvidenceVerificationStatus([reference("verified")], []),
+    "verified",
+  );
+  assert.equal(
+    inferLocalEvidenceVerificationStatus(
+      [reference("verified"), reference("source-unavailable")],
+      [],
+    ),
+    "partially_verified",
+  );
+  assert.equal(
+    inferLocalEvidenceVerificationStatus(
+      [reference("verified")],
+      [reference("verified")],
+    ),
+    "conflicting",
+  );
+  assert.equal(
+    inferLocalEvidenceVerificationStatus([reference("source-unavailable")], []),
+    "unverified",
+  );
+
+  const reconciled = reconcileClaimLedgerEvidenceStatus(
+    {
+      claims: [
+        {
+          id: "C1",
+          verificationStatus: "verified",
+          support: [reference("source-unavailable")],
+          contradictions: [],
+        },
+      ],
+      updatedAt: "before",
+    },
+    "after",
+  );
+  assert.equal(reconciled.claims[0].verificationStatus, "unverified");
+  assert.equal(reconciled.claims[0].updatedAt, "after");
+  assert.equal(reconciled.updatedAt, "after");
 });
 
 test("hybrid retrieval keeps technical aliases and ranks the mechanism", () => {

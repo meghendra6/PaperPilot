@@ -1,5 +1,6 @@
 import { config } from "../../../package.json";
 import { getLocaleID } from "../../utils/locale";
+import { copyTextToClipboard } from "../components/ChatMessage";
 import { renderResearchWorkspaceArtifactValue } from "./artifactRenderer";
 import {
   openCanonicalReaderCapability,
@@ -286,6 +287,7 @@ function renderOutput(
   panel.append(
     renderResearchWorkspaceArtifactValue(root.ownerDocument, value, {
       artifactType,
+      onCopyText: (text) => copyTextToClipboard(text, root.ownerDocument),
       onOpenEvidence: (reference) =>
         guarded(root, "Opening evidence", async () => {
           await openVerifiedResearchWorkspaceEvidence(

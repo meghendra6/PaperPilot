@@ -30,6 +30,7 @@ import {
   undoResearchWorkspaceZoteroSync,
 } from "./facade";
 import { renderResearchWorkspaceArtifactEnvelope } from "./artifactRenderer";
+import { copyTextToClipboard } from "../components/ChatMessage";
 import { openVerifiedResearchWorkspaceEvidence } from "./evidenceNavigation";
 import type { EvidenceReferenceV2 } from "./evidenceVerification";
 import { readResearchWorkspaceArtifact } from "./legacyCapabilityAdapters";
@@ -2262,6 +2263,7 @@ function renderArtifactHistory(
     }
     item.append(
       renderResearchWorkspaceArtifactEnvelope(doc, artifact, {
+        onCopyText: (text) => copyTextToClipboard(text, doc),
         onOpenEvidence: async (reference) => {
           try {
             await openVerifiedResearchWorkspaceEvidence(

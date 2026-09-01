@@ -12,23 +12,33 @@ export interface ResearchWorkspaceEvidenceView {
   reference: UnknownRecord;
   locator: string;
   status: string;
+  quote?: string;
+  detail?: string;
 }
+
+export type ResearchWorkspaceClaimReviewStatus =
+  | "ready"
+  | "needs-review"
+  | "conflicting";
 
 export interface ResearchWorkspaceClaimLedgerView {
   kind: "claim-ledger";
   summary: {
     total: number;
-    verified: number;
-    partiallyVerified: number;
-    unverified: number;
+    readyToCite: number;
+    needsReview: number;
     conflicting: number;
+    evidenceTotal: number;
+    evidenceVerified: number;
   };
   claims: Array<{
     id: string;
     text: string;
     claimKind: string;
     confidence?: number;
-    verificationStatus: string;
+    reviewStatus: ResearchWorkspaceClaimReviewStatus;
+    verifiedSupport: number;
+    evidenceTotal: number;
     support: ResearchWorkspaceEvidenceView[];
     contradictions: ResearchWorkspaceEvidenceView[];
   }>;
@@ -429,6 +439,7 @@ export type ResearchWorkspaceArtifactView =
 export interface ResearchWorkspaceArtifactRendererOptions {
   artifactType?: ResearchWorkspaceArtifactType;
   onOpenEvidence?: (reference: UnknownRecord) => void | Promise<void>;
+  onCopyText?: (value: string) => void | Promise<void>;
 }
 
 function record(value: unknown): UnknownRecord | undefined {
@@ -474,11 +485,18 @@ function isEvidence(value: unknown): value is UnknownRecord {
 
 function evidenceViews(value: unknown): ResearchWorkspaceEvidenceView[] {
   if (!Array.isArray(value)) return [];
-  return value.filter(isEvidence).map((reference) => ({
-    reference,
-    locator: formatEvidenceLocator(reference),
-    status: text(record(reference.verification)?.status, "unverified"),
-  }));
+  return value.filter(isEvidence).map((reference) => {
+    const verification = record(reference.verification);
+    const quote = text(reference.exactQuote ?? reference.quote, "").trim();
+    const detail = text(verification?.detail, "").trim();
+    return {
+      reference,
+      locator: formatEvidenceLocator(reference),
+      status: text(verification?.status, "unverified"),
+      ...(quote ? { quote } : {}),
+      ...(detail ? { detail } : {}),
+    };
+  });
 }
 
 function stringList(value: unknown) {
@@ -498,26 +516,54 @@ function claimLedgerView(
     .map((entry) => record(entry))
     .filter((entry): entry is UnknownRecord => Boolean(entry))
     .filter((entry) => typeof entry.text === "string")
-    .map((claim) => ({
-      id: text(claim.id, ""),
-      text: text(claim.text, "Unlabelled claim"),
-      claimKind: text(claim.kind, "claim"),
-      confidence: finite(claim.confidence),
-      verificationStatus: text(claim.verificationStatus, "unverified"),
-      support: evidenceViews(claim.support),
-      contradictions: evidenceViews(claim.contradictions),
-    }));
+    .map((claim) => {
+      const support = evidenceViews(claim.support);
+      const contradictions = evidenceViews(claim.contradictions);
+      const verifiedSupport = support.filter(
+        (reference) => reference.status === "verified",
+      ).length;
+      const verifiedContradictions = contradictions.filter(
+        (reference) => reference.status === "verified",
+      ).length;
+      const reviewStatus: ResearchWorkspaceClaimReviewStatus =
+        verifiedContradictions > 0
+          ? "conflicting"
+          : verifiedSupport > 0 && contradictions.length === 0
+            ? "ready"
+            : "needs-review";
+      return {
+        id: text(claim.id, ""),
+        text: text(claim.text, "Unlabelled claim"),
+        claimKind: text(claim.kind, "claim"),
+        confidence: finite(claim.confidence),
+        reviewStatus,
+        verifiedSupport,
+        evidenceTotal: support.length + contradictions.length,
+        support,
+        contradictions,
+      };
+    });
   if (value.claims.length && !claims.length) return undefined;
-  const count = (status: string) =>
-    claims.filter((claim) => claim.verificationStatus === status).length;
+  const allEvidence = claims.flatMap((claim) => [
+    ...claim.support,
+    ...claim.contradictions,
+  ]);
   return {
     kind: "claim-ledger",
     summary: {
       total: claims.length,
-      verified: count("verified"),
-      partiallyVerified: count("partially_verified"),
-      unverified: count("unverified"),
-      conflicting: count("conflicting"),
+      readyToCite: claims.filter((claim) => claim.reviewStatus === "ready")
+        .length,
+      needsReview: claims.filter(
+        (claim) => claim.reviewStatus === "needs-review",
+      ).length,
+      conflicting: claims.filter(
+        (claim) => claim.reviewStatus === "conflicting",
+      ).length,
+      evidenceTotal: allEvidence.length,
+      evidenceVerified: allEvidence.filter(
+        (reference) => reference.status === "verified",
+      ).length,
     },
     claims,
   };
@@ -1604,66 +1650,564 @@ function renderLabeledEvidence(
   return group;
 }
 
+type ClaimLedgerLanguage = "en" | "ko" | "zh";
+
+interface ClaimLedgerLabels {
+  language: ClaimLedgerLanguage;
+  guidance: string;
+  claims: string;
+  readyToCite: string;
+  needsReview: string;
+  conflicting: string;
+  checkedEvidence: string;
+  copyMarkdown: string;
+  copied: string;
+  copyFailed: string;
+  filters: string;
+  all: string;
+  ready: string;
+  review: string;
+  conflicts: string;
+  claimType: string;
+  allTypes: string;
+  showing: (visible: number, total: number) => string;
+  noMatches: string;
+  evidence: string;
+  supportingEvidence: string;
+  contradictingEvidence: string;
+  noEvidence: string;
+  noQuote: string;
+  openPDF: string;
+  status: Record<string, string>;
+  details: Record<string, string>;
+  kinds: Record<string, string>;
+  markdownTitle: string;
+  evidenceSummary: (verified: number, total: number) => string;
+}
+
+const CLAIM_LEDGER_LABELS: Record<ClaimLedgerLanguage, ClaimLedgerLabels> = {
+  en: {
+    language: "en",
+    guidance:
+      "Review claims first, then open the evidence only where it affects your reading or writing. Only locally checked evidence is ready to cite.",
+    claims: "Claims",
+    readyToCite: "Ready to cite",
+    needsReview: "Needs review",
+    conflicting: "Conflicting",
+    checkedEvidence: "Checked evidence",
+    copyMarkdown: "Copy readable Markdown",
+    copied: "Copied",
+    copyFailed: "Copy failed",
+    filters: "Evidence review filter",
+    all: "All",
+    ready: "Ready",
+    review: "Review needed",
+    conflicts: "Conflicts",
+    claimType: "Claim type",
+    allTypes: "All claim types",
+    showing: (visible, total) => `Showing ${visible} of ${total} claims`,
+    noMatches: "No claims match the current filters.",
+    evidence: "View evidence",
+    supportingEvidence: "Supporting evidence",
+    contradictingEvidence: "Contradicting evidence",
+    noEvidence: "No supporting evidence was returned for this claim.",
+    noQuote: "No quote was returned for this locator.",
+    openPDF: "Open in PDF",
+    status: {
+      ready: "Local evidence checked",
+      "needs-review": "Source review needed",
+      conflicting: "Conflicting evidence",
+      verified: "Locally checked",
+      unverified: "Not locally checked",
+      "not-found": "Quote not found",
+      "source-unavailable": "Source unavailable",
+    },
+    details: {},
+    kinds: {
+      author_claim: "Author claim",
+      empirical_result: "Empirical result",
+      assumption: "Assumption",
+      reader_inference: "Reader inference",
+      external_evidence: "External evidence",
+      claim: "Claim",
+    },
+    markdownTitle: "Claim–Evidence Review",
+    evidenceSummary: (verified, total) =>
+      `${verified} of ${total} evidence references locally checked`,
+  },
+  ko: {
+    language: "ko",
+    guidance:
+      "먼저 주장을 훑고, 읽기나 글쓰기에 필요한 근거만 펼쳐 확인하세요. 로컬 원문 확인이 끝난 근거만 인용에 사용할 수 있습니다.",
+    claims: "전체 주장",
+    readyToCite: "인용 준비",
+    needsReview: "확인 필요",
+    conflicting: "상충",
+    checkedEvidence: "확인된 근거",
+    copyMarkdown: "읽기 좋은 Markdown 복사",
+    copied: "복사됨",
+    copyFailed: "복사 실패",
+    filters: "근거 검토 필터",
+    all: "전체",
+    ready: "인용 준비",
+    review: "확인 필요",
+    conflicts: "상충",
+    claimType: "주장 유형",
+    allTypes: "모든 주장 유형",
+    showing: (visible, total) => `주장 ${total}개 중 ${visible}개 표시`,
+    noMatches: "현재 조건에 맞는 주장이 없습니다.",
+    evidence: "근거 보기",
+    supportingEvidence: "지지 근거",
+    contradictingEvidence: "상충 근거",
+    noEvidence: "이 주장에 제시된 지지 근거가 없습니다.",
+    noQuote: "이 위치에 대한 인용문이 제공되지 않았습니다.",
+    openPDF: "PDF에서 열기",
+    status: {
+      ready: "로컬 원문 확인됨",
+      "needs-review": "원문 확인 필요",
+      conflicting: "상충 근거 있음",
+      verified: "로컬 원문 확인됨",
+      unverified: "원문 확인 안 됨",
+      "not-found": "인용문을 찾지 못함",
+      "source-unavailable": "원본 접근 불가",
+    },
+    details: {
+      "No exact quote or trusted structured element was supplied.":
+        "직접 인용문이나 신뢰할 수 있는 구조화 요소가 제공되지 않았습니다.",
+      "The exact local PDF source could not be loaded.":
+        "정확한 로컬 PDF 원본을 불러오지 못했습니다.",
+      "The claimed page is outside the local PDF page range.":
+        "표시된 페이지가 로컬 PDF의 페이지 범위를 벗어납니다.",
+      "The exact quote was not found at the claimed local PDF location.":
+        "표시된 로컬 PDF 위치에서 해당 인용문을 찾지 못했습니다.",
+    },
+    kinds: {
+      author_claim: "저자 주장",
+      empirical_result: "실험 결과",
+      assumption: "가정",
+      reader_inference: "독자 추론",
+      external_evidence: "외부 근거",
+      claim: "주장",
+    },
+    markdownTitle: "주장–근거 검토표",
+    evidenceSummary: (verified, total) =>
+      `근거 ${total}개 중 ${verified}개 로컬 원문 확인됨`,
+  },
+  zh: {
+    language: "zh",
+    guidance:
+      "先浏览主张，再只展开影响阅读或写作的证据。只有经过本地原文核验的证据才适合引用。",
+    claims: "全部主张",
+    readyToCite: "可供引用",
+    needsReview: "需要核验",
+    conflicting: "存在冲突",
+    checkedEvidence: "已核验证据",
+    copyMarkdown: "复制易读 Markdown",
+    copied: "已复制",
+    copyFailed: "复制失败",
+    filters: "证据核验筛选",
+    all: "全部",
+    ready: "可供引用",
+    review: "需要核验",
+    conflicts: "冲突",
+    claimType: "主张类型",
+    allTypes: "全部主张类型",
+    showing: (visible, total) => `显示 ${visible}/${total} 条主张`,
+    noMatches: "没有符合当前筛选条件的主张。",
+    evidence: "查看证据",
+    supportingEvidence: "支持证据",
+    contradictingEvidence: "冲突证据",
+    noEvidence: "该主张没有返回支持证据。",
+    noQuote: "该位置没有返回引文。",
+    openPDF: "在 PDF 中打开",
+    status: {
+      ready: "本地原文已核验",
+      "needs-review": "需要原文核验",
+      conflicting: "存在冲突证据",
+      verified: "本地原文已核验",
+      unverified: "本地原文未核验",
+      "not-found": "未找到引文",
+      "source-unavailable": "原文不可用",
+    },
+    details: {
+      "No exact quote or trusted structured element was supplied.":
+        "未提供直接引文或可信的结构化元素。",
+      "The exact local PDF source could not be loaded.":
+        "无法加载对应的本地 PDF 原文。",
+      "The claimed page is outside the local PDF page range.":
+        "所标页码超出本地 PDF 的页数范围。",
+      "The exact quote was not found at the claimed local PDF location.":
+        "在所标的本地 PDF 位置未找到该引文。",
+    },
+    kinds: {
+      author_claim: "作者主张",
+      empirical_result: "实证结果",
+      assumption: "假设",
+      reader_inference: "读者推断",
+      external_evidence: "外部证据",
+      claim: "主张",
+    },
+    markdownTitle: "主张–证据核验表",
+    evidenceSummary: (verified, total) =>
+      `${total} 条证据中 ${verified} 条已完成本地原文核验`,
+  },
+};
+
+function claimLedgerLabels(view: ResearchWorkspaceClaimLedgerView) {
+  const sample = view.claims
+    .map((claim) => claim.text)
+    .join(" ")
+    .slice(0, 8000);
+  if (/[\uac00-\ud7a3]/u.test(sample)) return CLAIM_LEDGER_LABELS.ko;
+  if (/[\u3400-\u9fff]/u.test(sample)) return CLAIM_LEDGER_LABELS.zh;
+  return CLAIM_LEDGER_LABELS.en;
+}
+
+function localizedClaimKind(kind: string, labels: ClaimLedgerLabels) {
+  return labels.kinds[kind] ?? humanize(kind);
+}
+
+function localizedClaimStatus(status: string, labels: ClaimLedgerLabels) {
+  return labels.status[status] ?? humanize(status);
+}
+
+function localizedEvidenceDetail(detail: string, labels: ClaimLedgerLabels) {
+  return labels.details[detail] ?? detail;
+}
+
+function claimLedgerMarkdown(
+  view: ResearchWorkspaceClaimLedgerView,
+  labels: ClaimLedgerLabels,
+) {
+  const lines = [
+    `# ${labels.markdownTitle}`,
+    "",
+    `- ${labels.claims}: ${view.summary.total}`,
+    `- ${labels.readyToCite}: ${view.summary.readyToCite}`,
+    `- ${labels.needsReview}: ${view.summary.needsReview}`,
+    `- ${labels.conflicting}: ${view.summary.conflicting}`,
+    `- ${labels.checkedEvidence}: ${view.summary.evidenceVerified}/${view.summary.evidenceTotal}`,
+  ];
+  const appendEvidence = (
+    title: string,
+    evidence: ResearchWorkspaceEvidenceView[],
+  ) => {
+    lines.push("", `### ${title}`);
+    if (!evidence.length) {
+      lines.push("", `- ${labels.noEvidence}`);
+      return;
+    }
+    for (const [index, item] of evidence.entries()) {
+      lines.push(
+        "",
+        `${index + 1}. **${localizedClaimStatus(item.status, labels)}** — ${item.locator}`,
+      );
+      if (item.quote) lines.push("", `   > ${item.quote.replace(/\n+/g, " ")}`);
+      if (item.detail) {
+        lines.push("", `   ${localizedEvidenceDetail(item.detail, labels)}`);
+      }
+    }
+  };
+  for (const [index, claim] of view.claims.entries()) {
+    lines.push(
+      "",
+      `## ${index + 1}. ${claim.text}`,
+      "",
+      `- ${localizedClaimKind(claim.claimKind, labels)}`,
+      `- ${localizedClaimStatus(claim.reviewStatus, labels)}`,
+      `- ${labels.evidenceSummary(claim.verifiedSupport, claim.evidenceTotal)}`,
+    );
+    appendEvidence(labels.supportingEvidence, claim.support);
+    if (claim.contradictions.length) {
+      appendEvidence(labels.contradictingEvidence, claim.contradictions);
+    }
+  }
+  return `${lines.join("\n").trim()}\n`;
+}
+
+export function createResearchWorkspaceClaimLedgerMarkdown(value: unknown) {
+  const view = createResearchWorkspaceArtifactView(value, "claim-ledger");
+  if (view.kind !== "claim-ledger") {
+    throw new Error("The value is not a Claim Ledger artifact.");
+  }
+  return claimLedgerMarkdown(view, claimLedgerLabels(view));
+}
+
+function renderClaimEvidenceGroup(
+  doc: Document,
+  title: string,
+  evidence: ResearchWorkspaceEvidenceView[],
+  labels: ClaimLedgerLabels,
+  options: ResearchWorkspaceArtifactRendererOptions,
+) {
+  const section = element(doc, "section", "pprw-claim-evidence-group");
+  section.append(element(doc, "h4", "", `${title} · ${evidence.length}`));
+  if (!evidence.length) {
+    section.append(element(doc, "p", "pprw-render-empty", labels.noEvidence));
+    return section;
+  }
+  const list = element(doc, "div", "pprw-claim-evidence-list");
+  for (const item of evidence) {
+    const row = element(doc, "article", "pprw-claim-evidence-item");
+    row.dataset.status = item.status;
+    const header = element(doc, "div", "pprw-claim-evidence-header");
+    header.append(
+      element(
+        doc,
+        "strong",
+        "pprw-claim-evidence-status",
+        localizedClaimStatus(item.status, labels),
+      ),
+      element(doc, "span", "pprw-claim-evidence-locator", item.locator),
+    );
+    row.append(header);
+    if (item.quote) {
+      row.append(element(doc, "blockquote", "pprw-claim-quote", item.quote));
+    } else if (!item.detail) {
+      row.append(element(doc, "p", "pprw-claim-no-quote", labels.noQuote));
+    }
+    if (item.detail) {
+      row.append(
+        element(
+          doc,
+          "p",
+          "pprw-claim-evidence-detail",
+          localizedEvidenceDetail(item.detail, labels),
+        ),
+      );
+    }
+    if (item.status === "verified" && options.onOpenEvidence) {
+      const open = element(
+        doc,
+        "button",
+        "pprw-button pp-btn pp-btn--ghost pprw-claim-open",
+        labels.openPDF,
+      );
+      open.type = "button";
+      open.addEventListener("click", () => {
+        void options.onOpenEvidence?.(item.reference);
+      });
+      row.append(open);
+    }
+    list.append(row);
+  }
+  section.append(list);
+  return section;
+}
+
 function renderClaimLedger(
   doc: Document,
   view: ResearchWorkspaceClaimLedgerView,
   options: ResearchWorkspaceArtifactRendererOptions,
 ) {
   const root = element(doc, "div", "pprw-render pprw-render--claim-ledger");
-  const metrics = element(doc, "div", "pprw-render-metrics");
-  metrics.append(
-    metric(doc, "Claims", String(view.summary.total)),
-    metric(doc, "Verified", String(view.summary.verified)),
-    metric(doc, "Partially verified", String(view.summary.partiallyVerified)),
-    metric(doc, "Unverified", String(view.summary.unverified)),
-    metric(doc, "Conflicting", String(view.summary.conflicting)),
-  );
-  root.append(
-    metrics,
+  const labels = claimLedgerLabels(view);
+  root.lang = labels.language;
+  const overview = element(doc, "section", "pprw-claim-overview");
+  const metrics = element(doc, "div", "pprw-claim-metrics");
+  for (const [value, label, status] of [
+    [view.summary.total, labels.claims, "total"],
+    [view.summary.readyToCite, labels.readyToCite, "ready"],
+    [view.summary.needsReview, labels.needsReview, "needs-review"],
+    [view.summary.conflicting, labels.conflicting, "conflicting"],
+  ] as const) {
+    const item = element(doc, "div", "pprw-claim-metric");
+    item.dataset.status = status;
+    item.append(
+      element(doc, "strong", "", String(value)),
+      element(doc, "span", "", label),
+    );
+    metrics.append(item);
+  }
+  const guidance = element(doc, "div", "pprw-claim-guidance");
+  guidance.append(
+    element(doc, "p", "", labels.guidance),
     element(
       doc,
       "p",
-      "pprw-render-note",
-      "Verification labels summarize the saved claim ledger. Each evidence chip shows whether its exact local source could be opened and checked.",
+      "pprw-claim-coverage",
+      labels.evidenceSummary(
+        view.summary.evidenceVerified,
+        view.summary.evidenceTotal,
+      ),
     ),
   );
-  const list = element(doc, "div", "pprw-render-card-list");
-  for (const claim of view.claims) {
-    const card = element(doc, "article", "pprw-render-card");
-    const metadata = element(doc, "div", "pprw-render-inline");
-    metadata.append(
-      badge(doc, humanize(claim.claimKind), "accent"),
-      badge(
+  if (options.onCopyText) {
+    const copy = element(
+      doc,
+      "button",
+      "pprw-button pp-btn pp-btn--ghost pprw-claim-copy",
+      labels.copyMarkdown,
+    );
+    copy.type = "button";
+    copy.addEventListener("click", () => {
+      copy.disabled = true;
+      void Promise.resolve(
+        options.onCopyText?.(claimLedgerMarkdown(view, labels)),
+      )
+        .then(() => {
+          copy.textContent = labels.copied;
+        })
+        .catch(() => {
+          copy.textContent = labels.copyFailed;
+        })
+        .finally(() => {
+          copy.disabled = false;
+        });
+    });
+    guidance.append(copy);
+  }
+  overview.append(metrics, guidance);
+  root.append(overview);
+
+  const controls = element(doc, "div", "pprw-claim-controls");
+  const filterGroup = element(doc, "div", "pprw-claim-filters");
+  filterGroup.setAttribute("role", "group");
+  filterGroup.setAttribute("aria-label", labels.filters);
+  const filterDefinitions: Array<{
+    value: "all" | ResearchWorkspaceClaimReviewStatus;
+    label: string;
+  }> = [
+    { value: "all", label: labels.all },
+    { value: "ready", label: labels.ready },
+    { value: "needs-review", label: labels.review },
+    { value: "conflicting", label: labels.conflicts },
+  ];
+  const filterButtons = filterDefinitions.map((filter, index) => {
+    const control = element(doc, "button", "pprw-claim-filter", filter.label);
+    control.type = "button";
+    control.dataset.filter = filter.value;
+    control.setAttribute("aria-pressed", index === 0 ? "true" : "false");
+    filterGroup.append(control);
+    return control;
+  });
+  const typeLabel = element(doc, "label", "pprw-claim-type-control");
+  typeLabel.append(
+    element(doc, "span", "pp-visually-hidden", labels.claimType),
+  );
+  const typeSelect = element(doc, "select", "pprw-select pprw-claim-type");
+  const claimKinds = [...new Set(view.claims.map((claim) => claim.claimKind))];
+  for (const [value, label] of [
+    ["all", labels.allTypes],
+    ...claimKinds.map((kind) => [kind, localizedClaimKind(kind, labels)]),
+  ]) {
+    const option = element(doc, "option", "", label);
+    option.value = value;
+    typeSelect.append(option);
+  }
+  typeSelect.value = "all";
+  typeLabel.append(typeSelect);
+  controls.append(filterGroup, typeLabel);
+  root.append(controls);
+
+  const count = element(doc, "p", "pprw-claim-count");
+  count.setAttribute("role", "status");
+  count.setAttribute("aria-live", "polite");
+  root.append(count);
+  const list = element(doc, "div", "pprw-claim-list");
+  const rows: Array<{
+    node: HTMLDetailsElement;
+    status: ResearchWorkspaceClaimReviewStatus;
+    kind: string;
+  }> = [];
+  for (const [index, claim] of view.claims.entries()) {
+    const item = element(doc, "details", "pprw-claim");
+    item.dataset.status = claim.reviewStatus;
+    item.dataset.claimKind = claim.claimKind;
+    const summary = element(doc, "summary", "pprw-claim-summary");
+    const number = element(
+      doc,
+      "span",
+      "pprw-claim-number",
+      String(index + 1).padStart(2, "0"),
+    );
+    const main = element(doc, "div", "pprw-claim-main");
+    main.append(
+      element(doc, "p", "pprw-claim-statement", claim.text),
+      element(
         doc,
-        humanize(claim.verificationStatus),
-        statusTone(claim.verificationStatus),
+        "p",
+        `pprw-claim-meta pprw-claim-meta--${claim.reviewStatus}`,
+        `${localizedClaimKind(claim.claimKind, labels)} · ${localizedClaimStatus(claim.reviewStatus, labels)} · ${labels.evidenceSummary(claim.verifiedSupport, claim.evidenceTotal)}`,
       ),
     );
-    if (claim.confidence !== undefined) {
-      metadata.append(badge(doc, `Confidence ${percentage(claim.confidence)}`));
-    }
-    if (claim.id) metadata.append(badge(doc, claim.id));
-    card.append(
-      metadata,
-      element(doc, "p", "pprw-render-statement", claim.text),
-      renderLabeledEvidence(doc, "Supporting evidence", claim.support, options),
+    summary.append(
+      number,
+      main,
+      element(doc, "span", "pprw-claim-disclosure", labels.evidence),
+    );
+    const body = element(doc, "div", "pprw-claim-body");
+    body.append(
+      renderClaimEvidenceGroup(
+        doc,
+        labels.supportingEvidence,
+        claim.support,
+        labels,
+        options,
+      ),
     );
     if (claim.contradictions.length) {
-      card.append(
-        renderLabeledEvidence(
+      body.append(
+        renderClaimEvidenceGroup(
           doc,
-          "Contradicting evidence",
+          labels.contradictingEvidence,
           claim.contradictions,
+          labels,
           options,
         ),
       );
     }
-    list.append(card);
+    item.append(summary, body);
+    list.append(item);
+    rows.push({
+      node: item,
+      status: claim.reviewStatus,
+      kind: claim.claimKind,
+    });
   }
+  const noMatches = element(
+    doc,
+    "p",
+    "pprw-claim-no-matches",
+    labels.noMatches,
+  );
+  noMatches.hidden = true;
+  list.append(noMatches);
   if (!view.claims.length) {
-    list.append(element(doc, "p", "pprw-muted", "No claims were extracted."));
+    noMatches.hidden = false;
   }
   root.append(list);
+
+  let activeFilter: "all" | ResearchWorkspaceClaimReviewStatus = "all";
+  const updateFilters = () => {
+    let visible = 0;
+    for (const row of rows) {
+      const matchesStatus =
+        activeFilter === "all" || row.status === activeFilter;
+      const matchesKind =
+        typeSelect.value === "all" || row.kind === typeSelect.value;
+      row.node.hidden = !(matchesStatus && matchesKind);
+      if (!row.node.hidden) visible += 1;
+    }
+    for (const button of filterButtons) {
+      button.setAttribute(
+        "aria-pressed",
+        button.dataset.filter === activeFilter ? "true" : "false",
+      );
+    }
+    count.textContent = labels.showing(visible, view.summary.total);
+    noMatches.hidden = visible > 0;
+  };
+  for (const button of filterButtons) {
+    button.addEventListener("click", () => {
+      activeFilter = button.dataset.filter as
+        | "all"
+        | ResearchWorkspaceClaimReviewStatus;
+      updateFilters();
+    });
+  }
+  typeSelect.addEventListener("change", updateFilters);
+  updateFilters();
   return root;
 }
 
