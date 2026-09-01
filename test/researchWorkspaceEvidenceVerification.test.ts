@@ -230,6 +230,22 @@ test("Research Workspace verifies claim evidence before persistence", async () =
               contradictions: [],
               verificationStatus: "verified",
             },
+            {
+              id: "claim-2",
+              text: "The model claims an unsupported local sentence.",
+              kind: "author_claim",
+              confidence: 0.99,
+              support: [
+                {
+                  attachmentKey: "ATTACH",
+                  pageIndex: 0,
+                  quote: "This sentence is not in the local PDF.",
+                  confidence: 0.99,
+                },
+              ],
+              contradictions: [],
+              verificationStatus: "verified",
+            },
           ],
         });
       },
@@ -256,11 +272,18 @@ test("Research Workspace verifies claim evidence before persistence", async () =
   const ledger = await service.extractClaims(paper);
   const reference = ledger.claims[0].support[0];
   assert.equal(reference.verification.status, "verified");
+  assert.equal(ledger.claims[0].verificationStatus, "verified");
+  assert.equal(ledger.claims[1].support[0].verification.status, "not-found");
+  assert.equal(ledger.claims[1].verificationStatus, "unverified");
   assert.equal(reference.sourceID, source.sourceID);
   assert.equal(
     state.papers[source.sourceID].claimLedger.claims[0].support[0].verification
       .status,
     "verified",
+  );
+  assert.equal(
+    state.papers[source.sourceID].claimLedger.claims[1].verificationStatus,
+    "unverified",
   );
 });
 
@@ -300,10 +323,7 @@ test("Research Workspace view exposes no cross-library evidence scan", () => {
     "utf8",
   );
   const rendererSource = readFileSync(
-    join(
-      process.cwd(),
-      "src/modules/researchWorkspace/artifactRenderer.ts",
-    ),
+    join(process.cwd(), "src/modules/researchWorkspace/artifactRenderer.ts"),
     "utf8",
   );
   assert.doesNotMatch(viewSource, /Libraries\?\.getAll|Libraries\.getAll/);

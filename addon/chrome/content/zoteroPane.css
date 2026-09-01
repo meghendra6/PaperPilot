@@ -2984,6 +2984,382 @@ button.pprw-render-evidence-link {
   white-space: pre-wrap;
 }
 
+/* Claim Ledger is a review surface, not a serialized artifact inspector. */
+.pprw-render--claim-ledger {
+  gap: 12px;
+}
+
+.pprw-claim-overview {
+  display: grid;
+  gap: 10px;
+  padding-block: 4px 12px;
+  border-block-end: 1px solid var(--pp-border-light);
+}
+
+.pprw-claim-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(64px, 1fr));
+  min-width: 0;
+}
+
+.pprw-claim-metric {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding-inline: 9px;
+}
+
+.pprw-claim-metric:first-child {
+  padding-inline-start: 0;
+}
+
+.pprw-claim-metric + .pprw-claim-metric {
+  border-inline-start: 1px solid var(--pp-border-light);
+}
+
+.pprw-claim-metric strong {
+  color: var(--pp-text-primary);
+  font-size: clamp(16px, 4cqi, 21px);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+.pprw-claim-metric span {
+  color: var(--pp-text-muted);
+  font-size: var(--pp-font-size-xs);
+  line-height: 1.25;
+}
+
+.pprw-claim-metric[data-status="ready"] strong {
+  color: var(--pp-text-status-success);
+}
+
+.pprw-claim-metric[data-status="needs-review"] strong,
+.pprw-claim-metric[data-status="conflicting"] strong {
+  color: var(--pp-warning, #9a6700);
+}
+
+.pprw-claim-guidance {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px 12px;
+  align-items: end;
+}
+
+.pprw-claim-guidance p {
+  margin: 0;
+  color: var(--pp-text-secondary);
+  font-size: var(--pp-font-size-sm);
+  line-height: 1.5;
+}
+
+.pprw-claim-guidance .pprw-claim-coverage {
+  margin-top: 3px;
+  color: var(--pp-text-muted);
+  font-size: var(--pp-font-size-xs);
+}
+
+.pprw-claim-copy {
+  align-self: end;
+  color: var(--pp-text-evidence);
+}
+
+.pprw-claim-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.pprw-claim-filters {
+  display: flex;
+  min-width: 0;
+  overflow-x: auto;
+  border-block-end: 1px solid var(--pp-border-light);
+}
+
+.pprw-claim-filter {
+  min-height: 30px;
+  padding: 4px 9px;
+  border: 0;
+  border-block-end: 2px solid transparent;
+  background: transparent;
+  color: var(--pp-text-muted);
+  font: inherit;
+  font-size: var(--pp-font-size-xs);
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    color 120ms ease,
+    border-color 120ms ease,
+    background-color 120ms ease;
+}
+
+.pprw-claim-filter:hover {
+  color: var(--pp-text-primary);
+  background: var(--pp-bg-secondary);
+}
+
+.pprw-claim-filter[aria-pressed="true"] {
+  border-block-end-color: var(--pp-accent);
+  color: var(--pp-text-primary);
+  font-weight: 600;
+}
+
+.pprw-claim-filter:focus-visible,
+.pprw-claim-summary:focus-visible,
+.pprw-claim-type:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 var(--pp-focus-width) var(--pp-focus-color);
+}
+
+.pprw-claim-type {
+  max-width: 190px;
+  padding-inline: 7px;
+  font: inherit;
+  font-size: var(--pp-font-size-xs);
+}
+
+.pprw-claim-count {
+  margin: -2px 0 0;
+  color: var(--pp-text-muted);
+  font-size: var(--pp-font-size-xs);
+}
+
+.pprw-claim-list {
+  border-block-start: 1px solid var(--pp-border-light);
+}
+
+.pprw-claim {
+  border-block-end: 1px solid var(--pp-border-light);
+}
+
+.pprw-claim[hidden] {
+  display: none;
+}
+
+.pprw-claim-summary {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: start;
+  min-width: 0;
+  padding-block: 12px;
+  color: var(--pp-text-primary);
+  cursor: pointer;
+  list-style: none;
+  transition: background-color 120ms ease;
+}
+
+.pprw-claim-summary::-webkit-details-marker {
+  display: none;
+}
+
+.pprw-claim-summary:hover {
+  background: var(--pp-bg-secondary);
+}
+
+.pprw-claim-number {
+  padding-top: 2px;
+  color: var(--pp-text-muted);
+  font-family: var(--pp-font-mono);
+  font-size: var(--pp-font-size-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.pprw-claim-main {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.pprw-claim-statement {
+  margin: 0;
+  color: var(--pp-text-primary);
+  font-size: var(--pp-font-size-base);
+  font-weight: 540;
+  line-height: 1.58;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.pprw-claim-meta {
+  margin: 0;
+  color: var(--pp-text-muted);
+  font-size: var(--pp-font-size-xs);
+  line-height: 1.4;
+}
+
+.pprw-claim-meta--ready {
+  color: var(--pp-text-status-success);
+}
+
+.pprw-claim-meta--needs-review,
+.pprw-claim-meta--conflicting {
+  color: var(--pp-warning, #9a6700);
+}
+
+.pprw-claim-disclosure {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  padding-top: 2px;
+  color: var(--pp-text-muted);
+  font-size: var(--pp-font-size-xs);
+  white-space: nowrap;
+}
+
+.pprw-claim-disclosure::after {
+  content: "›";
+  display: inline-block;
+  font-size: 16px;
+  line-height: 1;
+  transform: rotate(90deg);
+  transition: transform 140ms ease;
+}
+
+.pprw-claim[open] .pprw-claim-disclosure::after {
+  transform: rotate(270deg);
+}
+
+.pprw-claim-body {
+  display: grid;
+  gap: 12px;
+  margin-inline-start: 38px;
+  padding: 2px 0 14px;
+}
+
+.pprw-claim-evidence-group {
+  display: grid;
+  gap: 7px;
+}
+
+.pprw-claim-evidence-group h4 {
+  margin: 0;
+  color: var(--pp-text-primary);
+  font-size: var(--pp-font-size-sm);
+  font-weight: 600;
+}
+
+.pprw-claim-evidence-list {
+  display: grid;
+  gap: 10px;
+}
+
+.pprw-claim-evidence-item {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  padding-inline-start: 10px;
+  border-inline-start: 2px solid var(--pp-border-medium);
+}
+
+.pprw-claim-evidence-item[data-status="verified"] {
+  border-inline-start-color: var(--pp-border-status-success);
+}
+
+.pprw-claim-evidence-item[data-status="unverified"],
+.pprw-claim-evidence-item[data-status="not-found"],
+.pprw-claim-evidence-item[data-status="source-unavailable"] {
+  border-inline-start-color: var(--pp-warning, #9a6700);
+}
+
+.pprw-claim-evidence-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 7px;
+  align-items: baseline;
+  font-size: var(--pp-font-size-xs);
+  line-height: 1.4;
+}
+
+.pprw-claim-evidence-status {
+  color: var(--pp-text-primary);
+  font-weight: 600;
+}
+
+.pprw-claim-evidence-item:not([data-status="verified"])
+  .pprw-claim-evidence-status {
+  color: var(--pp-warning, #9a6700);
+}
+
+.pprw-claim-evidence-locator {
+  color: var(--pp-text-muted);
+  overflow-wrap: anywhere;
+}
+
+.pprw-claim-quote {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  color: var(--pp-text-secondary);
+  font-size: var(--pp-font-size-sm);
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.pprw-claim-evidence-detail {
+  margin: 0;
+  color: var(--pp-text-muted);
+  font-size: var(--pp-font-size-xs);
+  line-height: 1.45;
+}
+
+.pprw-claim-no-quote {
+  margin: 0;
+  color: var(--pp-text-muted);
+  font-size: var(--pp-font-size-xs);
+  line-height: 1.45;
+}
+
+.pprw-claim-open {
+  justify-self: start;
+  min-height: 25px;
+  padding: 2px 7px;
+  color: var(--pp-text-evidence);
+  font-size: var(--pp-font-size-xs);
+}
+
+.pprw-claim-no-matches {
+  margin: 0;
+  padding-block: 18px;
+  color: var(--pp-text-muted);
+  font-size: var(--pp-font-size-sm);
+  text-align: center;
+}
+
+@container paper-pilot (max-width: 420px) {
+  .pprw-claim-guidance {
+    grid-template-columns: 1fr;
+  }
+
+  .pprw-claim-copy {
+    justify-self: start;
+  }
+
+  .pprw-claim-summary {
+    grid-template-columns: 24px minmax(0, 1fr);
+  }
+
+  .pprw-claim-disclosure {
+    grid-column: 2;
+  }
+
+  .pprw-claim-body {
+    margin-inline-start: 34px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pprw-claim-filter,
+  .pprw-claim-summary,
+  .pprw-claim-disclosure::after {
+    transition: none;
+  }
+}
+
 .pprw-render-note--warning,
 .pprw-render-section--warning {
   color: var(--pp-warning, #9a6700);

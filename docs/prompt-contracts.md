@@ -188,6 +188,7 @@ For structured workflows (`Research brief`, `Agent-led verified research discove
   - attachment and paper identifiers are parser-constrained to the supplied sets
   - malformed required arrays, unknown or duplicate IDs, incomplete rubric grades, dangling graph edges, and invalid enum values are rejected
   - deterministic local logic owns rubric maxima, evidence coverage denominators, and graph integrity
+  - Claim Ledger `verificationStatus` from the model is never user-facing authority; after exact local evidence verification, Paper Pilot reconciles the persisted claim status and the renderer derives ready-to-cite counts only from locally verified references
   - strict parser failures receive one bounded correction run; validation text is trust-labeled untrusted diagnostic data
   - missing citation classifications alone degrade to `unclear`
   - all runs use the shared `analysis` profile and Paper Pilot's selected engine; Research Monitor is intentionally absent

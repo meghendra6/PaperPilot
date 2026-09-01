@@ -26,6 +26,34 @@ function inferClaimVerificationStatus(support, contradictions) {
   );
   return strongSupport ? "verified" : "partially_verified";
 }
+function inferLocalEvidenceVerificationStatus(support, contradictions) {
+  const locallyVerified = (reference) =>
+    reference?.verification?.status === "verified";
+  if (contradictions.some(locallyVerified)) return "conflicting";
+  const verifiedSupport = support.filter(locallyVerified).length;
+  if (verifiedSupport === 0) return "unverified";
+  if (verifiedSupport === support.length && contradictions.length === 0) {
+    return "verified";
+  }
+  return "partially_verified";
+}
+function reconcileClaimLedgerEvidenceStatus(
+  ledger,
+  now = new Date().toISOString(),
+) {
+  return {
+    ...ledger,
+    claims: ledger.claims.map((claim) => ({
+      ...claim,
+      verificationStatus: inferLocalEvidenceVerificationStatus(
+        claim.support,
+        claim.contradictions,
+      ),
+      updatedAt: now,
+    })),
+    updatedAt: now,
+  };
+}
 function createPaperClaim(input) {
   if (!CLAIM_KINDS.has(input.kind))
     throw new Error(`Unsupported claim kind: ${input.kind}`);
@@ -175,6 +203,8 @@ function summarizeVersionedClaimLedger(ledger) {
 
 export {
   inferClaimVerificationStatus,
+  inferLocalEvidenceVerificationStatus,
+  reconcileClaimLedgerEvidenceStatus,
   createPaperClaim,
   mergePaperClaims,
   summarizeClaimLedger,
