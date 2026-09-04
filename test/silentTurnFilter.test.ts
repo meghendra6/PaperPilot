@@ -40,12 +40,23 @@ test("bare mastery question JSON line is flagged", () => {
   assert.equal(isLikelySilentToolMessage(record), true);
 });
 
-test("reasoning prose followed by a JSON object line with mastery keys is flagged", () => {
+test("prose followed by a JSON example remains visible", () => {
   const record = buildAssistant(
     [
       "현재 열린 논문 기준으로 질문을 만들어야 하니 본문을 다시 확인하겠습니다.",
       '{"understood":false,"confidence":0.99,"evaluation":"답변이 부족합니다."}',
     ].join("\n"),
+  );
+  assert.equal(isLikelySilentToolMessage(record), false);
+});
+
+test("pretty-printed legacy tool JSON is flagged when it is the whole message", () => {
+  const record = buildAssistant(
+    JSON.stringify(
+      { understood: false, confidence: 0.4, evaluation: "Needs work" },
+      null,
+      2,
+    ),
   );
   assert.equal(isLikelySilentToolMessage(record), true);
 });
@@ -69,6 +80,19 @@ test("markdown code-fenced JSON example is not flagged", () => {
   assert.equal(isLikelySilentToolMessage(record), false);
 });
 
+test("tilde-fenced and indented JSON examples are not flagged", () => {
+  assert.equal(
+    isLikelySilentToolMessage(
+      buildAssistant('~~~json\n{"kind":"x","summary":"y"}\n~~~'),
+    ),
+    false,
+  );
+  assert.equal(
+    isLikelySilentToolMessage(buildAssistant('    {"kind":"x","summary":"y"}')),
+    false,
+  );
+});
+
 test("user message containing JSON-shaped text is never flagged", () => {
   const record = buildUser(
     '{"question":"can you answer this?","topic":"y","difficulty":"foundational"}',
@@ -86,12 +110,16 @@ test("assistant message whose JSON line lacks any tool key is not flagged", () =
 });
 
 test("assistant message with a single matching key only is not flagged (tightened threshold)", () => {
-  const record = buildAssistant('{"summary":"The authors propose a new method."}');
+  const record = buildAssistant(
+    '{"summary":"The authors propose a new method."}',
+  );
   assert.equal(isLikelySilentToolMessage(record), false);
 });
 
 test("assistant message with two matching keys is flagged", () => {
-  const record = buildAssistant('{"kind":"research-brief","summary":"Overview"}');
+  const record = buildAssistant(
+    '{"kind":"research-brief","summary":"Overview"}',
+  );
   assert.equal(isLikelySilentToolMessage(record), true);
 });
 

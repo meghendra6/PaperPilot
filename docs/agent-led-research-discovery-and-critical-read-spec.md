@@ -1071,7 +1071,7 @@ reader records:
 - their confidence.
 
 After submission, the agent evaluates only the evidence and the reader's
-conclusion. It does not yet perform the Step 6 author comparison.
+conclusion. The separate Step 6 then performs the author comparison.
 
 ### Step 6 — Compare with the authors' conclusion
 

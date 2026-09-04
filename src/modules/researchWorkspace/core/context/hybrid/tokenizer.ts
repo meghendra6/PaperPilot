@@ -1,16 +1,4 @@
 // @ts-nocheck -- Ported feature core is guarded by strict runtime parsers.
-const ALIASES = {
-  ttft: ["time-to-first-token", "first-token-latency", "prefill-latency"],
-  tpot: ["time-per-output-token", "inter-token-latency", "decode-latency"],
-  itl: ["inter-token-latency", "time-per-output-token"],
-  kv: ["key-value", "kv-cache", "cache"],
-  llm: ["large-language-model", "language-model"],
-  rag: ["retrieval-augmented-generation", "retrieval"],
-  swa: ["sliding-window-attention", "window-attention"],
-  sd: ["speculative-decoding", "draft-verification"],
-  npu: ["neural-processing-unit", "accelerator"],
-  gpu: ["graphics-processing-unit", "accelerator"],
-};
 const STOPWORDS = new Set([
   "a",
   "an",
@@ -59,6 +47,8 @@ const STOPWORDS = new Set([
 ]);
 function normalize(value) {
   return value
+    .normalize("NFKD")
+    .replace(/\p{M}+/gu, "")
     .normalize("NFKC")
     .toLowerCase()
     .replace(/[‐‑‒–—−]/g, "-");
@@ -74,15 +64,32 @@ function koreanNgrams(word) {
   }
   return result;
 }
-function tokenizeHybridOccurrences(text, expandAliases = true) {
+function eastAsianNgrams(word) {
+  const chars = [...word].filter((character) =>
+    /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]/u.test(character),
+  );
+  if (chars.length < 2) return chars;
+  const result = [chars.join("")];
+  for (let index = 0; index < chars.length - 1; index += 1) {
+    result.push(chars.slice(index, index + 2).join(""));
+  }
+  return result;
+}
+function tokenizeHybridOccurrences(text) {
   const normalized = normalize(String(text || ""));
   const raw =
-    normalized.match(/[a-z0-9]+(?:[-_.][a-z0-9]+)*|[가-힣]+|[α-ωΑ-Ω]+/g) ?? [];
+    normalized.match(
+      /\p{Script=Han}+|\p{Script=Hiragana}+|\p{Script=Katakana}+|[가-힣]+|[\p{L}\p{N}]+(?:[-_.][\p{L}\p{N}]+)*/gu,
+    ) ?? [];
   const tokens = [];
   for (const token of raw) {
     if (STOPWORDS.has(token)) continue;
     if (/^[가-힣]+$/.test(token)) {
       tokens.push(...koreanNgrams(token));
+    } else if (
+      /^[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]+$/u.test(token)
+    ) {
+      tokens.push(...eastAsianNgrams(token));
     } else {
       // Keep exact technical identifiers (for example qk_scale) while also
       // indexing a punctuation-normalized form for natural-language queries.
@@ -91,24 +98,13 @@ function tokenizeHybridOccurrences(text, expandAliases = true) {
       if (normalizedToken !== token) tokens.push(normalizedToken);
     }
   }
-  if (expandAliases) {
-    const snapshot = [...tokens];
-    for (const token of snapshot) {
-      const aliases = ALIASES[token];
-      if (aliases) tokens.push(...aliases);
-      for (const [key, values] of Object.entries(ALIASES)) {
-        if (values.includes(token))
-          tokens.push(key, ...values.filter((value) => value !== token));
-      }
-    }
-  }
   return tokens.filter((token) => token.length > 0);
 }
-function tokenizeHybrid(text, expandAliases = true) {
-  return [...new Set(tokenizeHybridOccurrences(text, expandAliases))];
+function tokenizeHybrid(text) {
+  return [...new Set(tokenizeHybridOccurrences(text))];
 }
 function queryPhrases(text) {
-  const normalized = normalize(text).replace(/[^a-z0-9가-힣\s-]/g, " ");
+  const normalized = normalize(text).replace(/[^\p{L}\p{N}\s-]/gu, " ");
   const words = normalized.split(/\s+/).filter((word) => word.length > 1);
   const phrases = [];
   for (let size = 2; size <= Math.min(4, words.length); size += 1) {

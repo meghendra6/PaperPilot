@@ -1,5 +1,9 @@
-import { getPref, setPref } from "../../utils/prefs";
-import { getZoteroProfilePath } from "../../utils/zoteroProfile";
+import { getPref } from "../../utils/prefs";
+import { buildCliCommandEnvironment } from "../ai/cliEnvironment";
+import {
+  launchDetachedShellScript,
+  type ShellExecutor,
+} from "../ai/launchScript";
 import { normalizeClaudeModel } from "../codex/modelOptions";
 import { shellEscape } from "../codex/shell";
 import {
@@ -26,12 +30,16 @@ import {
   paperWorkspaceContentCache,
   type PaperWorkspaceContent,
 } from "../tools/paperWorkspaceContent";
-import { buildPaperWorkspacePath } from "../workspace/pathBuilder";
+import {
+  buildPaperWorkspacePath,
+  resolvePaperWorkspaceRoot,
+} from "../workspace/pathBuilder";
 import {
   writeWorkspaceSupplementalFiles,
   type WorkspaceSupplementalFiles,
 } from "../workspace/supplementalFiles";
 import { buildWorkspaceArtifacts } from "../context/workspaceArtifacts";
+import { readOptionalRunTextFile } from "../ai/runFileReader";
 
 declare const Zotero: any;
 
@@ -53,26 +61,12 @@ interface FailedClaudeRun {
   error: string;
 }
 
-function buildClaudeShellEnvironment() {
-  const profilePath = getZoteroProfilePath();
-  const userHome = profilePath.includes("/Library/")
-    ? profilePath.split("/Library/")[0]
-    : "";
-
-  return {
-    HOME: userHome || undefined,
-    XDG_CONFIG_HOME: userHome ? `${userHome}/.config` : undefined,
-    PATH: [
-      "/opt/homebrew/bin",
-      `${userHome}/.local/bin`,
-      `${userHome}/bin`,
-      "/usr/local/bin",
-      "/usr/bin",
-      "/bin",
-    ]
-      .filter(Boolean)
-      .join(":"),
-  };
+export function launchClaudeRunScript(
+  script: string,
+  execute: ShellExecutor = (executable, args) =>
+    Zotero.Utilities.Internal.exec(executable, args),
+) {
+  return launchDetachedShellScript(script, execute);
 }
 
 function normalizeClaudePermissionMode(permissionMode: string) {
@@ -89,17 +83,6 @@ function normalizeClaudePermissionMode(permissionMode: string) {
     : "default";
 }
 
-async function readTextFile(path: string) {
-  try {
-    const contents = await Promise.resolve(
-      Zotero.File.getContentsAsync(path, "utf-8"),
-    );
-    return String(contents || "");
-  } catch {
-    return "";
-  }
-}
-
 export function buildClaudeCommand(params: {
   promptPath: string;
   outputPath: string;
@@ -113,7 +96,7 @@ export function buildClaudeCommand(params: {
   permissionMode: string;
   outputSchema?: StructuredOutputSchema;
 }) {
-  const env = buildClaudeShellEnvironment();
+  const env = buildCliCommandEnvironment(params.executablePath);
   const environmentLines = Object.entries(env)
     .filter(([, value]) => Boolean(value))
     .map(([key, value]) => `export ${key}=${shellEscape(String(value))}`);
@@ -165,12 +148,8 @@ export async function startClaudeRunForQuestion(params: {
       ? String(getPref("claudePermissionMode") || "default").trim()
       : "plan";
 
-  if (model !== preferredModel) {
-    setPref("claudeDefaultModel", model);
-  }
-
-  const workspaceRoot = String(
-    getPref("codexWorkspaceRoot") || "/tmp/zotero-paper-ai",
+  const workspaceRoot = resolvePaperWorkspaceRoot(
+    getPref("codexWorkspaceRoot"),
   );
   const workspacePath = buildPaperWorkspacePath({
     root: workspaceRoot,
@@ -225,9 +204,14 @@ export async function startClaudeRunForQuestion(params: {
     }));
   const fullText = paperContent.fullText;
   payload.surroundingText = getPref("retrievalIncludeNearbyContext")
-    ? findNearbyContext({ fullText, selectedText: params.selectedText })
+    ? findNearbyContext({
+        fullText,
+        selectedText: params.selectedText,
+        pageIndex: readerContext.pageIndex,
+      })
     : undefined;
   const indexedChunks = getIndexedChunks({
+    libraryID: item.libraryID,
     itemKey: String(item.key || params.itemID),
     text: fullText,
     chunkSize: Number(getPref("retrievalChunkSize") || 1100),
@@ -256,11 +240,13 @@ export async function startClaudeRunForQuestion(params: {
     extractionNotes: paperContent.extractionNotes,
     payload,
     annotations: params.annotationIDs ?? [],
-    recentTurns: messageStore.recentRaw(params.sessionId, 3).map((message) => ({
-      role: message.role,
-      text: message.text,
-      createdAt: message.createdAt,
-    })),
+    recentTurns: messageStore
+      .recentForWorkspace(params.sessionId, 3)
+      .map((message) => ({
+        role: message.role,
+        text: message.text,
+        createdAt: message.createdAt,
+      })),
     requestText: params.question,
   });
 
@@ -353,7 +339,7 @@ export async function startClaudeRunForQuestion(params: {
       executablePath,
       helpArgs: ["--help"],
       flag: "--json-schema",
-      environment: buildClaudeShellEnvironment(),
+      environment: buildCliCommandEnvironment(executablePath),
     }))
       ? compatibleOutputSchema
       : undefined;
@@ -374,20 +360,17 @@ export async function startClaudeRunForQuestion(params: {
     outputSchema: nativeOutputSchema,
   });
 
-  const result = await Zotero.Utilities.Internal.exec("/bin/zsh", [
-    "-lc",
-    script,
-  ]);
-  if (result instanceof Error) {
+  const result = await launchClaudeRunScript(script);
+  if (!result.ok) {
     return {
       ok: false,
       workspacePath,
       promptPreview: claudePrompt,
-      error: result.message,
+      error: result.error,
     };
   }
 
-  const processId = (await readTextFile(pidPath)).trim();
+  const processId = (await readOptionalRunTextFile(pidPath))?.trim();
   return {
     ok: true,
     workspacePath,
@@ -405,17 +388,24 @@ export async function readClaudeRunProgress(paths: {
   stderrPath: string;
   exitCodePath: string;
 }) {
-  const stdout = await readTextFile(paths.outputPath);
-  const stderr = await readTextFile(paths.stderrPath);
+  const stdout = (await readOptionalRunTextFile(paths.outputPath)) ?? "";
+  const stderr = (await readOptionalRunTextFile(paths.stderrPath)) ?? "";
   const rawOutput = [stdout, stderr].filter(Boolean).join("\n");
-  const exitCode = (await readTextFile(paths.exitCodePath)).trim();
+  const exitCodeText = await readOptionalRunTextFile(paths.exitCodePath);
+  const exitCode = exitCodeText?.trim() ?? "file-read-error";
 
   return {
     rawOutput,
+    diagnosticOutput:
+      exitCodeText === undefined
+        ? [stderr, "The run exit-code file could not be read."]
+            .filter(Boolean)
+            .join("\n")
+        : stderr,
     parsedOutput: stdout.trim(),
     structuredOutput: false,
     latestEventType: stdout ? "text" : stderr ? "diagnostic" : "unknown",
-    completed: exitCode.length > 0,
+    completed: exitCodeText === undefined || exitCode.length > 0,
     exitCode,
   };
 }

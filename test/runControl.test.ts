@@ -60,7 +60,7 @@ test("cancellation keeps ownership and the pid when process death cannot be conf
   const previousZotero = (globalThis as { Zotero?: unknown }).Zotero;
   (globalThis as { addon?: unknown }).addon = {
     data: {
-      claudeRunPollers: new Map(),
+      claudeRunPollers: new Map([[82, { observer: "exit-code poller" }]]),
       claudeRunStates: new Map([[82, { processId: "6789" }]]),
       pendingEngineCompletions: new Map(),
       runProgressStates: new Map(),
@@ -75,6 +75,7 @@ test("cancellation keeps ownership and the pid when process death cannot be conf
     },
   };
   const token = markReaderRunStarted(82, "claude_code");
+  let timeoutCancelled = false;
 
   try {
     startRunProgress(82, "claude_code", token);
@@ -82,6 +83,9 @@ test("cancellation keeps ownership and the pid when process death cannot be conf
       mode: "claude_code",
       token,
       retryable: true,
+      cancelTimeout: () => {
+        timeoutCancelled = true;
+      },
     });
 
     assert.equal(await cancelActiveEngineRun(82), false);
@@ -89,6 +93,12 @@ test("cancellation keeps ownership and the pid when process death cannot be conf
     assert.equal(getPendingEngineCompletion(82)?.terminalClaim, undefined);
     assert.equal(getPendingEngineCompletion(82)?.terminalSettled, undefined);
     assert.equal(getRunProgressState(82)?.phase, "preparing");
+    assert.equal(timeoutCancelled, false);
+    assert.equal(
+      (globalThis as any).addon.data.claudeRunPollers.has(82),
+      true,
+      "the exit-code observer must remain armed for a delayed process exit",
+    );
     assert.match(
       getRunProgressState(82)?.failure?.rawError ?? "",
       /could not confirm process termination/i,
@@ -118,6 +128,7 @@ test("timeout keeps ownership when process death cannot be confirmed", async () 
     },
   };
   const token = markReaderRunStarted(83, "gemini_cli");
+  let timeoutRearmed = 0;
 
   try {
     startRunProgress(83, "gemini_cli", token);
@@ -125,6 +136,9 @@ test("timeout keeps ownership when process death cannot be confirmed", async () 
       mode: "gemini_cli",
       token,
       retryable: true,
+      rearmTimeout: () => {
+        timeoutRearmed += 1;
+      },
     });
 
     await completeTimedOutRun({
@@ -143,6 +157,7 @@ test("timeout keeps ownership when process death cannot be confirmed", async () 
     assert.equal(getPendingEngineCompletion(83)?.terminalClaim, undefined);
     assert.equal(getPendingEngineCompletion(83)?.terminalSettled, undefined);
     assert.equal(getRunProgressState(83)?.phase, "preparing");
+    assert.equal(timeoutRearmed, 1);
     assert.match(
       getRunProgressState(83)?.failure?.rawError ?? "",
       /could not confirm process termination after timeout/i,

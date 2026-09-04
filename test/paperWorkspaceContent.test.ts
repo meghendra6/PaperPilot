@@ -2,9 +2,104 @@ import { test } from "node:test";
 import * as assert from "node:assert/strict";
 
 import {
+  buildOpenDataLoaderScript,
+  classifyStructuredExtractionFailure,
   PaperWorkspaceContentCache,
+  probeJavaRuntime,
+  resetJavaRuntimeProbeForTests,
   resolveOpenDataLoaderJarPath,
+  waitForExtractorCompletion,
+  withOpenDataLoaderOutputCleanup,
 } from "../src/modules/tools/paperWorkspaceContent";
+import { checkShellSyntax } from "./helpers/shellSyntax";
+
+test("OpenDataLoader extraction records a pid and exit code", () => {
+  const script = buildOpenDataLoaderScript({
+    jarPath: "/tmp/tools/opendataloader.jar",
+    inputPath: "/tmp/papers/input.pdf",
+    outputDir: "/tmp/output",
+    exitCodePath: "/tmp/output/extractor-exit.txt",
+    pidPath: "/tmp/output/extractor-pid.txt",
+    stderrPath: "/tmp/output/extractor-stderr.log",
+  });
+  assert.equal(checkShellSyntax(script).status, 0);
+  assert.match(script, /echo \$! > '\/tmp\/output\/extractor-pid\.txt'/);
+  assert.match(
+    script,
+    /printf '%s' \$\? > '\/tmp\/output\/extractor-exit\.txt'/,
+  );
+});
+
+test("OpenDataLoader extraction stops its recorded pid on timeout", async () => {
+  const stopped: string[] = [];
+  await assert.rejects(
+    () =>
+      waitForExtractorCompletion({
+        exitCodePath: "/tmp/output/exit.txt",
+        pidPath: "/tmp/output/pid.txt",
+        stderrPath: "/tmp/output/stderr.log",
+        timeoutMs: 0,
+        read: async (path) => (path.endsWith("pid.txt") ? "4242" : ""),
+        stop: async (processId) => {
+          stopped.push(String(processId));
+        },
+      }),
+    /timed out after 0 seconds/,
+  );
+  assert.deepEqual(stopped, ["4242"]);
+});
+
+test("OpenDataLoader output cleanup runs on success and failure", async () => {
+  const removed: string[] = [];
+  const remove = async (path: string) => {
+    removed.push(path);
+  };
+  assert.equal(
+    await withOpenDataLoaderOutputCleanup(
+      "/tmp/output-success",
+      async () => "done",
+      remove,
+    ),
+    "done",
+  );
+  await assert.rejects(
+    withOpenDataLoaderOutputCleanup(
+      "/tmp/output-failure",
+      async () => {
+        throw new Error("injected failure");
+      },
+      remove,
+    ),
+    /injected failure/,
+  );
+  assert.deepEqual(removed, ["/tmp/output-success", "/tmp/output-failure"]);
+});
+
+test("a negative Java runtime probe is cached for the session", async () => {
+  resetJavaRuntimeProbeForTests();
+  let probes = 0;
+  const unavailable = async () => {
+    probes += 1;
+    throw new Error("java unavailable");
+  };
+  assert.equal(await probeJavaRuntime(unavailable), false);
+  assert.equal(await probeJavaRuntime(unavailable), false);
+  assert.equal(probes, 1);
+  resetJavaRuntimeProbeForTests();
+});
+
+test("structured extraction failures persist canned reasons only", () => {
+  assert.equal(
+    classifyStructuredExtractionFailure(
+      new Error("/private/var/folders/secret output is invalid JSON"),
+    ),
+    "invalid-json",
+  );
+  assert.equal(
+    classifyStructuredExtractionFailure(new Error("java-missing")),
+    "java-missing",
+  );
+});
 
 test("resolveOpenDataLoaderJarPath falls back to node_modules for file roots", async () => {
   const resolved = await resolveOpenDataLoaderJarPath({

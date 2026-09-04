@@ -77,4 +77,5 @@ export interface SessionHistoryRepositoryOptions {
   rootDir?: string;
   fileOps?: SessionHistoryFileOps;
   now?: () => Date;
+  warn?: (message: string) => void;
 }

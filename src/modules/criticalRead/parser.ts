@@ -3,6 +3,7 @@ import type {
   CriticalReadMethodAreaCode,
   CriticalReadStepID,
 } from "./types";
+import { parseFirstJsonObject } from "../ai/jsonCandidates";
 
 const METHOD_AREA_CODES = new Set<CriticalReadMethodAreaCode>([
   "data_provenance",
@@ -229,23 +230,13 @@ function alternatives(value: unknown) {
     .slice(0, 12);
 }
 
-function extract(raw: string) {
-  const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1];
-  const candidate = (fenced || raw).trim();
-  const start = candidate.indexOf("{");
-  const end = candidate.lastIndexOf("}");
-  return start >= 0 && end > start
-    ? candidate.slice(start, end + 1)
-    : candidate;
-}
-
 export function parseCriticalReadOutput(
   raw: string,
   stepID?: Exclude<CriticalReadStepID, 3>,
 ): CriticalReadAgentOutput {
   let parsed: unknown;
   try {
-    parsed = JSON.parse(extract(raw));
+    parsed = parseFirstJsonObject(raw);
   } catch (error) {
     throw new Error(
       `Invalid Critical Read JSON: ${error instanceof Error ? error.message : String(error)}`,

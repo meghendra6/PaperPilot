@@ -53,9 +53,14 @@ test("stopCodexRunSilently kills the active pid and clears run state and poller 
     const runToken = markReaderRunStarted(77, "codex_cli");
     const stopPromise = stopCodexRunSilently({ itemID: 77 });
 
-    assert.equal(isReaderRunTokenActive(77, runToken), false);
+    assert.equal(
+      isReaderRunTokenActive(77, runToken),
+      true,
+      "presentation ownership remains until process termination is confirmed",
+    );
     finishExec();
     await stopPromise;
+    assert.equal(isReaderRunTokenActive(77, runToken), false);
 
     assert.deepEqual(execCalls, [
       {

@@ -4,10 +4,6 @@ import { LegacyResearchWorkspaceImporter } from "./persistence/legacyMigration";
 import { ResearchWorkspaceLivingReviewService } from "./livingReviewService";
 import { ResearchWorkspaceZoteroSyncService } from "./zoteroSyncService";
 
-declare const Zotero: any;
-declare const IOUtils: any;
-declare const PathUtils: any;
-
 const STORAGE_DIRECTORY = "paperpilot-research-workspace";
 const STORAGE_FILE = "workspace-v3.json";
 
@@ -97,15 +93,22 @@ export function createResearchWorkspaceStorage() {
       const parent = pathUtils?.parent
         ? pathUtils.parent(path)
         : path.replace(/[\\/][^\\/]+$/, "");
+      if (!parent) {
+        throw new Error(
+          "Could not resolve the Research Workspace parent path.",
+        );
+      }
       await zotero.File.createDirectoryIfMissingAsync(parent);
       const ioUtils = getGlobalIOUtils();
-      if (ioUtils?.writeUTF8 && ioUtils?.move) {
+      if (ioUtils?.writeUTF8) {
         const temporaryPath = `${path}.tmp-${Date.now()}-${Math.random()
           .toString(36)
           .slice(2)}`;
         try {
-          await ioUtils.writeUTF8(temporaryPath, contents);
-          await ioUtils.move(temporaryPath, path, { noOverwrite: false });
+          await ioUtils.writeUTF8(path, contents, {
+            tmpPath: temporaryPath,
+            flush: true,
+          });
         } finally {
           try {
             await ioUtils.remove?.(temporaryPath, { ignoreAbsent: true });
@@ -115,7 +118,9 @@ export function createResearchWorkspaceStorage() {
         }
         return;
       }
-      await zotero.File.putContentsAsync(path, contents, "utf-8");
+      throw new Error(
+        "Atomic Research Workspace writes require IOUtils.writeUTF8.",
+      );
     },
     async remove(path: string, options?: { recursive?: boolean }) {
       const ioUtils = getGlobalIOUtils();
@@ -218,6 +223,7 @@ export function getResearchWorkspaceProjectRepository() {
     projectRepository = new ResearchWorkspaceProjectRepository({
       rootDir: getResearchWorkspaceStorageRoot(),
       fileOps: createResearchWorkspaceStorage(),
+      warn: (message) => getGlobalZotero()?.debug?.(`[Paper Pilot] ${message}`),
     });
   }
   return projectRepository;

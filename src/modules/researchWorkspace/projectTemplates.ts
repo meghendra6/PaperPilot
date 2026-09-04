@@ -7,8 +7,19 @@ import type {
   ResearchWorkspaceProjectTemplateAssumption,
   ResearchWorkspaceProjectTemplateSnapshot,
 } from "./persistence/contracts";
+import {
+  RESEARCH_PROJECT_TEMPLATE_REGISTRY_VERSION,
+  normalizeResearchWorkspaceTemplateAssumptions,
+  normalizeResearchWorkspaceTemplatePresetIDs,
+  normalizeResearchWorkspaceTemplateText as normalizedText,
+  validateResearchWorkspaceProjectTemplateState,
+} from "./persistence/projectTemplateValidation";
 
-export const RESEARCH_PROJECT_TEMPLATE_REGISTRY_VERSION = 1 as const;
+export {
+  RESEARCH_PROJECT_TEMPLATE_REGISTRY_VERSION,
+  normalizeResearchWorkspaceTemplateAssumptions,
+  validateResearchWorkspaceProjectTemplateState,
+} from "./persistence/projectTemplateValidation";
 
 export type ResearchWorkspaceProjectTemplateID =
   | "exploratory-literature-review"
@@ -208,73 +219,17 @@ const TEMPLATE_REGISTRY = deepFreeze<
   },
 ]);
 
-function normalizedText(value: string, label: string, maximum = 5_000) {
-  const normalized = value.replace(/\s+/g, " ").trim();
-  if (!normalized) throw new Error(`${label} is required.`);
-  if (normalized.length > maximum) throw new Error(`${label} is too long.`);
-  return normalized;
-}
-
-export function normalizeResearchWorkspaceTemplateAssumptions(
-  assumptions: readonly ResearchWorkspaceProjectTemplateAssumption[],
-) {
-  if (assumptions.length > 100) {
-    throw new Error("A project template supports at most 100 assumptions.");
-  }
-  const seen = new Set<string>();
-  return assumptions.map((assumption) => {
-    const assumptionID = normalizedText(
-      assumption.assumptionID,
-      "Template assumption ID",
-      200,
-    );
-    if (!/^[a-z0-9][a-z0-9-]*$/.test(assumptionID)) {
-      throw new Error(`Template assumption ID is invalid: ${assumptionID}.`);
-    }
-    if (seen.has(assumptionID)) {
-      throw new Error(`Duplicate template assumption: ${assumptionID}.`);
-    }
-    seen.add(assumptionID);
-    return {
-      assumptionID,
-      label: normalizedText(assumption.label, "Template assumption label", 300),
-      value: normalizedText(assumption.value, "Template assumption value"),
-      ...(assumption.description?.trim()
-        ? {
-            description: normalizedText(
-              assumption.description,
-              "Template assumption description",
-            ),
-          }
-        : {}),
-    };
-  });
-}
-
 function normalizeCapabilityPresetIDs(
   values: readonly string[],
   requireRegistered: boolean,
 ) {
-  if (values.length > 100) {
-    throw new Error(
-      "A project template supports at most 100 capability presets.",
-    );
-  }
-  const normalized: string[] = [];
-  const seen = new Set<string>();
-  for (const value of values) {
-    const capabilityID = normalizedText(value, "Capability preset ID", 200);
-    if (!/^[a-z0-9][a-z0-9-]*$/.test(capabilityID)) {
-      throw new Error(`Capability preset ID is invalid: ${capabilityID}.`);
-    }
-    if (requireRegistered) {
+  const normalized = normalizeResearchWorkspaceTemplatePresetIDs(values);
+  if (requireRegistered) {
+    for (const capabilityID of normalized) {
       getResearchWorkspaceCapability(
         capabilityID as ResearchWorkspaceCapabilityID,
       );
     }
-    if (seen.has(capabilityID)) continue;
-    seen.add(capabilityID);
-    normalized.push(capabilityID);
   }
   return normalized;
 }
@@ -360,46 +315,6 @@ export function instantiateResearchWorkspaceProjectTemplate(params: {
       params.preview.capabilityPresetIDs,
     ),
   };
-}
-
-export function validateResearchWorkspaceProjectTemplateState(
-  project: ResearchProject,
-) {
-  if (!project.templateSnapshot) {
-    if (project.templateAssumptions || project.capabilityPresetIDs) {
-      throw new Error(
-        "Template assumptions and capability presets require a template snapshot.",
-      );
-    }
-    return project;
-  }
-  const snapshot = project.templateSnapshot;
-  if (snapshot.registryVersion !== RESEARCH_PROJECT_TEMPLATE_REGISTRY_VERSION) {
-    throw new Error("Project template registry version is unsupported.");
-  }
-  normalizedText(snapshot.templateID, "Template snapshot ID", 200);
-  normalizedText(snapshot.templateName, "Template snapshot name", 500);
-  normalizedText(snapshot.description, "Template snapshot description");
-  normalizedText(
-    snapshot.suggestedResearchQuestion,
-    "Template snapshot research question",
-  );
-  if (
-    !Number.isInteger(snapshot.templateVersion) ||
-    snapshot.templateVersion < 1
-  ) {
-    throw new Error("Template snapshot version must be positive.");
-  }
-  if (!Number.isFinite(Date.parse(snapshot.appliedAt))) {
-    throw new Error("Template snapshot appliedAt must be an ISO date.");
-  }
-  normalizeResearchWorkspaceTemplateAssumptions(snapshot.registryAssumptions);
-  normalizeCapabilityPresetIDs(snapshot.registryCapabilityPresetIDs, false);
-  normalizeResearchWorkspaceTemplateAssumptions(
-    project.templateAssumptions ?? [],
-  );
-  normalizeCapabilityPresetIDs(project.capabilityPresetIDs ?? [], false);
-  return project;
 }
 
 export function updateResearchWorkspaceProjectTemplateSettings(

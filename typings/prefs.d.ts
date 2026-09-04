@@ -8,7 +8,6 @@ declare namespace _ZoteroTypes {
   interface Prefs {
     PluginPrefsMap: {
       "defaultMode": string;
-      "autoOpenPaneOnPdfOpen": boolean;
       "saveDocumentSessions": boolean;
       "responseLanguage": string;
       "paneSectionState": string;
@@ -19,6 +18,7 @@ declare namespace _ZoteroTypes {
       "geminiExecutablePath": string;
       "geminiDefaultModel": string;
       "geminiAllowedModels": string;
+      "geminiApprovalMode": string;
       "codexExecutablePath": string;
       "codexDefaultModel": string;
       "codexReasoningEffort": string;

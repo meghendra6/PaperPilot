@@ -27,6 +27,7 @@ import {
 import { stopDetachedRunProcess } from "../ai/runCompletion";
 import { getModeForItem } from "../ai/modeStore";
 import { cleanupWorkspaceIfEnabled } from "../workspace/cleanup";
+import { RUN_TIMEOUT_MS } from "../ai/runProgress";
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -56,6 +57,8 @@ async function waitForWorkspaceText(params: {
   title: string;
   question: string;
   onStatus?: (status: string) => void;
+  signal?: AbortSignal;
+  deadline: number;
 }) {
   const mode = getModeForItem(params.modeItemID);
   const engineLabel = getWorkspaceEngineLabel(mode);
@@ -83,6 +86,12 @@ async function waitForWorkspaceText(params: {
   let runError: unknown;
   try {
     for (let attempts = 0; attempts < 300; attempts += 1) {
+      if (params.signal?.aborted) {
+        throw new Error("Automatic highlighting cancelled.");
+      }
+      if (Date.now() >= params.deadline) {
+        throw new Error(`${engineLabel} highlight run timed out.`);
+      }
       const progress = await readWorkspaceRunProgress(mode, {
         outputPath: started.outputPath,
         stderrPath: started.stderrPath,
@@ -162,7 +171,13 @@ export async function runAutoHighlightWorkflow(params: {
   itemID: number;
   itemTitle: string;
   onStatus?: (status: string) => void;
+  signal?: AbortSignal;
+  deadline?: number;
 }): Promise<{ result: AutoHighlightResult; summary: string }> {
+  const deadline = params.deadline ?? Date.now() + RUN_TIMEOUT_MS;
+  if (params.signal?.aborted) {
+    throw new Error("Automatic highlighting cancelled.");
+  }
   const mode = getModeForItem(params.itemID);
   const reservationToken = claimWorkspaceRunReservation(mode, params.itemID);
   if (!reservationToken) {
@@ -188,6 +203,8 @@ export async function runAutoHighlightWorkflow(params: {
       title: params.itemTitle,
       question: buildAutoHighlightQuestion(DEFAULT_AUTO_HIGHLIGHT_LIMIT),
       onStatus: params.onStatus,
+      signal: params.signal,
+      deadline,
     });
     const candidates = await parseHighlightCandidatesWithRepair({
       itemID: attachment.id,
@@ -200,6 +217,8 @@ export async function runAutoHighlightWorkflow(params: {
           modeItemID: params.itemID,
           reservationToken,
           onTerminationFailure: retainReservationAfterStopFailure,
+          signal: params.signal,
+          deadline,
         }),
     });
 
@@ -215,6 +234,12 @@ export async function runAutoHighlightWorkflow(params: {
             reader as Parameters<typeof extractPdfTextPagesFromReader>[0],
           )
         : await extractPdfTextPages(filePath);
+    if (params.signal?.aborted) {
+      throw new Error("Automatic highlighting cancelled.");
+    }
+    if (Date.now() >= deadline) {
+      throw new Error("Automatic highlighting timed out.");
+    }
     if (!pages.length) {
       throw new Error("Could not extract readable PDF text geometry.");
     }
@@ -225,6 +250,12 @@ export async function runAutoHighlightWorkflow(params: {
     let unmatched = 0;
 
     for (const candidate of candidates) {
+      if (params.signal?.aborted) {
+        throw new Error("Automatic highlighting cancelled.");
+      }
+      if (Date.now() >= deadline) {
+        throw new Error("Automatic highlighting timed out.");
+      }
       const match = matchQuoteInPages(candidate.quote, pages);
       if (!match) {
         unmatched += 1;

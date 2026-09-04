@@ -6,7 +6,7 @@ import {
   isDuplicateHighlight,
 } from "../src/modules/autoHighlight/annotation";
 
-(globalThis as typeof globalThis & { Zotero?: unknown }).Zotero = {
+(globalThis as unknown as { Zotero?: unknown }).Zotero = {
   DataObjectUtilities: {
     generateKey: () => "AUTO1234",
   },
@@ -27,6 +27,7 @@ test("buildHighlightAnnotationJSON creates Zotero-compatible highlight payload",
     type: "highlight",
     text: "Exact quote",
     color: "#ffd400",
+    comment: "Paper Pilot auto-highlight",
     pageLabel: "1",
     sortIndex: "00000|000020|00010",
     position: {

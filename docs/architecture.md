@@ -7,7 +7,7 @@ Related notes:
 
 - [`prompt-contracts.md`](./prompt-contracts.md) — required output shapes per prompt surface
 - [`manual-qa.md`](./manual-qa.md) — real-Zotero runtime checklist
-- [`research-workspace-redesign-spec.md`](./research-workspace-redesign-spec.md) — proposed selection-independent Research Workspace redesign and migration plan
+- [`research-workspace-redesign-spec.md`](./research-workspace-redesign-spec.md) — delivered Research Workspace phases plus remaining rollout and runtime-verification proposals
 - [`agent-led-research-discovery-and-critical-read-spec.md`](./agent-led-research-discovery-and-critical-read-spec.md) — implemented verified-discovery and seven-step critical-reading specification
 - [`../AGENTS.md`](../AGENTS.md) — working agreements and verification expectations
 
@@ -21,7 +21,7 @@ already installed and authenticated on the user's machine.
 Zotero item panes
   ├── src/modules/readerPane.ts              reader chat and workbench
   └── modules/researchWorkspace/view.ts      single- and multi-paper tools
-        └── modules/researchWorkspace/       feature service and typed core
+        └── modules/researchWorkspace/       feature service and partially typed ported core
               └── modules/ai/workspaceRun.ts
                     └── <engine>/runner.ts   workspace build + process launch
                           └── codex | claude | gemini CLI
@@ -41,8 +41,8 @@ is the most common regression in this codebase.
 
 The pane itself uses a bounded flex column. `ui/paneHeader.ts` owns the compact
 engine/model header and its settings popover, while `ui/collapsibleSection.ts`
-owns the accessible Workbench, Find verified prior work, Critical Read, and Past
-sessions surfaces. `ui/chatComposerSizing.ts` preserves textarea auto-sizing
+owns the accessible Workbench, Find verified prior work, and Past sessions
+surfaces. Critical Read is rendered within Workbench. `ui/chatComposerSizing.ts` preserves textarea auto-sizing
 without changing the pane height. Disclosure state is serialized in the internal
 `paneSectionState` preference through the pure helpers in
 `ui/paneSectionState.ts`. The chat transcript takes the remaining space and
@@ -56,12 +56,13 @@ detached.
 ## Integrated Research Workspace boundary
 
 `src/modules/researchWorkspace/` owns the paper- and project-level research
-features. `view.ts` keeps a compact item-pane launcher, while
-`projectWindow.ts` owns the persistent modeless project window. Library
-selection is captured once by `selectionCapture.ts` and handed to the project
-controller; project actions never depend on a later live-selection read. This
-keeps the workflow reachable when Zotero replaces the ordinary item pane for a
-multi-selection.
+features. `view.ts` renders the full single-paper operation surface and is also
+embedded in the project window. `projectWindowView.ts` renders project UI,
+`window.ts` owns the modeless-window singleton and captured state, and `menu.ts`
+registers its launchers. Library selection is captured once by
+`selectionSnapshot.ts` and handed to the project controller; project actions
+never depend on a later live-selection read. This keeps the workflow reachable
+when Zotero replaces the ordinary item pane for a multi-selection.
 
 The feature service reuses `ai/workspaceRun.ts` with the `analysis` profile.
 It therefore follows the active Paper Pilot engine choice, never resumes or
@@ -85,13 +86,23 @@ bounding boxes are never promoted. Verified references are navigable through
 `evidenceNavigation.ts`, which performs one `libraryID + attachmentKey` lookup
 and never scans other libraries. Unverified, not-found, and unavailable-source
 references remain labelled but have no Open in PDF action.
+Structured element IDs can retain section and page metadata, but they remain
+unverified unless the response also supplies text that is matched against the
+local PDF. A locator alone never enters the verified claim or contradiction
+sets.
 
 Research Workspace durable state remains separate from transient run
 workspaces under `<Zotero profile>/paperpilot-research-workspace/`. The current
-store uses a revisioned `catalog-v1.json`, shared source records, and one
-directory per project containing `project.json`, `members.json`,
-`change-inbox.json`, artifacts, and runs. Writes are atomic and revision
-guarded. The legacy `workspace-v3.json`
+store uses revisioned `catalog-v1.json` and `preferences-v1.json`, shared source
+records, a legacy migration marker, and one directory per project containing
+`project.json`, `members.json`, `change-inbox.json`, `sync-receipts/`, artifacts,
+and runs. Derived caches and user-requested exports live under separate `cache/`
+and `exports/` directories. Each file replacement is atomic and revision
+guarded; a workflow that touches several files is not a transaction.
+Startup recovery reconciles `project.json` with valid artifact and run files,
+re-links files left behind by an interrupted write, quarantines unreadable
+orphans, repairs missing membership files, and rebuilds stale catalog entries.
+The legacy `workspace-v3.json`
 is read only by the migration adapter, which preserves supported papers and
 artifacts while dropping companion provider settings and Research Monitor
 state.
@@ -173,11 +184,12 @@ directory. Apply and undo both require `Zotero.DB.executeTransaction`; missing
 transaction support fails closed. The runtime never creates or deletes items,
 collections, tags, attachments, notes, or annotations and never writes
 bibliographic fields, PDF data, or annotation data. Per-item results record the
-collection/tag additions actually made and include PaperPilot-originated
-notifier data where the Zotero API accepts it. Undo may remove only additions
-recorded as owned by that receipt and preserves pre-existing and later unrelated
-collection/tag state. A prepared receipt without committed ownership results is
-shown as unresolved and is not eligible for undo or reapplication.
+collection/tag additions actually made. The runtime records that it passed
+Paper Pilot notifier metadata to APIs with an options position; it does not
+claim Zotero consumed that metadata. Undo may remove only additions recorded as
+owned by that receipt and preserves pre-existing and later unrelated
+collection/tag state. A prepared receipt without committed ownership results
+is shown as unresolved and is not eligible for undo or reapplication.
 
 ## Engine abstraction
 
@@ -244,10 +256,14 @@ polled**:
      session, while hidden `analysis` and `discovery` runs never resume or
      update it and use separate profile-suffixed workspace paths
    - computes the workspace path: `{workspaceRoot}/{itemID}-{slugified-title}`
-     (`workspace/pathBuilder.ts`); analysis and discovery add their profile to
-     the title before slugging
+     (`workspace/pathBuilder.ts`); an empty preference resolves below
+     `Zotero.getTempDirectory()` instead of a shared `/tmp` root, and analysis
+     and discovery add their profile to the title before slugging
    - extracts paper content via `tools/paperWorkspaceContent.ts` — OpenDataLoader
-     when Java is available, falling back to Zotero `attachmentText`
+     when Java is available, falling back to Zotero `attachmentText`; the Java
+     subprocess records its pid and exit code and is terminated after a
+     two-minute extraction limit, with the fallback reason kept in
+     `extractionNotes`
    - chunks and retrieves top-K passages (`context/indexStore.ts`,
      `context/retriever.ts`)
    - writes the workspace artifacts (see below)
@@ -258,7 +274,9 @@ polled**:
      `--json-schema` when supported; an incompatible schema, missing flag, or
      failed probe falls back to the prompt plus validating parser without
      blocking the run
-   - builds the CLI argv and wraps it in a **detached background shell script**
+   - builds the CLI argv and wraps it in a **detached background shell script**;
+     first and resumed Codex turns carry the same configured approval and
+     sandbox modes, and every engine prepends its executable directory to PATH
      (`codex/shell.ts` for Codex; inline in the runner for Claude and Gemini)
    - runs `Zotero.Utilities.Internal.exec("/bin/zsh", ["-lc", script])`
 4. The script writes stdout and stderr to separate files, writes the exit code
@@ -270,7 +288,12 @@ polled**:
    If the executor cannot confirm termination, the active owner and pid (or the
    direct-workflow reservation) remain in place and workspace cleanup is not
    claimed; the UI reports the stop failure instead of unlocking unsafely. A
-   started result or run state must provide a numeric pid—missing pid data is a
+   failed manual stop leaves its exit-file poller and absolute watchdog armed,
+   so a later natural exit is still reconciled. Add-on shutdown snapshots all
+   run-state, poller, pending-completion, and presentation owners, starts
+   best-effort non-blocking termination for every recorded pid, and only then
+   clears local observers and state. A started result or run state must provide
+   a numeric pid—missing pid data is a
    stop failure, not a successful no-op. The no-pid no-op is reserved for a
    cancellation that happens before any process exists.
    Terminal Codex state never retains a killable pid; session cleanup only
@@ -326,7 +349,8 @@ polled**:
 
 Failures are classified in `ai/runFailure.ts`. Workspace and timeout sources
 take precedence over string matching; executable and login patterns cover all
-three CLIs. Session history stores the safe `userMessage` as replayable text and
+three CLIs. Process-exit classification reads stderr plus explicit CLI error
+events, never the full stdout/tool-event stream. Session history stores the safe `userMessage` as replayable text and
 keeps raw stderr only in `rawEvent`, which the run card exposes under a collapsed
 Raw logs disclosure. Direct workspace workflows likewise derive visible text
 only from parsed stdout; a non-zero exit without parsed stdout becomes a generic
@@ -334,11 +358,13 @@ workflow error instead of exposing stderr. `ui/runProgressCard.ts` renders the
 same progress, cancel, retry, settings, and login-help surface for every engine.
 Only normal chat turns enter `addon.data.lastEngineRequests`; silent Workbench
 Paper Mastery, and Critical Read runs continue to use their own workflow buttons.
-Normal chat uses the configured provider permissions. Analysis is read-only
-(Codex read-only sandbox, Claude plan permission, Gemini plan approval) and has
-no web search. Discovery keeps the same filesystem boundary while admitting the
-verified web-search path. Hidden completion can persist workflow state without
-changing the visible session's provider resume id.
+Normal chat uses the configured provider permissions. Gemini's default approval
+mode prompts instead of accepting actions automatically, and Paper Pilot adds
+Gemini's sandbox flag when the installed CLI advertises it. Analysis is
+read-only (Codex read-only sandbox, Claude plan permission, Gemini plan
+approval) and has no web search. Discovery keeps the same filesystem boundary
+while admitting the verified web-search path. Hidden completion can persist
+workflow state without changing the visible session's provider resume id.
 
 Per-engine file names inside the workspace:
 
@@ -348,30 +374,35 @@ Per-engine file names inside the workspace:
 | Claude | `claude-prompt.txt` | `claude-output.txt`  | `claude-stderr.log` | `claude-exit.txt` | `claude-pid.txt` |
 | Gemini | `gemini-prompt.txt` | `gemini-output.txt`  | `gemini-stderr.log` | `gemini-exit.txt` | `gemini-pid.txt` |
 
-Codex emits JSONL events, so `outputParser.ts` extracts the assistant text and
-the resumable `thread_id`. Claude runs with `-p --output-format text` and Gemini
-returns plain text, so both are read directly.
+Codex emits JSONL events, so `outputParser.ts` extracts assistant text and
+`codex/controller.ts` extracts the resumable `thread_id`. Claude runs with
+`-p --output-format text` and Gemini returns plain text, so both are read
+directly.
+
+The current local-process adapter is macOS/POSIX-specific: it launches
+`/bin/zsh` and uses `/usr/bin/pgrep` and `/bin/ps`. Windows is not a supported
+runtime until those process-control assumptions have a platform adapter.
 
 ## Paper workspace artifacts
 
 `context/workspaceArtifacts.ts` builds the payload; the runner writes the files.
 
-| File                        | Written by                      | Contents                                                                  |
-| --------------------------- | ------------------------------- | ------------------------------------------------------------------------- |
-| `paper.md`                  | all engines                     | structured Markdown, or full text if extraction fell back                 |
-| `paper.json`                | all engines                     | structured elements + `extractionMethod` + `extractionNotes`              |
-| `paper.txt`                 | all engines                     | compatibility snapshot: metadata header plus text                         |
-| `metadata.json`             | all engines                     | title, authors, year, item/attachment key, abstract                       |
-| `selection.json`            | all engines                     | selected text, actual nearby context, page, annotations, retrieved chunks |
-| `recent-turns.json`         | all engines                     | last 3 turns for follow-up continuity                                     |
-| `annotations.json`          | all engines                     | annotation ids tied to this request                                       |
-| `CONTEXT_INDEX.md`          | all engines                     | reading-order file map                                                    |
-| `discovery-request.json`    | discovery runs                  | normalized research concern and current-paper context                     |
-| `discovery-plan.json`       | discovery runs                  | agent-owned field, venue, and query planning scaffold                     |
-| `discovery-candidates.json` | discovery runs                  | deterministic scholarly-provider candidates                               |
-| `discovery-evidence.json`   | discovery runs                  | official-evidence collection scaffold                                     |
-| `figures/`                  | Codex only                      | empty directory for image assets                                          |
-| `output-schema.json`        | supported Codex structured runs | native final-output JSON Schema                                           |
+| File                        | Written by                      | Contents                                                                         |
+| --------------------------- | ------------------------------- | -------------------------------------------------------------------------------- |
+| `paper.md`                  | all engines                     | structured Markdown, or full text if extraction fell back                        |
+| `paper.json`                | all engines                     | structured elements + `extractionMethod` + `extractionNotes`                     |
+| `paper.txt`                 | all engines                     | compatibility snapshot: metadata header plus text                                |
+| `metadata.json`             | all engines                     | title, authors, year, item/attachment key, abstract, extraction method and notes |
+| `selection.json`            | all engines                     | selected text, actual nearby context, page, annotations, retrieved chunks        |
+| `recent-turns.json`         | all engines                     | last 3 privacy-eligible turns for follow-up continuity                           |
+| `annotations.json`          | all engines                     | annotation ids tied to this request                                              |
+| `CONTEXT_INDEX.md`          | all engines                     | reading-order file map                                                           |
+| `discovery-request.json`    | discovery runs                  | normalized research concern and current-paper context                            |
+| `discovery-plan.json`       | discovery runs                  | agent-owned field, venue, and query planning scaffold                            |
+| `discovery-candidates.json` | discovery runs                  | deterministic scholarly-provider candidates                                      |
+| `discovery-evidence.json`   | discovery runs                  | official-evidence collection scaffold                                            |
+| `figures/`                  | Codex only                      | empty directory for image assets                                                 |
+| `output-schema.json`        | supported Codex structured runs | native final-output JSON Schema                                                  |
 
 All three engine prompts instruct the agent to read `CONTEXT_INDEX.md`. Discovery
 runs additionally stage the four `discovery-*.json` files for a reproducible
@@ -383,7 +414,10 @@ applicable runner _and_ to the prompt that tells the model to read it.
 The prompt preview owns only the explicit request and response-language
 instruction. Selection, retrieval, and annotation data appear once in
 `selection.json`; visible conversation context appears once in
-`recent-turns.json`. When nearby context is enabled, the runner finds the
+`recent-turns.json`. Prompts-only persistence omits assistant turns from that
+file. Disabling history persistence forces workspace cleanup after the run even
+when the general auto-clean preference is off. When nearby context is enabled,
+the runner finds the
 selection inside extracted full text and writes bounded text before and after
 it. A failed match omits nearby context instead of copying the selection.
 
@@ -399,6 +433,14 @@ redirect hop. It reads at most 200 KB of HTML/JSON and cancels PDF bodies.
 Timeouts and cancellation remain active through body consumption, and one
 absolute discovery deadline covers provider search, the agent run, and live
 evidence recheck. Raw pages and review text are not persisted.
+
+The Gecko DNS service is mandatory for production official-evidence requests;
+an unavailable resolver or an empty answer fails closed. The connected-remote
+address is observable only after the request begins, so a DNS-rebinding peer
+can still receive a blind GET before Paper Pilot aborts it. Response content is
+withheld in that case, preventing response-body exfiltration, but the residual
+request-delivery risk remains. Address pinning is not exposed by the Zotero
+HTTP API used here.
 
 The fetched page is authoritative only as inspected source data: Paper Pilot
 reconstructs title, venue, track, decision, and review availability from that

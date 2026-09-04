@@ -361,6 +361,7 @@ export function buildDiscoveryQuestion(params: {
   item: Pick<any, "getField" | "getCreators">;
   concern?: ResearchConcern;
   responseLanguage?: string;
+  structuredCandidateContext?: string;
 }) {
   const metadata = itemMetadata(params.item);
   const concern = params.concern || {
@@ -408,6 +409,7 @@ export function buildDiscoveryQuestion(params: {
       year: metadata.year || undefined,
       abstract: metadata.abstract || undefined,
     }),
+    params.structuredCandidateContext,
     "Your response MUST begin with '{' and end with '}'.",
   ]
     .filter(Boolean)

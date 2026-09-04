@@ -17,7 +17,6 @@ function buildHybridIndex(params) {
     .map((chunk) => {
       const tokens = (0, tokenizer_1.tokenizeHybridOccurrences)(
         `${chunk.title || ""}\n${chunk.text}`,
-        true,
       );
       const termFrequency = {};
       for (const token of tokens)
@@ -42,6 +41,11 @@ function buildHybridIndex(params) {
   const averageDocumentLength = chunks.length
     ? chunks.reduce((sum, chunk) => sum + chunk.length, 0) / chunks.length
     : 0;
+  const searchableChunks = chunks.map(({ tokens: _tokens, ...chunk }) => ({
+    ...chunk,
+    titleTokens: (0, tokenizer_1.tokenizeHybrid)(chunk.title || ""),
+    searchText: `${chunk.title || ""}\n${chunk.text}`.toLowerCase(),
+  }));
   return {
     schemaVersion: 1,
     documentKey: String(
@@ -52,7 +56,7 @@ function buildHybridIndex(params) {
         "document",
     ),
     createdAt: params.now ?? new Date().toISOString(),
-    chunks,
+    chunks: searchableChunks,
     documentFrequency,
     averageDocumentLength,
     embeddingDimensions: dimensions,

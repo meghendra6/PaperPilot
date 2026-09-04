@@ -2,6 +2,7 @@
 import * as types_1 from "../../evidence/types";
 import * as profiles_1 from "./profiles";
 import * as json_1 from "../../comprehensionCheck/v2/json";
+import { enumValue, optionalUnitInterval } from "../../parserValidation";
 function object(value, name) {
   if (!value || typeof value !== "object" || Array.isArray(value))
     throw new Error(`${name} must be an object`);
@@ -22,11 +23,6 @@ function strings(value) {
         .filter((entry) => typeof entry === "string" && Boolean(entry.trim()))
         .map((entry) => entry.trim())
     : [];
-}
-function clamp(value) {
-  return typeof value === "number" && Number.isFinite(value)
-    ? Math.max(0, Math.min(1, value))
-    : 0;
 }
 const STATUSES = new Set([
   "supported",
@@ -51,12 +47,16 @@ function parseProfiledCriticalReadResponse(params) {
     if (!expected.has(checkId)) throw new Error(`Unknown checkId ${checkId}`);
     if (seen.has(checkId)) throw new Error(`Duplicate checkId ${checkId}`);
     seen.add(checkId);
-    const rawStatus = string(value.status, `checks[${index}].status`);
-    const rawSeverity = string(value.severity, `checks[${index}].severity`);
-    if (!STATUSES.has(rawStatus))
-      throw new Error(`Invalid status ${rawStatus}`);
-    if (!SEVERITIES.has(rawSeverity))
-      throw new Error(`Invalid severity ${rawSeverity}`);
+    const rawStatus = enumValue(
+      value.status,
+      `checks[${index}].status`,
+      STATUSES,
+    );
+    const rawSeverity = enumValue(
+      value.severity,
+      `checks[${index}].severity`,
+      SEVERITIES,
+    );
     return {
       checkId,
       status: rawStatus,
@@ -66,7 +66,17 @@ function parseProfiledCriticalReadResponse(params) {
       evidence: (0, types_1.normalizeEvidenceReferences)(value.evidence, {
         allowedAttachmentKeys: allowed,
       }),
-      confidence: clamp(value.confidence),
+      ...(optionalUnitInterval(
+        value.confidence,
+        `checks[${index}].confidence`,
+      ) !== undefined
+        ? {
+            confidence: optionalUnitInterval(
+              value.confidence,
+              `checks[${index}].confidence`,
+            ),
+          }
+        : {}),
     };
   });
   const missing = profile.checks.filter((entry) => !seen.has(entry.id));

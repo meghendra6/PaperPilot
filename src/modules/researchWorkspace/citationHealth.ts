@@ -4,6 +4,16 @@ import type {
   ResearchWorkspaceArtifact,
   ResearchWorkspaceSourceRecord,
 } from "./persistence/contracts";
+import {
+  registerResearchWorkspaceArtifactPayloadValidator,
+  type ResearchWorkspaceArtifactPayloadValidationContext,
+} from "./persistence/payloadValidators";
+import {
+  normalizeIdentityAuthor as normalizeAuthor,
+  normalizeIdentityDOI as normalizeDOI,
+  normalizeIdentityTitle as normalizeTitle,
+  stableHash,
+} from "./identity";
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -272,43 +282,6 @@ function cleanText(value: unknown, maximum = 2_000) {
     : "";
 }
 
-function boundedStringList(value: unknown, maximum = 200) {
-  return Array.isArray(value)
-    ? value
-        .map((entry) => cleanText(entry))
-        .filter(Boolean)
-        .slice(0, maximum)
-    : [];
-}
-
-function normalizeDOI(value: unknown) {
-  return cleanText(value, 512)
-    .replace(/^https?:\/\/(?:dx\.)?doi\.org\//i, "")
-    .replace(/[\s.,;]+$/g, "")
-    .toLocaleLowerCase();
-}
-
-function normalizeTitle(value: unknown) {
-  return cleanText(value, 2_000)
-    .normalize("NFKC")
-    .toLocaleLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, " ")
-    .trim();
-}
-
-function normalizeAuthor(value: unknown) {
-  return normalizeTitle(value).split(" ").filter(Boolean).at(-1) ?? "";
-}
-
-function stableHash(value: string) {
-  let hash = 2166136261;
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return (hash >>> 0).toString(16).padStart(8, "0");
-}
-
 function canonicalValue(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(canonicalValue);
   const candidate = record(value);
@@ -348,6 +321,16 @@ function metadataSignals(params: {
   for (const entry of values) {
     for (const pattern of CORRECTION_SIGNAL_PATTERNS) {
       if (!pattern.expression.test(entry.value)) continue;
+      if (entry.field === "title") {
+        const prefix = entry.value.trim().slice(0, 80);
+        if (
+          !/^\[(?:retracted|withdrawn|corrected|erratum|corrigendum|expression of concern)\]|^(?:retracted|withdrawn|withdrawal|corrected|correction|erratum|corrigendum|expression of concern)\s*[:—-]/i.test(
+            prefix,
+          )
+        ) {
+          continue;
+        }
+      }
       const key = `${pattern.kind}|${entry.field}|${entry.value}`;
       if (seen.has(key)) continue;
       seen.add(key);
@@ -597,40 +580,36 @@ function contextIdentity(context: UnknownRecord) {
 
 function localLibraryMatches(
   context: UnknownRecord,
-  items: readonly CitationHealthLocalLibraryItem[],
+  indexes: {
+    byLibraryItem: ReadonlyMap<string, CitationHealthLocalLibraryItem[]>;
+    byDOI: ReadonlyMap<string, CitationHealthLocalLibraryItem[]>;
+    byTitle: ReadonlyMap<string, CitationHealthLocalLibraryItem[]>;
+    byAuthorYear: ReadonlyMap<string, CitationHealthLocalLibraryItem[]>;
+  },
 ) {
   const resolution = record(context.resolution) ?? {};
   const reference = record(context.reference) ?? {};
   const resolvedLibraryID = Number(resolution.zoteroLibraryID);
   const resolvedItemKey = cleanText(resolution.zoteroItemKey, 256);
   if (Number.isInteger(resolvedLibraryID) && resolvedItemKey) {
-    return items.filter(
-      (item) =>
-        item.libraryID === resolvedLibraryID &&
-        item.itemKey === resolvedItemKey,
+    return (
+      indexes.byLibraryItem.get(`${resolvedLibraryID}:${resolvedItemKey}`) ?? []
     );
   }
   const doi = normalizeDOI(reference.doi ?? resolution.doi);
-  if (doi) return items.filter((item) => item.doi === doi);
+  if (doi) return indexes.byDOI.get(doi) ?? [];
   const title = normalizeTitle(reference.title ?? resolution.title);
   const year = optionalYear(reference.year);
   if (title) {
-    return items.filter(
+    return (indexes.byTitle.get(title) ?? []).filter(
       (item) =>
-        normalizeTitle(item.title) === title &&
-        (year === undefined || item.year === undefined || item.year === year),
+        year === undefined || item.year === undefined || item.year === year,
     );
   }
   if (year !== undefined) {
     const firstAuthor = normalizeAuthor(reference.firstAuthor);
     if (firstAuthor) {
-      return items.filter(
-        (item) =>
-          item.year === year &&
-          item.authors.some(
-            (author) => normalizeAuthor(author) === firstAuthor,
-          ),
-      );
+      return indexes.byAuthorYear.get(`${firstAuthor}:${year}`) ?? [];
     }
   }
   return [];
@@ -703,12 +682,11 @@ function draftStatements(value: string) {
 
 function hasArtifactSupport(
   statement: string,
-  supportCorpus: readonly string[],
+  supportTokenSets: readonly ReadonlySet<string>[],
 ) {
   const statementTokens = tokens(statement);
   if (statementTokens.size < 3) return true;
-  for (const candidate of supportCorpus) {
-    const candidateTokens = tokens(candidate);
+  for (const candidateTokens of supportTokenSets) {
     let shared = 0;
     for (const token of statementTokens) {
       if (candidateTokens.has(token)) shared += 1;
@@ -928,6 +906,39 @@ export function buildCitationHealthReport(params: {
       `${right.libraryID}|${right.itemKey}`,
     ),
   );
+  const appendIndex = <Key>(
+    map: Map<Key, CitationHealthLocalLibraryItem[]>,
+    key: Key,
+    item: CitationHealthLocalLibraryItem,
+  ) => map.set(key, [...(map.get(key) ?? []), item]);
+  const localLibraryIndexes = {
+    byLibraryItem: new Map<string, CitationHealthLocalLibraryItem[]>(),
+    byDOI: new Map<string, CitationHealthLocalLibraryItem[]>(),
+    byTitle: new Map<string, CitationHealthLocalLibraryItem[]>(),
+    byAuthorYear: new Map<string, CitationHealthLocalLibraryItem[]>(),
+  };
+  for (const item of localLibraryItems) {
+    appendIndex(
+      localLibraryIndexes.byLibraryItem,
+      `${item.libraryID}:${item.itemKey}`,
+      item,
+    );
+    const doi = normalizeDOI(item.doi);
+    if (doi) appendIndex(localLibraryIndexes.byDOI, doi, item);
+    const title = normalizeTitle(item.title);
+    if (title) appendIndex(localLibraryIndexes.byTitle, title, item);
+    if (item.year !== undefined) {
+      for (const author of new Set(item.authors.map(normalizeAuthor))) {
+        if (author) {
+          appendIndex(
+            localLibraryIndexes.byAuthorYear,
+            `${author}:${item.year}`,
+            item,
+          );
+        }
+      }
+    }
+  }
   const eligible = params.details.artifacts
     .filter((artifact) => ELIGIBLE_ARTIFACT_TYPES.has(artifact.type))
     .sort((left, right) => {
@@ -1006,7 +1017,7 @@ export function buildCitationHealthReport(params: {
     contextsByIdentity.set(identity, grouped);
     const resolution = record(context.resolution) ?? {};
     const resolutionStatus = cleanText(resolution.status, 80) || "unresolved";
-    const localMatches = localLibraryMatches(context, localLibraryItems);
+    const localMatches = localLibraryMatches(context, localLibraryIndexes);
     for (const item of localMatches) {
       const itemKey = `${item.libraryID}:${item.itemKey}`;
       matchedLocalItemKeys.add(itemKey);
@@ -1176,7 +1187,8 @@ export function buildCitationHealthReport(params: {
         finding({
           kind: "local-correction-retraction-signal",
           severity:
-            signal.kind === "retraction" || signal.kind === "withdrawal"
+            signal.field !== "title" &&
+            (signal.kind === "retraction" || signal.kind === "withdrawal")
               ? "high"
               : "review",
           title: `Local Zotero metadata contains a ${signal.kind.replace(/-/g, " ")} signal`,
@@ -1240,10 +1252,12 @@ export function buildCitationHealthReport(params: {
 
   const draft = prepareDraft(params.draft);
   if (draft) {
-    const supportCorpus = admitted.flatMap(supportStringsFromArtifact);
+    const supportTokenSets = admitted
+      .flatMap(supportStringsFromArtifact)
+      .map(tokens);
     let unsupported = 0;
     for (const statement of draft.statements) {
-      if (hasArtifactSupport(statement.excerpt, supportCorpus)) continue;
+      if (hasArtifactSupport(statement.excerpt, supportTokenSets)) continue;
       unsupported += 1;
       if (unsupported > MAX_DRAFT_FINDINGS) continue;
       findings.push(
@@ -1873,3 +1887,56 @@ export function parseCitationHealthReport(
   }
   return value as CitationHealthReport;
 }
+
+export function validateCitationHealthArtifactPayload(
+  payload: unknown,
+  context: ResearchWorkspaceArtifactPayloadValidationContext,
+) {
+  const report = parseCitationHealthReport(payload);
+  if (report.projectID !== context.projectID) {
+    throw new Error(
+      "Citation Health payload projectID must match its artifact projectID.",
+    );
+  }
+  if (report.scope.membersRevision !== context.membersRevision) {
+    throw new Error(
+      "Citation Health members revision must match artifact lineage.",
+    );
+  }
+  if (
+    JSON.stringify([...report.scope.includedSourceIDs].sort()) !==
+    JSON.stringify([...context.sourceIDs].sort())
+  ) {
+    throw new Error(
+      "Citation Health included sources must match artifact sourceIDs.",
+    );
+  }
+  const reportedInputs = report.inputArtifacts
+    .map((input) => [
+      input.artifactID,
+      input.artifactType,
+      input.version,
+      input.updatedAt,
+      input.payloadFingerprint,
+    ])
+    .sort((left, right) => String(left[0]).localeCompare(String(right[0])));
+  const lineageInputs = context.artifactInputs
+    .map((input) => [
+      input.artifactID,
+      input.artifactType,
+      input.version,
+      input.updatedAt,
+      input.payloadFingerprint,
+    ])
+    .sort((left, right) => String(left[0]).localeCompare(String(right[0])));
+  if (JSON.stringify(reportedInputs) !== JSON.stringify(lineageInputs)) {
+    throw new Error(
+      "Citation Health payload inputs must match artifact lineage inputs.",
+    );
+  }
+}
+
+registerResearchWorkspaceArtifactPayloadValidator(
+  "citation-health",
+  validateCitationHealthArtifactPayload,
+);

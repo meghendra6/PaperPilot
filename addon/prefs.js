@@ -2,7 +2,6 @@
 
 // General
 pref("__prefsPrefix__.defaultMode", "codex_cli");
-pref("__prefsPrefix__.autoOpenPaneOnPdfOpen", false);
 pref("__prefsPrefix__.saveDocumentSessions", true);
 pref("__prefsPrefix__.responseLanguage", "English");
 pref("__prefsPrefix__.paneSectionState", "{}");
@@ -20,6 +19,7 @@ pref(
   "__prefsPrefix__.geminiAllowedModels",
   "gemini-3.1-pro-preview, gemini-3-flash-preview",
 );
+pref("__prefsPrefix__.geminiApprovalMode", "default");
 
 // Codex CLI
 pref("__prefsPrefix__.codexExecutablePath", "");

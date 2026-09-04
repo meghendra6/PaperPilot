@@ -12,7 +12,6 @@ import {
   claimPendingEngineCompletion,
   clearPendingEngineCompletion,
   failRunProgress,
-  getLastEngineRequest,
   getPendingEngineCompletion,
   isPendingEngineCompletionCurrent,
   isReaderSessionTransitionActive,
@@ -25,7 +24,6 @@ import {
 } from "../ai/runLifecycle";
 import { getRunProgressState } from "../ai/runProgress";
 import { classifyRunFailure } from "../ai/runFailure";
-import { cancelActiveEngineRun } from "../ai/runControl";
 import { armRunTimeout, completeTimedOutRun } from "../ai/runTimeout";
 import {
   finishRunAfterCleanup,
@@ -133,42 +131,49 @@ export async function handleCodexQuestion(params: {
     onComplete: params.onComplete,
     workspacePath: undefined as string | undefined,
     cancelTimeout: undefined as (() => void) | undefined,
+    rearmTimeout: undefined as (() => void) | undefined,
     cleanupClaimed: false,
     terminalClaim: undefined as "controller" | "cancel" | "timeout" | undefined,
     preparationSettled: false,
     terminalSettled: false,
   };
   registerPendingEngineCompletion(params.itemID, pendingCompletion);
-  const cancelTimeout = armRunTimeout({
-    itemID: params.itemID,
-    shouldTimeout: () => isReaderRunTokenActive(params.itemID, runToken),
-    onTimeout: async () => {
-      await completeTimedOutRun({
-        itemID: params.itemID,
-        sessionId: params.sessionId,
-        sessionTitle: params.sessionTitle,
-        paperTitle: params.paperTitle,
-        engine: "codex_cli",
-        engineLabel: "Codex CLI",
-        token: runToken,
-        workspacePath: pendingCompletion.workspacePath,
-        suppressMessage: params.suppressChatMessages,
-        stop: () =>
-          stopCodexRunSilently({
-            itemID: params.itemID,
-            finishPresentation: false,
-          }),
-        onMessage: (message) => {
-          if (assistantMessage) {
-            setMessageContent(assistantMessage, message, "ai");
-          }
-          params.streamingIndicator.style.display = "none";
-        },
-        onComplete: params.onComplete,
-      });
-    },
-  });
+  const armTimeout = (minimumDelayMs = 0) =>
+    armRunTimeout({
+      itemID: params.itemID,
+      minimumDelayMs,
+      shouldTimeout: () => isReaderRunTokenActive(params.itemID, runToken),
+      onTimeout: async () => {
+        await completeTimedOutRun({
+          itemID: params.itemID,
+          sessionId: params.sessionId,
+          sessionTitle: params.sessionTitle,
+          paperTitle: params.paperTitle,
+          engine: "codex_cli",
+          engineLabel: "Codex CLI",
+          token: runToken,
+          workspacePath: pendingCompletion.workspacePath,
+          suppressMessage: params.suppressChatMessages,
+          stop: () =>
+            stopCodexRunSilently({
+              itemID: params.itemID,
+              finishPresentation: false,
+            }),
+          onMessage: (message) => {
+            if (assistantMessage) {
+              setMessageContent(assistantMessage, message, "ai");
+            }
+            params.streamingIndicator.style.display = "none";
+          },
+          onComplete: params.onComplete,
+        });
+      },
+    });
+  const cancelTimeout = armTimeout();
   pendingCompletion.cancelTimeout = cancelTimeout;
+  pendingCompletion.rearmTimeout = () => {
+    pendingCompletion.cancelTimeout = armTimeout(5_000);
+  };
 
   const result = await startCodexRunForQuestion({
     itemID: params.itemID,
@@ -205,7 +210,8 @@ export async function handleCodexQuestion(params: {
       source: "workspace",
       canRetry: !params.suppressChatMessages,
     });
-    const assistantText = state!.failure!.userMessage;
+    const assistantText =
+      state?.failure?.userMessage ?? "Codex CLI run failed.";
     try {
       await sessionHistoryService
         .persistAssistantTurn({
@@ -418,7 +424,7 @@ export async function handleCodexQuestion(params: {
       ? undefined
       : classifyRunFailure({
           engine: "codex_cli",
-          rawError: progress.rawOutput || rawAssistantText,
+          rawError: progress.diagnosticOutput || rawAssistantText,
           source: "process_exit",
         });
     if (terminalFailure) assistantText = terminalFailure.userMessage;
@@ -449,7 +455,9 @@ export async function handleCodexQuestion(params: {
         title: params.sessionTitle,
         loginState: success
           ? "ready"
-          : classifyCodexLoginFailure(progress.rawOutput),
+          : classifyCodexLoginFailure(
+              progress.diagnosticOutput || rawAssistantText,
+            ),
       }),
       runStatus: success ? "completed" : "error",
       latestEventType: progress.latestEventType,
@@ -480,7 +488,10 @@ export async function handleCodexQuestion(params: {
               paperTitle: params.paperTitle || params.sessionTitle,
               assistantText,
               success: false,
-              rawEvent: terminalFailure!.rawError,
+              rawEvent:
+                terminalFailure?.rawError ||
+                progress.diagnosticOutput ||
+                rawAssistantText,
               suppressMessage: params.suppressChatMessages,
               updateResumeMetadata: profile === "chat",
             });
@@ -497,7 +508,7 @@ export async function handleCodexQuestion(params: {
             continuationToken: runToken,
           }),
         incomplete: (error) => {
-          const message = failRunProgress({
+          const failedProgress = failRunProgress({
             itemID: params.itemID,
             engine: "codex_cli",
             token: runToken,
@@ -505,7 +516,9 @@ export async function handleCodexQuestion(params: {
               error instanceof Error ? error.message : String(error || ""),
             source: "process_exit",
             canRetry: !params.suppressChatMessages,
-          })!.failure!.userMessage;
+          });
+          const message =
+            failedProgress?.failure?.userMessage ?? "Codex CLI run failed.";
           return params.onComplete?.({
             success: false,
             assistantText: message,
@@ -525,7 +538,10 @@ export async function handleCodexQuestion(params: {
                 itemID: params.itemID,
                 engine: "codex_cli",
                 token: runToken,
-                rawError: terminalFailure!.rawError,
+                rawError:
+                  terminalFailure?.rawError ||
+                  progress.diagnosticOutput ||
+                  rawAssistantText,
                 source: "process_exit",
                 canRetry: !params.suppressChatMessages,
               });
@@ -547,50 +563,4 @@ export async function handleCodexQuestion(params: {
   }, 800);
 
   addon.data.codexRunPollers?.set(params.itemID, poller);
-}
-
-export async function retryLastCodexQuestion(params: {
-  itemID: number;
-  chatMessages: HTMLElement;
-  streamingIndicator: HTMLElement;
-}) {
-  const last = getLastEngineRequest(params.itemID);
-  if (!last || last.mode !== "codex_cli") {
-    addMessage(
-      params.chatMessages,
-      "No previous Codex request to retry.",
-      "ai",
-    );
-    return;
-  }
-
-  await handleCodexQuestion({
-    itemID: params.itemID,
-    sessionId: last.sessionId,
-    sessionTitle: last.sessionTitle,
-    paperTitle: (last as typeof last & { paperTitle?: string }).paperTitle,
-    question: last.question,
-    resumeSessionId: last.resumeSessionId,
-    selectedText: last.selectedText,
-    annotationIDs: last.annotationIDs,
-    useResume: Boolean(last.useResume),
-    chatMessages: params.chatMessages,
-    streamingIndicator: params.streamingIndicator,
-  });
-}
-
-export async function cancelCodexRun(params: {
-  itemID: number;
-  chatMessages: HTMLElement;
-}) {
-  const cancelled = await cancelActiveEngineRun(params.itemID);
-  const updatedState = getRunProgressState(params.itemID);
-  addMessage(
-    params.chatMessages,
-    cancelled
-      ? "Codex run cancelled."
-      : updatedState?.failure?.userMessage ||
-          "No cancellable Codex run is active.",
-    "ai",
-  );
 }

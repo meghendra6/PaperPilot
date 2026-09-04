@@ -124,11 +124,21 @@ test("Living Review baselines silently, ignores annotation-only staleness, and i
     providerMode: "codex_cli",
     execute: async () => ({ claims: [] }),
   });
+  let invalidationCalls = 0;
+  const originalInvalidate =
+    setupState.repository.markArtifactsStaleForSource.bind(
+      setupState.repository,
+    );
+  setupState.repository.markArtifactsStaleForSource = async (...args) => {
+    invalidationCalls += 1;
+    return originalInvalidate(...args);
+  };
 
   const baseline = await setupState.service.checkProject(
     created.project.projectID,
   );
   assert.equal(baseline.changes.length, 0);
+  assert.equal(invalidationCalls, 0);
   setupState.observed.set(sourcePaper.sourceID, {
     sourceID: sourcePaper.sourceID,
     observedAt: "2026-08-29T12:01:00.000Z",
@@ -164,6 +174,7 @@ test("Living Review baselines silently, ignores annotation-only staleness, and i
     created.project.projectID,
   );
   assert.equal(changed.changes.at(-1)?.kind, "pdf-content-changed");
+  assert.ok(invalidationCalls > 0);
   const source = await setupState.repository.getSource(sourcePaper.sourceID);
   assert.equal(source?.source.contentFingerprint?.value, "pdf-A-v2");
   assert.equal(source?.source.extractionQuality, "unavailable");

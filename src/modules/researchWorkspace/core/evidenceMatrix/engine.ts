@@ -88,7 +88,9 @@ function normalizeEvidenceMatrixCell(column, cell) {
     value,
     status,
     displayValue: cell.displayValue?.trim() || display(value),
-    confidence: Math.max(0, Math.min(1, Number(cell.confidence) || 0)),
+    ...(typeof cell.confidence === "number" && Number.isFinite(cell.confidence)
+      ? { confidence: Math.max(0, Math.min(1, cell.confidence)) }
+      : {}),
     evidence: [...cell.evidence],
   };
 }

@@ -1,5 +1,10 @@
+/* eslint-disable @typescript-eslint/triple-slash-reference */
+/// <reference path="../typings/global.d.ts" />
+
 import { test } from "node:test";
 import * as assert from "node:assert/strict";
+import * as codexRunner from "../src/modules/codex/runner";
+import { classifyRunFailure } from "../src/modules/ai/runFailure";
 
 import {
   buildCodexExecCommand,
@@ -7,7 +12,10 @@ import {
   buildCodexResumeCommand,
   normalizeCodexApprovalMode,
 } from "../src/modules/codex/commandBuilder";
-import { buildPaperWorkspacePath } from "../src/modules/workspace/pathBuilder";
+import {
+  buildPaperWorkspacePath,
+  resolvePaperWorkspaceRoot,
+} from "../src/modules/workspace/pathBuilder";
 import {
   buildClaudeWorkspacePrompt,
   buildCodexWorkspacePrompt,
@@ -34,8 +42,15 @@ import {
   parseAllowedModels,
 } from "../src/modules/codex/modelOptions";
 import { buildWorkspaceArtifacts } from "../src/modules/context/workspaceArtifacts";
-import { selectRelevantChunks } from "../src/modules/context/retriever";
-import { redactPath } from "../src/modules/workspace/redaction";
+import {
+  selectRelevantChunks,
+  tokenizeRetrievalText,
+} from "../src/modules/context/retriever";
+import {
+  redactAbsolutePaths,
+  redactPath,
+  redactPersistenceFields,
+} from "../src/modules/workspace/redaction";
 
 test("buildCodexLoginStatusCommand uses codex login status", () => {
   assert.deepEqual(buildCodexLoginStatusCommand(), [
@@ -43,6 +58,89 @@ test("buildCodexLoginStatusCommand uses codex login status", () => {
     "login",
     "status",
   ]);
+});
+
+test("Codex sandbox preferences reject unknown values", () => {
+  assert.equal(
+    codexRunner.normalizeCodexSandboxMode("workspace-write"),
+    "workspace-write",
+  );
+  assert.equal(
+    codexRunner.normalizeCodexSandboxMode("unsupported"),
+    "read-only",
+  );
+});
+
+test("Codex launch reports a rejected shell exec as a start failure", async () => {
+  const result = await codexRunner.launchCodexRunScript("exit 1", async () => {
+    throw new Error("codex launch rejected");
+  });
+  assert.deepEqual(result, { ok: false, error: "codex launch rejected" });
+});
+
+test("Codex failure diagnostics exclude tool output from classification", async () => {
+  const previousZotero = (globalThis as { Zotero?: unknown }).Zotero;
+  const stdout = [
+    JSON.stringify({
+      type: "item.completed",
+      item: {
+        type: "command_execution",
+        output: "cat: missing: No such file or directory",
+      },
+    }),
+    JSON.stringify({ type: "error", message: "provider request failed" }),
+  ].join("\n");
+  (globalThis as { Zotero?: unknown }).Zotero = {
+    File: {
+      getContentsAsync: async (path: string) =>
+        path.endsWith("output.jsonl")
+          ? stdout
+          : path.endsWith("exit.txt")
+            ? "1"
+            : "",
+    },
+  };
+  try {
+    const progress = await codexRunner.readCodexRunProgress({
+      outputPath: "/tmp/output.jsonl",
+      stderrPath: "/tmp/stderr.log",
+      exitCodePath: "/tmp/exit.txt",
+    });
+    assert.equal(progress.exitCode, "1");
+    assert.equal(progress.diagnosticOutput, "provider request failed");
+    assert.doesNotMatch(progress.diagnosticOutput, /no such file/i);
+    assert.equal(
+      classifyRunFailure({
+        engine: "codex_cli",
+        rawError: progress.diagnosticOutput,
+        source: "process_exit",
+      }).kind,
+      "unknown",
+    );
+  } finally {
+    (globalThis as { Zotero?: unknown }).Zotero = previousZotero;
+  }
+});
+
+test("redactAbsolutePaths removes POSIX and Windows absolute path prefixes", () => {
+  const redacted = redactAbsolutePaths(
+    "ENOENT /private/var/tmp/paper.txt and C:\\Users\\me\\paper.txt; keep https://example.com/paper",
+  );
+  assert.doesNotMatch(redacted, /\/private\/var/);
+  assert.doesNotMatch(redacted, /C:\\Users/);
+  assert.match(redacted, /https:\/\/example\.com\/paper/);
+});
+
+test("redactPersistenceFields scrubs persisted failures and extraction notes", () => {
+  const redacted = redactPersistenceFields({
+    failure: { rawError: "failed at /private/var/tmp/output.json" },
+    extractionNotes: ["read C:\\Users\\reader\\paper.pdf"],
+    visibleSummary: "Keep /explicit/user/content unchanged here.",
+  });
+
+  assert.doesNotMatch(redacted.failure.rawError, /\/private\/var/);
+  assert.doesNotMatch(redacted.extractionNotes[0], /C:\\Users/);
+  assert.match(redacted.visibleSummary, /\/explicit\/user\/content/);
 });
 
 test("buildCodexExecCommand builds the expected first-question command", () => {
@@ -163,18 +261,29 @@ test("buildCodexExecCommand passes a supported native output schema path", () =>
   ]);
 });
 
-test("buildCodexResumeCommand builds the expected follow-up command", () => {
-  assert.deepEqual(buildCodexResumeCommand({ cd: "/tmp/paper-workspace" }), [
-    "codex",
-    "exec",
-    "--json",
-    "--cd",
-    "/tmp/paper-workspace",
-    "--skip-git-repo-check",
-    "resume",
-    "--last",
-    "-",
-  ]);
+test("buildCodexResumeCommand preserves configured permissions on follow-up", () => {
+  assert.deepEqual(
+    buildCodexResumeCommand({
+      cd: "/tmp/paper-workspace",
+      sandbox: "workspace-write",
+      approvalMode: "on-request",
+    }),
+    [
+      "codex",
+      "--ask-for-approval",
+      "on-request",
+      "exec",
+      "--json",
+      "--cd",
+      "/tmp/paper-workspace",
+      "--sandbox",
+      "workspace-write",
+      "--skip-git-repo-check",
+      "resume",
+      "--last",
+      "-",
+    ],
+  );
 });
 
 test("buildCodexResumeCommand adds web search before exec when enabled", () => {
@@ -190,6 +299,8 @@ test("buildCodexResumeCommand adds web search before exec when enabled", () => {
       "--json",
       "--cd",
       "/tmp/paper-workspace",
+      "--sandbox",
+      "read-only",
       "--skip-git-repo-check",
       "resume",
       "--last",
@@ -206,6 +317,23 @@ test("buildPaperWorkspacePath creates a stable per-paper workspace path", () => 
       title: "Attention Is All You Need",
     }),
     "/tmp/workspaces/42-attention-is-all-you-need",
+  );
+});
+
+test("resolvePaperWorkspaceRoot uses an explicit root or Zotero's private temp directory", () => {
+  assert.equal(
+    resolvePaperWorkspaceRoot("/custom/workspaces/", undefined),
+    "/custom/workspaces",
+  );
+  assert.equal(
+    resolvePaperWorkspaceRoot("", {
+      getTempDirectory: () => ({ path: "/private/user-temp" }),
+    }),
+    "/private/user-temp/paperpilot-workspaces",
+  );
+  assert.throws(
+    () => resolvePaperWorkspaceRoot("", undefined),
+    /private Paper Pilot workspace root/,
   );
 });
 
@@ -591,6 +719,29 @@ test("selectRelevantChunks prioritizes chunks that match the query", () => {
   assert.match(chunks[0], /attention|Transformers/i);
 });
 
+test("reader retrieval tokenizes supported scripts and ignores stopword-only queries", () => {
+  assert.deepEqual(tokenizeRetrievalText("注意机制"), ["注意", "意机", "机制"]);
+  assert.deepEqual(tokenizeRetrievalText("注意メカニズム"), [
+    "注意",
+    "メカ",
+    "カニ",
+    "ニス",
+    "スム",
+  ]);
+  assert(tokenizeRetrievalText("검색기법").includes("검색"));
+  assert(tokenizeRetrievalText("résumé").includes("resume"));
+  assert.deepEqual(
+    selectRelevantChunks({
+      text: "first chunk\n\nsecond chunk",
+      query: "the and of",
+      chunkSize: 12,
+      overlapSize: 0,
+      topK: 2,
+    }),
+    [],
+  );
+});
+
 test("redactPath keeps only the tail segments", () => {
   assert.equal(
     redactPath("/tmp/paper-pilot/42-attention-is-all-you-need"),
@@ -610,6 +761,8 @@ test("buildCodexResumeCommand prefers explicit session ids over --last", () => {
       "--json",
       "--cd",
       "/tmp/paper-workspace",
+      "--sandbox",
+      "read-only",
       "--skip-git-repo-check",
       "resume",
       "thread-123",

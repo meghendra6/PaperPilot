@@ -31,6 +31,7 @@ import {
 } from "./facade";
 import { renderResearchWorkspaceArtifactEnvelope } from "./artifactRenderer";
 import { copyTextToClipboard } from "../components/ChatMessage";
+import { getPref } from "../../utils/prefs";
 import { openVerifiedResearchWorkspaceEvidence } from "./evidenceNavigation";
 import type { EvidenceReferenceV2 } from "./evidenceVerification";
 import { readResearchWorkspaceArtifact } from "./legacyCapabilityAdapters";
@@ -58,8 +59,9 @@ import type {
   ResearchWorkspaceZoteroSyncReceiptFile,
   ResearchWorkspaceZoteroSyncTargets,
 } from "./zoteroSync";
+import { runResearchWorkspaceSurfaceAction } from "./surfaceAction";
+import { button as createButton, element, metric as createMetric } from "./dom";
 
-const HTML_NS = "http://www.w3.org/1999/xhtml";
 const generations = new WeakMap<HTMLElement, symbol>();
 const activeOperationRoots = new WeakMap<HTMLElement, HTMLElement>();
 
@@ -69,33 +71,29 @@ function disposeOperations(root: HTMLElement) {
   activeOperationRoots.delete(root);
 }
 
-function element<K extends keyof HTMLElementTagNameMap>(
-  doc: Document,
-  tag: K,
-  className = "",
-  text?: string,
-) {
-  const node = doc.createElementNS(HTML_NS, tag) as HTMLElementTagNameMap[K];
-  if (className) node.className = className;
-  if (text !== undefined) node.textContent = text;
-  return node;
-}
-
 function button(
   doc: Document,
   label: string,
   action: () => void | Promise<void>,
   primary = false,
 ) {
-  const node = element(
+  return createButton(
     doc,
-    "button",
-    `pprw-button pp-btn ${primary ? "pp-btn--primary" : "pp-btn--secondary"}`,
     label,
+    (node) => {
+      const root = node.closest<HTMLElement>(
+        "[data-research-workspace-project-surface]",
+      );
+      if (!root) return;
+      return runResearchWorkspaceSurfaceAction({
+        surface: root,
+        trigger: node,
+        action,
+        onError: (error) => reportProjectError(root, error),
+      });
+    },
+    `pprw-button pp-btn ${primary ? "pp-btn--primary" : "pp-btn--secondary"}`,
   );
-  node.type = "button";
-  node.addEventListener("click", () => void action());
-  return node;
 }
 
 function textInput(doc: Document, placeholder: string, value = "") {
@@ -115,10 +113,34 @@ function textArea(doc: Document, placeholder: string, value = "") {
 }
 
 function setMessage(root: HTMLElement, message: string, kind = "info") {
-  const node = root.querySelector<HTMLElement>("[data-project-message]");
-  if (!node) return;
+  let node = root.querySelector<HTMLElement>("[data-project-message]");
+  if (!node) {
+    node = element(root.ownerDocument, "div", "pprw-status");
+    node.dataset.projectMessage = "true";
+    node.setAttribute("role", kind === "error" ? "alert" : "status");
+    node.setAttribute("aria-live", kind === "error" ? "assertive" : "polite");
+    root.prepend(node);
+  }
   node.textContent = message;
   node.dataset.kind = kind;
+  if (kind === "error") logProjectError(new Error(message));
+}
+
+function logProjectError(error: unknown) {
+  const normalized = error instanceof Error ? error : new Error(String(error));
+  try {
+    Zotero.logError?.(normalized);
+  } catch {
+    console.error(normalized);
+  }
+}
+
+function reportProjectError(root: HTMLElement, error: unknown) {
+  setMessage(
+    root,
+    error instanceof Error ? error.message : String(error),
+    "error",
+  );
 }
 
 function isCurrent(root: HTMLElement, generation: symbol) {
@@ -126,12 +148,11 @@ function isCurrent(root: HTMLElement, generation: symbol) {
 }
 
 function metric(doc: Document, value: number, label: string) {
-  const node = element(doc, "div", "pprw-home-metric");
-  node.append(
-    element(doc, "strong", "", value.toLocaleString()),
-    element(doc, "span", "", label),
-  );
-  return node;
+  return createMetric(doc, {
+    className: "pprw-home-metric",
+    label,
+    value: value.toLocaleString(),
+  });
 }
 
 function capabilityPresetIDs(value: string) {
@@ -309,6 +330,7 @@ function renderProjectTemplateCreator(
             status.textContent =
               error instanceof Error ? error.message : String(error);
             status.className = "pprw-project-warning";
+            logProjectError(error);
           }
         },
         true,
@@ -455,8 +477,10 @@ async function renderProject(
   root: HTMLElement,
   projectID: string,
   capturedPapers: readonly ResearchWorkspacePaper[],
-  generation: symbol,
+  _parentGeneration: symbol,
 ) {
+  const generation = Symbol("project-render");
+  generations.set(root, generation);
   const [details, changeInbox, syncReceiptResult] = await Promise.all([
     loadResearchWorkspaceProject(projectID),
     loadResearchWorkspaceChangeInbox(projectID),
@@ -2263,6 +2287,7 @@ function renderArtifactHistory(
     }
     item.append(
       renderResearchWorkspaceArtifactEnvelope(doc, artifact, {
+        responseLanguage: String(getPref("responseLanguage") || "English"),
         onCopyText: (text) => copyTextToClipboard(text, doc),
         onOpenEvidence: async (reference) => {
           try {
@@ -2351,6 +2376,7 @@ export async function renderResearchWorkspaceProjectSurface(
   options: { capturedPapers?: readonly ResearchWorkspacePaper[] } = {},
 ) {
   disposeOperations(root);
+  root.dataset.researchWorkspaceProjectSurface = "true";
   const generation = Symbol("project-surface");
   generations.set(root, generation);
   const capturedPapers = options.capturedPapers ?? [];
@@ -2426,6 +2452,7 @@ export async function renderResearchWorkspaceProjectSurface(
               error instanceof Error ? error.message : String(error),
             );
             create.append(message);
+            logProjectError(error);
           }
         },
         true,
@@ -2452,6 +2479,7 @@ export async function renderResearchWorkspaceProjectSurface(
     }
   } catch (error) {
     if (!isCurrent(root, generation)) return;
+    logProjectError(error);
     root.replaceChildren(
       element(
         doc,

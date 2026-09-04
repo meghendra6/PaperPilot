@@ -57,3 +57,27 @@ test("findNearbyContext never repeats the selected text", () => {
 
   assert.doesNotMatch(nearby || "", /unique selected passage/);
 });
+
+test("findNearbyContext preserves source offsets when case folding expands", () => {
+  assert.equal(
+    findNearbyContext({
+      fullText: "İİİİİİİİİİ before **TARGET** after",
+      selectedText: "target",
+      radius: 12,
+    }),
+    "Before selection: İİ before **\nAfter selection: ** after",
+  );
+});
+
+test("findNearbyContext prefers the occurrence nearest the current page marker", () => {
+  const nearby = findNearbyContext({
+    fullText:
+      "first before repeated phrase first after\n\n<!-- page 2 -->\n\nsecond before repeated phrase second after",
+    selectedText: "repeated phrase",
+    pageIndex: 1,
+    radius: 20,
+  });
+  assert.match(nearby || "", /second before/);
+  assert.match(nearby || "", /second after/);
+  assert.doesNotMatch(nearby || "", /first before/);
+});

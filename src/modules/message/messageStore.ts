@@ -1,21 +1,6 @@
-import { getPref } from "../../utils/prefs";
 import { sanitizeAssistantText } from "./assistantOutput";
 import type { MessageRecord } from "./types";
-
-function shouldExposeAssistantMessage(message: MessageRecord) {
-  if (message.role !== "assistant") {
-    return true;
-  }
-
-  if (getPref("privacySavePromptsOnly")) {
-    return false;
-  }
-  if (!getPref("privacySaveResponses")) {
-    return false;
-  }
-
-  return true;
-}
+import { resolveSessionHistoryPrefs } from "../session/historyPrefs";
 
 class MessageStore {
   private messages = new Map<string, MessageRecord[]>();
@@ -25,13 +10,7 @@ class MessageStore {
   }
 
   list(sessionId: string) {
-    const messages = this.listRaw(sessionId);
-
-    if (!getPref("privacyStoreLocalHistory")) {
-      return messages.filter((message) => message.role !== "assistant");
-    }
-
-    return messages.filter(shouldExposeAssistantMessage);
+    return this.listRaw(sessionId);
   }
 
   recent(sessionId: string, count: number) {
@@ -40,6 +19,15 @@ class MessageStore {
 
   recentRaw(sessionId: string, count: number) {
     return this.listRaw(sessionId).slice(-count);
+  }
+
+  recentForWorkspace(sessionId: string, count: number) {
+    const prefs = resolveSessionHistoryPrefs();
+    return this.listRaw(sessionId)
+      .filter(
+        (message) => message.role === "user" || prefs.persistAssistantMessages,
+      )
+      .slice(-count);
   }
 
   append(sessionId: string, message: Omit<MessageRecord, "id" | "createdAt">) {

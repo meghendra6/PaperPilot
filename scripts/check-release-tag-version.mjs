@@ -16,7 +16,9 @@ export function assertReleaseTagMatchesVersion({ tagName, version }) {
   return expectedTag;
 }
 
-async function readPackageVersion(packageJsonPath = new URL("../package.json", import.meta.url)) {
+async function readPackageVersion(
+  packageJsonPath = new URL("../package.json", import.meta.url),
+) {
   const packageJson = JSON.parse(await readFile(packageJsonPath, "utf8"));
   if (typeof packageJson.version !== "string" || !packageJson.version.trim()) {
     throw new Error("package.json version is missing or invalid.");
@@ -46,7 +48,10 @@ async function main() {
   );
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (
+  process.argv[1] &&
+  import.meta.url === pathToFileURL(process.argv[1]).href
+) {
   main().catch((error) => {
     const message = error instanceof Error ? error.message : String(error);
     console.error(message);

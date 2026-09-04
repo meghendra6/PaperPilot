@@ -95,6 +95,10 @@ export type ResearchWorkspaceMultiOperation =
 
 const sharedHybridIndexes = new Map<string, unknown>();
 
+export function clearResearchWorkspaceHybridIndexCache() {
+  sharedHybridIndexes.clear();
+}
+
 function clone<T>(value: T): T {
   return typeof globalThis.structuredClone === "function"
     ? globalThis.structuredClone(value)
@@ -140,10 +144,9 @@ async function createBoundService(params: {
     preferences.preferences.maxPaperCharacters;
   params.seed?.(state);
   const repository = createMemoryRepository(state);
-  const service = new (ResearchWorkspaceService as any)({
+  const service = new ResearchWorkspaceService({
     repository,
     indexes: sharedHybridIndexes,
-    exportTextFile: exportResearchWorkspaceTextFile,
     agent: {
       run: (
         prompt: string,
@@ -216,13 +219,6 @@ async function latestArtifact(
       )
     );
   });
-}
-
-export async function registerResearchWorkspacePapers(
-  _papers: ResearchWorkspacePaper[],
-) {
-  // Rendering is intentionally side-effect free. Sources are registered only
-  // by explicit project creation, add, or analysis actions.
 }
 
 export async function searchResearchWorkspacePaper(params: {

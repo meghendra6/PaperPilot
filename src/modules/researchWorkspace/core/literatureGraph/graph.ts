@@ -59,7 +59,9 @@ function normalizeEdge(edge) {
     target,
     kind,
     type: kind,
-    confidence: Math.max(0, Math.min(1, Number(edge.confidence) || 0)),
+    ...(typeof edge.confidence === "number" && Number.isFinite(edge.confidence)
+      ? { confidence: Math.max(0, Math.min(1, edge.confidence)) }
+      : {}),
     evidence: [...(edge.evidence || [])],
     verified: edge.verified === true,
   };

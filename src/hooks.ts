@@ -5,6 +5,7 @@ import { createZToolkit } from "./utils/ztoolkit";
 import {
   disposeReaderPaneRunProgressCards,
   registerPaperPilotPaneSection,
+  unregisterPaperPilotPaneSection,
 } from "./modules/readerPane";
 import { clearClaudePollerForItem } from "./modules/claude/poller";
 import { clearCodexPollerForItem } from "./modules/codex/poller";
@@ -28,10 +29,16 @@ import {
   migrateLegacyResearchWorkspace,
   recoverResearchWorkspaceProjectPersistence,
 } from "./modules/researchWorkspace/storage";
+import { clearResearchWorkspaceHybridIndexCache } from "./modules/researchWorkspace/facade";
 import {
   registerResearchWorkspaceLivingReviewNotifier,
   unregisterResearchWorkspaceLivingReviewNotifier,
 } from "./modules/researchWorkspace/livingReviewIntegration";
+import {
+  collectShutdownRuns,
+  stopShutdownRunsBestEffort,
+} from "./modules/ai/shutdownRuns";
+import { listActiveReaderRuns } from "./modules/ai/runPresentation";
 
 async function onStartup() {
   await Promise.all([
@@ -118,7 +125,12 @@ async function registerPreferencePane() {
 }
 
 function onShutdown(): void {
+  unregisterPaperPilotPaneSection();
   disposeReaderPaneRunProgressCards();
+  stopShutdownRunsBestEffort({
+    runs: collectShutdownRuns(addon.data, listActiveReaderRuns()),
+    log: (...values) => addon.data.ztoolkit?.log(...values),
+  });
   addon.data.codexRunPollers?.forEach((_poller, itemID) =>
     clearCodexPollerForItem(itemID),
   );
@@ -138,6 +150,7 @@ function onShutdown(): void {
   unregisterResearchWorkspacePaneSection();
   unregisterResearchWorkspaceLaunchers();
   closeResearchWorkspaceWindow();
+  clearResearchWorkspaceHybridIndexCache();
   ztoolkit.unregisterAll();
   // Remove plugin stylesheet from all windows
   for (const win of Zotero.getMainWindows()) {
@@ -146,15 +159,6 @@ function onShutdown(): void {
   // Remove addon object
   addon.data.alive = false;
   delete (Zotero as any)[config.addonInstance];
-}
-
-async function onNotify(
-  event: string,
-  type: string,
-  ids: Array<string | number>,
-  extraData: { [key: string]: any },
-) {
-  ztoolkit.log("notify", event, type, ids, extraData);
 }
 
 async function onPrefsEvent(type: string, data: { [key: string]: any }) {
@@ -172,6 +176,5 @@ export default {
   onShutdown,
   onMainWindowLoad,
   onMainWindowUnload,
-  onNotify,
   onPrefsEvent,
 };

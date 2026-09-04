@@ -36,11 +36,6 @@ export interface PaneHeaderHandle {
   codexAuthButton: HTMLButtonElement;
   codexDeviceAuthButton: HTMLButtonElement;
   codexRecheckButton: HTMLButtonElement;
-  codexRetryButton: HTMLButtonElement;
-  codexCancelButton: HTMLButtonElement;
-  policyWarning: HTMLElement;
-  geminiFallbackCard: HTMLElement;
-  geminiEmbedCard: HTMLElement;
   modelRow: HTMLElement;
   modelInput: HTMLSelectElement;
   modelSaveButton: HTMLButtonElement;
@@ -171,36 +166,12 @@ export function createPaneHeader(params: {
     "Re-check status",
     "pp-btn pp-btn--secondary",
   );
-  const codexRetryButton = makeButton(
-    doc,
-    "chat-codex-retry",
-    "Retry Last",
-    "pp-btn pp-btn--secondary",
-  );
-  const codexCancelButton = makeButton(
-    doc,
-    "chat-codex-cancel",
-    "Cancel Run",
-    "pp-btn pp-btn--secondary",
-  );
   codexActions.append(
     codexAuthButton,
     codexDeviceAuthButton,
     codexRecheckButton,
   );
 
-  const policyWarning = doc.createElement("div");
-  policyWarning.id = "paper-pilot-policy-warning";
-  policyWarning.className = "pp-status-card pp-status-card--warning";
-  policyWarning.style.display = "none";
-  const geminiFallbackCard = doc.createElement("div");
-  geminiFallbackCard.id = "paper-pilot-gemini-fallback";
-  geminiFallbackCard.className = "pp-status-card pp-status-card--success";
-  geminiFallbackCard.style.display = "none";
-  const geminiEmbedCard = doc.createElement("div");
-  geminiEmbedCard.id = "paper-pilot-gemini-embed";
-  geminiEmbedCard.className = "pp-status-card pp-status-card--embed";
-  geminiEmbedCard.style.display = "none";
   const modelHistory = doc.createElement("div");
   modelHistory.id = "paper-pilot-model-history";
   modelHistory.className = "pp-model-history";
@@ -213,9 +184,6 @@ export function createPaneHeader(params: {
     codexOptionsRow,
     modelHistory,
     codexActions,
-    policyWarning,
-    geminiFallbackCard,
-    geminiEmbedCard,
   );
   root.append(trigger, newSessionButton, popover);
   params.mount.replaceWith(root);
@@ -276,11 +244,6 @@ export function createPaneHeader(params: {
     codexAuthButton,
     codexDeviceAuthButton,
     codexRecheckButton,
-    codexRetryButton,
-    codexCancelButton,
-    policyWarning,
-    geminiFallbackCard,
-    geminiEmbedCard,
     modelRow,
     modelInput,
     modelSaveButton,

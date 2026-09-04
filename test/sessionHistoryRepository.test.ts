@@ -8,7 +8,10 @@ import {
 } from "../src/modules/session/historyTypes";
 import { resolveSessionHistoryPrefs } from "../src/modules/session/historyPrefs";
 import { buildSessionTitle } from "../src/modules/session/sessionTitle";
-import { SessionHistoryRepository } from "../src/modules/session/sessionHistoryRepository";
+import {
+  resolveDefaultSessionHistoryRootDir,
+  SessionHistoryRepository,
+} from "../src/modules/session/sessionHistoryRepository";
 
 function withPrefs(
   prefs: Record<string, boolean>,
@@ -37,6 +40,7 @@ function withPrefs(
 class MemoryFileOps implements SessionHistoryFileOps {
   files = new Map<string, string>();
   directories = new Set<string>();
+  reads: string[] = [];
   throwOnMissingRead = true;
 
   async ensureDirectory(path: string) {
@@ -44,6 +48,7 @@ class MemoryFileOps implements SessionHistoryFileOps {
   }
 
   async readText(path: string) {
+    this.reads.push(path);
     if (!this.files.has(path)) {
       if (this.throwOnMissingRead) {
         throw new Error(`ENOENT: no such file or directory, open '${path}'`);
@@ -75,6 +80,19 @@ class MemoryFileOps implements SessionHistoryFileOps {
     );
   }
 }
+
+test("default session history root fails closed without a Zotero profile", () => {
+  const previousZotero = (globalThis as { Zotero?: unknown }).Zotero;
+  (globalThis as { Zotero?: unknown }).Zotero = undefined;
+  try {
+    assert.throws(
+      () => resolveDefaultSessionHistoryRootDir(),
+      /Could not resolve the Zotero profile directory/,
+    );
+  } finally {
+    (globalThis as { Zotero?: unknown }).Zotero = previousZotero;
+  }
+});
 
 function buildSnapshot() {
   return {
@@ -332,6 +350,56 @@ test("SessionHistoryRepository recovers valid snapshots when index.json is malfo
   );
 });
 
+test("SessionHistoryRepository reads each indexed snapshot once and caches the index", async () => {
+  const fileOps = new MemoryFileOps();
+  const repo = new SessionHistoryRepository({
+    rootDir: "/session-history",
+    fileOps,
+  });
+  const first = buildSnapshot();
+  const second = {
+    ...buildSnapshot(),
+    sessionId: "paper-42-session-b",
+    updatedAt: "2026-04-14T00:30:00.000Z",
+  };
+  const entries = [first, second].map((snapshot) => ({
+    storageVersion: SESSION_HISTORY_STORAGE_VERSION,
+    sessionId: snapshot.sessionId,
+    title: snapshot.title,
+    createdAt: snapshot.createdAt,
+    updatedAt: snapshot.updatedAt,
+    messageCount: snapshot.messages.length,
+    lastMode: snapshot.messages.at(-1)?.sourceMode,
+    hasArtifacts: true,
+    hasRecommendations: true,
+    hasMasteryState: true,
+  }));
+  fileOps.files.set(
+    repo.getPaperIndexPath(42),
+    JSON.stringify({
+      storageVersion: SESSION_HISTORY_STORAGE_VERSION,
+      paperItemID: 42,
+      paperTitle: "Paper",
+      sessions: entries,
+    }),
+  );
+  for (const snapshot of [first, second]) {
+    fileOps.files.set(
+      repo.getSessionSnapshotPath(42, snapshot.sessionId),
+      JSON.stringify(snapshot),
+    );
+  }
+
+  await repo.readPaperIndex(42);
+  assert.equal(
+    fileOps.reads.filter((path) => path.includes("/sessions/")).length,
+    2,
+  );
+  const readsAfterFirst = fileOps.reads.length;
+  await repo.readPaperIndex(42);
+  assert.equal(fileOps.reads.length, readsAfterFirst);
+});
+
 test("SessionHistoryRepository prunes index rows whose snapshot is missing", async () => {
   const fileOps = new MemoryFileOps();
   const repo = new SessionHistoryRepository({
@@ -454,6 +522,49 @@ test("SessionHistoryRepository prunes index rows whose snapshot is corrupt", asy
     [validSnapshot.sessionId],
   );
   assert.deepEqual(await repo.listSessions(42), index.sessions);
+  assert.equal(
+    fileOps.files.has(repo.getSessionSnapshotPath(42, corruptSnapshotId)),
+    false,
+  );
+  assert(
+    [...fileOps.files.keys()].some((path) =>
+      path.includes(`${corruptSnapshotId}.json.corrupt-`),
+    ),
+  );
+});
+
+test("SessionHistoryRepository rejects invalid and future snapshots with a warning", async () => {
+  const fileOps = new MemoryFileOps();
+  const warnings: string[] = [];
+  const repo = new SessionHistoryRepository({
+    rootDir: "/session-history",
+    fileOps,
+    warn: (message) => warnings.push(message),
+  });
+  const snapshotPath = repo.getSessionSnapshotPath(42, "paper-42-session-a");
+
+  for (const invalid of [[], "text"]) {
+    fileOps.files.set(snapshotPath, JSON.stringify(invalid));
+    assert.equal(
+      await repo.readSessionSnapshot(42, "paper-42-session-a"),
+      undefined,
+    );
+  }
+
+  fileOps.files.set(
+    snapshotPath,
+    JSON.stringify({
+      ...buildSnapshot(),
+      storageVersion: SESSION_HISTORY_STORAGE_VERSION + 1,
+    }),
+  );
+  assert.equal(
+    await repo.readSessionSnapshot(42, "paper-42-session-a"),
+    undefined,
+  );
+  assert(warnings.some((message) => message.includes("invalid")));
+  assert(warnings.some((message) => message.includes("future")));
+  assert(fileOps.files.has(snapshotPath));
 });
 
 test("SessionHistoryRepository uses platform-safe path joining", () => {

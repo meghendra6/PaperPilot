@@ -213,6 +213,7 @@ test("Claim Ledger localizes Korean review labels and copies readable Markdown",
     payload,
     {
       artifactType: "claim-ledger",
+      responseLanguage: "Korean",
       onCopyText: (value) => {
         copied = value;
       },
@@ -240,7 +241,14 @@ test("Claim Ledger localizes Korean review labels and copies readable Markdown",
   assert.match(copied, /정확한 로컬 PDF 원본을 불러오지 못했습니다/);
   assert.doesNotMatch(copied, /schemaVersion|attachmentKey|confidence/);
 
-  assert.equal(createResearchWorkspaceClaimLedgerMarkdown(payload), copied);
+  assert.equal(
+    createResearchWorkspaceClaimLedgerMarkdown(payload, "Korean"),
+    copied,
+  );
+  assert.match(
+    createResearchWorkspaceClaimLedgerMarkdown(payload, "English"),
+    /^# Claim–Evidence Review/m,
+  );
 });
 
 test("Methodology Audit renders a summary, review checks, and implications", () => {

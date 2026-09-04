@@ -8,6 +8,7 @@ import {
   type ResearchWorkspaceLivingReviewState,
   type ResearchWorkspaceSourceAvailability,
 } from "./persistence/contracts";
+import { stableHash } from "./identity";
 
 /**
  * The inbox is deliberately bounded so repeated local Zotero notifications
@@ -63,15 +64,6 @@ function optionalFingerprint(value: string | undefined, label: string) {
   return requireText(value, label);
 }
 
-function fnv1a(value: string, seed: number) {
-  let hash = seed >>> 0;
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 16777619) >>> 0;
-  }
-  return hash.toString(16).padStart(8, "0");
-}
-
 function semanticState(state: ResearchWorkspaceLivingReviewState) {
   return {
     availability: state.availability,
@@ -107,7 +99,7 @@ function changeIdentity(params: {
     before: semanticState(params.before),
     after: semanticState(params.after),
   });
-  const digest = `${fnv1a(semantic, 2166136261)}${fnv1a(
+  const digest = `${stableHash(semantic, 2166136261)}${stableHash(
     semantic,
     2246822519,
   )}${semantic.length.toString(16).padStart(4, "0")}`;

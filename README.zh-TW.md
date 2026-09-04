@@ -8,17 +8,12 @@ Paper Pilot 是一個面向 Zotero 7-10 PDF 閱讀器的 AI 閱讀工作台。�
 
 ![Zotero 7-10](https://img.shields.io/badge/Zotero-7--10-cc2936) ![Node 20+](https://img.shields.io/badge/Node-20%2B-339933) ![Java 11+](https://img.shields.io/badge/Java-11%2B-007396) ![License](https://img.shields.io/badge/License-AGPL--3.0--or--later-blue) ![Engines](https://img.shields.io/badge/Engines-Codex%20CLI%20%7C%20Claude%20Code%20%7C%20Gemini%20CLI-6f42c1)
 
-目前外掛支援三種引擎模式：
-
-- **Codex CLI**
-- **Claude Code**
-- **Gemini CLI**
-
 ## 快速總覽
 
 - 直接在 Zotero Reader 中使用 AI 聊天
 - 三種本地引擎模式：**Codex CLI**、**Claude Code** 與 **Gemini CLI**
 - 面向 brief、compare、contributions、limitations、follow-ups 的結構化論文工作台
+- 透過 **OpenDataLoader PDF** 擷取結構化 PDF 工作區
 - 無需使用者設定會議清單，以官方出版證據和三個結果分區探索先行研究
 - **Critical Read** — 讀者先判斷的七步批判性閱讀流程與最終報告
 - 支援 auto-highlight 與可持久化的論文級會話歷史
@@ -312,7 +307,9 @@ OpenDataLoader 打包說明：
 
 目前需要注意：
 
+- 外掛介面目前僅提供英文；翻譯版 README 描述的是同一套英文介面。
 - 回應語言會被正規化為 **English**、**Korean** 或 **Chinese**
+- 回應語言只會變更模型產生的回答與 artifact，不會變更介面標籤
 - 執行時程式碼已經讀取了許多與引擎、retrieval、workspace、privacy 相關的設定
 - 結構化 PDF 擷取使用內建的 OpenDataLoader JAR；Java 或執行時擷取不可用時會退回到 Zotero `attachmentText`
 - 所有設定路徑在真實執行環境中的 QA 仍是剩餘工作的一部分
@@ -334,7 +331,7 @@ addon/      Zotero 外掛清單、語系資源、設定介面、靜態資源
 src/        閱讀器 UI、引擎整合、脈絡、工具與工作流的 TypeScript 原始碼
 test/       針對 prompt 建構、解析、儲存與工作流邏輯的 Node 回歸測試
 docs/       手動 QA 清單、prompt contract 與補充產品文件
-scripts/    本地 Zotero 外掛腳手架 CLI 入口
+scripts/    建置/發布 CLI、OpenDataLoader 準備、發布標籤檢查與環境診斷
 build/      產生的外掛建置產物
 ```
 
@@ -365,6 +362,7 @@ build/      產生的外掛建置產物
 - related-paper recommendation 解析
 - compare 與 artifact 儲存流程
 - auto-highlight 解析／匹配
+- discovery、Critical Read、會話持久化與 Research Workspace 合約
 
 本地驗證使用的核心命令：
 

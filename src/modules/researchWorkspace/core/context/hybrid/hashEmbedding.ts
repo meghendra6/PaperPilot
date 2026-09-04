@@ -1,16 +1,9 @@
 // @ts-nocheck -- Ported feature core is guarded by strict runtime parsers.
 import * as tokenizer_1 from "./tokenizer";
-function hash(value) {
-  let result = 2166136261;
-  for (let index = 0; index < value.length; index += 1) {
-    result ^= value.charCodeAt(index);
-    result = Math.imul(result, 16777619);
-  }
-  return result >>> 0;
-}
+import { fnv1a32 as hash } from "../../../identity";
 function createHashEmbedding(text, dimensions = 192) {
   const vector = Array.from({ length: dimensions }, () => 0);
-  const tokens = (0, tokenizer_1.tokenizeHybridOccurrences)(text, true);
+  const tokens = (0, tokenizer_1.tokenizeHybridOccurrences)(text);
   for (const token of tokens) {
     const bucket = hash(token) % dimensions;
     const sign = (hash(`${token}:sign`) & 1) === 0 ? 1 : -1;

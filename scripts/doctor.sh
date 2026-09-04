@@ -4,145 +4,93 @@ set -euo pipefail
 
 TARGET_DIR="${1:-.}"
 TARGET_DIR="$(cd "${TARGET_DIR}" && pwd)"
-
-RED='\033[0;31m'
-YELLOW='\033[1;33m'
-GREEN='\033[0;32m'
-NC='\033[0m'
-
 errors=0
 warnings=0
 
-say_error() {
-    echo -e "${RED}ERROR:${NC} $*"
+error() {
+    printf 'ERROR: %s\n' "$*"
     errors=$((errors + 1))
 }
 
-say_warn() {
-    echo -e "${YELLOW}WARN:${NC} $*"
+warn() {
+    printf 'WARN: %s\n' "$*"
     warnings=$((warnings + 1))
 }
 
-say_ok() {
-    echo -e "${GREEN}OK:${NC} $*"
+ok() {
+    printf 'OK: %s\n' "$*"
 }
 
-require_file() {
-    local path="$1"
-    if [ ! -f "${path}" ]; then
-        say_error "Missing file: ${path#${TARGET_DIR}/}"
-    fi
-}
+printf 'Paper Pilot doctor\nTarget: %s\n\n' "${TARGET_DIR}"
 
-warn_if_missing_file() {
-    local path="$1"
-    if [ ! -f "${path}" ]; then
-        say_warn "Missing optional file: ${path#${TARGET_DIR}/}"
-    fi
-}
-
-require_dir() {
-    local path="$1"
-    if [ ! -d "${path}" ]; then
-        say_error "Missing directory: ${path#${TARGET_DIR}/}"
-    fi
-}
-
-get_setting() {
-    local settings_file="$1"
-    local key="$2"
-
-    python3 - "${settings_file}" "${key}" <<'PY'
-import json
-import re
-import sys
-
-path, key = sys.argv[1], sys.argv[2]
-with open(path, "r", encoding="utf-8") as fh:
-    lines = []
-    for line in fh:
-        if re.match(r"^\s*//", line):
-            continue
-        lines.append(line)
-    data = json.loads("".join(lines))
-value = data.get(key, None)
-if isinstance(value, bool):
-    print("true" if value else "false")
-elif value is None:
-    print("unset")
-else:
-    print(str(value))
-PY
-}
-
-SETTINGS_PATH="${TARGET_DIR}/.vscode/settings.json"
-
-echo "oh-my-copilot doctor"
-echo "Target: ${TARGET_DIR}"
-echo ""
-
-require_file "${TARGET_DIR}/.github/copilot-instructions.md"
-require_dir "${TARGET_DIR}/.github/instructions"
-require_dir "${TARGET_DIR}/.github/prompts"
-require_dir "${TARGET_DIR}/.github/agents"
-require_dir "${TARGET_DIR}/.github/skills"
-require_file "${TARGET_DIR}/.vscode/toolsets.json"
-require_file "${SETTINGS_PATH}"
-
-# AGENTS.md is useful when chat.useAgentsMdFile is enabled, but not installed by install.sh.
-warn_if_missing_file "${TARGET_DIR}/AGENTS.md"
-
-# Core prompt/agent/skill files required for one-request workflow.
-require_file "${TARGET_DIR}/.github/prompts/ultrawork.prompt.md"
-require_file "${TARGET_DIR}/.github/prompts/autopilot.prompt.md"
-require_file "${TARGET_DIR}/.github/prompts/handoff.prompt.md"
-require_file "${TARGET_DIR}/.github/prompts/ecomode.prompt.md"
-require_file "${TARGET_DIR}/.github/prompts/note.prompt.md"
-require_file "${TARGET_DIR}/.github/agents/sisyphus.agent.md"
-require_file "${TARGET_DIR}/.github/agents/oracle.agent.md"
-require_file "${TARGET_DIR}/.github/skills/context-map/SKILL.md"
-require_file "${TARGET_DIR}/.github/skills/handoff/SKILL.md"
-
-if [ -f "${SETTINGS_PATH}" ]; then
-    use_instructions=$(get_setting "${SETTINGS_PATH}" "github.copilot.chat.codeGeneration.useInstructionFiles")
-    use_agents_md=$(get_setting "${SETTINGS_PATH}" "chat.useAgentsMdFile")
-    use_nested_agents=$(get_setting "${SETTINGS_PATH}" "chat.useNestedAgentsMdFiles")
-    use_agent_skills=$(get_setting "${SETTINGS_PATH}" "chat.useAgentSkills")
-
-    if [ "${use_instructions}" != "true" ]; then
-        say_warn "github.copilot.chat.codeGeneration.useInstructionFiles is ${use_instructions}"
+if command -v node >/dev/null 2>&1; then
+    node_version="$(node --version)"
+    node_major="${node_version#v}"
+    node_major="${node_major%%.*}"
+    if [ "${node_major}" -ge 20 ] 2>/dev/null; then
+        ok "Node ${node_version}"
     else
-        say_ok "Instruction files enabled"
+        error "Node 20 or newer is required; found ${node_version}"
     fi
-
-    if [ "${use_agents_md}" != "true" ]; then
-        say_warn "chat.useAgentsMdFile is ${use_agents_md}"
-    else
-        say_ok "AGENTS.md enabled"
-    fi
-
-    if [ "${use_nested_agents}" = "true" ]; then
-        say_warn "chat.useNestedAgentsMdFiles is true (nested AGENTS.md adds more context; enable only when needed)"
-    elif [ "${use_nested_agents}" = "false" ]; then
-        say_ok "Nested AGENTS.md disabled by default"
-    fi
-
-    if [ "${use_agent_skills}" = "true" ]; then
-        say_ok "Agent Skills enabled"
-    else
-        say_warn "chat.useAgentSkills is ${use_agent_skills}"
-    fi
+else
+    error "Node is not installed"
 fi
 
-echo ""
+if command -v npm >/dev/null 2>&1; then
+    ok "npm $(npm --version)"
+else
+    error "npm is not installed"
+fi
+
+if command -v java >/dev/null 2>&1; then
+    java_line="$(java -version 2>&1 | head -n 1 || true)"
+    java_version="$(printf '%s' "${java_line}" | sed -E 's/.*version "([0-9]+)(\.([0-9]+))?.*/\1 \3/')"
+    java_major="${java_version%% *}"
+    if [ "${java_major}" = "1" ]; then
+        java_major="${java_version##* }"
+    fi
+    if [ -n "${java_major}" ] && [ "${java_major}" -ge 11 ] 2>/dev/null; then
+        ok "${java_line}"
+    else
+        warn "Java 11 or newer is recommended for OpenDataLoader; found ${java_line}"
+    fi
+else
+    warn "Java 11 or newer is recommended for OpenDataLoader extraction"
+fi
+
+extractor_jar="${TARGET_DIR}/addon/chrome/content/vendor/opendataloader/opendataloader-pdf-cli.jar"
+if [ -f "${extractor_jar}" ]; then
+    ok "Vendored OpenDataLoader runtime is present"
+else
+    error "Vendored OpenDataLoader runtime is missing; run npm install then node scripts/prepare-opendataloader.mjs"
+fi
+
+available_engines=""
+for engine in codex claude gemini; do
+    if command -v "${engine}" >/dev/null 2>&1; then
+        available_engines="${available_engines}${available_engines:+, }${engine}"
+    fi
+done
+if [ -n "${available_engines}" ]; then
+    ok "Local engine CLI available: ${available_engines}"
+else
+    warn "No Codex, Claude, or Gemini CLI was found on PATH"
+fi
+
+if command -v git >/dev/null 2>&1 && git -C "${TARGET_DIR}" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    never_commit_status="$(git -C "${TARGET_DIR}" status --short -- \
+        .github ':!.github/workflows' ':!.github/FUNDING.yml' \
+        .vscode docs/superpowers .worktrees reference build)"
+    if [ -n "${never_commit_status}" ]; then
+        error "Never-commit paths contain changes:\n${never_commit_status}"
+    else
+        ok "Never-commit paths are clean"
+    fi
+else
+    warn "Git worktree status could not be checked"
+fi
+
+printf '\nDoctor found %s error(s) and %s warning(s).\n' "${errors}" "${warnings}"
 if [ "${errors}" -gt 0 ]; then
-    echo -e "${RED}Doctor found ${errors} error(s) and ${warnings} warning(s).${NC}"
     exit 1
 fi
-
-if [ "${warnings}" -gt 0 ]; then
-    echo -e "${YELLOW}Doctor found ${warnings} warning(s).${NC}"
-    exit 0
-fi
-
-echo -e "${GREEN}Doctor checks passed.${NC}"

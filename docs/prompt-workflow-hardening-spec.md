@@ -2,7 +2,8 @@
 
 ## Status
 
-Implementation specification for Paper Pilot's local-CLI prompt surfaces. This
+Implemented source contract with automated coverage; the real-Zotero and
+cross-engine paths listed in `manual-qa.md` remain manual verification. This
 document covers the confirmed prompt, parser, context, and execution-boundary
 issues found in the 2026-08-23 audit.
 

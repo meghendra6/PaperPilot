@@ -14,3 +14,6 @@ zotero-cmd.json
 
 # Superpowers planning/spec workspace — local design notes, not for GitHub.
 docs/superpowers/
+.worktrees/
+reference/
+addon/chrome/content/vendor/opendataloader/

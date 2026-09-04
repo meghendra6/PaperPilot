@@ -19,6 +19,8 @@ type BuildGeminiCommand = (params: {
   resumeSessionId?: string;
   executablePath: string;
   profile: "chat" | "analysis" | "discovery";
+  approvalMode: string;
+  sandboxSupported?: boolean;
 }) => string;
 
 test("buildGeminiCommand uses plan mode for hidden analysis runs", () => {
@@ -39,6 +41,8 @@ test("buildGeminiCommand uses plan mode for hidden analysis runs", () => {
     model: "gemini-3.1-pro-preview",
     executablePath: "/opt/Homebrew Tools/gemini's bin/gemini",
     profile: "analysis",
+    approvalMode: "yolo",
+    sandboxSupported: true,
   });
 
   const syntax = checkShellSyntax(script);
@@ -50,9 +54,11 @@ test("buildGeminiCommand uses plan mode for hidden analysis runs", () => {
     /cat '\/tmp\/Paper Pilot\/Smith'\\''s paper\/gemini-prompt\.txt' \|/,
   );
   assert.match(script, /'\/opt\/Homebrew Tools\/gemini'\\''s bin\/gemini'/);
+  assert.match(script, /export PATH='\/opt\/Homebrew Tools\/gemini'\\''s bin:/);
   assert.match(script, /--skip-trust/);
-  assert.match(script, /--approval-mode plan/);
+  assert.match(script, /--approval-mode 'plan'/);
   assert.doesNotMatch(script, /--yolo/);
+  assert.match(script, /--sandbox/);
   assert.match(script, /-p ''/);
   assert.match(
     script,
@@ -60,7 +66,17 @@ test("buildGeminiCommand uses plan mode for hidden analysis runs", () => {
   );
 });
 
-test("buildGeminiCommand preserves the existing chat approval policy", () => {
+test("Gemini launch reports a rejected shell exec as a start failure", async () => {
+  const result = await geminiRunner.launchGeminiRunScript(
+    "exit 1",
+    async () => {
+      throw new Error("gemini launch rejected");
+    },
+  );
+  assert.deepEqual(result, { ok: false, error: "gemini launch rejected" });
+});
+
+test("buildGeminiCommand defaults chat to approval prompts without yolo", () => {
   const buildGeminiCommand = (
     geminiRunner as unknown as { buildGeminiCommand?: BuildGeminiCommand }
   ).buildGeminiCommand!;
@@ -75,11 +91,45 @@ test("buildGeminiCommand preserves the existing chat approval policy", () => {
     model: "gemini-3.1-pro-preview",
     executablePath: "gemini",
     profile: "chat",
+    approvalMode: "unsupported",
   });
 
   assert.equal(checkShellSyntax(script).status, 0);
-  assert.match(script, /--yolo/);
-  assert.doesNotMatch(script, /--approval-mode plan/);
+  assert.match(script, /--approval-mode 'default'/);
+  assert.doesNotMatch(script, /(?:^|\s)--yolo(?:\s|$)/);
+});
+
+for (const approvalMode of ["default", "auto_edit", "yolo", "plan"]) {
+  test(`buildGeminiCommand allows ${approvalMode} for visible chat`, () => {
+    const buildGeminiCommand = (
+      geminiRunner as unknown as { buildGeminiCommand?: BuildGeminiCommand }
+    ).buildGeminiCommand!;
+    const script = buildGeminiCommand({
+      promptPath: "/tmp/paper/prompt.txt",
+      outputPath: "/tmp/paper/output.txt",
+      stderrPath: "/tmp/paper/stderr.log",
+      exitCodePath: "/tmp/paper/exit.txt",
+      pidPath: "/tmp/paper/pid.txt",
+      workspacePath: "/tmp/paper",
+      question: "Explain this result",
+      model: "gemini-3.1-pro-preview",
+      executablePath: "gemini",
+      profile: "chat",
+      approvalMode,
+    });
+
+    assert.equal(checkShellSyntax(script).status, 0);
+    assert.match(script, new RegExp(`--approval-mode '?${approvalMode}'?`));
+  });
+}
+
+test("normalizeGeminiApprovalMode rejects values outside the CLI allowlist", () => {
+  assert.equal(
+    geminiRunner.normalizeGeminiApprovalMode("auto_edit"),
+    "auto_edit",
+  );
+  assert.equal(geminiRunner.normalizeGeminiApprovalMode(" yolo "), "yolo");
+  assert.equal(geminiRunner.normalizeGeminiApprovalMode("always"), "default");
 });
 
 test("Gemini progress keeps successful stderr out of parsed assistant text", async () => {

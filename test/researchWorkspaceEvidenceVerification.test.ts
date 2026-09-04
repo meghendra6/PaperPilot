@@ -109,7 +109,7 @@ test("local evidence verifier never verifies an unmatched or wrong-page quote", 
   assert.equal(wrongPage?.verification.status, "not-found");
 });
 
-test("local evidence verifier accepts trusted structured element identity", async () => {
+test("a structured element locator without a matching quote stays unverified", async () => {
   const verifier = new ResearchWorkspaceEvidenceVerifier([source], {
     now: () => "2026-08-29T00:00:00.000Z",
   });
@@ -119,10 +119,24 @@ test("local evidence verifier accepts trusted structured element identity", asyn
     elementType: "paragraph",
   });
 
-  assert.equal(reference?.verification.status, "verified");
+  assert.equal(reference?.verification.status, "unverified");
   assert.equal(reference?.verification.method, "structured-element");
   assert.equal(reference?.pageIndex, 2);
   assert.deepEqual(reference?.sectionPath, ["Method"]);
+});
+
+test("a valid structured element cannot verify an unrelated statement", async () => {
+  const verifier = new ResearchWorkspaceEvidenceVerifier([source], {
+    now: () => "2026-08-29T00:00:00.000Z",
+  });
+  const reference = await verifier.verify({
+    attachmentKey: "ATTACH",
+    elementId: "element-1",
+    statement: "This unrelated claim is not in the structured evidence.",
+  });
+
+  assert.equal(reference?.verification.status, "unverified");
+  assert.match(reference?.verification.detail ?? "", /no matching quote/i);
 });
 
 test("evidence verification fails closed for unavailable and unadmitted sources", async () => {

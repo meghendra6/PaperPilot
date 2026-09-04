@@ -18,7 +18,7 @@ Paper Pilot is an AI reading workbench for the Zotero 7-10 PDF reader. It adds a
 - **Critical Read** — a reader-first, seven-step paper evaluation workflow with a final report
 - Auto-highlight plus persisted paper-scoped session history
 - **Paper Mastery** — multi-round Socratic comprehension check with a final Markdown learning report
-- Automated verification and focused Zotero 9 and 10 runtime smokes are recorded; the broader Zotero 7-10 and cross-engine matrix remains manual QA
+- Automated verification and focused Zotero 9 and 10 reader-pane, discovery, and Critical Read runtime smokes are recorded; the Research Workspace project window and broader Zotero 7-10 cross-engine matrix remain manual QA
 
 ## Integrated Research Workspace
 
@@ -310,7 +310,9 @@ The preferences UI currently exposes settings across these areas:
 
 Important current details:
 
+- the plugin interface is currently English only; translated README files document the same English UI
 - response language is normalized to **English**, **Korean**, or **Chinese**
+- response language changes model-generated answers and artifacts, not interface labels
 - runtime code already reads many engine, retrieval, workspace, and privacy preferences
 - structured PDF extraction uses a bundled OpenDataLoader JAR and falls back to Zotero `attachmentText` if Java/runtime extraction is unavailable
 - full real-runtime QA of every preference path is still part of the remaining manual verification work
@@ -332,7 +334,7 @@ addon/      Zotero add-on manifest, locales, preferences UI, static assets
 src/        TypeScript source for reader UI, engine integrations, context, tools, and workflows
 test/       Node-based regression tests for prompt builders, parsing, storage, and workflow logic
 docs/       Manual QA checklist, prompt contracts, and supporting product notes
-scripts/    Local Zotero plugin scaffold CLI entrypoint
+scripts/    Build/release CLI, OpenDataLoader preparation, release-tag guard, and environment doctor
 build/      Generated add-on artifacts
 ```
 
@@ -363,6 +365,7 @@ The repository currently includes automated checks for core logic such as:
 - related-paper recommendation parsing
 - compare and artifact-save flows
 - auto-highlight parsing/matching
+- discovery, Critical Read, session persistence, and Research Workspace contracts
 
 Core commands used during local verification:
 
@@ -376,7 +379,7 @@ Manual runtime verification is still required in Zotero itself. Use [`docs/manua
 ## Known limitations
 
 - The project is not yet claiming full production readiness.
-- Focused Zotero 9 and 10 runtime QA is recorded in `docs/manual-qa.md`; the broader compatibility and cross-engine matrix remains manual QA.
+- Focused Zotero 9 and 10 reader-pane, discovery, and Critical Read runtime QA is recorded in `docs/manual-qa.md`; the Research Workspace project window and broader compatibility and cross-engine matrix remain manual QA.
 
 ## Roadmap
 

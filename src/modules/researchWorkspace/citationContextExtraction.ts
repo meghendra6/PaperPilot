@@ -2,6 +2,12 @@ import type {
   ResearchWorkspacePaper,
   ResearchWorkspaceStructuredChunk,
 } from "./paperSource";
+import {
+  normalizeIdentityAuthor,
+  normalizeIdentityDOI,
+  normalizeIdentityTitle,
+  stableHash,
+} from "./identity";
 
 export const CITATION_CONTEXT_EXTRACTOR_VERSION =
   "paperpilot-citation-context-v1" as const;
@@ -116,34 +122,6 @@ function normalizeWhitespace(value: string) {
   return value.replace(/\s+/g, " ").trim();
 }
 
-function normalizeDOI(value: string) {
-  return value
-    .trim()
-    .replace(/^https?:\/\/(?:dx\.)?doi\.org\//i, "")
-    .replace(/[\s.,;]+$/g, "")
-    .toLowerCase();
-}
-
-function normalizeTitle(value: string) {
-  return normalizeWhitespace(value)
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, " ")
-    .trim();
-}
-
-function normalizeAuthor(value: string) {
-  return normalizeTitle(value).split(" ").filter(Boolean).at(-1) ?? "";
-}
-
-function stableHash(value: string) {
-  let hash = 2166136261;
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return (hash >>> 0).toString(16).padStart(8, "0");
-}
-
 function sentences(value: string): SentenceSlice[] {
   const protectedValue = value
     .replace(/\b(?:et\s+al|e\.g|i\.e|fig|eq|dr|mr|mrs|prof)\./gi, (match) =>
@@ -202,7 +180,7 @@ function citationMarkers(sentence: string): CitationMarker[] {
         /(?:^|\s)([\p{L}][\p{L}'’-]+)(?:\s+et\s+al\.)?[^\d]{0,50}((?:19|20)\d{2})[a-z]?/iu,
       );
       if (authorYear) {
-        const firstAuthor = normalizeAuthor(authorYear[1]);
+        const firstAuthor = normalizeIdentityAuthor(authorYear[1]);
         const year = Number(authorYear[2]);
         markers.push({
           raw: part.trim(),
@@ -218,7 +196,7 @@ function citationMarkers(sentence: string): CitationMarker[] {
   for (const match of sentence.matchAll(
     /\b([\p{Lu}][\p{L}'’-]+)(?:\s+et\s+al\.)?\s*\(((?:19|20)\d{2})[a-z]?\)/gu,
   )) {
-    const firstAuthor = normalizeAuthor(match[1]);
+    const firstAuthor = normalizeIdentityAuthor(match[1]);
     const year = Number(match[2]);
     markers.push({
       raw: match[0],
@@ -292,7 +270,7 @@ function parseReference(rawValue: string, key?: string) {
     if (candidate) title = candidate;
   }
   const firstAuthor = authors.length
-    ? normalizeAuthor(authors[0].replace(/\bet\s+al\.?$/i, ""))
+    ? normalizeIdentityAuthor(authors[0].replace(/\bet\s+al\.?$/i, ""))
     : undefined;
   return {
     key: key ?? `${firstAuthor || "unknown"}:${year || "unknown"}`,
@@ -302,7 +280,7 @@ function parseReference(rawValue: string, key?: string) {
     authors,
     ...(year ? { year } : {}),
     ...(title ? { title } : {}),
-    ...(doiMatch ? { doi: normalizeDOI(doiMatch[0]) } : {}),
+    ...(doiMatch ? { doi: normalizeIdentityDOI(doiMatch[0]) } : {}),
   } satisfies ExtractedCitationReference;
 }
 
@@ -407,14 +385,14 @@ function resolveReference(
         : {}),
       ...(match.itemKey ? { zoteroItemKey: match.itemKey } : {}),
       ...(match.title ? { title: match.title } : {}),
-      ...(match.doi ? { doi: normalizeDOI(match.doi) } : {}),
+      ...(match.doi ? { doi: normalizeIdentityDOI(match.doi) } : {}),
     };
   };
   if (reference.doi) {
-    const doi = normalizeDOI(reference.doi);
+    const doi = normalizeIdentityDOI(reference.doi);
     const resolved = select(
       candidates.filter(
-        (entry) => entry.doi && normalizeDOI(entry.doi) === doi,
+        (entry) => entry.doi && normalizeIdentityDOI(entry.doi) === doi,
       ),
       "project-doi",
       "zotero-doi",
@@ -423,15 +401,24 @@ function resolveReference(
     if (resolved) return resolved;
   }
   if (reference.title) {
-    const title = normalizeTitle(reference.title);
+    const title = normalizeIdentityTitle(reference.title);
     const resolved = select(
       candidates.filter((entry) => {
-        const candidate = normalizeTitle(entry.title ?? "");
+        const candidate = normalizeIdentityTitle(entry.title ?? "");
+        const referenceTokens = new Set(title.split(" ").filter(Boolean));
+        const candidateTokens = new Set(candidate.split(" ").filter(Boolean));
+        const shared = [...referenceTokens].filter((token) =>
+          candidateTokens.has(token),
+        ).length;
+        const overlap =
+          shared /
+          Math.max(1, Math.max(referenceTokens.size, candidateTokens.size));
         return (
           candidate.length >= 8 &&
           (candidate === title ||
-            candidate.includes(title) ||
-            title.includes(candidate))
+            (Boolean(reference.year) &&
+              entry.year === reference.year &&
+              overlap >= 0.8))
         );
       }),
       "project-title",
@@ -446,7 +433,8 @@ function resolveReference(
         (entry) =>
           entry.year === reference.year &&
           entry.authors.some(
-            (author) => normalizeAuthor(author) === reference.firstAuthor,
+            (author) =>
+              normalizeIdentityAuthor(author) === reference.firstAuthor,
           ),
       ),
       "project-author-year",
@@ -503,17 +491,25 @@ export function extractResearchWorkspaceCitationContexts(params: {
             skippedMarkers += 1;
             continue;
           }
-          const reference =
+          const parsedReference =
             references.get(marker.key) ??
             parseReference(
               marker.raw,
               marker.numericIndex ? String(marker.numericIndex) : marker.key,
             );
-          if (!reference.firstAuthor && marker.firstAuthor) {
-            reference.firstAuthor = marker.firstAuthor;
-            reference.authors = [marker.firstAuthor];
-          }
-          if (!reference.year && marker.year) reference.year = marker.year;
+          const reference = {
+            ...parsedReference,
+            authors: [...parsedReference.authors],
+            ...(!parsedReference.firstAuthor && marker.firstAuthor
+              ? {
+                  firstAuthor: marker.firstAuthor,
+                  authors: [marker.firstAuthor],
+                }
+              : {}),
+            ...(!parsedReference.year && marker.year
+              ? { year: marker.year }
+              : {}),
+          };
           const resolution = resolveReference(
             reference,
             params.papers,

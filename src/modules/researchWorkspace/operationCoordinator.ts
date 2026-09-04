@@ -10,6 +10,7 @@ import type {
 } from "./persistence/contracts";
 import type { ResearchWorkspaceProjectRepository } from "./persistence/projectRepository";
 import { researchWorkspaceArtifactPayloadFingerprint } from "./artifactFingerprint";
+import { stableHash } from "./identity";
 import { ResearchWorkspaceProjectController } from "./projectController";
 import {
   claimResearchWorkspaceOwner,
@@ -96,12 +97,7 @@ export interface RunResearchWorkspaceIncrementalOperation<
 }
 
 function fingerprint(value: string) {
-  let hash = 2166136261;
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return `fnv1a32:${value.length}:${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return `fnv1a32:${value.length}:${stableHash(value)}`;
 }
 
 function clone<T>(value: T): T {
@@ -113,7 +109,7 @@ function clone<T>(value: T): T {
 function safeError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
   return message
-    .replace(/(?:[A-Za-z]:\\|\/Users\/|\/home\/)[^\s"']+/g, "[local-path]")
+    .replace(/[A-Za-z]:\\[^\s"'<>]+|(?<![:/])\/[^\s"'<>]+/g, "[local-path]")
     .slice(0, 800);
 }
 
@@ -580,8 +576,11 @@ export class ResearchWorkspaceOperationCoordinator {
           (candidate.status === "partial" || candidate.status === "stale") &&
           candidate.lineage.operation === params.operation &&
           candidate.lineage.operationVersion === params.operationVersion &&
+          candidate.lineage.promptVersion ===
+            (params.promptVersion ?? `${params.operation}-prompt-v1`) &&
           candidate.lineage.parserVersion ===
             (params.parserVersion ?? `${params.operation}-parser-v1`) &&
+          candidate.lineage.schemaVersion === params.schemaVersion &&
           candidate.sourceIDs.length === params.papers.length &&
           params.papers.every((paper) =>
             candidate.sourceIDs.includes(paper.sourceID),
@@ -754,6 +753,7 @@ export class ResearchWorkspaceOperationCoordinator {
                 lastCheckpointAt: new Date().toISOString(),
               },
             }),
+            false,
           );
           run = await this.repository.updateRun(
             params.projectID,
@@ -795,6 +795,7 @@ export class ResearchWorkspaceOperationCoordinator {
                 lastCheckpointAt: new Date().toISOString(),
               },
             }),
+            false,
           );
           run = await this.repository.updateRun(
             params.projectID,
@@ -835,7 +836,8 @@ export class ResearchWorkspaceOperationCoordinator {
       }
 
       const completedAt = new Date().toISOString();
-      const status = failedUnits.length ? "partial" : "complete";
+      const status =
+        failedUnits.length || pendingUnits.length ? "partial" : "complete";
       const latestArtifact = await this.repository.getArtifact(
         params.projectID,
         artifact.artifact.artifactID,

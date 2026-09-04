@@ -8,6 +8,7 @@ import type {
 } from "./persistence/contracts";
 import type { ResearchWorkspaceProjectDetails } from "./projectController";
 import { researchWorkspaceArtifactPayloadFingerprint } from "./artifactFingerprint";
+import { stableHash } from "./identity";
 
 export { researchWorkspaceArtifactPayloadFingerprint };
 
@@ -168,15 +169,6 @@ function cleanText(value: unknown, maximum = 2_000) {
   return typeof value === "string"
     ? value.replace(/\s+/g, " ").trim().slice(0, maximum)
     : "";
-}
-
-function stableHash(value: string) {
-  let hash = 2166136261;
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return (hash >>> 0).toString(16).padStart(8, "0");
 }
 
 function normalizedStatement(value: string) {
@@ -629,20 +621,55 @@ function collectGenericEvidence(
   walk(artifact.payload, "payload", 0);
 }
 
-function direction(
+export function classifyMetricDirection(
   value: unknown,
+  metricContext = "",
 ): "positive" | "negative" | "neutral" | undefined {
+  const context = cleanText(metricContext).toLocaleLowerCase();
+  const lowerIsBetter =
+    /\b(error|loss|latency|delay|cost|time|mortality|failure|risk|memory)\b/.test(
+      context,
+    );
+  const higherIsBetter =
+    /\b(accuracy|precision|recall|f1|auc|throughput|success|quality|score)\b/.test(
+      context,
+    );
+  const applyMetricPolarity = (raw: "positive" | "negative") => {
+    if (lowerIsBetter) return raw === "positive" ? "negative" : "positive";
+    if (higherIsBetter) return raw;
+    return raw;
+  };
   if (typeof value === "number" && Number.isFinite(value)) {
-    return value > 0 ? "positive" : value < 0 ? "negative" : "neutral";
+    if (!/\b(delta|change|difference|improvement|gain)\b|[Δ∆]/i.test(context)) {
+      return undefined;
+    }
+    return value > 0
+      ? applyMetricPolarity("positive")
+      : value < 0
+        ? applyMetricPolarity("negative")
+        : "neutral";
   }
   const text = cleanText(value).toLocaleLowerCase();
   if (!text) return undefined;
-  if (/\b(increas|improv|higher|positive|gain|outperform|benefit)/.test(text))
-    return "positive";
-  if (/\b(decreas|wors|lower|negative|declin|harm|underperform)/.test(text))
-    return "negative";
+  if (
+    /\b(no|not|never|neither)\s+(?:statistically\s+)?(?:significant(?:ly)?\s+)?(?:increas\w*|decreas\w*|improv\w*|higher|lower|gain\w*|outperform\w*|benefit\w*|difference|change|effect)\b/.test(
+      text,
+    ) ||
+    /\b(?:did|does|do)\s+not\s+(?:outperform|improve|increase|decrease)\b/.test(
+      text,
+    )
+  )
+    return "neutral";
   if (/\b(no (?:effect|difference|change)|neutral|unchanged)\b/.test(text))
     return "neutral";
+  if (/\b(improv|positive|gain|outperform|benefit)/.test(text))
+    return "positive";
+  if (/\b(wors|negative|declin|harm|underperform)/.test(text))
+    return "negative";
+  if (/\b(increas|higher)\w*/.test(text))
+    return applyMetricPolarity("positive");
+  if (/\b(decreas|reduc|lower)\w*/.test(text))
+    return applyMetricPolarity("negative");
   return undefined;
 }
 
@@ -725,7 +752,12 @@ function matrixRelationships(
       .map(([sourceID, sourceEntries]) => {
         const directions = new Set(
           sourceEntries
-            .map((entry) => direction(entry.rawValue ?? entry.statement))
+            .map((entry) =>
+              classifyMetricDirection(
+                entry.rawValue ?? entry.statement,
+                `${entry.columnID} ${entry.outcomeIdentity ?? ""}`,
+              ),
+            )
             .filter((entry): entry is "positive" | "negative" | "neutral" =>
               Boolean(entry),
             ),
@@ -746,8 +778,14 @@ function matrixRelationships(
       ) {
         const left = ordered[leftIndex];
         const right = ordered[rightIndex];
-        const leftDirection = direction(left.rawValue ?? left.statement);
-        const rightDirection = direction(right.rawValue ?? right.statement);
+        const leftDirection = classifyMetricDirection(
+          left.rawValue ?? left.statement,
+          `${left.columnID} ${left.outcomeIdentity ?? ""}`,
+        );
+        const rightDirection = classifyMetricDirection(
+          right.rawValue ?? right.statement,
+          `${right.columnID} ${right.outcomeIdentity ?? ""}`,
+        );
         if (
           !leftDirection ||
           !rightDirection ||

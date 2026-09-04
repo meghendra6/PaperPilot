@@ -1,4 +1,3 @@
-// @ts-nocheck -- Ported feature core is guarded by strict runtime parsers.
 const EVIDENCE_REFERENCE_SCHEMA_VERSION = 1;
 const MAX_LABEL_LENGTH = 64;
 const MAX_PATH_SEGMENTS = 12;
@@ -6,36 +5,73 @@ const MAX_PATH_SEGMENT_LENGTH = 160;
 const MAX_ELEMENT_ID_LENGTH = 128;
 const MAX_QUOTE_LENGTH = 1200;
 const MAX_HASH_LENGTH = 256;
-function isRecord(value) {
+interface EvidenceNormalizationOptions {
+  allowedAttachmentKeys?: Set<string>;
+  pageCountByAttachmentKey?: Map<string, number>;
+}
+
+interface EvidenceBoundingBox {
+  pageIndex: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+interface EvidenceReference {
+  schemaVersion?: number;
+  sourceID?: string;
+  libraryID?: number;
+  attachmentKey?: string;
+  pageIndex?: number;
+  pageLabel?: string;
+  sectionPath?: string[];
+  elementType?: string;
+  elementId?: string;
+  elementID?: string;
+  quote?: string;
+  exactQuote?: string;
+  quoteHash?: string;
+  boundingBox?: EvidenceBoundingBox;
+  boundingBoxes?: unknown;
+  extractionMethod?: string;
+  confidence?: number;
+  verification?: { status?: string };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
-function readString(value, maxLength = Number.POSITIVE_INFINITY) {
+function readString(
+  value: unknown,
+  maxLength = Number.POSITIVE_INFINITY,
+): string | undefined {
   if (typeof value !== "string") return undefined;
   const normalized = value.trim();
   if (normalized.length === 0) return undefined;
   return normalized.slice(0, maxLength);
 }
-function readFiniteNumber(value) {
+function readFiniteNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value)
     ? value
     : undefined;
 }
-function readPageIndex(value) {
+function readPageIndex(value: unknown): number | undefined {
   const number = readFiniteNumber(value);
   if (number === undefined || !Number.isInteger(number) || number < 0)
     return undefined;
   return number;
 }
-function readLibraryID(value) {
+function readLibraryID(value: unknown): number | undefined {
   const number = readFiniteNumber(value);
   return number !== undefined && Number.isInteger(number) && number > 0
     ? number
     : undefined;
 }
-function clamp01(value) {
+function clamp01(value: number) {
   return Math.min(1, Math.max(0, value));
 }
-function normalizeStringArray(value) {
+function normalizeStringArray(value: unknown): string[] | undefined {
   if (!Array.isArray(value)) return undefined;
   const result = value
     .slice(0, MAX_PATH_SEGMENTS)
@@ -59,7 +95,10 @@ const EXTRACTION_METHODS = new Set([
   "annotation",
   "external",
 ]);
-function normalizeBoundingBox(value, fallbackPageIndex) {
+function normalizeBoundingBox(
+  value: unknown,
+  fallbackPageIndex?: number,
+): EvidenceBoundingBox | undefined {
   if (!isRecord(value)) return undefined;
   if (
     value.pageIndex !== undefined &&
@@ -89,7 +128,11 @@ function normalizeBoundingBox(value, fallbackPageIndex) {
   if (width <= 0 || height <= 0) return undefined;
   return { pageIndex, x, y, width, height };
 }
-function pageIsAllowed(attachmentKey, pageIndex, options) {
+function pageIsAllowed(
+  attachmentKey: string,
+  pageIndex: number | undefined,
+  options: EvidenceNormalizationOptions,
+) {
   if (pageIndex === undefined) return true;
   const pageCount = options.pageCountByAttachmentKey?.get(attachmentKey);
   return pageCount === undefined || pageIndex < pageCount;
@@ -99,7 +142,10 @@ function pageIsAllowed(attachmentKey, pageIndex, options) {
  * Invalid optional fields are discarded. A missing or disallowed attachment key
  * invalidates the whole object.
  */
-function normalizeEvidenceReference(value, options = {}) {
+function normalizeEvidenceReference(
+  value: unknown,
+  options: EvidenceNormalizationOptions = {},
+): EvidenceReference | null {
   if (!isRecord(value)) return null;
   const attachmentKey = readString(value.attachmentKey, 256);
   if (
@@ -164,10 +210,13 @@ function normalizeEvidenceReference(value, options = {}) {
     ...(confidence !== undefined ? { confidence: clamp01(confidence) } : {}),
   };
 }
-function normalizeEvidenceReferences(value, options = {}) {
+function normalizeEvidenceReferences(
+  value: unknown,
+  options: EvidenceNormalizationOptions = {},
+): EvidenceReference[] {
   if (!Array.isArray(value)) return [];
-  const seen = new Set();
-  const result = [];
+  const seen = new Set<string>();
+  const result: EvidenceReference[] = [];
   for (const candidate of value) {
     const normalized = normalizeEvidenceReference(candidate, options);
     if (!normalized) continue;
@@ -178,7 +227,7 @@ function normalizeEvidenceReferences(value, options = {}) {
   }
   return result;
 }
-function evidenceReferenceKey(reference) {
+function evidenceReferenceKey(reference: EvidenceReference) {
   return [
     reference.sourceID ?? "",
     reference.libraryID ?? "",
@@ -191,8 +240,8 @@ function evidenceReferenceKey(reference) {
     reference.quoteHash ?? reference.quote ?? "",
   ].join("|");
 }
-function formatEvidenceLocator(reference) {
-  const parts = [];
+function formatEvidenceLocator(reference: EvidenceReference) {
+  const parts: string[] = [];
   if (reference.pageLabel) {
     parts.push(`Page ${reference.pageLabel}`);
   } else if (reference.pageIndex !== undefined) {
@@ -210,7 +259,7 @@ function formatEvidenceLocator(reference) {
   }
   return parts.length > 0 ? parts.join(" · ") : "Source location unavailable";
 }
-function toPdfNavigationTarget(reference) {
+function toPdfNavigationTarget(reference: EvidenceReference) {
   if (reference.verification?.status !== "verified") return null;
   return {
     sourceID: reference.sourceID,

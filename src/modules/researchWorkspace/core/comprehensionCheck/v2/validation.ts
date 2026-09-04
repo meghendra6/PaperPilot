@@ -1,6 +1,7 @@
 // @ts-nocheck -- Ported feature core is guarded by strict runtime parsers.
 import * as types_1 from "../../evidence/types";
 import * as json_1 from "./json";
+import { enumValue } from "../../parserValidation";
 const DIMENSION_VALUES = [
   "contribution",
   "mechanism",
@@ -22,13 +23,6 @@ const MODES = new Set([
   "comparison",
 ]);
 const SEVERITIES = new Set(["minor", "major"]);
-function enumValue(value, fieldName, allowed) {
-  const normalized = (0, json_1.readString)(value, fieldName);
-  if (!allowed.has(normalized)) {
-    throw new Error(`${fieldName} has unsupported value: ${normalized}`);
-  }
-  return normalized;
-}
 function stringArray(value) {
   if (!Array.isArray(value)) return [];
   return value

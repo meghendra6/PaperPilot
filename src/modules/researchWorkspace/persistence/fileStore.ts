@@ -1,4 +1,5 @@
 import {
+  ResearchWorkspaceFileMissingError,
   ResearchWorkspaceRevisionConflictError,
   type ResearchWorkspaceFileOps,
 } from "./contracts";
@@ -53,6 +54,27 @@ export class SerializedResearchWorkspaceFiles {
     });
   }
 
+  async writeMissing<T extends { revision: number }>(
+    path: string,
+    value: T,
+    parser: (value: unknown) => T,
+  ) {
+    return this.exclusive(path, async () => {
+      if (await this.fileOps.exists(path)) {
+        const contents = await this.fileOps.readText(path);
+        if (contents !== undefined) {
+          return clone(parseStoredJSON(contents, path, parser));
+        }
+      }
+      const next = clone(value);
+      await this.fileOps.writeTextAtomic(
+        path,
+        `${JSON.stringify(next, null, 2)}\n`,
+      );
+      return clone(next);
+    });
+  }
+
   async mutate<T extends { revision: number }>(params: {
     path: string;
     parser: (value: unknown) => T;
@@ -69,8 +91,7 @@ export class SerializedResearchWorkspaceFiles {
         }
       }
       if (!current) current = params.create?.();
-      if (!current)
-        throw new Error(`Research Workspace file is missing: ${params.path}`);
+      if (!current) throw new ResearchWorkspaceFileMissingError(params.path);
       if (
         params.expectedRevision !== undefined &&
         current.revision !== params.expectedRevision
@@ -97,6 +118,16 @@ export class SerializedResearchWorkspaceFiles {
 
   async remove(path: string, options?: { recursive?: boolean }) {
     return this.exclusive(path, () => this.fileOps.remove(path, options));
+  }
+
+  async quarantine(path: string, quarantinePath: string) {
+    return this.exclusive(path, async () => {
+      const contents = await this.fileOps.readText(path);
+      if (contents === undefined) return false;
+      await this.fileOps.writeTextAtomic(quarantinePath, contents);
+      await this.fileOps.remove(path);
+      return true;
+    });
   }
 
   async replace<T extends { revision: number }>(path: string, value: T) {

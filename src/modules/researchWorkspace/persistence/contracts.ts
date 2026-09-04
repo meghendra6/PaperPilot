@@ -363,6 +363,7 @@ export interface ResearchWorkspaceCatalogEntry {
   archivedAt?: string;
   memberCount: number;
   staleArtifactCount: number;
+  dueMasteryReviewCount?: number;
 }
 
 export interface ResearchWorkspaceCatalog {
@@ -490,6 +491,7 @@ export interface ResearchWorkspaceRepositoryOptions {
   fileOps: ResearchWorkspaceFileOps;
   now?: () => Date;
   idFactory?: (prefix: string) => string;
+  warn?: (message: string) => void;
 }
 
 export class ResearchWorkspaceRevisionConflictError extends Error {
@@ -502,6 +504,13 @@ export class ResearchWorkspaceRevisionConflictError extends Error {
       `Research Workspace revision conflict at ${path}: expected ${expectedRevision}, found ${actualRevision}.`,
     );
     this.name = "ResearchWorkspaceRevisionConflictError";
+  }
+}
+
+export class ResearchWorkspaceFileMissingError extends Error {
+  constructor(public readonly path: string) {
+    super(`Research Workspace file is missing: ${path}`);
+    this.name = "ResearchWorkspaceFileMissingError";
   }
 }
 

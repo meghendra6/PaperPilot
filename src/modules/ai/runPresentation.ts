@@ -88,6 +88,15 @@ export function getActiveReaderRunMode(itemID: number): EngineMode | undefined {
   return activeRunsByItem.get(itemID)?.at(-1)?.mode;
 }
 
+export function listActiveReaderRuns(): Array<{
+  itemID: number;
+  mode: EngineMode;
+}> {
+  return [...activeRunsByItem].flatMap(([itemID, runs]) =>
+    runs.map((run) => ({ itemID, mode: run.mode })),
+  );
+}
+
 export function isReaderRunTokenActive(
   itemID: number,
   token: ReaderRunToken,

@@ -13,6 +13,7 @@ Paper Pilot 是一个面向 Zotero 7-10 PDF 阅读器的 AI 阅读工作台。�
 - 直接在 Zotero Reader 中使用 AI 聊天
 - 三种本地引擎模式：**Codex CLI**、**Claude Code** 与 **Gemini CLI**
 - 面向 brief、compare、contributions、limitations、follow-ups 的结构化论文工作台
+- 通过 **OpenDataLoader PDF** 提取结构化 PDF 工作区
 - 无需用户配置会议列表，以官方出版证据和三个结果分区发现先行研究
 - **Critical Read** — 读者先判断的七步批判性阅读流程与最终报告
 - 支持 auto-highlight 与可持久化的论文级会话历史
@@ -306,7 +307,9 @@ OpenDataLoader 打包说明：
 
 当前需要注意的点：
 
+- 插件界面目前仅提供英文；翻译版 README 描述的是同一套英文界面。
 - 响应语言会被规范化为 **English**、**Korean** 或 **Chinese**
+- 响应语言只改变模型生成的回答和 artifact，不改变界面标签
 - 运行时代码已经读取了许多与引擎、retrieval、workspace、privacy 相关的设置
 - 结构化 PDF 抽取使用内置的 OpenDataLoader JAR；Java 或运行时抽取不可用时会回退到 Zotero `attachmentText`
 - 所有设置路径在真实运行环境中的 QA 仍是剩余工作的一部分
@@ -328,7 +331,7 @@ addon/      Zotero 插件清单、语言资源、设置界面、静态资源
 src/        阅读器 UI、引擎集成、上下文、工具与工作流的 TypeScript 源码
 test/       针对 prompt 构造、解析、存储与工作流逻辑的 Node 回归测试
 docs/       手动 QA 清单、prompt contract 与补充产品文档
-scripts/    本地 Zotero 插件脚手架 CLI 入口
+scripts/    构建/发布 CLI、OpenDataLoader 准备、发布标签检查与环境诊断
 build/      生成的插件构建产物
 ```
 
@@ -359,6 +362,7 @@ build/      生成的插件构建产物
 - related-paper recommendation 解析
 - compare 与 artifact 保存流程
 - auto-highlight 解析/匹配
+- discovery、Critical Read、会话持久化与 Research Workspace 合约
 
 本地验证使用的核心命令：
 

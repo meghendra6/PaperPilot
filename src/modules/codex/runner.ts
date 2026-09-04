@@ -10,6 +10,10 @@ import {
   compatibleNativeOutputSchema,
   type StructuredOutputSchema,
 } from "../ai/structuredOutput";
+import {
+  launchDetachedShellScript,
+  type ShellExecutor,
+} from "../ai/launchScript";
 import { getCurrentReaderContext } from "../context/readerContext";
 import { getIndexedChunks } from "../context/indexStore";
 import { findNearbyContext } from "../context/nearbyContext";
@@ -24,7 +28,10 @@ import {
   paperWorkspaceContentCache,
   type PaperWorkspaceContent,
 } from "../tools/paperWorkspaceContent";
-import { buildPaperWorkspacePath } from "../workspace/pathBuilder";
+import {
+  buildPaperWorkspacePath,
+  resolvePaperWorkspaceRoot,
+} from "../workspace/pathBuilder";
 import {
   writeWorkspaceSupplementalFiles,
   type WorkspaceSupplementalFiles,
@@ -41,8 +48,23 @@ import {
 } from "./modelOptions";
 import { parseCodexOutput } from "./outputParser";
 import { buildBackgroundCodexShellScript } from "./shell";
+import { readOptionalRunTextFile } from "../ai/runFileReader";
 
 declare const Zotero: any;
+
+export type CodexSandboxMode =
+  | "read-only"
+  | "workspace-write"
+  | "danger-full-access";
+
+export function normalizeCodexSandboxMode(value: string): CodexSandboxMode {
+  const normalized = value.trim() as CodexSandboxMode;
+  return ["read-only", "workspace-write", "danger-full-access"].includes(
+    normalized,
+  )
+    ? normalized
+    : "read-only";
+}
 
 export interface StartedCodexRun {
   ok: true;
@@ -62,15 +84,12 @@ interface FailedCodexRun {
   error: string;
 }
 
-async function readTextFile(path: string) {
-  try {
-    const contents = await Promise.resolve(
-      Zotero.File.getContentsAsync(path, "utf-8"),
-    );
-    return String(contents || "");
-  } catch {
-    return "";
-  }
+export function launchCodexRunScript(
+  script: string,
+  execute: ShellExecutor = (executable, args) =>
+    Zotero.Utilities.Internal.exec(executable, args),
+) {
+  return launchDetachedShellScript(script, execute);
 }
 
 export async function startCodexRunForQuestion(params: {
@@ -99,8 +118,8 @@ export async function startCodexRunForQuestion(params: {
     String(getPref("codexReasoningEffort") || "medium"),
     model,
   );
-  const workspaceRoot = String(
-    getPref("codexWorkspaceRoot") || "/tmp/zotero-paper-ai",
+  const workspaceRoot = resolvePaperWorkspaceRoot(
+    getPref("codexWorkspaceRoot"),
   );
   const webSearchEnabled =
     profile === "analysis"
@@ -109,11 +128,11 @@ export async function startCodexRunForQuestion(params: {
         ? true
         : (params.webSearchEnabledOverride ??
           Boolean(getPref("codexEnableWebSearch")));
-  const sandbox = (
+  const sandbox = normalizeCodexSandboxMode(
     profile === "chat"
       ? String(getPref("codexSandboxMode") || "read-only")
-      : "read-only"
-  ) as "read-only" | "workspace-write" | "danger-full-access";
+      : "read-only",
+  );
   const approvalMode = String(getPref("codexApprovalMode") || "never");
   const workspacePath = buildPaperWorkspacePath({
     root: workspaceRoot,
@@ -168,9 +187,14 @@ export async function startCodexRunForQuestion(params: {
     }));
   const fullText = paperContent.fullText;
   payload.surroundingText = getPref("retrievalIncludeNearbyContext")
-    ? findNearbyContext({ fullText, selectedText: params.selectedText })
+    ? findNearbyContext({
+        fullText,
+        selectedText: params.selectedText,
+        pageIndex: readerContext.pageIndex,
+      })
     : undefined;
   const indexedChunks = getIndexedChunks({
+    libraryID: item.libraryID,
     itemKey: String(item.key || params.itemID),
     text: fullText,
     chunkSize: Number(getPref("retrievalChunkSize") || 1100),
@@ -199,11 +223,13 @@ export async function startCodexRunForQuestion(params: {
     extractionNotes: paperContent.extractionNotes,
     payload,
     annotations: params.annotationIDs ?? [],
-    recentTurns: messageStore.recentRaw(params.sessionId, 3).map((message) => ({
-      role: message.role,
-      text: message.text,
-      createdAt: message.createdAt,
-    })),
+    recentTurns: messageStore
+      .recentForWorkspace(params.sessionId, 3)
+      .map((message) => ({
+        role: message.role,
+        text: message.text,
+        createdAt: message.createdAt,
+      })),
     requestText: params.question,
   });
 
@@ -321,6 +347,8 @@ export async function startCodexRunForQuestion(params: {
             sessionId: params.resumeSessionId,
             model,
             reasoningEffort,
+            sandbox,
+            approvalMode,
             webSearchEnabled,
           },
           executablePath,
@@ -350,20 +378,17 @@ export async function startCodexRunForQuestion(params: {
     environment: buildCodexCommandEnvironment(executablePath),
   });
 
-  const result = await Zotero.Utilities.Internal.exec("/bin/zsh", [
-    "-lc",
-    script,
-  ]);
-  if (result instanceof Error) {
+  const result = await launchCodexRunScript(script);
+  if (!result.ok) {
     return {
       ok: false as const,
       workspacePath,
       promptPreview: codexPrompt,
-      error: result.message,
+      error: result.error,
     };
   }
 
-  const processId = (await readTextFile(pidPath)).trim();
+  const processId = (await readOptionalRunTextFile(pidPath))?.trim();
 
   return {
     ok: true,
@@ -382,14 +407,37 @@ export async function readCodexRunProgress(paths: {
   stderrPath: string;
   exitCodePath: string;
 }) {
-  const stdout = await readTextFile(paths.outputPath);
-  const stderr = await readTextFile(paths.stderrPath);
+  const exitCodeText = await readOptionalRunTextFile(paths.exitCodePath);
+  if (exitCodeText === undefined) {
+    return {
+      rawOutput: "",
+      diagnosticOutput: "The run exit-code file could not be read.",
+      parsedOutput: "",
+      structuredOutput: undefined,
+      latestEventType: "file_read_error",
+      completed: true,
+      exitCode: "file-read-error",
+    };
+  }
+  const exitCode = exitCodeText.trim();
+  if (!exitCode) {
+    return {
+      rawOutput: "",
+      diagnosticOutput: "",
+      parsedOutput: "",
+      structuredOutput: undefined,
+      latestEventType: "running",
+      completed: false,
+      exitCode: "",
+    };
+  }
+  const stdout = (await readOptionalRunTextFile(paths.outputPath)) ?? "";
+  const stderr = (await readOptionalRunTextFile(paths.stderrPath)) ?? "";
   const rawOutput = [stdout, stderr].filter(Boolean).join("\n");
   const parsed = parseCodexOutput(stdout);
-  const exitCode = (await readTextFile(paths.exitCodePath)).trim();
-
   return {
     rawOutput,
+    diagnosticOutput: [stderr, parsed.errorText].filter(Boolean).join("\n"),
     parsedOutput: parsed.text,
     structuredOutput: parsed.structuredOutput,
     latestEventType: parsed.latestEventType,

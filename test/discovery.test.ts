@@ -17,6 +17,7 @@ import {
   reconstructOfficialEvidence,
   verifyDiscoveryEvidenceLive,
 } from "../src/modules/discovery/workflow";
+import { inspectOfficialEvidenceURL } from "../src/modules/discovery/providers/officialEvidence";
 import { buildDiscoveryNoteMarkdown } from "../src/modules/note/discoveryNote";
 import {
   buildDiscoveryEvidenceExtra,
@@ -102,6 +103,22 @@ function result(papers: unknown[]) {
     completedAt: "2026-08-12T00:00:00.000Z",
   });
 }
+
+test("official evidence rejects an explicit empty DNS result before fetch", async () => {
+  let fetched = false;
+  await assert.rejects(
+    inspectOfficialEvidenceURL({
+      url: "https://example.org/program",
+      resolveHost: async () => [],
+      fetch: (async () => {
+        fetched = true;
+        return new Response("ok");
+      }) as typeof fetch,
+    }),
+    /DNS resolution returned no addresses/,
+  );
+  assert.equal(fetched, false);
+});
 
 test("discovery normalizes strict-schema provider ID entries", () => {
   const parsed = parseDiscoveryResult(
@@ -2284,6 +2301,31 @@ test("a provider match cannot validate an unrelated repository URL", async () =>
   );
 });
 
+test("provider evidence uses the shared bound URL even when it is listed second", async () => {
+  const arxivURL = "https://arxiv.org/abs/9999.99999";
+  const preprint = paper({
+    publicationClass: "preprint_only",
+    urls: [arxivURL],
+    publicationEvidence: [],
+  });
+  const verified = await verifyDiscoveryEvidenceLive({
+    discovery: parseDiscoveryResult(result([preprint])),
+    providerCandidates: [
+      {
+        provider: "openalex",
+        providerID: "W1",
+        title: "Verified Paper",
+        authors: ["A. Author"],
+        year: 2026,
+        urls: ["https://openalex.org/W1", arxivURL],
+      },
+    ],
+  });
+
+  assert.equal(verified.noveltyRadar.length, 1);
+  assert.equal(verified.noveltyRadar[0].publicationEvidence[0]?.url, arxivURL);
+});
+
 test("malformed DOI text cannot bypass author and year identity", () => {
   assert.throws(
     () =>
@@ -2845,7 +2887,7 @@ test("generic official pages require venue-owned structural authority", async ()
   );
 });
 
-test("an unseen venue can verify through an independently bound official domain", async () => {
+test("a venue-named registrable domain is not authority without a known binding", async () => {
   const url = "https://new-archival-venue.org/program/paper-7";
   const unseen = paper({
     venueName: "New Archival Venue",
@@ -2873,15 +2915,17 @@ test("an unseen venue can verify through an independently bound official domain"
       basis: "Selective archival venue with field-specific evidence.",
     },
   });
-  const verified = await verifyDiscoveryEvidenceLive({
-    discovery: parseDiscoveryResult(result([unseen])),
-    fetch: (async () =>
-      new Response(
-        "<title>New Archival Venue 2026 Program</title><main>Verified Paper — A. Author — 2026 — New Archival Venue — Track: Main Conference — accepted</main>",
-        { status: 200, headers: { "content-type": "text/html" } },
-      )) as typeof fetch,
-  });
-  assert.equal(verified.verifiedMain.length, 1);
+  await assert.rejects(
+    verifyDiscoveryEvidenceLive({
+      discovery: parseDiscoveryResult(result([unseen])),
+      fetch: (async () =>
+        new Response(
+          "<title>New Archival Venue 2026 Program</title><main>Verified Paper — A. Author — 2026 — New Archival Venue — Track: Main Conference — accepted</main>",
+          { status: 200, headers: { "content-type": "text/html" } },
+        )) as typeof fetch,
+    }),
+    /did not include any usable papers/,
+  );
 });
 
 test("a venue-named subdomain on another registered domain earns no authority", async () => {

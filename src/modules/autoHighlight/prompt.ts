@@ -1,5 +1,6 @@
 import type { HighlightCandidate } from "./types";
 import type { StructuredOutputSchema } from "../ai/structuredOutput";
+import { extractJsonCandidates } from "../ai/jsonCandidates";
 
 export const DEFAULT_AUTO_HIGHLIGHT_LIMIT = 5;
 
@@ -22,82 +23,6 @@ export const AUTO_HIGHLIGHT_OUTPUT_SCHEMA: StructuredOutputSchema = {
     },
   },
 };
-
-function stripMarkdownFence(raw: string) {
-  const trimmed = raw.trim();
-  const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
-  return fenced ? fenced[1].trim() : trimmed;
-}
-
-function* extractBalancedJSONObjectCandidates(raw: string) {
-  let start = -1;
-  let depth = 0;
-  let inString = false;
-  let escaped = false;
-
-  for (let index = 0; index < raw.length; index += 1) {
-    const char = raw[index];
-
-    if (inString) {
-      if (escaped) {
-        escaped = false;
-      } else if (char === "\\") {
-        escaped = true;
-      } else if (char === '"') {
-        inString = false;
-      }
-      continue;
-    }
-
-    if (char === '"') {
-      inString = true;
-      continue;
-    }
-
-    if (char === "{") {
-      if (depth === 0) {
-        start = index;
-      }
-      depth += 1;
-      continue;
-    }
-
-    if (char === "}") {
-      if (depth === 0) {
-        continue;
-      }
-      depth -= 1;
-      if (depth === 0 && start >= 0) {
-        yield raw.slice(start, index + 1);
-        start = -1;
-      }
-    }
-  }
-}
-
-function extractJsonCandidates(raw: string) {
-  const trimmed = raw.trim();
-  const candidates = new Set<string>();
-
-  if (trimmed) {
-    candidates.add(trimmed);
-    candidates.add(stripMarkdownFence(trimmed));
-  }
-
-  for (const match of trimmed.matchAll(/```(?:json)?\s*([\s\S]*?)\s*```/gi)) {
-    if (match[1]?.trim()) {
-      candidates.add(match[1].trim());
-    }
-  }
-
-  for (const candidate of extractBalancedJSONObjectCandidates(trimmed)) {
-    if (candidate.trim()) {
-      candidates.add(candidate.trim());
-    }
-  }
-
-  return [...candidates];
-}
 
 function normalizeParsedHighlights(
   parsed: unknown,

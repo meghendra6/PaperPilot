@@ -4,7 +4,7 @@ function normalizeQuestionTitle(question: string) {
   return question
     .trim()
     .replace(/\s+/g, " ")
-    .replace(/^[\s"'`“”‘’(\[]+/, "")
+    .replace(/^[\s"'`“”‘’([]+/, "")
     .replace(/[\s"'`“”‘’)\].,!?;:]+$/, "");
 }
 

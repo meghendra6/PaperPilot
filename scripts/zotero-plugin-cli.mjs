@@ -15,8 +15,6 @@ util.styleText = (format, text, options) => {
 
 syncBuiltinESMExports();
 
-const { default: cli } = await import(
-  "../node_modules/zotero-plugin-scaffold/dist/cli.mjs"
-);
+const { default: cli } = await import("zotero-plugin-scaffold/cli");
 
 cli();

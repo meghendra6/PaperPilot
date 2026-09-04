@@ -505,6 +505,29 @@ test("local Zotero metadata collection detects correction and retraction signals
   );
 });
 
+test("ordinary title words do not become correction or withdrawal signals", async () => {
+  const snapshot = await collectCitationHealthLocalLibrarySnapshot([1], {
+    observedAt: GENERATED_AT,
+    getAllItems: async () => [
+      {
+        id: 101,
+        libraryID: 1,
+        key: "ITEM-1",
+        isAttachment: () => false,
+        isNote: () => false,
+        getField: (field: string) =>
+          field === "title"
+            ? "Withdrawal behavior and error correction in networks"
+            : "",
+        getCreators: () => [],
+        getTags: () => [],
+      },
+    ],
+  });
+
+  assert.deepEqual(snapshot.items[0].signals, []);
+});
+
 test("optional external provider signals remain explicitly supplementary", () => {
   const setup = details();
   const report = buildCitationHealthReport({

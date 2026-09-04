@@ -21,7 +21,15 @@ Read [`docs/architecture.md`](./docs/architecture.md) before changing engine, wo
   - `modules/ai/`: `EngineMode` union, per-item mode overrides, provider registry, and the mode-dispatching `workspaceRun.ts` helpers
   - `modules/codex/`, `modules/claude/`, `modules/gemini/`: one near-duplicate module per engine (`runner`, `controller`, `runState`, `poller`, `stopRun`); Codex carries the extra command/executable/model/status surface
   - `modules/context/`: retrieval, chunk indexing, and workspace artifact construction
-  - `modules/workspace/`: workspace path building, writability probe, cleanup, redaction, collection artifact bundles
+  - `modules/workspace/`: workspace path building, writability probe, cleanup, and collection artifact bundles
+  - `modules/researchWorkspace/`: project persistence, selection capture, verified evidence, project capabilities, and modeless-window UI
+  - `modules/discovery/`: provider search, live evidence verification, ranking, and discovery prompt/parsing contracts
+  - `modules/criticalRead/`: the seven-step reader-first Critical Read workflow
+  - `modules/ui/`: reusable pane controls, transcript windowing, disclosure state, and popover behavior
+  - `modules/components/`, `message/`, `note/`: rendered messages, note output, and reusable view helpers
+  - `modules/tools/`: PDF extraction, paper workspace content, and built-in paper actions
+  - `modules/translation/`: response-language selection and translation prompt helpers
+  - `modules/autoHighlight/`: exact local PDF matching and owned Zotero highlight creation
   - `modules/researchBrief.ts`, `paperTools.ts`, `paperCompare.ts`, `relatedRecommendations.ts`: structured paper workflows
   - `modules/comprehensionCheck/`: Paper Mastery prompts, parser, and round/topic state
   - `modules/session/`: paper-scoped session history service, snapshot capture/apply, and the silent-turn filter that keeps tool JSON out of replayed chat
@@ -47,12 +55,17 @@ Local-only, not tracked: `.github/` except `workflows/` and `FUNDING.yml`, `docs
 - `npm install`: local development setup
 - `npm ci`: clean reproducible install for verification or worktrees
 - `npm test`: Node-based regression suite
-- `npx tsc --noEmit`: TypeScript typecheck (`addon/` is excluded by `tsconfig.json`)
+- `npm run typecheck`: TypeScript typecheck for product source and Node tests (`addon/` remains excluded)
 - `npm run build`: packages the Zotero add-on and vendors the OpenDataLoader runtime
-- `npx eslint <paths>` / `npx prettier --check <paths>`: preferred read-only lint/style checks on touched files
-- Avoid `npm run lint` as a default verification step because it runs write/fix operations across the repo
+- `npm run lint:check`: repository-wide read-only lint and formatting gate
+- `npx eslint <paths>` / `npx prettier --check <paths>`: focused read-only checks while iterating
+- `npm run lint:fix`: intentional repository-wide formatting and lint fixes
 
 Development baseline: Node 20+, npm, Zotero 7-10, Java 11+ for OpenDataLoader extraction at runtime, and at least one local CLI if you want to exercise a real engine path.
+
+Set `PAPERPILOT_CODEX_BIN` to an explicit Codex CLI executable to opt into the
+CLI flag-ordering integration test. When unset, the test uses `codex` from
+`PATH` and skips if the executable is unavailable.
 
 ## Working principles
 
@@ -86,9 +99,9 @@ Development baseline: Node 20+, npm, Zotero 7-10, Java 11+ for OpenDataLoader ex
 - Engine behavior that should be identical across the three belongs in `modules/ai/workspaceRun.ts`, not in cross-engine imports. The engine modules are deliberately near-duplicates for isolation.
 - Runs are file-based and polled, not streamed: the runner spawns a detached shell job that writes output, exit-code, and pid files, and the controller polls them every 800 ms. Preserve that contract when touching a runner or controller.
 - Preserve workspace grounding behavior and compatibility fallbacks, including the `extractionMethod` distinction between `opendataloader-pdf` and `zotero-attachment-text`.
-- A new workspace artifact is dead weight unless the prompt tells the engine to read it. Update the runner and the prompt together, and note that `CONTEXT_INDEX.md` and `figures/` are Codex-only today.
+- A new workspace artifact is dead weight unless the prompt tells the engine to read it. Update the runner and the prompt together. All engines receive `CONTEXT_INDEX.md`; only `figures/` is Codex-only today.
 - If you touch OpenDataLoader or packaging flow, verify the build path still vendors the runtime correctly.
-- Changes under `scripts/` are not covered by the repo ESLint config, so review changed `.mjs` files carefully and use targeted checks such as `node --check <file>` when relevant.
+- Review changed `.mjs` files carefully and use targeted checks such as `node --check <file>` when relevant.
 
 ### Preference changes
 
@@ -121,9 +134,9 @@ Run the lightest set that proves the change, then report exactly what ran. Prefe
 - Baseline environment setup when dependencies are missing: `npm ci`
 - Documentation-only changes: manual review of links, commands, and consistency
 - Prompt/parser/workflow logic: `npm test` plus focused test updates
-- Type-sensitive changes under `src/` or `typings/`: `npx tsc --noEmit`
+- Type-sensitive changes under `src/`, `test/`, or `typings/`: `npm run typecheck`
 - Build/packaging changes: `npm run build`
-- Lint/format validation: prefer targeted `npx eslint <paths>` and `npx prettier --check <paths>` to avoid unrelated repo-wide churn on a dirty tree; do not run `npm run lint` unless you intentionally want repo-wide writes/fixes
+- Lint/format validation: use `npm run lint:check` for the repository gate, or targeted `npx eslint <paths>` and `npx prettier --check <paths>` while iterating; run `npm run lint:fix` only when you intentionally want repository-wide writes/fixes
 - Runtime-sensitive reader changes: use `docs/manual-qa.md` for Zotero checks when feasible
 
 If you cannot run a relevant check, say so explicitly and explain why.

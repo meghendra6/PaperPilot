@@ -6,6 +6,19 @@ import {
 import type { DiscoveryProviderCandidate } from "../types";
 import type { CandidateSearchProvider, DiscoveryFetch } from "./types";
 
+const MAX_SCHOLARLY_BODY_BYTES = 1_000_000;
+const PROVIDER_CONTACT = "paperpilot@harampark.com";
+
+class ScholarlyProviderHttpError extends Error {
+  constructor(
+    public readonly status: number,
+    public readonly retryAfter?: string,
+  ) {
+    super(`Scholarly provider request failed (${status}).`);
+    this.name = "ScholarlyProviderHttpError";
+  }
+}
+
 function safeLimit(value?: number) {
   return Math.max(1, Math.min(20, Math.trunc(value || 10)));
 }
@@ -31,9 +44,44 @@ async function getJson(url: string, fetcher: DiscoveryFetch) {
     headers: { Accept: "application/json" },
   });
   if (!response.ok) {
-    throw new Error(`Scholarly provider request failed (${response.status}).`);
+    throw new ScholarlyProviderHttpError(
+      response.status,
+      response.headers.get("retry-after") ?? undefined,
+    );
   }
-  return (await response.json()) as unknown;
+  const declaredLength = Number(response.headers.get("content-length"));
+  if (
+    Number.isFinite(declaredLength) &&
+    declaredLength > MAX_SCHOLARLY_BODY_BYTES
+  ) {
+    throw new Error("Scholarly provider response exceeded the body limit.");
+  }
+  const reader = response.body?.getReader();
+  if (!reader) {
+    const text = await response.text();
+    if (new TextEncoder().encode(text).byteLength > MAX_SCHOLARLY_BODY_BYTES) {
+      throw new Error("Scholarly provider response exceeded the body limit.");
+    }
+    return JSON.parse(text) as unknown;
+  }
+  const decoder = new TextDecoder();
+  let bytes = 0;
+  let text = "";
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      bytes += value.byteLength;
+      if (bytes > MAX_SCHOLARLY_BODY_BYTES) {
+        throw new Error("Scholarly provider response exceeded the body limit.");
+      }
+      text += decoder.decode(value, { stream: true });
+    }
+    text += decoder.decode();
+  } finally {
+    void reader.cancel().catch(() => undefined);
+  }
+  return JSON.parse(text) as unknown;
 }
 
 export const semanticScholarProvider: CandidateSearchProvider = {
@@ -93,7 +141,7 @@ export const openAlexProvider: CandidateSearchProvider = {
     const fetcher = options?.fetch || fetch;
     const limit = safeLimit(options?.limit);
     const raw = (await getJson(
-      `https://api.openalex.org/works?search=${encodeURIComponent(query)}&per-page=${limit}`,
+      `https://api.openalex.org/works?search=${encodeURIComponent(query)}&per-page=${limit}&mailto=${encodeURIComponent(PROVIDER_CONTACT)}`,
       fetcher,
     )) as { results?: unknown[] };
     return (raw.results || []).flatMap(
@@ -195,7 +243,7 @@ export const crossrefProvider: CandidateSearchProvider = {
     const fetcher = options?.fetch || fetch;
     const limit = safeLimit(options?.limit);
     const raw = (await getJson(
-      `https://api.crossref.org/works?query.bibliographic=${encodeURIComponent(query)}&rows=${limit}`,
+      `https://api.crossref.org/works?query.bibliographic=${encodeURIComponent(query)}&rows=${limit}&mailto=${encodeURIComponent(PROVIDER_CONTACT)}`,
       fetcher,
     )) as any;
     const items = raw?.message?.items;

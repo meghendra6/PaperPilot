@@ -17,6 +17,7 @@ export interface PDFPageText {
 }
 
 export interface MatchedHighlight {
+  /** Exact display text reconstructed from the locally matched PDF spans. */
   quote: string;
   normalizedQuote: string;
   pageIndex: number;

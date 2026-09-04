@@ -48,7 +48,7 @@ test("messageStore keeps in-memory context across turns", () => {
   });
 });
 
-test("messageStore exposes raw history separately from filtered history", () => {
+test("messageStore keeps live history visible but filters workspace persistence", () => {
   const previousZotero = (globalThis as { Zotero?: unknown }).Zotero;
   (globalThis as { Zotero?: unknown }).Zotero = {
     Prefs: {
@@ -76,8 +76,14 @@ test("messageStore exposes raw history separately from filtered history", () => 
       status: "done",
     });
 
-    assert.equal(messageStore.recent(sessionId, 2).length, 1);
+    assert.equal(messageStore.recent(sessionId, 2).length, 2);
     assert.equal(messageStore.recentRaw(sessionId, 2).length, 2);
+    assert.deepEqual(
+      messageStore
+        .recentForWorkspace(sessionId, 2)
+        .map((message) => message.role),
+      ["user"],
+    );
 
     messageStore.clear(sessionId);
   } finally {

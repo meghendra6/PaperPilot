@@ -1,5 +1,8 @@
 import { getPref } from "../../utils/prefs";
-import { buildPaperWorkspacePath } from "../workspace/pathBuilder";
+import {
+  buildPaperWorkspacePath,
+  resolvePaperWorkspaceRoot,
+} from "../workspace/pathBuilder";
 import type { CodexLoginState } from "./status";
 import {
   normalizeCodexModel,
@@ -69,8 +72,8 @@ export function buildCodexRunState(params: {
   loginState: CodexLoginState;
   workspaceWritable?: boolean;
 }) {
-  const workspaceRoot = String(
-    getPref("codexWorkspaceRoot") || "/tmp/zotero-paper-ai",
+  const workspaceRoot = resolvePaperWorkspaceRoot(
+    getPref("codexWorkspaceRoot"),
   );
   const model = normalizeCodexModel(
     String(getPref("codexDefaultModel") || "gpt-5.6-sol"),

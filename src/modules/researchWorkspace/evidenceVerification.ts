@@ -17,6 +17,7 @@ export type EvidenceVerificationMethod =
   | "pdf-exact-quote"
   | "structured-element"
   | "zotero-annotation"
+  | "local-index-hit"
   | "metadata-only"
   | "none";
 
@@ -40,7 +41,7 @@ export interface EvidenceReferenceV2 {
     status: EvidenceVerificationStatus;
     method: EvidenceVerificationMethod;
     verifiedAt?: string;
-    verifierVersion: string;
+    verifierVersion?: string;
     detail?: string;
   };
 }
@@ -250,7 +251,12 @@ export class ResearchWorkspaceEvidenceVerifier {
           ...(chunk.metadata?.elementType
             ? { elementType: chunk.metadata.elementType }
             : {}),
-          verification: verification("verified", "structured-element", now),
+          verification: verification(
+            "unverified",
+            "structured-element",
+            now,
+            "The structured element exists locally, but no matching quote was supplied.",
+          ),
         };
       }
       return {

@@ -1,9 +1,10 @@
 import { getPref } from "../../utils/prefs";
-import { buildPaperWorkspacePath } from "./pathBuilder";
+import {
+  buildPaperWorkspacePath,
+  resolvePaperWorkspaceRoot,
+} from "./pathBuilder";
 import { getRunWorkspaceTitle, type RunProfile } from "../ai/runProfile";
-
-declare const IOUtils: any;
-declare const Zotero: any;
+import { resolveSessionHistoryPrefs } from "../session/historyPrefs";
 
 function isSafeWorkspacePath(workspacePath: string) {
   const normalized = workspacePath.trim().replace(/[\\/]+$/g, "");
@@ -43,7 +44,10 @@ export async function cleanupWorkspaceDirectory(workspacePath: string) {
 }
 
 export async function cleanupWorkspaceIfEnabled(workspacePath: string) {
-  if (!getPref("codexAutoCleanWorkspace")) {
+  if (
+    !getPref("codexAutoCleanWorkspace") &&
+    resolveSessionHistoryPrefs().persistHistory
+  ) {
     return false;
   }
 
@@ -59,8 +63,8 @@ export async function cleanupPaperWorkspaceForItemIfEnabled(params: {
   title: string;
   profile?: RunProfile;
 }) {
-  const workspaceRoot = String(
-    getPref("codexWorkspaceRoot") || "/tmp/zotero-paper-ai",
+  const workspaceRoot = resolvePaperWorkspaceRoot(
+    getPref("codexWorkspaceRoot"),
   );
   return cleanupWorkspaceIfEnabled(
     buildPaperWorkspacePath({

@@ -1,6 +1,37 @@
-// @ts-nocheck -- Ported feature core is guarded by strict runtime parsers.
 const RESEARCH_WORKSPACE_SCHEMA_VERSION = 4;
-function createResearchWorkspaceState(now = new Date().toISOString()) {
+export interface ResearchWorkspaceCorePaperState {
+  sourceID: string;
+  paperKey: string;
+  attachmentKey: string;
+  title: string;
+  extractionQuality:
+    | "structured"
+    | "zotero_text"
+    | "plain_text"
+    | "unavailable";
+  mastery?: { completedAt?: string };
+  [key: string]: unknown;
+}
+
+export interface ResearchWorkspaceCoreState {
+  schemaVersion: number;
+  revision: number;
+  papers: Record<string, ResearchWorkspaceCorePaperState>;
+  matrices: unknown[];
+  graphs: unknown[];
+  crossPaperMastery: unknown[];
+  crossPaperQuestions: unknown[];
+  crossPaperAttempts: unknown[];
+  citationContexts: unknown[];
+  citationResults: unknown[];
+  preferences: { responseLanguage: string; maxPaperCharacters: number };
+  createdAt: string;
+  updatedAt: string;
+}
+
+function createResearchWorkspaceState(
+  now = new Date().toISOString(),
+): ResearchWorkspaceCoreState {
   return {
     schemaVersion: RESEARCH_WORKSPACE_SCHEMA_VERSION,
     revision: 0,
@@ -20,12 +51,12 @@ function createResearchWorkspaceState(now = new Date().toISOString()) {
     updatedAt: now,
   };
 }
-function object(value) {
+function object(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === "object" && !Array.isArray(value)
-    ? value
+    ? (value as Record<string, unknown>)
     : undefined;
 }
-function contentFingerprint(value) {
+function contentFingerprint(value: unknown) {
   if (typeof value === "string" && value) {
     return {
       algorithm: "zotero-version-mtime-size-v1",
@@ -51,10 +82,12 @@ function contentFingerprint(value) {
       : {}),
   };
 }
-function papers(value) {
+function papers(
+  value: unknown,
+): Record<string, ResearchWorkspaceCorePaperState> {
   const raw = object(value);
   if (!raw) return {};
-  const result = {};
+  const result: Record<string, ResearchWorkspaceCorePaperState> = {};
   for (const [key, entry] of Object.entries(raw)) {
     const item = object(entry);
     if (!item) continue;
@@ -111,7 +144,10 @@ function papers(value) {
   }
   return result;
 }
-function migrateResearchWorkspaceState(value, now = new Date().toISOString()) {
+function migrateResearchWorkspaceState(
+  value: unknown,
+  now = new Date().toISOString(),
+): ResearchWorkspaceCoreState {
   const base = createResearchWorkspaceState(now);
   const root = object(value);
   if (!root) return base;
@@ -163,7 +199,7 @@ function migrateResearchWorkspaceState(value, now = new Date().toISOString()) {
     updatedAt: typeof root.updatedAt === "string" ? root.updatedAt : now,
   };
 }
-function summarizeResearchWorkspace(state) {
+function summarizeResearchWorkspace(state: ResearchWorkspaceCoreState) {
   return {
     paperCount: Object.keys(state.papers).length,
     matrixCount: state.matrices.length,

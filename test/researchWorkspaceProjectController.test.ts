@@ -144,6 +144,39 @@ test("project creation registers sources and idempotent membership", async () =>
   assert.equal(again.members[0].reviewStatus, "unreviewed");
 });
 
+test("addPapers retries a concurrent source revision", async () => {
+  const { projects, repository } = setup();
+  const original = paper("A", "fingerprint-retry-v1");
+  const created = await projects.createProject(
+    { projectID: "project-source-retry", name: "Source retry" },
+    [original],
+  );
+  const putSource = repository.putSource.bind(repository);
+  let injected = false;
+  repository.putSource = (async (source, expectedRevision) => {
+    if (!injected && expectedRevision !== undefined) {
+      injected = true;
+      const current = await repository.getSource(source.sourceID);
+      await putSource(
+        { ...current!.source, title: "Concurrent metadata refresh" },
+        current!.revision,
+      );
+    }
+    return putSource(source, expectedRevision);
+  }) as typeof repository.putSource;
+
+  await projects.addPapers(created.project.projectID, [
+    paper("A", "fingerprint-retry-v2"),
+  ]);
+
+  assert.equal(injected, true);
+  assert.equal(
+    (await repository.getSource(original.sourceID))?.source.contentFingerprint
+      ?.value,
+    "fingerprint-retry-v2",
+  );
+});
+
 test("updating a shared source stales artifacts in every project that uses it", async () => {
   const { projects, operations, repository } = setup();
   const original = paper("A", "fingerprint-shared-v1");
@@ -474,7 +507,7 @@ test("operation failures retain a redacted failed run without a fake artifact", 
         providerMode: "claude_code",
         execute: async () => {
           throw new Error(
-            "Provider failed at /Users/example/private/paper.pdf",
+            "Provider failed at /private/var/folders/secret/paper.pdf and /Volumes/research/data.json",
           );
         },
       });
@@ -488,7 +521,8 @@ test("operation failures retain a redacted failed run without a fake artifact", 
   assert.equal(runs.runs.length, 1);
   assert.equal(runs.runs[0].status, "failed");
   assert.match(runs.runs[0].safeError ?? "", /\[local-path\]/);
-  assert.equal(runs.runs[0].safeError?.includes("/Users/example"), false);
+  assert.equal(runs.runs[0].safeError?.includes("/private/var"), false);
+  assert.equal(runs.runs[0].safeError?.includes("/Volumes/research"), false);
   assert.equal(artifacts.artifacts.length, 0);
 });
 

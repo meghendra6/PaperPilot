@@ -1,5 +1,9 @@
-import { getPref, setPref } from "../../utils/prefs";
-import { getZoteroProfilePath } from "../../utils/zoteroProfile";
+import { getPref } from "../../utils/prefs";
+import { buildCliCommandEnvironment } from "../ai/cliEnvironment";
+import {
+  launchDetachedShellScript,
+  type ShellExecutor,
+} from "../ai/launchScript";
 import { normalizeGeminiModel } from "../codex/modelOptions";
 import { normalizeResponseLanguage } from "../translation/responseLanguage";
 import {
@@ -7,7 +11,10 @@ import {
   getRunWorkspaceTitle,
   type RunProfile,
 } from "../ai/runProfile";
-import type { StructuredOutputSchema } from "../ai/structuredOutput";
+import {
+  cliSupportsFlag,
+  type StructuredOutputSchema,
+} from "../ai/structuredOutput";
 import { getCurrentReaderContext } from "../context/readerContext";
 import { getIndexedChunks } from "../context/indexStore";
 import { findNearbyContext } from "../context/nearbyContext";
@@ -22,12 +29,16 @@ import {
   paperWorkspaceContentCache,
   type PaperWorkspaceContent,
 } from "../tools/paperWorkspaceContent";
-import { buildPaperWorkspacePath } from "../workspace/pathBuilder";
+import {
+  buildPaperWorkspacePath,
+  resolvePaperWorkspaceRoot,
+} from "../workspace/pathBuilder";
 import {
   writeWorkspaceSupplementalFiles,
   type WorkspaceSupplementalFiles,
 } from "../workspace/supplementalFiles";
 import { shellEscape } from "../codex/shell";
+import { readOptionalRunTextFile } from "../ai/runFileReader";
 
 declare const Zotero: any;
 
@@ -49,37 +60,28 @@ interface FailedGeminiRun {
   error: string;
 }
 
-function buildGeminiShellEnvironment() {
-  const profilePath = getZoteroProfilePath();
-  const userHome = profilePath.includes("/Library/")
-    ? profilePath.split("/Library/")[0]
-    : "";
-
-  return {
-    HOME: userHome || undefined,
-    XDG_CONFIG_HOME: userHome ? `${userHome}/.config` : undefined,
-    PATH: [
-      "/opt/homebrew/bin",
-      `${userHome}/.local/bin`,
-      `${userHome}/bin`,
-      "/usr/local/bin",
-      "/usr/bin",
-      "/bin",
-    ]
-      .filter(Boolean)
-      .join(":"),
-  };
+export function launchGeminiRunScript(
+  script: string,
+  execute: ShellExecutor = (executable, args) =>
+    Zotero.Utilities.Internal.exec(executable, args),
+) {
+  return launchDetachedShellScript(script, execute);
 }
 
-async function readTextFile(path: string) {
-  try {
-    const contents = await Promise.resolve(
-      Zotero.File.getContentsAsync(path, "utf-8"),
-    );
-    return String(contents || "");
-  } catch {
-    return "";
-  }
+export type GeminiApprovalMode = "default" | "auto_edit" | "yolo" | "plan";
+
+const GEMINI_APPROVAL_MODES = new Set<GeminiApprovalMode>([
+  "default",
+  "auto_edit",
+  "yolo",
+  "plan",
+]);
+
+export function normalizeGeminiApprovalMode(
+  approvalMode: string,
+): GeminiApprovalMode {
+  const normalized = approvalMode.trim() as GeminiApprovalMode;
+  return GEMINI_APPROVAL_MODES.has(normalized) ? normalized : "default";
 }
 
 export function buildGeminiCommand(params: {
@@ -94,8 +96,10 @@ export function buildGeminiCommand(params: {
   resumeSessionId?: string;
   executablePath: string;
   profile: RunProfile;
+  approvalMode: string;
+  sandboxSupported?: boolean;
 }) {
-  const env = buildGeminiShellEnvironment();
+  const env = buildCliCommandEnvironment(params.executablePath);
   const environmentLines = Object.entries(env)
     .filter(([, value]) => Boolean(value))
     .map(([key, value]) => `export ${key}=${shellEscape(String(value))}`);
@@ -104,8 +108,11 @@ export function buildGeminiCommand(params: {
   const resumePart = params.resumeSessionId
     ? `--resume ${shellEscape(params.resumeSessionId)}`
     : "";
-  const approvalPart =
-    params.profile === "chat" ? "--yolo" : "--approval-mode plan";
+  const approvalMode =
+    params.profile === "chat"
+      ? normalizeGeminiApprovalMode(params.approvalMode)
+      : "plan";
+  const sandboxPart = params.sandboxSupported ? "--sandbox" : "";
 
   return [
     `mkdir -p ${shellEscape(outputDir)}`,
@@ -113,7 +120,7 @@ export function buildGeminiCommand(params: {
     ...environmentLines,
     `(` +
       `cd ${shellEscape(params.workspacePath)} && ` +
-      `cat ${shellEscape(params.promptPath)} | ${shellEscape(params.executablePath)} --skip-trust ${resumePart} -m ${shellEscape(params.model)} ${approvalPart} --output-format text -p '' > ${shellEscape(params.outputPath)} 2> ${shellEscape(params.stderrPath)}; ` +
+      `cat ${shellEscape(params.promptPath)} | ${shellEscape(params.executablePath)} --skip-trust ${resumePart} -m ${shellEscape(params.model)} --approval-mode ${shellEscape(approvalMode)} ${sandboxPart} --output-format text -p '' > ${shellEscape(params.outputPath)} 2> ${shellEscape(params.stderrPath)}; ` +
       `printf '%s' $? > ${shellEscape(params.exitCodePath)}` +
       `) & echo $! > ${shellEscape(params.pidPath)}`,
   ].join(" && ");
@@ -138,13 +145,12 @@ export async function startGeminiRunForQuestion(params: {
     getPref("geminiDefaultModel") || "gemini-3.1-pro-preview",
   ).trim();
   const model = normalizeGeminiModel(preferredModel);
+  const approvalMode = normalizeGeminiApprovalMode(
+    String(getPref("geminiApprovalMode") || "default"),
+  );
 
-  if (model !== preferredModel) {
-    setPref("geminiDefaultModel", model);
-  }
-
-  const workspaceRoot = String(
-    getPref("codexWorkspaceRoot") || "/tmp/zotero-paper-ai",
+  const workspaceRoot = resolvePaperWorkspaceRoot(
+    getPref("codexWorkspaceRoot"),
   );
   const workspacePath = buildPaperWorkspacePath({
     root: workspaceRoot,
@@ -199,9 +205,14 @@ export async function startGeminiRunForQuestion(params: {
     }));
   const fullText = paperContent.fullText;
   payload.surroundingText = getPref("retrievalIncludeNearbyContext")
-    ? findNearbyContext({ fullText, selectedText: params.selectedText })
+    ? findNearbyContext({
+        fullText,
+        selectedText: params.selectedText,
+        pageIndex: readerContext.pageIndex,
+      })
     : undefined;
   const indexedChunks = getIndexedChunks({
+    libraryID: item.libraryID,
     itemKey: String(item.key || params.itemID),
     text: fullText,
     chunkSize: Number(getPref("retrievalChunkSize") || 1100),
@@ -230,11 +241,13 @@ export async function startGeminiRunForQuestion(params: {
     extractionNotes: paperContent.extractionNotes,
     payload,
     annotations: params.annotationIDs ?? [],
-    recentTurns: messageStore.recentRaw(params.sessionId, 3).map((message) => ({
-      role: message.role,
-      text: message.text,
-      createdAt: message.createdAt,
-    })),
+    recentTurns: messageStore
+      .recentForWorkspace(params.sessionId, 3)
+      .map((message) => ({
+        role: message.role,
+        text: message.text,
+        createdAt: message.createdAt,
+      })),
     requestText: params.question,
   });
 
@@ -318,6 +331,13 @@ export async function startGeminiRunForQuestion(params: {
     );
   }
 
+  const environment = buildCliCommandEnvironment(executablePath);
+  const sandboxSupported = await cliSupportsFlag({
+    executablePath,
+    helpArgs: ["--help"],
+    flag: "--sandbox",
+    environment,
+  });
   const script = buildGeminiCommand({
     promptPath,
     outputPath,
@@ -332,22 +352,21 @@ export async function startGeminiRunForQuestion(params: {
       : undefined,
     executablePath,
     profile,
+    approvalMode,
+    sandboxSupported,
   });
 
-  const result = await Zotero.Utilities.Internal.exec("/bin/zsh", [
-    "-lc",
-    script,
-  ]);
-  if (result instanceof Error) {
+  const result = await launchGeminiRunScript(script);
+  if (!result.ok) {
     return {
       ok: false,
       workspacePath,
       promptPreview: geminiPrompt,
-      error: result.message,
+      error: result.error,
     };
   }
 
-  const processId = (await readTextFile(pidPath)).trim();
+  const processId = (await readOptionalRunTextFile(pidPath))?.trim();
   return {
     ok: true,
     workspacePath,
@@ -365,17 +384,24 @@ export async function readGeminiRunProgress(paths: {
   stderrPath: string;
   exitCodePath: string;
 }) {
-  const stdout = await readTextFile(paths.outputPath);
-  const stderr = await readTextFile(paths.stderrPath);
+  const stdout = (await readOptionalRunTextFile(paths.outputPath)) ?? "";
+  const stderr = (await readOptionalRunTextFile(paths.stderrPath)) ?? "";
   const rawOutput = [stdout, stderr].filter(Boolean).join("\n");
-  const exitCode = (await readTextFile(paths.exitCodePath)).trim();
+  const exitCodeText = await readOptionalRunTextFile(paths.exitCodePath);
+  const exitCode = exitCodeText?.trim() ?? "file-read-error";
 
   return {
     rawOutput,
+    diagnosticOutput:
+      exitCodeText === undefined
+        ? [stderr, "The run exit-code file could not be read."]
+            .filter(Boolean)
+            .join("\n")
+        : stderr,
     parsedOutput: stdout.trim(),
     structuredOutput: false,
     latestEventType: stdout ? "text" : stderr ? "diagnostic" : "unknown",
-    completed: exitCode.length > 0,
+    completed: exitCodeText === undefined || exitCode.length > 0,
     exitCode,
   };
 }

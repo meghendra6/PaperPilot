@@ -3,8 +3,7 @@ import type {
   ResearchWorkspaceArtifactType,
   ResearchWorkspaceArtifact,
 } from "./persistence/contracts";
-
-const HTML_NS = "http://www.w3.org/1999/xhtml";
+import { element, metric as createMetric } from "./dom";
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -438,6 +437,7 @@ export type ResearchWorkspaceArtifactView =
 
 export interface ResearchWorkspaceArtifactRendererOptions {
   artifactType?: ResearchWorkspaceArtifactType;
+  responseLanguage?: string;
   onOpenEvidence?: (reference: UnknownRecord) => void | Promise<void>;
   onCopyText?: (value: string) => void | Promise<void>;
 }
@@ -1540,18 +1540,6 @@ export function createResearchWorkspaceArtifactView(
   return { kind: "generic", value };
 }
 
-function element<K extends keyof HTMLElementTagNameMap>(
-  doc: Document,
-  tag: K,
-  className = "",
-  contents?: string,
-) {
-  const node = doc.createElementNS(HTML_NS, tag) as HTMLElementTagNameMap[K];
-  if (className) node.className = className;
-  if (contents !== undefined) node.textContent = contents;
-  return node;
-}
-
 function percentage(value: number | undefined) {
   return value === undefined ? "—" : `${Math.round(value * 100)}%`;
 }
@@ -1602,12 +1590,7 @@ function renderEvidence(
 }
 
 function metric(doc: Document, label: string, value: string) {
-  const node = element(doc, "div", "pprw-render-metric");
-  node.append(
-    element(doc, "strong", "", value),
-    element(doc, "span", "", label),
-  );
-  return node;
+  return createMetric(doc, { className: "pprw-render-metric", label, value });
 }
 
 function statusTone(status: string) {
@@ -1632,22 +1615,6 @@ function statusTone(status: string) {
     return "warning";
   }
   return "accent";
-}
-
-function renderLabeledEvidence(
-  doc: Document,
-  title: string,
-  evidence: ResearchWorkspaceEvidenceView[],
-  options: ResearchWorkspaceArtifactRendererOptions,
-) {
-  const group = element(doc, "div", "pprw-render-evidence-group");
-  group.append(element(doc, "h5", "", `${title} (${evidence.length})`));
-  group.append(
-    evidence.length
-      ? renderEvidence(doc, evidence, options)
-      : element(doc, "span", "pprw-render-empty", "None reported"),
-  );
-  return group;
 }
 
 type ClaimLedgerLanguage = "en" | "ko" | "zh";
@@ -1853,13 +1820,14 @@ const CLAIM_LEDGER_LABELS: Record<ClaimLedgerLanguage, ClaimLedgerLabels> = {
   },
 };
 
-function claimLedgerLabels(view: ResearchWorkspaceClaimLedgerView) {
-  const sample = view.claims
-    .map((claim) => claim.text)
-    .join(" ")
-    .slice(0, 8000);
-  if (/[\uac00-\ud7a3]/u.test(sample)) return CLAIM_LEDGER_LABELS.ko;
-  if (/[\u3400-\u9fff]/u.test(sample)) return CLAIM_LEDGER_LABELS.zh;
+function claimLedgerLabels(responseLanguage?: string) {
+  const normalized = String(responseLanguage || "English").toLowerCase();
+  if (normalized === "korean" || normalized.startsWith("ko")) {
+    return CLAIM_LEDGER_LABELS.ko;
+  }
+  if (normalized === "chinese" || normalized.startsWith("zh")) {
+    return CLAIM_LEDGER_LABELS.zh;
+  }
   return CLAIM_LEDGER_LABELS.en;
 }
 
@@ -1925,12 +1893,15 @@ function claimLedgerMarkdown(
   return `${lines.join("\n").trim()}\n`;
 }
 
-export function createResearchWorkspaceClaimLedgerMarkdown(value: unknown) {
+export function createResearchWorkspaceClaimLedgerMarkdown(
+  value: unknown,
+  responseLanguage = "English",
+) {
   const view = createResearchWorkspaceArtifactView(value, "claim-ledger");
   if (view.kind !== "claim-ledger") {
     throw new Error("The value is not a Claim Ledger artifact.");
   }
-  return claimLedgerMarkdown(view, claimLedgerLabels(view));
+  return claimLedgerMarkdown(view, claimLedgerLabels(responseLanguage));
 }
 
 function renderClaimEvidenceGroup(
@@ -2001,7 +1972,7 @@ function renderClaimLedger(
   options: ResearchWorkspaceArtifactRendererOptions,
 ) {
   const root = element(doc, "div", "pprw-render pprw-render--claim-ledger");
-  const labels = claimLedgerLabels(view);
+  const labels = claimLedgerLabels(options.responseLanguage);
   root.lang = labels.language;
   const overview = element(doc, "section", "pprw-claim-overview");
   const metrics = element(doc, "div", "pprw-claim-metrics");

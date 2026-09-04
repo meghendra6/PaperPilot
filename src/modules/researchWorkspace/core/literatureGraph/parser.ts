@@ -2,6 +2,7 @@
 import * as json_1 from "../comprehensionCheck/v2/json";
 import * as types_1 from "../evidence/types";
 import * as graph_1 from "./graph";
+import { enumValue, optionalUnitInterval } from "../parserValidation";
 const NODE_KINDS = new Set(["paper", "concept", "claim", "method", "dataset"]);
 const EDGE_KINDS = new Set([
   "introduces",
@@ -21,8 +22,11 @@ function parseLiteratureGraphResponse(params) {
   const nodes = (0, json_1.readArray)(root.nodes, "nodes").map(
     (entry, index) => {
       const object = (0, json_1.readObject)(entry, `nodes[${index}]`);
-      const kind = String(object.kind ?? object.type);
-      if (!NODE_KINDS.has(kind)) throw new Error(`Invalid node kind ${kind}`);
+      const kind = enumValue(
+        object.kind ?? object.type,
+        "node kind",
+        NODE_KINDS,
+      );
       const paperKey =
         typeof object.paperKey === "string"
           ? object.paperKey.trim()
@@ -54,8 +58,11 @@ function parseLiteratureGraphResponse(params) {
   const edges = (0, json_1.readArray)(root.edges, "edges").map(
     (entry, index) => {
       const object = (0, json_1.readObject)(entry, `edges[${index}]`);
-      const kind = String(object.kind ?? object.type);
-      if (!EDGE_KINDS.has(kind)) throw new Error(`Invalid edge kind ${kind}`);
+      const kind = enumValue(
+        object.kind ?? object.type,
+        "edge kind",
+        EDGE_KINDS,
+      );
       const id = String(object.id ?? "").trim();
       if (edgeIds.has(id)) throw new Error(`Duplicate edge ${id}`);
       edgeIds.add(id);
@@ -68,7 +75,17 @@ function parseLiteratureGraphResponse(params) {
         ...(typeof object.label === "string" && object.label.trim()
           ? { label: object.label.trim() }
           : {}),
-        confidence: Number(object.confidence) || 0,
+        ...(optionalUnitInterval(
+          object.confidence,
+          `edges[${index}].confidence`,
+        ) !== undefined
+          ? {
+              confidence: optionalUnitInterval(
+                object.confidence,
+                `edges[${index}].confidence`,
+              ),
+            }
+          : {}),
         evidence: (0, types_1.normalizeEvidenceReferences)(object.evidence, {
           allowedAttachmentKeys: params.allowedAttachmentKeys,
         }),

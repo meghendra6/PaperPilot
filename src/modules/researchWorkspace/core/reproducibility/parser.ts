@@ -1,6 +1,7 @@
 // @ts-nocheck -- Ported feature core is guarded by strict runtime parsers.
 import * as json_1 from "../comprehensionCheck/v2/json";
 import * as types_1 from "../evidence/types";
+import { enumValue, optionalUnitInterval } from "../parserValidation";
 const KINDS = new Set([
   "code",
   "commit",
@@ -39,21 +40,10 @@ function stringArray(value) {
     : [];
 }
 function normalizedKind(value) {
-  const candidate = text(value, "other");
-  if (!KINDS.has(candidate))
-    throw new Error(`Unsupported reproducibility artifact kind: ${candidate}`);
-  return candidate;
+  return enumValue(value, "reproducibility artifact kind", KINDS);
 }
 function normalizedAvailability(value) {
-  const candidate = text(value, "unclear");
-  if (!AVAILABILITY.has(candidate))
-    throw new Error(`Unsupported reproducibility availability: ${candidate}`);
-  return candidate;
-}
-function clamp01(value) {
-  const number =
-    typeof value === "number" && Number.isFinite(value) ? value : Number(value);
-  return Number.isFinite(number) ? Math.min(1, Math.max(0, number)) : 0;
+  return enumValue(value, "reproducibility availability", AVAILABILITY);
 }
 function parseReproducibilityResponse(params) {
   const root = (0, json_1.extractLastJsonObject)(params.response);
@@ -66,8 +56,11 @@ function parseReproducibilityResponse(params) {
       const availability = normalizedAvailability(
         object.availability ?? object.status,
       );
-      const id = text(object.id, `${kind}-${index + 1}`);
-      const label = text(object.label, kind.replace(/_/g, " "));
+      const id = (0, json_1.readString)(object.id, `artifacts[${index}].id`);
+      const label = (0, json_1.readString)(
+        object.label,
+        `artifacts[${index}].label`,
+      );
       const evidence = (0, types_1.normalizeEvidenceReferences)(
         object.evidence,
         { allowedAttachmentKeys },
@@ -94,9 +87,17 @@ function parseReproducibilityResponse(params) {
           ? { notes: (0, json_1.readOptionalString)(object.notes) }
           : {}),
         evidence,
-        confidence: clamp01(
-          object.confidence ?? (evidence.length ? 0.7 : 0.35),
-        ),
+        ...(optionalUnitInterval(
+          object.confidence,
+          `artifacts[${index}].confidence`,
+        ) !== undefined
+          ? {
+              confidence: optionalUnitInterval(
+                object.confidence,
+                `artifacts[${index}].confidence`,
+              ),
+            }
+          : {}),
       };
     },
   );
@@ -131,20 +132,21 @@ function parseReproducibilityResponse(params) {
         };
       }
       const object = (0, json_1.readObject)(entry, `blockers[${index}]`);
-      const severityText = text(object.severity, "major");
-      if (!SEVERITIES.has(severityText))
-        throw new Error(`Unsupported blocker severity: ${severityText}`);
-      const severity = severityText;
+      const severity = enumValue(
+        object.severity,
+        `blockers[${index}].severity`,
+        SEVERITIES,
+      );
       return {
-        id: text(object.id, `blocker-${index + 1}`),
+        id: (0, json_1.readString)(object.id, `blockers[${index}].id`),
         severity,
-        description: text(
-          object.description,
-          text(object.title, "Unspecified blocker"),
+        description: (0, json_1.readString)(
+          object.description ?? object.title,
+          `blockers[${index}].description`,
         ),
-        mitigation: text(
+        mitigation: (0, json_1.readString)(
           object.mitigation,
-          "Clarify the missing information or use a documented substitute.",
+          `blockers[${index}].mitigation`,
         ),
         evidence: (0, types_1.normalizeEvidenceReferences)(object.evidence, {
           allowedAttachmentKeys,
@@ -188,7 +190,7 @@ function parseReproducibilityResponse(params) {
     id: text(root.id, `repro-${params.paperKey}-${now.replace(/[^0-9]/g, "")}`),
     paperKey: params.paperKey,
     attachmentKey: params.attachmentKey,
-    summary: text(root.summary, "No reproducibility summary was returned."),
+    summary: (0, json_1.readString)(root.summary, "summary"),
     artifacts,
     steps,
     blockers,

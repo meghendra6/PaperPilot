@@ -1,4 +1,4 @@
-import katex from "katex";
+import * as katex from "katex";
 
 function escapeHtml(value: string) {
   return value
@@ -22,21 +22,35 @@ function renderKatex(tex: string, displayMode: boolean): string {
   }
 }
 
-function renderInlineMarkdown(value: string) {
+export function renderInlineMarkdown(value: string) {
+  const safeValue = Array.from(value)
+    .filter((character) => {
+      const codePoint = character.codePointAt(0) ?? 0;
+      return (
+        codePoint === 9 ||
+        codePoint === 10 ||
+        codePoint === 13 ||
+        codePoint > 31
+      );
+    })
+    .filter((character) => character.codePointAt(0) !== 127)
+    .join("");
   // 1. Extract and render math BEFORE HTML escaping to avoid
   //    encode-then-decode round-trips (defense-in-depth against XSS).
   const mathPlaceholders: string[] = [];
+  let placeholderPrefix = "PP_MATH_PLACEHOLDER_";
+  while (safeValue.includes(placeholderPrefix)) placeholderPrefix += "_";
   // Extract \(...\) inline math first
-  let withMathExtracted = value.replace(/\\\((.+?)\\\)/g, (_match, tex) => {
-    const placeholder = `\x00MATH${mathPlaceholders.length}\x00`;
+  let withMathExtracted = safeValue.replace(/\\\((.+?)\\\)/g, (_match, tex) => {
+    const placeholder = `${placeholderPrefix}${mathPlaceholders.length}__`;
     mathPlaceholders.push(renderKatex(tex, false));
     return placeholder;
   });
   // Then extract $...$ inline math
   withMathExtracted = withMathExtracted.replace(
-    /(?<!\$)\$(?!\$)([^$]+?)\$(?!\$)/g,
+    /(?<!\$)\$(?![\s$])([^$\n]*?\S)\$(?![$\d])/g,
     (_match, tex) => {
-      const placeholder = `\x00MATH${mathPlaceholders.length}\x00`;
+      const placeholder = `${placeholderPrefix}${mathPlaceholders.length}__`;
       mathPlaceholders.push(renderKatex(tex, false));
       return placeholder;
     },
@@ -52,9 +66,10 @@ function renderInlineMarkdown(value: string) {
   rendered = rendered.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, "$1");
 
   // 4. Restore math placeholders
-  for (let i = 0; i < mathPlaceholders.length; i++) {
-    rendered = rendered.replace(`\x00MATH${i}\x00`, mathPlaceholders[i]);
-  }
+  rendered = rendered.replace(
+    new RegExp(`${placeholderPrefix}(\\d+)__`, "g"),
+    (_match, index) => mathPlaceholders[Number(index)] ?? "",
+  );
 
   return rendered;
 }
@@ -83,6 +98,21 @@ function appendList(
     list.appendChild(li);
   }
   fragment.appendChild(list);
+}
+
+function parseFenceOpener(line: string) {
+  const match = line.trim().match(/^(`{3,}|~{3,})(?:[A-Za-z0-9_+.-]+)?\s*$/);
+  return match ? { marker: match[1][0], length: match[1].length } : undefined;
+}
+
+function isFenceCloser(
+  line: string,
+  opener: { marker: string; length: number },
+) {
+  const match = line.trim().match(/^(`{3,}|~{3,})\s*$/);
+  return Boolean(
+    match && match[1][0] === opener.marker && match[1].length >= opener.length,
+  );
 }
 
 export function renderMarkdownFragment(text: string, doc: Document) {
@@ -146,6 +176,9 @@ export function renderMarkdownFragment(text: string, doc: Document) {
         index += 1;
         continue;
       }
+    }
+
+    if (trimmed === "$$") {
       // Multi-line display math
       const mathLines: string[] = [];
       index += 1;
@@ -163,10 +196,11 @@ export function renderMarkdownFragment(text: string, doc: Document) {
       continue;
     }
 
-    if (trimmed.startsWith("```")) {
+    const fence = parseFenceOpener(trimmed);
+    if (fence) {
       const codeLines: string[] = [];
       index += 1;
-      while (index < lines.length && !lines[index].trim().startsWith("```")) {
+      while (index < lines.length && !isFenceCloser(lines[index], fence)) {
         codeLines.push(lines[index]);
         index += 1;
       }
@@ -269,8 +303,8 @@ export function renderMarkdownFragment(text: string, doc: Document) {
         const next = lines[index].trim();
         if (
           next === "\\[" ||
-          next.startsWith("$$") ||
-          next.startsWith("```") ||
+          next === "$$" ||
+          Boolean(parseFenceOpener(next)) ||
           /^#{1,6}\s/.test(next) ||
           next.startsWith(">") ||
           /^[-*+]\s/.test(next) ||
@@ -331,16 +365,10 @@ function appendTable(
   }
 
   const tbody = doc.createElement("tbody");
-  const startCells = hasSeparator ? [] : [headerCells];
-  const allDataRows = [
-    ...startCells,
-    ...rows.slice(dataStartIndex).map(parseTableCells),
-  ];
-
-  for (const cells of allDataRows) {
-    if (isSeparatorRow(rows[startCells.length ? 0 : dataStartIndex])) {
-      continue;
-    }
+  const dataRows = hasSeparator ? rows.slice(dataStartIndex) : rows;
+  for (const row of dataRows) {
+    if (isSeparatorRow(row)) continue;
+    const cells = parseTableCells(row);
     const tr = doc.createElement("tr");
     for (const cell of cells) {
       const td = doc.createElement("td");

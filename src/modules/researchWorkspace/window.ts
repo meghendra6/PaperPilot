@@ -12,11 +12,15 @@ import {
   disposeResearchWorkspaceProjectSurface,
   renderResearchWorkspaceProjectSurface,
 } from "./projectWindowView";
+import {
+  replaceResearchWorkspaceDialogAfterCreate,
+  runResearchWorkspaceSurfaceAction,
+} from "./surfaceAction";
+import { element } from "./dom";
 
 declare const addon: any;
 declare const Zotero: any;
 
-const HTML_NS = "http://www.w3.org/1999/xhtml";
 const WINDOW_ROOT_ID = "paperpilot-research-workspace-window";
 const WINDOW_BODY_ID = "paperpilot-research-workspace-window-body";
 
@@ -33,18 +37,6 @@ export interface OpenResearchWorkspaceOptions {
   origin?: ResearchWorkspaceLaunchOrigin;
 }
 
-function element<K extends keyof HTMLElementTagNameMap>(
-  doc: Document,
-  tag: K,
-  className = "",
-  text?: string,
-) {
-  const node = doc.createElementNS(HTML_NS, tag) as HTMLElementTagNameMap[K];
-  if (className) node.className = className;
-  if (text !== undefined) node.textContent = text;
-  return node;
-}
-
 function actionButton(
   doc: Document,
   label: string,
@@ -57,7 +49,22 @@ function actionButton(
     label,
   );
   node.type = "button";
-  node.addEventListener("click", () => void action());
+  node.addEventListener("click", () => {
+    const root = doc.getElementById(WINDOW_ROOT_ID);
+    void runResearchWorkspaceSurfaceAction({
+      surface: root ?? node,
+      trigger: node,
+      action,
+      onError: (error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        const banner = element(doc, "div", "pprw-window-error", message);
+        banner.setAttribute("role", "alert");
+        const body = doc.getElementById(WINDOW_BODY_ID);
+        (body ?? root)?.prepend(banner);
+        Zotero.logError?.(error);
+      },
+    });
+  });
   return node;
 }
 
@@ -73,7 +80,7 @@ function windowIsOpen() {
 function installWindowStyles(doc: Document) {
   const cssID = `${config.addonRef}-research-workspace-window-stylesheet`;
   if (doc.getElementById(cssID)) return;
-  const link = doc.createElementNS(HTML_NS, "link") as HTMLLinkElement;
+  const link = element(doc, "link");
   link.id = cssID;
   link.rel = "stylesheet";
   link.href = `chrome://${config.addonRef}/content/zoteroPane.css`;
@@ -278,6 +285,7 @@ async function createResearchWorkspaceDialog(
     loadedSourceIDs: Object.freeze([]),
     skipped: snapshot.skipped,
   });
+  return dialog;
 }
 
 /** Opens the singleton modeless host or focuses the existing captured run. */
@@ -306,12 +314,9 @@ export async function openResearchWorkspace(
 
 export async function replaceResearchWorkspaceSelection() {
   const current = addon.data.dialog as DialogHelper | undefined;
-  if (current) {
-    addon.data.dialog = undefined;
-    addon.data.researchWorkspaceWindowState = undefined;
-    current.window?.close();
-  }
-  await openResearchWorkspace({ origin: "workspace-new-selection" });
+  await replaceResearchWorkspaceDialogAfterCreate(current, () =>
+    createResearchWorkspaceDialog({ origin: "workspace-new-selection" }),
+  );
 }
 
 export function closeResearchWorkspaceWindow() {
