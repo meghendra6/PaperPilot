@@ -18,14 +18,14 @@ override anything there.
 
 ```bash
 npm test              # 280 Node tests, no Zotero runtime required
-npx tsc --noEmit      # typecheck (addon/ is excluded)
+npm run typecheck     # typecheck source and tests (addon/ is excluded)
 npm run build         # packages the xpi and vendors the OpenDataLoader JAR
+npm run lint:check    # read-only repository lint and formatting gate
 ```
 
-Do **not** run `npm run lint` as a verification step — it runs
-`prettier --write` and `eslint --fix` across the whole repo and will rewrite
-files you did not touch. Use `npx prettier --check <paths>` and
-`npx eslint <paths>` on changed files instead.
+Run `npm run lint:fix` only when repository-wide formatting and lint edits are
+intentional. Use `npx prettier --check <paths>` and `npx eslint <paths>` for
+focused read-only checks while iterating.
 
 ## Do not commit these paths
 

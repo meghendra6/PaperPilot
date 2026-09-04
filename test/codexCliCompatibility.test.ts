@@ -3,13 +3,17 @@ import { spawnSync } from "node:child_process";
 import { test } from "node:test";
 import * as assert from "node:assert/strict";
 
-const CANDIDATE_PATHS = [
-  "/opt/homebrew/bin/codex",
-  "/Users/meghendra/.nvm/versions/node/v20.16.0/bin/codex",
-];
-
 function findCodexBinary() {
-  return CANDIDATE_PATHS.find((candidate) => existsSync(candidate));
+  const configuredPath = process.env.PAPERPILOT_CODEX_BIN;
+  if (configuredPath && existsSync(configuredPath)) {
+    return configuredPath;
+  }
+
+  const whichResult = spawnSync("which", ["codex"], { encoding: "utf-8" });
+  const discoveredPath = whichResult.stdout.trim();
+  return whichResult.status === 0 && existsSync(discoveredPath)
+    ? discoveredPath
+    : undefined;
 }
 
 test(

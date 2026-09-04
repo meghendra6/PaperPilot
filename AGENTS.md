@@ -47,12 +47,17 @@ Local-only, not tracked: `.github/` except `workflows/` and `FUNDING.yml`, `docs
 - `npm install`: local development setup
 - `npm ci`: clean reproducible install for verification or worktrees
 - `npm test`: Node-based regression suite
-- `npx tsc --noEmit`: TypeScript typecheck (`addon/` is excluded by `tsconfig.json`)
+- `npm run typecheck`: TypeScript typecheck for product source and Node tests (`addon/` remains excluded)
 - `npm run build`: packages the Zotero add-on and vendors the OpenDataLoader runtime
-- `npx eslint <paths>` / `npx prettier --check <paths>`: preferred read-only lint/style checks on touched files
-- Avoid `npm run lint` as a default verification step because it runs write/fix operations across the repo
+- `npm run lint:check`: repository-wide read-only lint and formatting gate
+- `npx eslint <paths>` / `npx prettier --check <paths>`: focused read-only checks while iterating
+- `npm run lint:fix`: intentional repository-wide formatting and lint fixes
 
 Development baseline: Node 20+, npm, Zotero 7-10, Java 11+ for OpenDataLoader extraction at runtime, and at least one local CLI if you want to exercise a real engine path.
+
+Set `PAPERPILOT_CODEX_BIN` to an explicit Codex CLI executable to opt into the
+CLI flag-ordering integration test. When unset, the test uses `codex` from
+`PATH` and skips if the executable is unavailable.
 
 ## Working principles
 
@@ -88,7 +93,7 @@ Development baseline: Node 20+, npm, Zotero 7-10, Java 11+ for OpenDataLoader ex
 - Preserve workspace grounding behavior and compatibility fallbacks, including the `extractionMethod` distinction between `opendataloader-pdf` and `zotero-attachment-text`.
 - A new workspace artifact is dead weight unless the prompt tells the engine to read it. Update the runner and the prompt together, and note that `CONTEXT_INDEX.md` and `figures/` are Codex-only today.
 - If you touch OpenDataLoader or packaging flow, verify the build path still vendors the runtime correctly.
-- Changes under `scripts/` are not covered by the repo ESLint config, so review changed `.mjs` files carefully and use targeted checks such as `node --check <file>` when relevant.
+- Review changed `.mjs` files carefully and use targeted checks such as `node --check <file>` when relevant.
 
 ### Preference changes
 
@@ -121,9 +126,9 @@ Run the lightest set that proves the change, then report exactly what ran. Prefe
 - Baseline environment setup when dependencies are missing: `npm ci`
 - Documentation-only changes: manual review of links, commands, and consistency
 - Prompt/parser/workflow logic: `npm test` plus focused test updates
-- Type-sensitive changes under `src/` or `typings/`: `npx tsc --noEmit`
+- Type-sensitive changes under `src/`, `test/`, or `typings/`: `npm run typecheck`
 - Build/packaging changes: `npm run build`
-- Lint/format validation: prefer targeted `npx eslint <paths>` and `npx prettier --check <paths>` to avoid unrelated repo-wide churn on a dirty tree; do not run `npm run lint` unless you intentionally want repo-wide writes/fixes
+- Lint/format validation: use `npm run lint:check` for the repository gate, or targeted `npx eslint <paths>` and `npx prettier --check <paths>` while iterating; run `npm run lint:fix` only when you intentionally want repository-wide writes/fixes
 - Runtime-sensitive reader changes: use `docs/manual-qa.md` for Zotero checks when feasible
 
 If you cannot run a relevant check, say so explicitly and explain why.

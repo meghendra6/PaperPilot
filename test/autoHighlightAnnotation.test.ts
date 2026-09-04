@@ -6,7 +6,7 @@ import {
   isDuplicateHighlight,
 } from "../src/modules/autoHighlight/annotation";
 
-(globalThis as typeof globalThis & { Zotero?: unknown }).Zotero = {
+(globalThis as unknown as { Zotero?: unknown }).Zotero = {
   DataObjectUtilities: {
     generateKey: () => "AUTO1234",
   },
