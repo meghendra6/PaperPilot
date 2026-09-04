@@ -538,11 +538,6 @@ export function registerPaperPilotPaneSection() {
         codexAuthButton,
         codexDeviceAuthButton,
         codexRecheckButton,
-        codexRetryButton,
-        codexCancelButton,
-        policyWarning,
-        geminiFallbackCard,
-        geminiEmbedCard,
         modelRow,
         modelInput,
         modelSaveButton,
@@ -707,11 +702,6 @@ export function registerPaperPilotPaneSection() {
         codexAuthButton &&
         codexDeviceAuthButton &&
         codexRecheckButton &&
-        codexRetryButton &&
-        codexCancelButton &&
-        policyWarning &&
-        geminiFallbackCard &&
-        geminiEmbedCard &&
         modelRow &&
         modelInput &&
         modelSaveButton &&
@@ -749,9 +739,6 @@ export function registerPaperPilotPaneSection() {
           modeStatus,
           runStateCard,
           codexActions,
-          policyWarning,
-          geminiFallbackCard,
-          geminiEmbedCard,
           modelRow,
           modelInput,
           codexOptionsRow,
@@ -3275,9 +3262,6 @@ interface PaneElements {
   modeStatus: HTMLElement;
   runStateCard: HTMLElement;
   codexActions: HTMLElement;
-  policyWarning: HTMLElement;
-  geminiFallbackCard: HTMLElement;
-  geminiEmbedCard: HTMLElement;
   modelRow: HTMLElement;
   modelInput: HTMLSelectElement;
   codexOptionsRow: HTMLElement;
@@ -3343,9 +3327,6 @@ async function renderPaneState(options: {
     "not_checked",
   );
   renderCodexActions(params.codexActions, descriptor.mode);
-  renderPolicyWarning(params.policyWarning, descriptor.mode);
-  renderGeminiFallbackCard(params.geminiFallbackCard, descriptor.mode);
-  renderGeminiEmbedCard(params.geminiEmbedCard, descriptor.mode);
   renderModelRow(params.modelRow, params.modelInput, descriptor.mode);
   renderCodexOptionsRow(
     params.codexOptionsRow,
@@ -4044,34 +4025,6 @@ function renderRunStateCard(
 
 function renderCodexActions(codexActions: HTMLElement, mode: EngineMode) {
   codexActions.style.display = mode === "codex_cli" ? "flex" : "none";
-}
-
-function renderPolicyWarning(policyWarning: HTMLElement, mode: EngineMode) {
-  const shouldShow = mode === "gemini_cli" && false;
-  if (!shouldShow) {
-    policyWarning.style.display = "none";
-    policyWarning.textContent = "";
-    return;
-  }
-
-  policyWarning.style.display = "block";
-  policyWarning.textContent =
-    "Gemini CLI mode runs through the local Gemini CLI and follows the current workspace/tooling constraints.";
-}
-
-function renderGeminiFallbackCard(
-  geminiFallbackCard: HTMLElement,
-  mode: EngineMode,
-) {
-  void mode;
-  geminiFallbackCard.style.display = "none";
-  geminiFallbackCard.textContent = "";
-}
-
-function renderGeminiEmbedCard(geminiEmbedCard: HTMLElement, mode: EngineMode) {
-  void mode;
-  geminiEmbedCard.style.display = "none";
-  geminiEmbedCard.textContent = "";
 }
 
 function confirmDestructive(

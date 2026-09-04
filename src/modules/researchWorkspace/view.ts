@@ -3,6 +3,7 @@ import { getLocaleID } from "../../utils/locale";
 import { getPref } from "../../utils/prefs";
 import { copyTextToClipboard } from "../components/ChatMessage";
 import { renderResearchWorkspaceArtifactValue } from "./artifactRenderer";
+import { button, element } from "./dom";
 import {
   openCanonicalReaderCapability,
   type CanonicalReaderCapability,
@@ -35,7 +36,6 @@ import {
 
 declare const Zotero: any;
 
-const HTML_NS = "http://www.w3.org/1999/xhtml";
 const PANE_ID = "paper-pilot-research-workspace-pane";
 
 interface ViewRuntime {
@@ -65,30 +65,6 @@ export interface ResearchWorkspaceViewOptions {
 const runtime = new WeakMap<HTMLElement, ViewRuntime>();
 const activeAbortControllers = new Set<AbortController>();
 let registered = false;
-
-function element<K extends keyof HTMLElementTagNameMap>(
-  doc: Document,
-  tag: K,
-  className = "",
-  text?: string,
-) {
-  const node = doc.createElementNS(HTML_NS, tag) as HTMLElementTagNameMap[K];
-  if (className) node.className = className;
-  if (text !== undefined) node.textContent = text;
-  return node;
-}
-
-function button(
-  doc: Document,
-  text: string,
-  action: () => void | Promise<void>,
-  className = "pprw-button pp-btn pp-btn--secondary",
-) {
-  const node = element(doc, "button", className, text);
-  node.type = "button";
-  node.addEventListener("click", () => void action());
-  return node;
-}
 
 const CAPABILITY_BUTTON_LABELS = new Map<string, string>([
   ["Extract claims", "claim-ledger"],

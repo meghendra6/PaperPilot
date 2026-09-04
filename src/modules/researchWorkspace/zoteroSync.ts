@@ -1,153 +1,43 @@
 import type { ResearchWorkspaceSourceRecord } from "./persistence/contracts";
+import { stableHash } from "./identity";
+import { registerResearchWorkspaceReceiptContract } from "./persistence/receiptContract";
+import {
+  RESEARCH_WORKSPACE_ZOTERO_SYNC_MAX_ITEMS,
+  RESEARCH_WORKSPACE_ZOTERO_SYNC_MAX_TAGS,
+  RESEARCH_WORKSPACE_ZOTERO_SYNC_SCHEMA_VERSION,
+  type ResearchWorkspaceZoteroItemIdentity,
+  type ResearchWorkspaceZoteroItemKind,
+  type ResearchWorkspaceZoteroSyncApplyItemResult,
+  type ResearchWorkspaceZoteroSyncCollectionSnapshot,
+  type ResearchWorkspaceZoteroSyncItemSnapshot,
+  type ResearchWorkspaceZoteroSyncObservedState,
+  type ResearchWorkspaceZoteroSyncPreview,
+  type ResearchWorkspaceZoteroSyncPreviewItem,
+  type ResearchWorkspaceZoteroSyncReceiptFile,
+  type ResearchWorkspaceZoteroSyncSelection,
+  type ResearchWorkspaceZoteroSyncUndoItemResult,
+} from "./persistence/zoteroSyncContracts";
 
-export const RESEARCH_WORKSPACE_ZOTERO_SYNC_SCHEMA_VERSION = 1 as const;
-export const RESEARCH_WORKSPACE_ZOTERO_SYNC_MAX_ITEMS = 10_000;
-export const RESEARCH_WORKSPACE_ZOTERO_SYNC_MAX_TAGS = 100;
-
-export type ResearchWorkspaceZoteroItemKind =
-  | "regular-item"
-  | "attachment"
-  | "annotation"
-  | "note"
-  | "unknown";
-
-export interface ResearchWorkspaceZoteroItemIdentity {
-  libraryID: number;
-  itemKey: string;
-}
-
-export interface ResearchWorkspaceZoteroCollectionIdentity {
-  libraryID: number;
-  collectionKey: string;
-}
-
-export interface ResearchWorkspaceZoteroSyncSelection {
-  libraryID: number;
-  collectionKey?: string;
-  tagNames: string[];
-}
-
-export interface ResearchWorkspaceZoteroSyncCollectionSnapshot
-  extends ResearchWorkspaceZoteroCollectionIdentity {
-  name: string;
-  version?: number;
-}
-
-export interface ResearchWorkspaceZoteroSyncItemSnapshot
-  extends ResearchWorkspaceZoteroItemIdentity {
-  title?: string;
-  version?: number;
-  itemKind: ResearchWorkspaceZoteroItemKind;
-  eligibleForAdditiveSync: boolean;
-  collectionKeys: string[];
-  tagNames: string[];
-  available: boolean;
-}
-
-export interface ResearchWorkspaceZoteroSyncObservedState {
-  libraryID: number;
-  collection?: ResearchWorkspaceZoteroSyncCollectionSnapshot;
-  existingTagNames: string[];
-  items: ResearchWorkspaceZoteroSyncItemSnapshot[];
-}
-
-export interface ResearchWorkspaceZoteroSyncPreviewItem
-  extends ResearchWorkspaceZoteroItemIdentity {
-  sourceIDs: string[];
-  title?: string;
-  observedVersion?: number;
-  itemKind: ResearchWorkspaceZoteroItemKind;
-  beforeCollectionKeys: string[];
-  beforeTagNames: string[];
-  addCollection: boolean;
-  addTagNames: string[];
-  status: "additive" | "no-op" | "blocked";
-  blockedReason?: string;
-}
-
-export interface ResearchWorkspaceZoteroSyncPreview {
-  schemaVersion: typeof RESEARCH_WORKSPACE_ZOTERO_SYNC_SCHEMA_VERSION;
-  previewID: string;
-  projectID: string;
-  membersRevision: number;
-  createdAt: string;
-  selection: ResearchWorkspaceZoteroSyncSelection;
-  collection?: ResearchWorkspaceZoteroSyncCollectionSnapshot;
-  observedStateFingerprint: string;
-  items: ResearchWorkspaceZoteroSyncPreviewItem[];
-  summary: {
-    totalItems: number;
-    additiveItems: number;
-    noOpItems: number;
-    blockedItems: number;
-    collectionAdditions: number;
-    tagAdditions: number;
-  };
-  approvalToken: string;
-}
-
-export interface ResearchWorkspaceZoteroSyncApplyItemResult
-  extends ResearchWorkspaceZoteroItemIdentity {
-  status: "applied" | "no-op" | "blocked";
-  collectionAdded: boolean;
-  tagNamesAdded: string[];
-  afterCollectionKeys: string[];
-  afterTagNames: string[];
-  versionAfter?: number;
-  notifierDataIncluded: boolean;
-  message?: string;
-}
-
-export interface ResearchWorkspaceZoteroSyncUndoItemResult
-  extends ResearchWorkspaceZoteroItemIdentity {
-  status: "undone" | "partially-undone" | "no-op" | "blocked" | "failed";
-  collectionRemoved: boolean;
-  tagNamesRemoved: string[];
-  notifierDataIncluded: boolean;
-  message?: string;
-}
-
-export type ResearchWorkspaceZoteroSyncReceiptStatus =
-  | "prepared"
-  | "committed"
-  | "failed"
-  | "partially-undone"
-  | "undone";
-
-export interface ResearchWorkspaceZoteroSyncReceipt {
-  receiptID: string;
-  projectID: string;
-  status: ResearchWorkspaceZoteroSyncReceiptStatus;
-  membersRevision: number;
-  selection: ResearchWorkspaceZoteroSyncSelection;
-  previewID: string;
-  previewFingerprint: string;
-  approvalTokenFingerprint: string;
-  observedStateFingerprint: string;
-  plannedItems: ResearchWorkspaceZoteroSyncPreviewItem[];
-  applyResults?: ResearchWorkspaceZoteroSyncApplyItemResult[];
-  undoResults?: ResearchWorkspaceZoteroSyncUndoItemResult[];
-  error?: string;
-  createdAt: string;
-  updatedAt: string;
-  committedAt?: string;
-  undoneAt?: string;
-}
-
-export interface ResearchWorkspaceZoteroSyncReceiptFile {
-  schemaVersion: typeof RESEARCH_WORKSPACE_ZOTERO_SYNC_SCHEMA_VERSION;
-  revision: number;
-  receipt: ResearchWorkspaceZoteroSyncReceipt;
-}
-
-export interface ResearchWorkspaceZoteroSyncTargets {
-  libraries: Array<{
-    libraryID: number;
-    collections: ResearchWorkspaceZoteroSyncCollectionSnapshot[];
-    tagNames: string[];
-  }>;
-  limitations: string[];
-}
+export {
+  RESEARCH_WORKSPACE_ZOTERO_SYNC_MAX_ITEMS,
+  RESEARCH_WORKSPACE_ZOTERO_SYNC_MAX_TAGS,
+  RESEARCH_WORKSPACE_ZOTERO_SYNC_SCHEMA_VERSION,
+  type ResearchWorkspaceZoteroCollectionIdentity,
+  type ResearchWorkspaceZoteroItemIdentity,
+  type ResearchWorkspaceZoteroItemKind,
+  type ResearchWorkspaceZoteroSyncApplyItemResult,
+  type ResearchWorkspaceZoteroSyncCollectionSnapshot,
+  type ResearchWorkspaceZoteroSyncItemSnapshot,
+  type ResearchWorkspaceZoteroSyncObservedState,
+  type ResearchWorkspaceZoteroSyncPreview,
+  type ResearchWorkspaceZoteroSyncPreviewItem,
+  type ResearchWorkspaceZoteroSyncReceipt,
+  type ResearchWorkspaceZoteroSyncReceiptFile,
+  type ResearchWorkspaceZoteroSyncReceiptStatus,
+  type ResearchWorkspaceZoteroSyncSelection,
+  type ResearchWorkspaceZoteroSyncTargets,
+  type ResearchWorkspaceZoteroSyncUndoItemResult,
+} from "./persistence/zoteroSyncContracts";
 
 function clone<T>(value: T): T {
   return typeof globalThis.structuredClone === "function"
@@ -276,15 +166,6 @@ function canonical(value: unknown): unknown {
       .sort()
       .map((key) => [key, canonical(object[key])]),
   );
-}
-
-function stableHash(value: string, seed: number) {
-  let hash = seed >>> 0;
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 16777619) >>> 0;
-  }
-  return hash.toString(16).padStart(8, "0");
 }
 
 function fingerprint(prefix: string, value: unknown) {
@@ -1196,6 +1077,13 @@ export function parseResearchWorkspaceZoteroSyncReceiptFile(
   }
   return clone(value) as ResearchWorkspaceZoteroSyncReceiptFile;
 }
+
+registerResearchWorkspaceReceiptContract<ResearchWorkspaceZoteroSyncReceiptFile>(
+  {
+    schemaVersion: RESEARCH_WORKSPACE_ZOTERO_SYNC_SCHEMA_VERSION,
+    parse: parseResearchWorkspaceZoteroSyncReceiptFile,
+  },
+);
 
 export function fingerprintResearchWorkspaceZoteroSyncApprovalToken(
   approvalToken: string,

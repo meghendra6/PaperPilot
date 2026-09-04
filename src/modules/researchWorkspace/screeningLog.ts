@@ -10,6 +10,11 @@ import type {
   ResearchWorkspaceScreeningStage,
   ResearchWorkspaceSourceRecord,
 } from "./persistence/contracts";
+import {
+  normalizeIdentityDOI,
+  normalizeIdentityTitle,
+  stableHash,
+} from "./identity";
 
 export const RESEARCH_WORKSPACE_SCREENING_LOG_VERSION =
   "screening-log-v1" as const;
@@ -76,31 +81,6 @@ export interface RecordResearchWorkspaceScreeningDecisionInput {
 
 function normalizeWhitespace(value: string) {
   return value.replace(/\s+/g, " ").trim();
-}
-
-function normalizeDOI(value: string) {
-  return value
-    .trim()
-    .replace(/^https?:\/\/(?:dx\.)?doi\.org\//i, "")
-    .replace(/[\s.,;]+$/g, "")
-    .toLowerCase();
-}
-
-function normalizeTitle(value: string) {
-  return normalizeWhitespace(value)
-    .normalize("NFKC")
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, " ")
-    .trim();
-}
-
-function stableHash(value: string) {
-  let hash = 2166136261;
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return (hash >>> 0).toString(16).padStart(8, "0");
 }
 
 function normalizedCriterionLines(lines: readonly string[]) {
@@ -296,8 +276,8 @@ export function detectScreeningIssues(
   const issues: ResearchWorkspaceScreeningIssue[] = [];
   const groups = new Map<string, ResearchWorkspaceSourceRecord[]>();
   for (const source of sources) {
-    const doi = source.doi ? normalizeDOI(source.doi) : "";
-    const title = normalizeTitle(source.title);
+    const doi = source.doi ? normalizeIdentityDOI(source.doi) : "";
+    const title = normalizeIdentityTitle(source.title);
     const key = doi
       ? `doi:${doi}`
       : title && source.year

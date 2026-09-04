@@ -8,6 +8,7 @@ import type {
 } from "./persistence/contracts";
 import type { ResearchWorkspaceProjectDetails } from "./projectController";
 import { researchWorkspaceArtifactPayloadFingerprint } from "./artifactFingerprint";
+import { stableHash } from "./identity";
 
 export { researchWorkspaceArtifactPayloadFingerprint };
 
@@ -168,15 +169,6 @@ function cleanText(value: unknown, maximum = 2_000) {
   return typeof value === "string"
     ? value.replace(/\s+/g, " ").trim().slice(0, maximum)
     : "";
-}
-
-function stableHash(value: string) {
-  let hash = 2166136261;
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return (hash >>> 0).toString(16).padStart(8, "0");
 }
 
 function normalizedStatement(value: string) {

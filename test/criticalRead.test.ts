@@ -518,7 +518,6 @@ test("a post-gate review insight is attached to Critical Read and exported separ
       title: "Peer",
       authors: ["A. Author"],
       year: 2026,
-      relevanceScore: 1,
       candidateID: "peer-1",
     },
     insight: {
@@ -600,7 +599,6 @@ test("Critical Read review attachment requires canonical row identity", () => {
       title: "Peer",
       authors: ["A. Author"],
       year: 2026,
-      relevanceScore: 1,
     },
     insight: {
       sourceURLs: ["https://openreview.net/forum?id=peer"],

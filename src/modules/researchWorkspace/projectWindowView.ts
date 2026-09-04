@@ -60,8 +60,8 @@ import type {
   ResearchWorkspaceZoteroSyncTargets,
 } from "./zoteroSync";
 import { runResearchWorkspaceSurfaceAction } from "./surfaceAction";
+import { button as createButton, element, metric as createMetric } from "./dom";
 
-const HTML_NS = "http://www.w3.org/1999/xhtml";
 const generations = new WeakMap<HTMLElement, symbol>();
 const activeOperationRoots = new WeakMap<HTMLElement, HTMLElement>();
 
@@ -71,44 +71,29 @@ function disposeOperations(root: HTMLElement) {
   activeOperationRoots.delete(root);
 }
 
-function element<K extends keyof HTMLElementTagNameMap>(
-  doc: Document,
-  tag: K,
-  className = "",
-  text?: string,
-) {
-  const node = doc.createElementNS(HTML_NS, tag) as HTMLElementTagNameMap[K];
-  if (className) node.className = className;
-  if (text !== undefined) node.textContent = text;
-  return node;
-}
-
 function button(
   doc: Document,
   label: string,
   action: () => void | Promise<void>,
   primary = false,
 ) {
-  const node = element(
+  return createButton(
     doc,
-    "button",
-    `pprw-button pp-btn ${primary ? "pp-btn--primary" : "pp-btn--secondary"}`,
     label,
+    (node) => {
+      const root = node.closest<HTMLElement>(
+        "[data-research-workspace-project-surface]",
+      );
+      if (!root) return;
+      return runResearchWorkspaceSurfaceAction({
+        surface: root,
+        trigger: node,
+        action,
+        onError: (error) => reportProjectError(root, error),
+      });
+    },
+    `pprw-button pp-btn ${primary ? "pp-btn--primary" : "pp-btn--secondary"}`,
   );
-  node.type = "button";
-  node.addEventListener("click", () => {
-    const root = node.closest<HTMLElement>(
-      "[data-research-workspace-project-surface]",
-    );
-    if (!root) return;
-    void runResearchWorkspaceSurfaceAction({
-      surface: root,
-      trigger: node,
-      action,
-      onError: (error) => reportProjectError(root, error),
-    });
-  });
-  return node;
 }
 
 function textInput(doc: Document, placeholder: string, value = "") {
@@ -163,12 +148,11 @@ function isCurrent(root: HTMLElement, generation: symbol) {
 }
 
 function metric(doc: Document, value: number, label: string) {
-  const node = element(doc, "div", "pprw-home-metric");
-  node.append(
-    element(doc, "strong", "", value.toLocaleString()),
-    element(doc, "span", "", label),
-  );
-  return node;
+  return createMetric(doc, {
+    className: "pprw-home-metric",
+    label,
+    value: value.toLocaleString(),
+  });
 }
 
 function capabilityPresetIDs(value: string) {

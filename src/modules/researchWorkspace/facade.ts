@@ -147,7 +147,6 @@ async function createBoundService(params: {
   const service = new ResearchWorkspaceService({
     repository,
     indexes: sharedHybridIndexes,
-    exportTextFile: exportResearchWorkspaceTextFile,
     agent: {
       run: (
         prompt: string,
@@ -220,13 +219,6 @@ async function latestArtifact(
       )
     );
   });
-}
-
-export async function registerResearchWorkspacePapers(
-  _papers: ResearchWorkspacePaper[],
-) {
-  // Rendering is intentionally side-effect free. Sources are registered only
-  // by explicit project creation, add, or analysis actions.
 }
 
 export async function searchResearchWorkspacePaper(params: {

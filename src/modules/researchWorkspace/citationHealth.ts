@@ -4,6 +4,16 @@ import type {
   ResearchWorkspaceArtifact,
   ResearchWorkspaceSourceRecord,
 } from "./persistence/contracts";
+import {
+  registerResearchWorkspaceArtifactPayloadValidator,
+  type ResearchWorkspaceArtifactPayloadValidationContext,
+} from "./persistence/payloadValidators";
+import {
+  normalizeIdentityAuthor as normalizeAuthor,
+  normalizeIdentityDOI as normalizeDOI,
+  normalizeIdentityTitle as normalizeTitle,
+  stableHash,
+} from "./identity";
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -270,34 +280,6 @@ function cleanText(value: unknown, maximum = 2_000) {
   return typeof value === "string"
     ? value.replace(/\s+/g, " ").trim().slice(0, maximum)
     : "";
-}
-
-function normalizeDOI(value: unknown) {
-  return cleanText(value, 512)
-    .replace(/^https?:\/\/(?:dx\.)?doi\.org\//i, "")
-    .replace(/[\s.,;]+$/g, "")
-    .toLocaleLowerCase();
-}
-
-function normalizeTitle(value: unknown) {
-  return cleanText(value, 2_000)
-    .normalize("NFKC")
-    .toLocaleLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, " ")
-    .trim();
-}
-
-function normalizeAuthor(value: unknown) {
-  return normalizeTitle(value).split(" ").filter(Boolean).at(-1) ?? "";
-}
-
-function stableHash(value: string) {
-  let hash = 2166136261;
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return (hash >>> 0).toString(16).padStart(8, "0");
 }
 
 function canonicalValue(value: unknown): unknown {
@@ -1905,3 +1887,56 @@ export function parseCitationHealthReport(
   }
   return value as CitationHealthReport;
 }
+
+export function validateCitationHealthArtifactPayload(
+  payload: unknown,
+  context: ResearchWorkspaceArtifactPayloadValidationContext,
+) {
+  const report = parseCitationHealthReport(payload);
+  if (report.projectID !== context.projectID) {
+    throw new Error(
+      "Citation Health payload projectID must match its artifact projectID.",
+    );
+  }
+  if (report.scope.membersRevision !== context.membersRevision) {
+    throw new Error(
+      "Citation Health members revision must match artifact lineage.",
+    );
+  }
+  if (
+    JSON.stringify([...report.scope.includedSourceIDs].sort()) !==
+    JSON.stringify([...context.sourceIDs].sort())
+  ) {
+    throw new Error(
+      "Citation Health included sources must match artifact sourceIDs.",
+    );
+  }
+  const reportedInputs = report.inputArtifacts
+    .map((input) => [
+      input.artifactID,
+      input.artifactType,
+      input.version,
+      input.updatedAt,
+      input.payloadFingerprint,
+    ])
+    .sort((left, right) => String(left[0]).localeCompare(String(right[0])));
+  const lineageInputs = context.artifactInputs
+    .map((input) => [
+      input.artifactID,
+      input.artifactType,
+      input.version,
+      input.updatedAt,
+      input.payloadFingerprint,
+    ])
+    .sort((left, right) => String(left[0]).localeCompare(String(right[0])));
+  if (JSON.stringify(reportedInputs) !== JSON.stringify(lineageInputs)) {
+    throw new Error(
+      "Citation Health payload inputs must match artifact lineage inputs.",
+    );
+  }
+}
+
+registerResearchWorkspaceArtifactPayloadValidator(
+  "citation-health",
+  validateCitationHealthArtifactPayload,
+);

@@ -1,5 +1,6 @@
 // @ts-nocheck -- Ported feature core is guarded by strict runtime parsers.
 import { researchWorkspaceOutputSchemaForPurpose } from "./outputSchemas";
+import { stableHash } from "./identity";
 import * as indexExports_1 from "./core/context/hybrid/indexExports";
 import * as claimExtraction_1 from "./core/evidence/claimExtraction";
 import * as claimLedger_1 from "./core/evidence/claimLedger";
@@ -9,17 +10,13 @@ import * as prompt_1 from "./core/criticalRead/profiled/prompt";
 import * as parser_1 from "./core/criticalRead/profiled/parser";
 import * as prompt_2 from "./core/reproducibility/prompt";
 import * as parser_2 from "./core/reproducibility/parser";
-import * as export_1 from "./core/reproducibility/export";
 import * as prompt_3 from "./core/paperToCode/prompt";
 import * as parser_3 from "./core/paperToCode/parser";
-import * as export_2 from "./core/paperToCode/export";
 import * as engine_1 from "./core/evidenceMatrix/engine";
 import * as prompt_4 from "./core/evidenceMatrix/prompt";
 import * as parser_4 from "./core/evidenceMatrix/parser";
-import * as export_3 from "./core/evidenceMatrix/export";
 import * as prompt_5 from "./core/literatureGraph/prompt";
 import * as parser_5 from "./core/literatureGraph/parser";
-import * as export_4 from "./core/literatureGraph/export";
 import { validateAndAnnotateRelationshipGraph } from "./core/literatureGraph/provenance";
 import * as engine_2 from "./core/crossPaperMastery/engine";
 import * as prompt_6 from "./core/crossPaperMastery/prompt";
@@ -52,16 +49,8 @@ function id(prefix) {
 function now() {
   return new Date().toISOString();
 }
-function normalizeLanguage(value) {
-  return value.trim() || "English";
-}
 function sourceFingerprint(value) {
-  let hash = 2166136261;
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return `${value.length}:${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return `${value.length}:${stableHash(value)}`;
 }
 function contentFingerprintValue(fingerprint) {
   if (typeof fingerprint === "string") return fingerprint;
@@ -84,7 +73,6 @@ export interface ResearchWorkspaceServiceEnvironment {
     ): Promise<string>;
   };
   evidenceVerification?: EvidenceVerificationDependencies;
-  exportTextFile(name: string, contents: string): Promise<string>;
 }
 
 class ResearchWorkspaceService {
@@ -97,23 +85,6 @@ class ResearchWorkspaceService {
   }
   async state() {
     return this.env.repository.load();
-  }
-  async configure(input) {
-    return this.env.repository.update((state) => {
-      if (input.responseLanguage !== undefined)
-        state.preferences.responseLanguage = normalizeLanguage(
-          input.responseLanguage,
-        );
-      if (
-        input.maxPaperCharacters !== undefined &&
-        Number.isFinite(Number(input.maxPaperCharacters))
-      ) {
-        state.preferences.maxPaperCharacters = Math.max(
-          10000,
-          Math.min(10000000, Math.floor(Number(input.maxPaperCharacters))),
-        );
-      }
-    });
   }
   async run(prompt, purpose) {
     return this.env.agent.run(
@@ -295,10 +266,6 @@ class ResearchWorkspaceService {
       report,
     };
   }
-  /** @deprecated Read compatibility only. New callers use Methodology Audit. */
-  async runCriticalRead(paper) {
-    return this.runMethodologyAudit(paper);
-  }
   async runReproducibility(paper) {
     const state = await this.state();
     const prompt = (0, prompt_2.buildReproducibilityPrompt)({
@@ -463,25 +430,6 @@ class ResearchWorkspaceService {
   }
   evidenceMatrixCoverage(matrix) {
     return (0, engine_1.calculateEvidenceMatrixCoverage)(matrix);
-  }
-  async createEvidenceMatrix(papers) {
-    if (papers.length < 2)
-      throw new Error("Select at least two papers in the Zotero item list.");
-    let matrix = this.createEvidenceMatrixShell(papers, "full");
-    for (const paper of papers) {
-      const row = await this.extractEvidenceMatrixRow(matrix, paper);
-      matrix = this.mergeEvidenceMatrixRow(matrix, row);
-    }
-    await this.env.repository.update((next) => {
-      next.matrices = [
-        ...next.matrices.filter((entry) => entry.id !== matrix.id),
-        matrix,
-      ];
-    });
-    return {
-      matrix,
-      coverage: this.evidenceMatrixCoverage(matrix),
-    };
   }
   async createLiteratureGraph(papers) {
     if (papers.length < 2)
@@ -913,64 +861,6 @@ class ResearchWorkspaceService {
       extractorVersion: extraction?.extractorVersion,
       corrections: [],
     };
-  }
-  async exportWorkspace() {
-    const state = await this.state();
-    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-    const jsonPath = await this.env.exportTextFile(
-      `research-workspace-${stamp}.json`,
-      `${JSON.stringify(state, null, 2)}\n`,
-    );
-    const lines = [
-      "# PaperPilot Research Workspace",
-      "",
-      `Exported: ${now()}`,
-      "",
-      `Papers: ${Object.keys(state.papers).length}`,
-      `Matrices: ${state.matrices.length}`,
-      `Graphs: ${state.graphs.length}`,
-      "",
-    ];
-    for (const paper of Object.values(state.papers)) {
-      lines.push(
-        `## ${paper.title}`,
-        "",
-        `- Extraction: ${paper.extractionQuality}`,
-        `- Critical reads: ${paper.criticalReads.length}`,
-        `- Reproducibility reports: ${paper.reproducibilityReports.length}`,
-        `- Paper-to-Code reports: ${paper.paperToCodeReports.length}`,
-        `- Mastery attempts: ${paper.mastery?.attempts.length ?? 0}`,
-        "",
-      );
-      const repro =
-        paper.reproducibilityReports[paper.reproducibilityReports.length - 1];
-      if (repro)
-        lines.push((0, export_1.exportReproducibilityMarkdown)(repro), "");
-      const code =
-        paper.paperToCodeReports[paper.paperToCodeReports.length - 1];
-      if (code) lines.push((0, export_2.exportPaperToCodeMarkdown)(code), "");
-    }
-    for (const matrix of state.matrices)
-      lines.push(
-        (0, export_3.exportEvidenceMatrixMarkdown)(matrix),
-        "",
-        "```csv",
-        (0, export_3.exportEvidenceMatrixCsv)(matrix),
-        "```",
-        "",
-      );
-    for (const graph of state.graphs)
-      lines.push(
-        "```mermaid",
-        (0, export_4.exportLiteratureGraphMermaid)(graph),
-        "```",
-        "",
-      );
-    const markdownPath = await this.env.exportTextFile(
-      `research-workspace-${stamp}.md`,
-      `${lines.join("\n")}\n`,
-    );
-    return { jsonPath, markdownPath };
   }
 }
 

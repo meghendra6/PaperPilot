@@ -51,6 +51,7 @@ import {
 } from "./discovery/normalize";
 import { RUN_TIMEOUT_MS } from "./ai/runProgress";
 import { parseFirstJsonObject } from "./ai/jsonCandidates";
+import { normalizeIdentityTitle } from "./researchWorkspace/identity";
 
 declare const Zotero: any;
 
@@ -63,7 +64,6 @@ export interface RecommendedPaper {
   doi?: string;
   url?: string;
   abstract?: string;
-  relevanceScore: number;
   reason?: string;
   existingItemID?: number;
   urls?: string[];
@@ -216,12 +216,6 @@ function discoveredPaperToRecommendation(
     url: paper.urls[0],
     urls: paper.urls,
     abstract: paper.abstract,
-    relevanceScore:
-      paper.relationship === "direct"
-        ? 1
-        : paper.relationship === "strong"
-          ? 0.75
-          : 0.5,
     reason: paper.relevanceReason,
     existingItemID: paper.existingItemID,
     providerIDs: paper.providerIDs,
@@ -267,13 +261,6 @@ function normalizeWhitespace(value: string) {
   return value.replace(/\s+/g, " ").trim();
 }
 
-function normalizeTitle(value: string) {
-  return normalizeWhitespace(value)
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, " ")
-    .trim();
-}
-
 export function normalizeDOI(value: string) {
   return normalizeDiscoveryDOI(value) ?? "";
 }
@@ -310,9 +297,13 @@ export function sortRecommendationGroups(groups: RecommendationGroup[]) {
   return groups
     .map((group) => ({
       category: normalizeWhitespace(group.category),
-      papers: [...group.papers].sort(
-        (left, right) => right.relevanceScore - left.relevanceScore,
-      ),
+      papers: [...group.papers].sort((left, right) => {
+        const rank = { direct: 0, strong: 1, adjacent: 2 } as const;
+        return (
+          (left.relationship ? rank[left.relationship] : 3) -
+          (right.relationship ? rank[right.relationship] : 3)
+        );
+      }),
     }))
     .sort((left, right) => {
       const leftIndex =
@@ -412,17 +403,17 @@ export function findExistingLibraryItem(
   );
   if (stableIDMatch) return stableIDMatch;
 
-  const normalizedPaperTitle = normalizeTitle(paper.title);
+  const normalizedPaperTitle = normalizeIdentityTitle(paper.title);
   const authorKeys = new Set(
     paper.authors
-      .map((author) => normalizeTitle(author).split(" ").at(-1))
+      .map((author) => normalizeIdentityTitle(author).split(" ").at(-1))
       .filter(Boolean),
   );
   return candidates.find((candidate) => {
     if (!candidate.title) {
       return false;
     }
-    if (normalizeTitle(candidate.title) !== normalizedPaperTitle) {
+    if (normalizeIdentityTitle(candidate.title) !== normalizedPaperTitle) {
       return false;
     }
     if (!paper.year || !candidate.year || paper.year !== candidate.year) {
@@ -430,7 +421,7 @@ export function findExistingLibraryItem(
     }
     if (!paper.authors.length || !candidate.authors?.length) return false;
     return candidate.authors.some((author) =>
-      authorKeys.has(normalizeTitle(author).split(" ").at(-1)),
+      authorKeys.has(normalizeIdentityTitle(author).split(" ").at(-1)),
     );
   });
 }

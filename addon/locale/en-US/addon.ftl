@@ -1,10 +1,6 @@
-startup-begin = Paper Pilot is loading
-startup-finish = Paper Pilot is ready
 prefs-title = Paper Pilot
 prefs-table-title = Title
 prefs-table-detail = Detail
-tabpanel-lib-tab-label = Lib Tab
-tabpanel-reader-tab-label = Reader Tab
 reader-action-explain = Explain
 reader-action-find-prior-work = Find prior work
 reader-action-summarize = Summarize

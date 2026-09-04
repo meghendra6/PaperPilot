@@ -1,4 +1,5 @@
 import { migrateResearchWorkspaceState } from "../core/researchWorkspace/state";
+import { stableHash } from "../identity";
 import {
   buildZoteroSourceID,
   parseZoteroSourceID,
@@ -117,18 +118,9 @@ function pathJoin(...parts: string[]) {
     .join(separator);
 }
 
-function hash32(value: string, seed: number) {
-  let hash = seed >>> 0;
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 16777619) >>> 0;
-  }
-  return hash.toString(16).padStart(8, "0");
-}
-
 function fallbackFingerprint(value: string) {
   return [2166136261, 2246822519, 3266489917, 668265263]
-    .map((seed) => hash32(value, seed))
+    .map((seed) => stableHash(value, seed))
     .join("");
 }
 

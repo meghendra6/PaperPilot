@@ -78,6 +78,7 @@ Use the lightest verification that still proves the change.
 
 - review links, headings, and examples manually
 - update multilingual docs together when the shared meaning changes
+- keep shared feature lists the same length in all four README files
 
 ### Parser / prompt / workflow logic changes
 

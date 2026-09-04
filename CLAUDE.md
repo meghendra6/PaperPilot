@@ -17,7 +17,7 @@ override anything there.
 ## Verification quick reference
 
 ```bash
-npm test              # 280 Node tests, no Zotero runtime required
+npm test              # Node regression suite, no Zotero runtime required
 npm run typecheck     # typecheck source and tests (addon/ is excluded)
 npm run build         # packages the xpi and vendors the OpenDataLoader JAR
 npm run lint:check    # read-only repository lint and formatting gate

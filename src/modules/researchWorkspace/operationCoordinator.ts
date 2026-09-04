@@ -10,6 +10,7 @@ import type {
 } from "./persistence/contracts";
 import type { ResearchWorkspaceProjectRepository } from "./persistence/projectRepository";
 import { researchWorkspaceArtifactPayloadFingerprint } from "./artifactFingerprint";
+import { stableHash } from "./identity";
 import { ResearchWorkspaceProjectController } from "./projectController";
 import {
   claimResearchWorkspaceOwner,
@@ -96,12 +97,7 @@ export interface RunResearchWorkspaceIncrementalOperation<
 }
 
 function fingerprint(value: string) {
-  let hash = 2166136261;
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return `fnv1a32:${value.length}:${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return `fnv1a32:${value.length}:${stableHash(value)}`;
 }
 
 function clone<T>(value: T): T {

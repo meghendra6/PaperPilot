@@ -1,4 +1,5 @@
 import type { ResearchWorkspacePaper } from "./paperSource";
+import { stableHash } from "./identity";
 
 export const RESEARCH_WORKSPACE_CONTEXT_PLANNER_VERSION =
   "context-planner-v1" as const;
@@ -35,12 +36,7 @@ interface CandidateChunk {
 }
 
 function stableFingerprint(value: string) {
-  let hash = 2166136261;
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return `fnv1a32:${value.length}:${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return `fnv1a32:${value.length}:${stableHash(value)}`;
 }
 
 function terms(operation: string, query?: string) {

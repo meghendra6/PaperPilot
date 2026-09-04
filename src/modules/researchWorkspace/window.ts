@@ -16,11 +16,11 @@ import {
   replaceResearchWorkspaceDialogAfterCreate,
   runResearchWorkspaceSurfaceAction,
 } from "./surfaceAction";
+import { element } from "./dom";
 
 declare const addon: any;
 declare const Zotero: any;
 
-const HTML_NS = "http://www.w3.org/1999/xhtml";
 const WINDOW_ROOT_ID = "paperpilot-research-workspace-window";
 const WINDOW_BODY_ID = "paperpilot-research-workspace-window-body";
 
@@ -35,18 +35,6 @@ export interface ResearchWorkspaceWindowState {
 export interface OpenResearchWorkspaceOptions {
   items?: readonly any[];
   origin?: ResearchWorkspaceLaunchOrigin;
-}
-
-function element<K extends keyof HTMLElementTagNameMap>(
-  doc: Document,
-  tag: K,
-  className = "",
-  text?: string,
-) {
-  const node = doc.createElementNS(HTML_NS, tag) as HTMLElementTagNameMap[K];
-  if (className) node.className = className;
-  if (text !== undefined) node.textContent = text;
-  return node;
 }
 
 function actionButton(
@@ -92,7 +80,7 @@ function windowIsOpen() {
 function installWindowStyles(doc: Document) {
   const cssID = `${config.addonRef}-research-workspace-window-stylesheet`;
   if (doc.getElementById(cssID)) return;
-  const link = doc.createElementNS(HTML_NS, "link") as HTMLLinkElement;
+  const link = element(doc, "link");
   link.id = cssID;
   link.rel = "stylesheet";
   link.href = `chrome://${config.addonRef}/content/zoteroPane.css`;

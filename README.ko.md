@@ -13,6 +13,7 @@ Paper Pilot는 Zotero 7-10 PDF 리더를 위한 AI 읽기 워크벤치입니다.
 - Zotero Reader 안에서 바로 사용하는 AI 채팅
 - 세 가지 로컬 엔진 모드: **Codex CLI**, **Claude Code**, **Gemini CLI**
 - brief, compare, contributions, limitations, follow-ups를 위한 구조화된 논문 워크벤치
+- **OpenDataLoader PDF** 기반 구조화 PDF 워크스페이스 추출
 - 사용자 설정 없이 공식 출판 근거와 세 결과 레인으로 선행연구 탐색
 - **Critical Read** — 독자 판단을 우선하는 7단계 비판적 논문 읽기와 최종 리포트
 - auto-highlight 및 저장되는 논문 단위 세션 기록 지원
@@ -310,7 +311,9 @@ OpenDataLoader 패키징 메모:
 
 중요한 현재 사항:
 
+- 플러그인 인터페이스는 현재 영어 전용이며, 번역된 README는 동일한 영어 UI를 설명합니다.
 - 응답 언어는 **English**, **Korean**, **Chinese**로 정규화됩니다.
+- 응답 언어 설정은 모델이 생성하는 답변과 아티팩트만 바꾸며 인터페이스 라벨은 바꾸지 않습니다.
 - 런타임 코드는 엔진, retrieval, workspace, privacy 관련 여러 설정을 이미 읽습니다.
 - 구조화 PDF 추출은 번들된 OpenDataLoader JAR를 사용하며, Java 또는 런타임 추출이 불가능하면 Zotero `attachmentText`로 폴백합니다.
 - 모든 설정 경로에 대한 실제 런타임 QA는 아직 남아 있습니다.
@@ -332,7 +335,7 @@ addon/      Zotero 애드온 매니페스트, 로케일, 설정 UI, 정적 자�
 src/        리더 UI, 엔진 연동, 컨텍스트, 도구, 워크플로우용 TypeScript 소스
 test/       프롬프트 빌더, 파싱, 저장, 워크플로우 로직에 대한 Node 기반 회귀 테스트
 docs/       수동 QA 체크리스트, 프롬프트 계약, 보조 제품 문서
-scripts/    로컬 Zotero 플러그인 스캐폴드 CLI 엔트리포인트
+scripts/    빌드/릴리스 CLI, OpenDataLoader 준비, 릴리스 태그 가드, 환경 진단
 build/      생성된 애드온 아티팩트
 ```
 
@@ -363,6 +366,7 @@ build/      생성된 애드온 아티팩트
 - related-paper recommendation 파싱
 - compare 및 artifact 저장 흐름
 - auto-highlight 파싱/매칭
+- discovery, Critical Read, 세션 지속성, Research Workspace 계약
 
 로컬 검증에 사용한 핵심 명령:
 

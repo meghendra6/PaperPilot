@@ -11,6 +11,7 @@ import {
   assertResearchWorkspaceID,
   assertResearchWorkspaceMember,
   type ResearchWorkspaceArtifactFile,
+  type ResearchWorkspaceArtifactType,
   type ResearchWorkspaceCatalog,
   type ResearchWorkspaceChangeInboxFile,
   type ResearchWorkspaceMembersFile,
@@ -22,8 +23,8 @@ import {
   type ResearchWorkspaceSourceFile,
 } from "./contracts";
 import { parseZoteroSourceID } from "../sourceIdentity";
-import { parseCitationHealthReport } from "../citationHealth";
-import { validateResearchWorkspaceProjectTemplateState } from "../projectTemplates";
+import { validateResearchWorkspaceProjectTemplateState } from "./projectTemplateValidation";
+import { validateRegisteredResearchWorkspaceArtifactPayload } from "./payloadValidators";
 
 function object(value: unknown, label: string): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -889,55 +890,18 @@ export function parseResearchWorkspaceArtifactFile(
       throw new Error("checkpoint unit lists must not overlap.");
     }
   }
-  if (artifact.type === "citation-health") {
-    const report = parseCitationHealthReport(artifact.payload);
-    if (report.projectID !== artifact.projectID) {
-      throw new Error(
-        "Citation Health payload projectID must match its artifact projectID.",
-      );
-    }
-    if (report.scope.membersRevision !== lineage.membersRevision) {
-      throw new Error(
-        "Citation Health members revision must match artifact lineage.",
-      );
-    }
-    if (
-      JSON.stringify([...report.scope.includedSourceIDs].sort()) !==
-      JSON.stringify([...sourceIDs].sort())
-    ) {
-      throw new Error(
-        "Citation Health included sources must match artifact sourceIDs.",
-      );
-    }
-    const reportedInputs = report.inputArtifacts
-      .map((input) => [
-        input.artifactID,
-        input.artifactType,
-        input.version,
-        input.updatedAt,
-        input.payloadFingerprint,
-      ])
-      .sort((left, right) => String(left[0]).localeCompare(String(right[0])));
-    const lineageInputs = (
-      Array.isArray(lineage.artifactInputs) ? lineage.artifactInputs : []
-    )
-      .map((input) => {
-        const item = input as Record<string, unknown>;
-        return [
-          item.artifactID,
-          item.artifactType,
-          item.version,
-          item.updatedAt,
-          item.payloadFingerprint,
-        ];
-      })
-      .sort((left, right) => String(left[0]).localeCompare(String(right[0])));
-    if (JSON.stringify(reportedInputs) !== JSON.stringify(lineageInputs)) {
-      throw new Error(
-        "Citation Health payload inputs must match artifact lineage inputs.",
-      );
-    }
-  }
+  validateRegisteredResearchWorkspaceArtifactPayload(
+    artifact.type as ResearchWorkspaceArtifactType,
+    artifact.payload,
+    {
+      projectID: String(artifact.projectID),
+      sourceIDs,
+      membersRevision: Number(lineage.membersRevision),
+      artifactInputs: Array.isArray(lineage.artifactInputs)
+        ? (lineage.artifactInputs as Record<string, unknown>[])
+        : [],
+    },
+  );
   return normalizedCopy(value) as ResearchWorkspaceArtifactFile;
 }
 

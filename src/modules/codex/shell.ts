@@ -14,20 +14,6 @@ function buildShellEnvironmentExports(
     .map(([key, value]) => `export ${key}=${shellEscape(value)}`);
 }
 
-export function buildCodexShellScript(params: {
-  promptPath: string;
-  outputPath: string;
-  command: string[];
-  environment?: Record<string, string | undefined>;
-}) {
-  const command = params.command.map(shellEscape).join(" ");
-  return [
-    `mkdir -p ${shellEscape(params.outputPath.replace(/\/[^/]+$/, ""))}`,
-    ...buildShellEnvironmentExports(params.environment),
-    `cat ${shellEscape(params.promptPath)} | ${command} > ${shellEscape(params.outputPath)}`,
-  ].join(" && ");
-}
-
 export function buildBackgroundCodexShellScript(params: {
   promptPath: string;
   outputPath: string;

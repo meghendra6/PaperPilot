@@ -310,7 +310,9 @@ The preferences UI currently exposes settings across these areas:
 
 Important current details:
 
+- the plugin interface is currently English only; translated README files document the same English UI
 - response language is normalized to **English**, **Korean**, or **Chinese**
+- response language changes model-generated answers and artifacts, not interface labels
 - runtime code already reads many engine, retrieval, workspace, and privacy preferences
 - structured PDF extraction uses a bundled OpenDataLoader JAR and falls back to Zotero `attachmentText` if Java/runtime extraction is unavailable
 - full real-runtime QA of every preference path is still part of the remaining manual verification work
@@ -332,7 +334,7 @@ addon/      Zotero add-on manifest, locales, preferences UI, static assets
 src/        TypeScript source for reader UI, engine integrations, context, tools, and workflows
 test/       Node-based regression tests for prompt builders, parsing, storage, and workflow logic
 docs/       Manual QA checklist, prompt contracts, and supporting product notes
-scripts/    Local Zotero plugin scaffold CLI entrypoint
+scripts/    Build/release CLI, OpenDataLoader preparation, release-tag guard, and environment doctor
 build/      Generated add-on artifacts
 ```
 
@@ -363,6 +365,7 @@ The repository currently includes automated checks for core logic such as:
 - related-paper recommendation parsing
 - compare and artifact-save flows
 - auto-highlight parsing/matching
+- discovery, Critical Read, session persistence, and Research Workspace contracts
 
 Core commands used during local verification:
 

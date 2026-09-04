@@ -12,7 +12,6 @@ import {
   claimPendingEngineCompletion,
   clearPendingEngineCompletion,
   failRunProgress,
-  getLastEngineRequest,
   getPendingEngineCompletion,
   isPendingEngineCompletionCurrent,
   isReaderSessionTransitionActive,
@@ -25,7 +24,6 @@ import {
 } from "../ai/runLifecycle";
 import { getRunProgressState } from "../ai/runProgress";
 import { classifyRunFailure } from "../ai/runFailure";
-import { cancelActiveEngineRun } from "../ai/runControl";
 import { armRunTimeout, completeTimedOutRun } from "../ai/runTimeout";
 import {
   finishRunAfterCleanup,
@@ -565,50 +563,4 @@ export async function handleCodexQuestion(params: {
   }, 800);
 
   addon.data.codexRunPollers?.set(params.itemID, poller);
-}
-
-export async function retryLastCodexQuestion(params: {
-  itemID: number;
-  chatMessages: HTMLElement;
-  streamingIndicator: HTMLElement;
-}) {
-  const last = getLastEngineRequest(params.itemID);
-  if (!last || last.mode !== "codex_cli") {
-    addMessage(
-      params.chatMessages,
-      "No previous Codex request to retry.",
-      "ai",
-    );
-    return;
-  }
-
-  await handleCodexQuestion({
-    itemID: params.itemID,
-    sessionId: last.sessionId,
-    sessionTitle: last.sessionTitle,
-    paperTitle: (last as typeof last & { paperTitle?: string }).paperTitle,
-    question: last.question,
-    resumeSessionId: last.resumeSessionId,
-    selectedText: last.selectedText,
-    annotationIDs: last.annotationIDs,
-    useResume: Boolean(last.useResume),
-    chatMessages: params.chatMessages,
-    streamingIndicator: params.streamingIndicator,
-  });
-}
-
-export async function cancelCodexRun(params: {
-  itemID: number;
-  chatMessages: HTMLElement;
-}) {
-  const cancelled = await cancelActiveEngineRun(params.itemID);
-  const updatedState = getRunProgressState(params.itemID);
-  addMessage(
-    params.chatMessages,
-    cancelled
-      ? "Codex run cancelled."
-      : updatedState?.failure?.userMessage ||
-          "No cancellable Codex run is active.",
-    "ai",
-  );
 }

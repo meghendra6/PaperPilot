@@ -49,7 +49,6 @@ import {
   migrateResearchWorkspaceState,
   summarizeResearchWorkspace,
 } from "../src/modules/researchWorkspace/core/researchWorkspace/state";
-import { ResearchWorkspaceRepository } from "../src/modules/researchWorkspace/core/researchWorkspace/repository";
 import { extractLastJsonObject } from "../src/modules/researchWorkspace/core/comprehensionCheck/v2/json";
 import { parseLiteratureGraphResponse } from "../src/modules/researchWorkspace/core/literatureGraph/parser";
 import { exportLiteratureGraphMermaid } from "../src/modules/researchWorkspace/core/literatureGraph/export";
@@ -178,7 +177,6 @@ test("Research Workspace hybrid indexes are bounded and omit build-only tokens",
     },
     indexes,
     agent: { run: async () => "{}" },
-    exportTextFile: async () => "",
   });
   let lastIndex: any;
   for (let index = 0; index < 14; index += 1) {
@@ -792,42 +790,6 @@ test("workspace state preserves canonical Zotero source and stale metadata", () 
   );
 });
 
-test("workspace repository serializes atomic collection and paper updates", async () => {
-  let persisted: string | undefined;
-  const repository = new ResearchWorkspaceRepository("workspace.json", {
-    async exists() {
-      return persisted !== undefined;
-    },
-    async readText() {
-      return persisted;
-    },
-    async writeTextAtomic(_path: string, contents: string) {
-      persisted = contents;
-    },
-  });
-  await Promise.all([
-    repository.update(async (state: any) => {
-      await Promise.resolve();
-      state.papers.P1 = {
-        paperKey: "P1",
-        attachmentKey: "A1",
-        title: "One",
-        extractionQuality: "zotero_text",
-        criticalReads: [],
-        reproducibilityReports: [],
-        paperToCodeReports: [],
-      };
-    }),
-    repository.update((state: any) => {
-      state.matrices.push({ id: "M1", rows: [] });
-    }),
-  ]);
-  const state = await repository.load();
-  assert(state.papers.P1);
-  assert.equal(state.matrices.length, 1);
-  assert.equal(state.revision, 2);
-});
-
 test("balanced JSON recovery survives an unmatched prose brace", () => {
   assert.deepEqual(
     extractLastJsonObject('progress {not closed\n{"result":"ok"}'),
@@ -1024,17 +986,4 @@ test("Research Workspace marks persisted artifacts stale after source replacemen
   );
   assert.match(state.papers[sourceID].sourceStaleAt, /^\d{4}-\d{2}-\d{2}T/);
   assert.equal(state.papers[sourceID].claimLedger, priorLedger);
-});
-
-test("workspace repository surfaces corrupt persisted JSON", async () => {
-  const repository = new ResearchWorkspaceRepository("workspace.json", {
-    async exists() {
-      return true;
-    },
-    async readText() {
-      return "{broken";
-    },
-    async writeTextAtomic() {},
-  });
-  await assert.rejects(() => repository.load(), /invalid JSON/);
 });

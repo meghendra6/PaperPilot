@@ -43,12 +43,20 @@ import {
   parseResearchWorkspaceRunFile,
   parseResearchWorkspaceSourceFile,
 } from "./validation";
-import {
-  RESEARCH_WORKSPACE_ZOTERO_SYNC_SCHEMA_VERSION,
-  parseResearchWorkspaceZoteroSyncReceiptFile,
-  type ResearchWorkspaceZoteroSyncReceipt,
-  type ResearchWorkspaceZoteroSyncReceiptFile,
-} from "../zoteroSync";
+import type {
+  ResearchWorkspaceZoteroSyncReceipt,
+  ResearchWorkspaceZoteroSyncReceiptFile,
+} from "./zoteroSyncContracts";
+import { stableHash } from "../identity";
+import { getResearchWorkspaceReceiptContract } from "./receiptContract";
+
+function zoteroSyncReceiptContract() {
+  return getResearchWorkspaceReceiptContract<ResearchWorkspaceZoteroSyncReceiptFile>();
+}
+
+function parseResearchWorkspaceZoteroSyncReceiptFile(value: unknown) {
+  return zoteroSyncReceiptContract().parse(value);
+}
 
 function joinPath(...parts: string[]) {
   const separator = parts.some((part) => part.includes("\\")) ? "\\" : "/";
@@ -105,15 +113,6 @@ function defaultPreferences(now: string) {
     createdAt: now,
     updatedAt: now,
   } as const;
-}
-
-function stableHash(value: string, seed: number) {
-  let hash = seed >>> 0;
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 16777619) >>> 0;
-  }
-  return hash.toString(16).padStart(8, "0");
 }
 
 export function researchWorkspaceSourcePathID(sourceID: string) {
@@ -625,7 +624,7 @@ export class ResearchWorkspaceProjectRepository {
     }
     await this.files.ensureDirectory(this.getSyncReceiptsRoot(projectID));
     const candidate: ResearchWorkspaceZoteroSyncReceiptFile = {
-      schemaVersion: RESEARCH_WORKSPACE_ZOTERO_SYNC_SCHEMA_VERSION,
+      schemaVersion: zoteroSyncReceiptContract().schemaVersion,
       revision: 0,
       receipt: cloneResearchWorkspaceValue(receipt),
     };

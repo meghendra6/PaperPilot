@@ -64,8 +64,4 @@ export type FluentMessageId =
   | 'reader-action-find-prior-work'
   | 'reader-action-summarize'
   | 'reader-action-translate'
-  | 'research-workspace-open-menuitem'
-  | 'startup-begin'
-  | 'startup-finish'
-  | 'tabpanel-lib-tab-label'
-  | 'tabpanel-reader-tab-label';
+  | 'research-workspace-open-menuitem';

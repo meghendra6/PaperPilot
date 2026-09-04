@@ -17,6 +17,7 @@ import {
   normalizeDiscoveryRunFailure,
   openRecommendedPaper,
   parseRelatedPaperResponse,
+  sortRecommendationGroups,
   type RelatedRunSubmission,
 } from "../src/modules/relatedRecommendations";
 import { releaseReservationAfterConfirmedCleanup } from "../src/modules/ai/workspaceRun";
@@ -28,6 +29,25 @@ const restoreGlobals = createGlobalStateRestorer([
   "Zotero_Tabs",
 ]);
 afterEach(restoreGlobals);
+
+test("recommendations sort by relationship rank without a fabricated score", () => {
+  const groups = sortRecommendationGroups([
+    {
+      category: "Closest match",
+      papers: [
+        { title: "Adjacent", authors: [], relationship: "adjacent" },
+        { title: "Direct", authors: [], relationship: "direct" },
+        { title: "Strong", authors: [], relationship: "strong" },
+      ],
+    },
+  ]);
+
+  assert.deepEqual(
+    groups[0].papers.map((paper) => paper.title),
+    ["Direct", "Strong", "Adjacent"],
+  );
+  assert.equal("relevanceScore" in groups[0].papers[0], false);
+});
 
 test("related-run states stay bound to the submitted concern, not later edits", () => {
   const submission: RelatedRunSubmission = {
@@ -62,7 +82,7 @@ test("related-run states stay bound to the submitted concern, not later edits", 
     groups: [
       {
         category: "Verified main-conference papers",
-        papers: [{ title: "Paper", authors: [], relevanceScore: 0.5 }],
+        papers: [{ title: "Paper", authors: [] }],
       },
     ],
   });
@@ -320,7 +340,6 @@ test("buildRecommendationMetadataLine and buildOpenTarget cover DOI fallback", (
     buildRecommendationMetadataLine({
       title: "Paper",
       authors: ["Ada Lovelace", "Grace Hopper"],
-      relevanceScore: 0.7,
       year: 2024,
       venue: "ICML",
     }),
@@ -486,7 +505,6 @@ test("openRecommendedPaper opens an existing Zotero item via the main pane", asy
   await openRecommendedPaper({
     title: "Paper",
     authors: [],
-    relevanceScore: 0.8,
     existingItemID: 42,
   });
 
@@ -560,7 +578,6 @@ test("addRecommendationToCollection reuses an existing item and adds it to the c
       title: "Paper",
       authors: ["Ada Author"],
       year: 2026,
-      relevanceScore: 0.9,
       existingItemID: 99,
       doi: "10.5555/candidate",
       venue: "Example Conference",

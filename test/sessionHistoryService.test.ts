@@ -205,7 +205,6 @@ function buildSavedSnapshot(itemID: number): SessionHistorySnapshot {
               candidateID: "persistent-conversations",
               title: "Persistent conversations",
               authors: ["A. Researcher"],
-              relevanceScore: 0.91,
               url: "https://proceedings.example.org/persistent",
               publicationClass: "verified_main",
               evidenceConfidence: "high",
@@ -347,7 +346,6 @@ test("SessionHistoryService persists the active session snapshot with mixed-mode
             {
               title: "Persistent conversations",
               authors: ["A. Researcher"],
-              relevanceScore: 0.91,
             },
           ],
         },
@@ -423,7 +421,6 @@ test("SessionHistoryService persists the active session snapshot with mixed-mode
             {
               title: "Persistent conversations",
               authors: ["A. Researcher"],
-              relevanceScore: 0.91,
             },
           ],
         },
@@ -474,7 +471,6 @@ test("pre-gate snapshots never persist public-review URLs or reviewer content", 
             {
               title: "Gated Paper",
               authors: ["A. Researcher"],
-              relevanceScore: 0.9,
               reviewURL: "https://openreview.net/forum?id=gated",
               reviewInsight: {
                 sourceURLs: ["https://openreview.net/forum?id=gated"],
@@ -1107,7 +1103,6 @@ test("snapshot migration keeps empty verified lanes so lane messaging survives r
               title: "Published Peer",
               authors: ["A. Researcher"],
               year: 2025,
-              relevanceScore: 0.8,
               url: "https://journal.example.org/published-peer",
               publicationClass: "verified_journal",
               evidenceConfidence: "high",

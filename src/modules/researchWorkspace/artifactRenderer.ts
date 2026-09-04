@@ -3,8 +3,7 @@ import type {
   ResearchWorkspaceArtifactType,
   ResearchWorkspaceArtifact,
 } from "./persistence/contracts";
-
-const HTML_NS = "http://www.w3.org/1999/xhtml";
+import { element, metric as createMetric } from "./dom";
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -1541,18 +1540,6 @@ export function createResearchWorkspaceArtifactView(
   return { kind: "generic", value };
 }
 
-function element<K extends keyof HTMLElementTagNameMap>(
-  doc: Document,
-  tag: K,
-  className = "",
-  contents?: string,
-) {
-  const node = doc.createElementNS(HTML_NS, tag) as HTMLElementTagNameMap[K];
-  if (className) node.className = className;
-  if (contents !== undefined) node.textContent = contents;
-  return node;
-}
-
 function percentage(value: number | undefined) {
   return value === undefined ? "—" : `${Math.round(value * 100)}%`;
 }
@@ -1603,12 +1590,7 @@ function renderEvidence(
 }
 
 function metric(doc: Document, label: string, value: string) {
-  const node = element(doc, "div", "pprw-render-metric");
-  node.append(
-    element(doc, "strong", "", value),
-    element(doc, "span", "", label),
-  );
-  return node;
+  return createMetric(doc, { className: "pprw-render-metric", label, value });
 }
 
 function statusTone(status: string) {
