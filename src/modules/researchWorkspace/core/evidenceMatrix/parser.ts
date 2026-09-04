@@ -2,6 +2,14 @@
 import * as json_1 from "../comprehensionCheck/v2/json";
 import * as types_1 from "../evidence/types";
 import * as engine_1 from "./engine";
+import { enumValue, optionalUnitInterval } from "../parserValidation";
+const STATUSES = new Set([
+  "extracted",
+  "not_reported",
+  "unclear",
+  "conflicting",
+  "error",
+]);
 function parseCells(params) {
   const root = (0, json_1.extractLastJsonObject)(params.response);
   const columnMap = new Map(
@@ -39,14 +47,20 @@ function parseCells(params) {
           typeof object.displayValue === "string"
             ? object.displayValue
             : undefined,
-        status:
-          object.status === "not_reported" ||
-          object.status === "unclear" ||
-          object.status === "conflicting" ||
-          object.status === "error"
-            ? object.status
-            : "extracted",
-        confidence: Number(object.confidence) || 0,
+        ...(object.status !== undefined
+          ? { status: enumValue(object.status, "cell status", STATUSES) }
+          : {}),
+        ...(optionalUnitInterval(
+          object.confidence,
+          `cells[${index}].confidence`,
+        ) !== undefined
+          ? {
+              confidence: optionalUnitInterval(
+                object.confidence,
+                `cells[${index}].confidence`,
+              ),
+            }
+          : {}),
         evidence,
         ...(typeof object.notes === "string" && object.notes.trim()
           ? { notes: object.notes.trim() }
@@ -66,10 +80,7 @@ function parseEvidenceMatrixRowResponse(params) {
   return {
     paperKey: params.paperKey,
     attachmentKey: params.attachmentKey,
-    title:
-      typeof root.title === "string" && root.title.trim()
-        ? root.title.trim()
-        : params.paperKey,
+    title: (0, json_1.readString)(root.title, "title"),
     cells: parseCells({
       response: params.response,
       paperKey: params.paperKey,

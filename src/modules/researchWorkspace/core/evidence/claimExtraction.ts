@@ -2,6 +2,14 @@
 import * as claimLedger_1 from "./claimLedger";
 import * as types_1 from "./types";
 import * as json_1 from "../comprehensionCheck/v2/json";
+import { enumValue, optionalUnitInterval } from "../parserValidation";
+const CLAIM_KINDS = new Set([
+  "author_claim",
+  "empirical_result",
+  "assumption",
+  "reader_inference",
+  "external_evidence",
+]);
 const VERIFICATION_STATUSES = new Set([
   "verified",
   "partially_verified",
@@ -65,8 +73,11 @@ function parseClaimExtractionResponse(params) {
     ledger = (0, claimLedger_1.addClaim)(ledger, {
       id: String(claim.id || `claim-${index + 1}`),
       text: String(claim.text || "").trim(),
-      kind: String(claim.kind || "reader_inference"),
-      confidence: Math.max(0, Math.min(1, Number(claim.confidence) || 0)),
+      kind: enumValue(claim.kind, `claim[${index}].kind`, CLAIM_KINDS),
+      confidence: optionalUnitInterval(
+        claim.confidence,
+        `claim[${index}].confidence`,
+      ),
       support,
       contradictions,
       verificationStatus,

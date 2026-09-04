@@ -1,6 +1,8 @@
 // @ts-nocheck -- Ported feature core is guarded by strict runtime parsers.
 import * as json_1 from "../comprehensionCheck/v2/json";
 import * as types_1 from "../evidence/types";
+import { enumValue } from "../parserValidation";
+const IMPACTS = new Set(["low", "medium", "high", "unknown"]);
 function text(value, fallback = "") {
   return typeof value === "string" ? value.trim() : fallback;
 }
@@ -12,10 +14,7 @@ function strings(value) {
     : [];
 }
 function asImpact(value) {
-  const candidate = text(value, "unknown");
-  return candidate === "low" || candidate === "medium" || candidate === "high"
-    ? candidate
-    : "unknown";
+  return enumValue(value, "ambiguity risk", IMPACTS);
 }
 function parsePaperToCodeResponse(params) {
   const root = (0, json_1.extractLastJsonObject)(params.response);
@@ -39,8 +38,14 @@ function parsePaperToCodeResponse(params) {
         order: Number.isFinite(Number(object.order))
           ? Math.max(1, Math.floor(Number(object.order)))
           : index + 1,
-        name: text(object.name, text(object.stage, `Step ${index + 1}`)),
-        operation: text(object.operation, "Unspecified operation"),
+        name: (0, json_1.readString)(
+          object.name ?? object.stage,
+          `trace[${index}].name`,
+        ),
+        operation: (0, json_1.readString)(
+          object.operation,
+          `trace[${index}].operation`,
+        ),
         inputShapes: inputShapes.length
           ? inputShapes
           : legacyInput
@@ -77,7 +82,10 @@ function parsePaperToCodeResponse(params) {
       const object = (0, json_1.readObject)(entry, `invariants[${index}]`);
       return {
         id: text(object.id, `inv-${index + 1}`),
-        statement: text(object.statement, "Unspecified invariant"),
+        statement: (0, json_1.readString)(
+          object.statement,
+          `invariants[${index}].statement`,
+        ),
         consequence: text(
           object.consequence,
           "Violation changes correctness or semantics.",
@@ -91,12 +99,12 @@ function parsePaperToCodeResponse(params) {
   const rawComplexity = (0, json_1.readObject)(root.complexity, "complexity");
   const compute = text(
     rawComplexity.compute,
-    text(rawComplexity.time, "Unspecified"),
+    (0, json_1.readString)(rawComplexity.time, "complexity.time"),
   );
   const complexity = {
     compute,
     time: compute,
-    memory: text(rawComplexity.memory, "Unspecified"),
+    memory: (0, json_1.readString)(rawComplexity.memory, "complexity.memory"),
     ...((0, json_1.readOptionalString)(rawComplexity.communication)
       ? {
           communication: (0, json_1.readOptionalString)(
@@ -120,14 +128,17 @@ function parsePaperToCodeResponse(params) {
     const impact = asImpact(object.impact ?? object.risk);
     const proposedExperiment = text(
       object.proposedExperiment,
-      text(
+      (0, json_1.readString)(
         object.suggestedResolution,
-        "Inspect the official code or design a discriminating experiment.",
+        `ambiguities[${index}].suggestedResolution`,
       ),
     );
     return {
       id: text(object.id, `ambiguity-${index + 1}`),
-      question: text(object.question, "Unspecified implementation ambiguity"),
+      question: (0, json_1.readString)(
+        object.question,
+        `ambiguities[${index}].question`,
+      ),
       impact,
       likelyChoices: strings(object.likelyChoices),
       proposedExperiment,
@@ -170,10 +181,22 @@ function parsePaperToCodeResponse(params) {
       `paperCodeDivergences[${index}]`,
     );
     return {
-      area: text(object.area, `Divergence ${index + 1}`),
-      paperStatement: text(object.paperStatement),
-      codeBehavior: text(object.codeBehavior),
-      impact: text(object.impact),
+      area: (0, json_1.readString)(
+        object.area,
+        `paperCodeDivergences[${index}].area`,
+      ),
+      paperStatement: (0, json_1.readString)(
+        object.paperStatement,
+        `paperCodeDivergences[${index}].paperStatement`,
+      ),
+      codeBehavior: (0, json_1.readString)(
+        object.codeBehavior,
+        `paperCodeDivergences[${index}].codeBehavior`,
+      ),
+      impact: (0, json_1.readString)(
+        object.impact,
+        `paperCodeDivergences[${index}].impact`,
+      ),
       evidence: (0, types_1.normalizeEvidenceReferences)(object.evidence, {
         allowedAttachmentKeys,
       }),
@@ -187,7 +210,7 @@ function parsePaperToCodeResponse(params) {
     );
   const minimalReproduction = strings(rawMinimalReproduction);
   const summary = (0, json_1.readString)(root.summary, "summary");
-  const objective = text(root.objective, summary);
+  const objective = (0, json_1.readString)(root.objective, "objective");
   const tensorTrace = trace.map((step, index) => ({
     id: `trace-${index + 1}`,
     stage: step.name,
@@ -210,8 +233,12 @@ function parsePaperToCodeResponse(params) {
     paperKey: params.paperKey,
     attachmentKey: params.attachmentKey,
     objective,
-    inputs: strings(root.inputs),
-    outputs: strings(root.outputs),
+    inputs: (0, json_1.readArray)(root.inputs, "inputs").map((entry, index) =>
+      (0, json_1.readString)(entry, `inputs[${index}]`),
+    ),
+    outputs: (0, json_1.readArray)(root.outputs, "outputs").map(
+      (entry, index) => (0, json_1.readString)(entry, `outputs[${index}]`),
+    ),
     summary,
     pseudocode: (0, json_1.readString)(root.pseudocode, "pseudocode"),
     trace,

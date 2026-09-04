@@ -569,8 +569,11 @@ test("addRecommendationToCollection reuses an existing item and adds it to the c
     collectionID: 5,
     reusedExistingItem: true,
   });
-  assert.equal(fields.DOI, "10.5555/candidate");
-  assert.equal(fields.publicationTitle, "Example Conference");
-  assert.equal(fields.url, "https://publisher.example/paper");
+  assert.equal(fields.DOI, undefined);
+  assert.equal(fields.publicationTitle, undefined);
+  assert.equal(fields.url, undefined);
+  assert.match(fields.extra, /Suggested DOI.*10\.5555\/candidate/);
+  assert.match(fields.extra, /Suggested venue.*Example Conference/);
+  assert.match(fields.extra, /Suggested URL.*publisher\.example/);
   assert.ok(saveCalls > 0);
 });

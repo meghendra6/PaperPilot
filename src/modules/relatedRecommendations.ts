@@ -47,6 +47,7 @@ import {
   areLikelySamePaper,
   deduplicateProviderCandidates,
   isPublicReviewURL,
+  normalizeDiscoveryDOI,
   normalizeHttpURL,
 } from "./discovery/normalize";
 import { RUN_TIMEOUT_MS } from "./ai/runProgress";
@@ -274,9 +275,7 @@ function normalizeTitle(value: string) {
 }
 
 export function normalizeDOI(value: string) {
-  return normalizeWhitespace(value)
-    .replace(/^https?:\/\/(dx\.)?doi\.org\//i, "")
-    .toLowerCase();
+  return normalizeDiscoveryDOI(value) ?? "";
 }
 
 function extractJSONObject(raw: string) {
@@ -565,9 +564,26 @@ export function buildDiscoveryEvidenceExtra(
   paper: RecommendedPaper,
   options: { includeReviewURL?: boolean } = {},
 ) {
-  if (!paper.publicationClass && !paper.publicationEvidence?.length) return "";
+  if (
+    !paper.publicationClass &&
+    !paper.publicationEvidence?.length &&
+    !paper.doi &&
+    !paper.venue &&
+    !safePaperURLs(paper).length
+  ) {
+    return "";
+  }
   return [
     "Paper Pilot discovery evidence:",
+    paper.doi && normalizeDiscoveryDOI(paper.doi)
+      ? `Suggested DOI (not applied to existing metadata): ${normalizeDiscoveryDOI(paper.doi)}`
+      : undefined,
+    paper.venue
+      ? `Suggested venue (not applied to existing metadata): ${paper.venue}`
+      : undefined,
+    safePaperURLs(paper)[0]
+      ? `Suggested URL (not applied to existing metadata): ${safePaperURLs(paper)[0]}`
+      : undefined,
     paper.publicationClass
       ? `Publication class: ${paper.publicationClass}`
       : undefined,
@@ -1194,26 +1210,6 @@ export async function addRecommendationToCollection(params: {
       item.setCreators(params.paper.authors.map(splitCreatorName));
     }
     needsSave = true;
-  }
-
-  if (existing) {
-    const fillIfMissing = (field: string, value?: string) => {
-      if (value && !String(item.getField(field) || "").trim()) {
-        item.setField(field, value);
-        needsSave = true;
-      }
-    };
-    fillIfMissing(
-      "DOI",
-      params.paper.doi ? normalizeDOI(params.paper.doi) : undefined,
-    );
-    fillIfMissing("publicationTitle", params.paper.venue);
-    fillIfMissing(
-      "url",
-      params.includeReviewURL === false
-        ? safePaperURLs(params.paper)[0]
-        : params.paper.url || params.paper.urls?.[0],
-    );
   }
 
   const evidenceExtra = buildDiscoveryEvidenceExtra(params.paper, {

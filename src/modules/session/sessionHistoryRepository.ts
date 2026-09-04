@@ -55,6 +55,71 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
+function isEngineMode(value: unknown) {
+  return (
+    value === "codex_cli" || value === "claude_code" || value === "gemini_cli"
+  );
+}
+
+function isSessionListEntry(value: unknown): value is SessionHistoryListEntry {
+  if (!isPlainObject(value)) return false;
+  return (
+    value.storageVersion === SESSION_HISTORY_STORAGE_VERSION &&
+    typeof value.sessionId === "string" &&
+    Boolean(value.sessionId) &&
+    typeof value.title === "string" &&
+    typeof value.createdAt === "string" &&
+    typeof value.updatedAt === "string" &&
+    Number.isInteger(value.messageCount) &&
+    Number(value.messageCount) >= 0 &&
+    (value.lastMode === undefined || isEngineMode(value.lastMode)) &&
+    typeof value.hasArtifacts === "boolean" &&
+    typeof value.hasRecommendations === "boolean" &&
+    typeof value.hasMasteryState === "boolean"
+  );
+}
+
+function isSessionHistoryIndex(
+  value: unknown,
+  itemID: number,
+): value is SessionHistoryIndex {
+  if (!isPlainObject(value)) return false;
+  return (
+    value.storageVersion === SESSION_HISTORY_STORAGE_VERSION &&
+    value.paperItemID === itemID &&
+    typeof value.paperTitle === "string" &&
+    Array.isArray(value.sessions) &&
+    value.sessions.every(isSessionListEntry)
+  );
+}
+
+function isSessionHistorySnapshot(
+  value: unknown,
+  itemID: number,
+  sessionId: string,
+): value is SessionHistorySnapshot {
+  if (!isPlainObject(value)) return false;
+  return (
+    value.storageVersion === SESSION_HISTORY_STORAGE_VERSION &&
+    value.sessionId === sessionId &&
+    value.paperItemID === itemID &&
+    typeof value.title === "string" &&
+    typeof value.createdAt === "string" &&
+    typeof value.updatedAt === "string" &&
+    (value.lastMode === undefined || isEngineMode(value.lastMode)) &&
+    (value.messages === undefined || Array.isArray(value.messages))
+  );
+}
+
+function defaultWarn(message: string) {
+  const zotero = getGlobalZotero();
+  if (zotero?.logError) {
+    zotero.logError(new Error(message));
+    return;
+  }
+  globalThis.console?.warn?.(`[Paper Pilot] ${message}`);
+}
+
 function hasMeaningfulState(value: unknown) {
   if (Array.isArray(value)) {
     return value.length > 0;
@@ -233,11 +298,13 @@ export class SessionHistoryRepository {
   private readonly rootDir?: string;
   private readonly fileOps: SessionHistoryFileOps;
   private readonly now: () => Date;
+  private readonly warn: (message: string) => void;
 
   constructor(options: SessionHistoryRepositoryOptions = {}) {
     this.rootDir = options.rootDir;
     this.fileOps = options.fileOps || createDefaultFileOps();
     this.now = options.now || (() => new Date());
+    this.warn = options.warn || defaultWarn;
   }
 
   getPaperRoot(itemID: number) {
@@ -260,7 +327,23 @@ export class SessionHistoryRepository {
     return joinPath(this.getSessionsRoot(itemID), `${sessionId}.json`);
   }
 
-  private async readJson<T>(path: string): Promise<T | undefined> {
+  private async quarantineCorruptFile(path: string, raw: string) {
+    const timestamp = this.now()
+      .toISOString()
+      .replace(/[^0-9TZ]/g, "-");
+    const quarantinePath = `${path}.corrupt-${timestamp}`;
+    try {
+      await this.fileOps.writeTextAtomic(quarantinePath, raw);
+      await this.fileOps.remove(path);
+      this.warn(`Quarantined unreadable session history file: ${path}`);
+    } catch (error) {
+      this.warn(
+        `Could not quarantine unreadable session history file ${path}: ${String(error)}`,
+      );
+    }
+  }
+
+  private async readJson(path: string): Promise<unknown> {
     let raw: string | undefined;
     try {
       raw = await this.fileOps.readText(path);
@@ -273,10 +356,25 @@ export class SessionHistoryRepository {
     }
 
     try {
-      return JSON.parse(raw) as T;
+      return JSON.parse(raw);
     } catch {
+      await this.quarantineCorruptFile(path, raw);
       return undefined;
     }
+  }
+
+  private rejectsFutureVersion(value: unknown, path: string) {
+    if (
+      isPlainObject(value) &&
+      typeof value.storageVersion === "number" &&
+      value.storageVersion > SESSION_HISTORY_STORAGE_VERSION
+    ) {
+      this.warn(
+        `Refusing future session history version ${value.storageVersion} at ${path}.`,
+      );
+      return true;
+    }
+    return false;
   }
 
   private async ensurePaperDirectories(itemID: number) {
@@ -359,9 +457,16 @@ export class SessionHistoryRepository {
   }
 
   async readPaperIndex(itemID: number): Promise<SessionHistoryIndex> {
-    const index = await this.readJson<SessionHistoryIndex>(
-      this.getPaperIndexPath(itemID),
-    );
+    const indexPath = this.getPaperIndexPath(itemID);
+    const candidate = await this.readJson(indexPath);
+    const index = isSessionHistoryIndex(candidate, itemID)
+      ? candidate
+      : undefined;
+    if (candidate !== undefined && !index) {
+      if (!this.rejectsFutureVersion(candidate, indexPath)) {
+        this.warn(`Ignoring invalid session history index at ${indexPath}.`);
+      }
+    }
     const recoveredSessions = await this.recoverSessionsFromDisk(itemID);
     if (!index) {
       return {
@@ -397,17 +502,20 @@ export class SessionHistoryRepository {
     itemID: number,
     sessionId: string,
   ): Promise<SessionHistorySnapshot | undefined> {
-    const snapshot = await this.readJson<SessionHistorySnapshot>(
-      this.getSessionSnapshotPath(itemID, sessionId),
-    );
-    if (!snapshot) {
+    const snapshotPath = this.getSessionSnapshotPath(itemID, sessionId);
+    const candidate = await this.readJson(snapshotPath);
+    if (!isSessionHistorySnapshot(candidate, itemID, sessionId)) {
+      if (candidate !== undefined) {
+        if (!this.rejectsFutureVersion(candidate, snapshotPath)) {
+          this.warn(
+            `Ignoring invalid session history snapshot at ${snapshotPath}.`,
+          );
+        }
+      }
       return undefined;
     }
 
-    return {
-      ...snapshot,
-      storageVersion: SESSION_HISTORY_STORAGE_VERSION,
-    };
+    return candidate;
   }
 
   async saveSessionSnapshot(params: {

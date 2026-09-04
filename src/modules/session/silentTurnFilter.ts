@@ -13,16 +13,12 @@ const SILENT_TOOL_KEYS = new Set([
   "groups",
 ]);
 
-function isCodeFenceLine(line: string) {
-  return line.startsWith("```");
-}
-
 function isPlainObjectShape(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
-function lineLooksLikeSilentToolJson(line: string) {
-  const trimmed = line.trim();
+function textLooksLikeSilentToolJson(text: string) {
+  const trimmed = text.trim();
   if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) {
     return false;
   }
@@ -55,27 +51,23 @@ function lineLooksLikeSilentToolJson(line: string) {
  * (mastery, paper-workbench cards, related-recommendation requests) that were
  * persisted by versions before suppressMessage suppression existed.
  *
- * Only inspects assistant messages. Walks lines top-to-bottom and ignores
- * anything inside fenced code blocks so that legitimate JSON examples in chat
- * are not hidden.
+ * Only inspects assistant messages. Legacy tool JSON must constitute the full
+ * message; prose containing an example object is kept. Fenced and indented
+ * code is always treated as visible user-facing content.
  */
 export function isLikelySilentToolMessage(record: MessageRecord): boolean {
   if (record.role !== "assistant") {
     return false;
   }
 
-  let insideFence = false;
-  for (const line of record.text.split(/\r?\n/)) {
-    if (isCodeFenceLine(line.trim())) {
-      insideFence = !insideFence;
-      continue;
-    }
-    if (insideFence) {
-      continue;
-    }
-    if (lineLooksLikeSilentToolJson(line)) {
-      return true;
-    }
+  const lines = record.text.split(/\r?\n/);
+  if (
+    lines.some(
+      (line) =>
+        /^(?:\s*)(?:`{3,}|~{3,})/.test(line) || /^(?: {4}|\t)/.test(line),
+    )
+  ) {
+    return false;
   }
-  return false;
+  return textLooksLikeSilentToolJson(record.text);
 }

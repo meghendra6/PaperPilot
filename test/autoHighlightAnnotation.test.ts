@@ -27,6 +27,7 @@ test("buildHighlightAnnotationJSON creates Zotero-compatible highlight payload",
     type: "highlight",
     text: "Exact quote",
     color: "#ffd400",
+    comment: "Paper Pilot auto-highlight",
     pageLabel: "1",
     sortIndex: "00000|000020|00010",
     position: {

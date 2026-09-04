@@ -5,6 +5,7 @@ import {
   RESEARCH_WORKSPACE_OUTPUT_SCHEMAS,
   researchWorkspaceOutputSchemaForPurpose,
 } from "../src/modules/researchWorkspace/outputSchemas";
+import { parseCrossPaperGradeResponse } from "../src/modules/researchWorkspace/core/crossPaperMastery/parser";
 
 type Schema = Record<string, unknown>;
 
@@ -139,4 +140,44 @@ test("unknown purposes fail before a mismatched schema reaches a provider", () =
     () => researchWorkspaceOutputSchemaForPurpose("unknown-purpose"),
     /Unsupported Research Workspace output purpose: unknown-purpose/,
   );
+});
+
+test("cross-paper grade schema fixture round-trips through its parser", () => {
+  const fixture = {
+    criterionScores: [
+      {
+        criterionId: "criterion-1",
+        score: 4,
+        feedback: "Connects the two papers with local evidence.",
+        evidence: [],
+      },
+    ],
+    feedback: "Strong synthesis with one remaining qualification.",
+    misconceptions: ["The second paper does not claim causality."],
+    graderConfidence: 0.8,
+  };
+
+  const parsed = parseCrossPaperGradeResponse({
+    response: JSON.stringify(fixture),
+    question: {
+      id: "question-1",
+      rubric: [
+        {
+          id: "criterion-1",
+          maxScore: 5,
+          requiredPaperKeys: ["paper-a", "paper-b"],
+        },
+      ],
+    },
+    answer: "A grounded comparison.",
+    learnerConfidence: 0.6,
+    now: "2026-09-03T00:00:00.000Z",
+  });
+
+  assert.equal(parsed.feedback, fixture.feedback);
+  assert.equal(parsed.graderConfidence, fixture.graderConfidence);
+  assert.equal(parsed.learnerConfidence, 0.6);
+  assert.deepEqual(parsed.misconceptions, fixture.misconceptions);
+  assert.equal(parsed.grades[0].criterionId, "criterion-1");
+  assert.equal(parsed.grades[0].score, 4);
 });

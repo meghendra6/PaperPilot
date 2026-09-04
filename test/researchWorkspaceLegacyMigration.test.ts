@@ -8,6 +8,7 @@ import {
   type LegacySourceResolutionCandidate,
 } from "../src/modules/researchWorkspace/persistence/legacyMigration";
 import { ResearchWorkspaceProjectRepository } from "../src/modules/researchWorkspace/persistence/projectRepository";
+import { readResearchWorkspaceArtifact } from "../src/modules/researchWorkspace/legacyCapabilityAdapters";
 
 class MemoryMigrationFiles implements ResearchWorkspaceFileOps {
   readonly files = new Map<string, string>();
@@ -296,10 +297,27 @@ test("an interrupted import resumes with deterministic source and artifact IDs",
     context.files.files.get(context.importer.markerPath)!,
   );
   assert.equal(markerAfterFailure.migration.status, "in-progress");
+  const projectID = markerAfterFailure.migration.createdProjectID;
+  const projectBeforeResume = await context.repository.getProject(projectID);
+  const sourceID = projectBeforeResume.members[0].sourceID;
+  const sourceBeforeResume = await context.repository.getSource(sourceID);
+  await context.repository.putSource(
+    { ...sourceBeforeResume!.source, title: "Locally refreshed title" },
+    sourceBeforeResume!.revision,
+  );
+  await context.repository.updateMembers(
+    projectID,
+    projectBeforeResume.membersRevision,
+    (members) =>
+      members.map((member) =>
+        member.sourceID === sourceID
+          ? { ...member, role: "included", reviewStatus: "included" }
+          : member,
+      ),
+  );
 
   const completed = await context.importer.migrate();
   assert.equal(completed.status, "completed");
-  const projectID = completed.marker!.migration.createdProjectID;
   const project = await context.repository.getProject(projectID);
   assert.equal(project.members.length, 3);
   assert.equal(new Set(project.members.map((entry) => entry.sourceID)).size, 3);
@@ -307,6 +325,40 @@ test("an interrupted import resumes with deterministic source and artifact IDs",
     (await context.repository.listArtifacts(projectID)).artifacts.length,
     5,
   );
+  assert.equal(
+    (await context.repository.getSource(sourceID))?.source.title,
+    "Locally refreshed title",
+  );
+  const preservedMember = project.members.find(
+    (member) => member.sourceID === sourceID,
+  );
+  assert.equal(preservedMember?.role, "included");
+  assert.equal(preservedMember?.reviewStatus, "included");
+});
+
+test("legacy artifacts bind to capabilities and mastery keeps its session envelope", async () => {
+  const state = legacyState();
+  (
+    state.papers["OLD-A"] as (typeof state.papers)["OLD-A"] & {
+      mastery: unknown;
+    }
+  ).mastery = { phase: "active", rounds: [] };
+  const context = setup({ legacy: state });
+  const result = await context.importer.migrate();
+  const projectID = result.marker!.migration.createdProjectID;
+  const artifacts = (await context.repository.listArtifacts(projectID))
+    .artifacts;
+
+  for (const artifact of artifacts) {
+    assert(readResearchWorkspaceArtifact(artifact).capabilityID);
+  }
+  const mastery = artifacts.find(
+    (artifact) => artifact.type === "paper-mastery",
+  );
+  assert.equal(mastery?.lineage.operation, "paper-mastery");
+  assert.deepEqual(mastery?.payload, {
+    session: { phase: "active", rounds: [] },
+  });
 });
 
 test("changed legacy content after a completed import is not rebound or duplicated", async () => {

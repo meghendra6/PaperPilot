@@ -282,6 +282,34 @@ test("matchQuoteInPages calculates sub-span rects for partial span matches", () 
   assert.ok(rect[2] < 100, "right edge should not extend to span end");
 });
 
+test("matchQuoteInPages returns the exact locally matched span text", () => {
+  const pages = [
+    {
+      pageIndex: 0,
+      pageLabel: "1",
+      spans: [
+        {
+          pageIndex: 0,
+          pageLabel: "1",
+          text: "Prefix novel approach—works reliably across datasets suffix",
+          normalizedText: normalizeQuoteText(
+            "Prefix novel approach—works reliably across datasets suffix",
+          ),
+          rect: [0, 10, 240, 20],
+        },
+      ],
+    },
+  ];
+
+  const match = matchQuoteInPages(
+    "novel approach works reliably across datasets",
+    pages,
+  );
+
+  assert.ok(match);
+  assert.equal(match.quote, "novel approach—works reliably across datasets");
+});
+
 test("matchQuoteInPages merges adjacent rects on the same line", () => {
   const pages = [
     {

@@ -263,7 +263,7 @@ export function applyResearchWorkspaceContextPlan(
       ...paper,
       context: [
         `<paper source_id="${paper.sourceID}" attachment_key="${paper.attachmentKey}">`,
-        projection.includedText,
+        projection.includedText.replace(/<\/paper/gi, "<\\/paper"),
         "</paper>",
       ].join("\n"),
       structuredChunks: paper.structuredChunks?.filter((chunk) =>

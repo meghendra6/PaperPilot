@@ -684,6 +684,7 @@ export function matchQuoteInPages(
   }
 
   const rawRects: number[][] = [];
+  const matchedTextParts: string[] = [];
   for (const [spanIndex, range] of [...spanMatchRanges].sort(
     ([a], [b]) => a - b,
   )) {
@@ -706,6 +707,7 @@ export function matchQuoteInPages(
 
     if (range.startInSpan === 0 && range.endInSpan >= totalChars) {
       rawRects.push([x1, y1, x2, y2]);
+      matchedTextParts.push(span.text);
     } else {
       const n2oMap = buildNormalizedToOriginalMap(span.text);
       const origLen = span.text.normalize("NFKC").length;
@@ -722,6 +724,9 @@ export function matchQuoteInPages(
       const newX1 = x1 + startFraction * spanWidth;
       const newX2 = x1 + endFraction * spanWidth;
       rawRects.push([newX1, y1, newX2, y2]);
+      matchedTextParts.push(
+        span.text.normalize("NFKC").slice(origStart, origEnd),
+      );
     }
   }
 
@@ -732,7 +737,7 @@ export function matchQuoteInPages(
   }
 
   return {
-    quote,
+    quote: matchedTextParts.join(" ").replace(/\s+/g, " ").trim() || quote,
     normalizedQuote,
     pageIndex: page.pageIndex,
     pageLabel: page.pageLabel,

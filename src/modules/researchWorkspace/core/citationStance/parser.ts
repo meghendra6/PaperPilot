@@ -1,6 +1,7 @@
 // @ts-nocheck -- Ported feature core is guarded by strict runtime parsers.
 import * as json_1 from "../comprehensionCheck/v2/json";
 import * as types_1 from "../evidence/types";
+import { enumValue, optionalUnitInterval } from "../parserValidation";
 const STANCES = new Set([
   "supporting",
   "contrasting",
@@ -28,7 +29,7 @@ function parse(response, contexts, allowedAttachments) {
     ? root.results
     : Array.isArray(root.contexts)
       ? root.contexts
-      : [];
+      : (0, json_1.readArray)(root.results, "results");
   const results = raw.map((entry, index) => {
     const object = (0, json_1.readObject)(entry, `citationStance[${index}]`);
     const contextId = String(object.contextId ?? object.id ?? "").trim();
@@ -37,11 +38,12 @@ function parse(response, contexts, allowedAttachments) {
     if (seen.has(contextId))
       throw new Error(`Duplicate citation context ${contextId}`);
     seen.add(contextId);
-    const rawStance = String(object.stance ?? "uncertain");
-    if (!STANCES.has(rawStance))
-      throw new Error(`Invalid citation stance ${rawStance}`);
+    const rawStance = enumValue(object.stance, "citation stance", STANCES);
     const stance = rawStance === "unclear" ? "uncertain" : rawStance;
-    const confidenceNumber = Number(object.confidence);
+    const confidence = optionalUnitInterval(
+      object.confidence,
+      `citationStance[${index}].confidence`,
+    );
     return {
       contextId,
       ...(typeof object.targetClaimId === "string" &&
@@ -51,9 +53,7 @@ function parse(response, contexts, allowedAttachments) {
           ? { targetClaimId: source.targetClaimId }
           : {}),
       stance,
-      confidence: Number.isFinite(confidenceNumber)
-        ? Math.max(0, Math.min(1, confidenceNumber))
-        : 0,
+      ...(confidence !== undefined ? { confidence } : {}),
       rationale:
         typeof object.rationale === "string" ? object.rationale.trim() : "",
       ...(typeof object.claim === "string" && object.claim.trim()
@@ -77,7 +77,6 @@ function parse(response, contexts, allowedAttachments) {
           ? { targetClaimId: context.targetClaimId }
           : {}),
         stance: "uncertain",
-        confidence: 0,
         rationale: "No classification returned.",
         limitations: ["Missing model output"],
         evidence: [],

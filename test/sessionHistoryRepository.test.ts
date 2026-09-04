@@ -470,6 +470,49 @@ test("SessionHistoryRepository prunes index rows whose snapshot is corrupt", asy
     [validSnapshot.sessionId],
   );
   assert.deepEqual(await repo.listSessions(42), index.sessions);
+  assert.equal(
+    fileOps.files.has(repo.getSessionSnapshotPath(42, corruptSnapshotId)),
+    false,
+  );
+  assert(
+    [...fileOps.files.keys()].some((path) =>
+      path.includes(`${corruptSnapshotId}.json.corrupt-`),
+    ),
+  );
+});
+
+test("SessionHistoryRepository rejects invalid and future snapshots with a warning", async () => {
+  const fileOps = new MemoryFileOps();
+  const warnings: string[] = [];
+  const repo = new SessionHistoryRepository({
+    rootDir: "/session-history",
+    fileOps,
+    warn: (message) => warnings.push(message),
+  });
+  const snapshotPath = repo.getSessionSnapshotPath(42, "paper-42-session-a");
+
+  for (const invalid of [[], "text"]) {
+    fileOps.files.set(snapshotPath, JSON.stringify(invalid));
+    assert.equal(
+      await repo.readSessionSnapshot(42, "paper-42-session-a"),
+      undefined,
+    );
+  }
+
+  fileOps.files.set(
+    snapshotPath,
+    JSON.stringify({
+      ...buildSnapshot(),
+      storageVersion: SESSION_HISTORY_STORAGE_VERSION + 1,
+    }),
+  );
+  assert.equal(
+    await repo.readSessionSnapshot(42, "paper-42-session-a"),
+    undefined,
+  );
+  assert(warnings.some((message) => message.includes("invalid")));
+  assert(warnings.some((message) => message.includes("future")));
+  assert(fileOps.files.has(snapshotPath));
 });
 
 test("SessionHistoryRepository uses platform-safe path joining", () => {

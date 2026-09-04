@@ -250,7 +250,12 @@ export class ResearchWorkspaceEvidenceVerifier {
           ...(chunk.metadata?.elementType
             ? { elementType: chunk.metadata.elementType }
             : {}),
-          verification: verification("verified", "structured-element", now),
+          verification: verification(
+            "unverified",
+            "structured-element",
+            now,
+            "The structured element exists locally, but no matching quote was supplied.",
+          ),
         };
       }
       return {

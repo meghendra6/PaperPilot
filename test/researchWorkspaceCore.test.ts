@@ -39,7 +39,10 @@ import {
   validateLiteratureGraph,
 } from "../src/modules/researchWorkspace/core/literatureGraph/graph";
 import { createCrossPaperMasterySession } from "../src/modules/researchWorkspace/core/crossPaperMastery/engine";
-import { parseCrossPaperGradeResponse } from "../src/modules/researchWorkspace/core/crossPaperMastery/parser";
+import {
+  parseCrossPaperGradeResponse,
+  parseCrossPaperQuestionResponse,
+} from "../src/modules/researchWorkspace/core/crossPaperMastery/parser";
 import { parseCitationStanceResponse } from "../src/modules/researchWorkspace/core/citationStance/parser";
 import {
   RESEARCH_WORKSPACE_SCHEMA_VERSION,
@@ -50,9 +53,13 @@ import { ResearchWorkspaceRepository } from "../src/modules/researchWorkspace/co
 import { extractLastJsonObject } from "../src/modules/researchWorkspace/core/comprehensionCheck/v2/json";
 import { parseLiteratureGraphResponse } from "../src/modules/researchWorkspace/core/literatureGraph/parser";
 import { exportLiteratureGraphMermaid } from "../src/modules/researchWorkspace/core/literatureGraph/export";
-import { buildClaimExtractionPrompt } from "../src/modules/researchWorkspace/core/evidence/claimExtraction";
+import {
+  buildClaimExtractionPrompt,
+  parseClaimExtractionResponse,
+} from "../src/modules/researchWorkspace/core/evidence/claimExtraction";
 import { buildProfiledCriticalReadPrompt } from "../src/modules/researchWorkspace/core/criticalRead/profiled/prompt";
 import { buildReproducibilityPrompt } from "../src/modules/researchWorkspace/core/reproducibility/prompt";
+import { parseReproducibilityResponse } from "../src/modules/researchWorkspace/core/reproducibility/parser";
 import { buildPaperToCodePrompt } from "../src/modules/researchWorkspace/core/paperToCode/prompt";
 import { buildEvidenceMatrixExtractionPrompt } from "../src/modules/researchWorkspace/core/evidenceMatrix/prompt";
 import { ResearchWorkspaceService } from "../src/modules/researchWorkspace/service";
@@ -148,6 +155,13 @@ test("hybrid retrieval keeps technical aliases and ranks the mechanism", () => {
   );
   assert.equal(result[0].chunk.id, "method");
   assert(result[0].score.combined > 0);
+});
+
+test("hybrid tokenization covers CJK, Korean, and folded Latin scripts", () => {
+  assert(tokenizeHybrid("注意机制", false).includes("注意"));
+  assert(tokenizeHybrid("注意機構", false).includes("注意"));
+  assert(tokenizeHybrid("어텐션메커니즘", false).includes("어텐"));
+  assert(tokenizeHybrid("résumé naïve", false).includes("resume"));
 });
 
 test("evidence references clamp safe geometry and reject foreign attachments", () => {
@@ -297,6 +311,9 @@ test("reproducibility readiness penalizes major blockers", () => {
 
 test("Paper-to-Code requires every implementation report surface", () => {
   const complete = {
+    objective: "Implement the method",
+    inputs: [],
+    outputs: [],
     summary: "Implementation summary",
     pseudocode: "step()",
     tensorTrace: [],
@@ -432,6 +449,158 @@ test("cross-paper contracts require two papers and complete rubric grades", () =
       }),
     /Missing criterion r2/,
   );
+});
+
+test("structured parsers reject invalid enums and non-numeric confidence", () => {
+  const crossPaperQuestion = {
+    id: "q",
+    mode: "compare",
+    prompt: "Compare the papers.",
+    paperKeys: ["P1", "P2"],
+    difficulty: "expert",
+    criteria: [
+      {
+        id: "r1",
+        description: "Compare mechanisms",
+        maxScore: 2,
+        paperKeys: ["P1", "P2"],
+        requiredClaims: [],
+        evidence: [],
+      },
+    ],
+  };
+  assert.throws(
+    () =>
+      parseCrossPaperQuestionResponse({
+        response: JSON.stringify(crossPaperQuestion),
+        allowedPaperKeys: new Set(["P1", "P2"]),
+      }),
+    /difficulty has unsupported value/,
+  );
+
+  const paperToCode = {
+    objective: "Implement",
+    inputs: [],
+    outputs: [],
+    summary: "Summary",
+    pseudocode: "run()",
+    tensorTrace: [],
+    invariants: [],
+    complexity: {
+      time: "O(n)",
+      memory: "O(1)",
+      communication: null,
+      assumptions: [],
+      evidence: [],
+    },
+    ambiguities: [
+      {
+        id: "a1",
+        question: "Which kernel?",
+        risk: "catastrophic",
+        suggestedResolution: "Benchmark both.",
+        evidence: [],
+      },
+    ],
+    paperCodeDivergences: [],
+    minimalReproduction: [],
+    validationTests: [],
+  };
+  assert.throws(
+    () =>
+      parsePaperToCodeResponse({
+        response: JSON.stringify(paperToCode),
+        paperKey: "P1",
+        attachmentKey: "A1",
+      }),
+    /ambiguity risk has unsupported value/,
+  );
+
+  assert.throws(
+    () =>
+      parseReproducibilityResponse({
+        response: JSON.stringify({
+          summary: "Summary",
+          artifacts: [],
+          blockers: [
+            {
+              id: "b1",
+              severity: "urgent",
+              description: "Missing code",
+              mitigation: "Release code",
+              evidence: [],
+            },
+          ],
+          minimalReproductionSteps: [],
+          verificationCommands: [],
+        }),
+        paperKey: "P1",
+        attachmentKey: "A1",
+      }),
+    /severity has unsupported value/,
+  );
+
+  assert.throws(
+    () =>
+      parseClaimExtractionResponse({
+        response: JSON.stringify({
+          claims: [
+            {
+              id: "c1",
+              text: "Claim",
+              kind: "author_claim",
+              confidence: "high",
+              support: [],
+              contradictions: [],
+              verificationStatus: "unverified",
+            },
+          ],
+        }),
+        paperKey: "P1",
+        attachmentKey: "A1",
+      }),
+    /confidence must be a finite number/,
+  );
+});
+
+test("cross-paper grade preserves holistic feedback and ignores model learner confidence", () => {
+  const parsed = parseCrossPaperGradeResponse({
+    response: JSON.stringify({
+      criterionScores: [
+        { criterionId: "r1", score: 2, feedback: "Criterion detail" },
+      ],
+      feedback: "Holistic diagnosis",
+      misconceptions: [],
+      graderConfidence: 0.8,
+      learnerConfidence: 1,
+    }),
+    question: { id: "q", rubric: [{ id: "r1", maxScore: 2 }] },
+    answer: "Answer",
+    learnerConfidence: 0.25,
+  });
+
+  assert.equal(parsed.feedback, "Holistic diagnosis");
+  assert.equal(parsed.learnerConfidence, 0.25);
+});
+
+test("missing claim confidence remains absent", () => {
+  const ledger = parseClaimExtractionResponse({
+    response: JSON.stringify({
+      claims: [
+        {
+          id: "c1",
+          text: "Claim",
+          kind: "author_claim",
+          support: [],
+          contradictions: [],
+          verificationStatus: "unverified",
+        },
+      ],
+    }),
+    paperKey: "P1",
+    attachmentKey: "A1",
+  });
+  assert.equal("confidence" in ledger.claims[0], false);
 });
 
 test("citation stance drops model evidence outside supplied attachments", () => {

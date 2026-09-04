@@ -8,6 +8,7 @@ import {
   RESEARCH_WORKSPACE_RUN_SCHEMA_VERSION,
   RESEARCH_WORKSPACE_SOURCE_SCHEMA_VERSION,
   ResearchWorkspaceNotFoundError,
+  ResearchWorkspaceRevisionConflictError,
   assertResearchWorkspaceID,
   assertResearchWorkspaceMember,
   type ResearchProject,
@@ -62,6 +63,10 @@ function joinPath(...parts: string[]) {
     )
     .filter(Boolean)
     .join(separator);
+}
+
+function fileName(path: string) {
+  return path.split(/[\\/]/).pop() ?? path;
 }
 
 function defaultID(prefix: string) {
@@ -1016,20 +1021,36 @@ export class ResearchWorkspaceProjectRepository {
       this.getArtifactPath(projectID, artifactID),
       artifactFile,
     );
-    await this.files.mutate({
-      path: this.getProjectPath(projectID),
-      parser: parseResearchWorkspaceProjectFile,
-      expectedRevision: bundle.projectRevision,
-      mutate: (file) => ({
-        ...file,
-        project: {
-          ...file.project,
-          artifactIDs: [...file.project.artifactIDs, artifactID],
-          activeArtifactID: artifactID,
-          updatedAt: timestamp,
-        },
-      }),
-    });
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const current = attempt === 0 ? bundle : await this.getProject(projectID);
+      try {
+        await this.files.mutate({
+          path: this.getProjectPath(projectID),
+          parser: parseResearchWorkspaceProjectFile,
+          expectedRevision: current.projectRevision,
+          mutate: (file) =>
+            file.project.artifactIDs.includes(artifactID)
+              ? undefined
+              : {
+                  ...file,
+                  project: {
+                    ...file.project,
+                    artifactIDs: [...file.project.artifactIDs, artifactID],
+                    activeArtifactID: artifactID,
+                    updatedAt: timestamp,
+                  },
+                },
+        });
+        break;
+      } catch (error) {
+        if (
+          !(error instanceof ResearchWorkspaceRevisionConflictError) ||
+          attempt === 2
+        ) {
+          throw error;
+        }
+      }
+    }
     if (input.supersedeLatest !== false && previous) {
       const previousFile = await this.getArtifact(
         projectID,
@@ -1053,8 +1074,51 @@ export class ResearchWorkspaceProjectRepository {
         });
       }
     }
+    await this.pruneArtifactHistory(projectID, artifact);
     await this.syncCatalogEntry(projectID);
     return created;
+  }
+
+  private async pruneArtifactHistory(
+    projectID: string,
+    latest: ResearchWorkspaceArtifact,
+  ) {
+    const limit = (await this.getPreferences()).preferences
+      .artifactHistoryLimit;
+    const listed = await this.listArtifacts(projectID);
+    const scope = [...latest.sourceIDs].sort().join("\n");
+    const sameHistory = listed.artifacts.filter(
+      (artifact) =>
+        artifact.type === latest.type &&
+        artifact.lineage.operation === latest.lineage.operation &&
+        [...artifact.sourceIDs].sort().join("\n") === scope,
+    );
+    let excess = sameHistory.length - limit;
+    if (excess <= 0) return;
+    const referenced = new Set(
+      listed.artifacts.flatMap((artifact) =>
+        (artifact.lineage.artifactInputs ?? []).map(
+          (input) => input.artifactID,
+        ),
+      ),
+    );
+    const candidates = sameHistory
+      .filter(
+        (artifact) =>
+          artifact.status === "superseded" &&
+          !referenced.has(artifact.artifactID),
+      )
+      .sort((left, right) => {
+        if (left.createdAt !== right.createdAt) {
+          return left.createdAt < right.createdAt ? -1 : 1;
+        }
+        return left.version - right.version;
+      });
+    for (const candidate of candidates) {
+      if (excess <= 0) break;
+      await this.deleteArtifact(projectID, candidate.artifactID);
+      excess -= 1;
+    }
   }
 
   async updateArtifact<T = unknown>(
@@ -1063,11 +1127,12 @@ export class ResearchWorkspaceProjectRepository {
     expectedRevision: number,
     mutate: (
       artifact: ResearchWorkspaceArtifact<T>,
-    ) => ResearchWorkspaceArtifact<T>,
+    ) => ResearchWorkspaceArtifact<T> | undefined,
     syncCatalog = true,
   ) {
     const timestamp = this.timestamp();
     let previousArtifact: ResearchWorkspaceArtifact<T> | undefined;
+    let changed = false;
     const next = await this.files.mutate({
       path: this.getArtifactPath(projectID, artifactID),
       parser: parseResearchWorkspaceArtifactFile,
@@ -1081,28 +1146,28 @@ export class ResearchWorkspaceProjectRepository {
             file.artifact as ResearchWorkspaceArtifact<T>,
           ),
         );
+        if (!artifact) return undefined;
         if (
           artifact.artifactID !== artifactID ||
           artifact.projectID !== projectID
         ) {
           throw new Error("An artifact update cannot change its identity.");
         }
+        if (JSON.stringify(previousArtifact) === JSON.stringify(artifact)) {
+          return undefined;
+        }
         artifact.updatedAt = timestamp;
         const candidate = { ...file, artifact };
         parseResearchWorkspaceArtifactFile(candidate);
+        changed = true;
         return candidate;
       },
     });
-    if (syncCatalog) {
-      const changed =
-        !previousArtifact ||
-        JSON.stringify(previousArtifact) !== JSON.stringify(next.artifact);
-      if (changed) {
-        await this.markArtifactsStaleForArtifact({
-          projectID,
-          artifactID,
-        });
-      }
+    if (syncCatalog && changed) {
+      await this.markArtifactsStaleForArtifact({
+        projectID,
+        artifactID,
+      });
       await this.syncCatalogEntry(projectID);
     }
     return next as ResearchWorkspaceArtifactFile<T>;
@@ -1537,28 +1602,134 @@ export class ResearchWorkspaceProjectRepository {
     return { recovered, warnings };
   }
 
-  async recoverStartup() {
+  private async quarantineProjectFile(path: string, projectID: string) {
+    const quarantineRoot = joinPath(
+      this.getProjectRoot(projectID),
+      "quarantine",
+    );
+    await this.files.ensureDirectory(quarantineRoot);
+    const quarantinePath = joinPath(
+      quarantineRoot,
+      `${fileName(path)}.corrupt-${this.timestamp().replace(/[^0-9TZ]/g, "-")}`,
+    );
+    return this.files.quarantine(path, quarantinePath);
+  }
+
+  private async repairProjectReferences(projectID: string) {
+    const bundle = await this.getProject(projectID);
     const warnings: string[] = [];
-    let repairedCatalog = false;
-    let needsRepair = false;
-    try {
-      if (await this.hasCatalog()) await this.getCatalog();
-      else {
-        const paths = await this.files.listDirectory(this.projectsRoot);
-        needsRepair = paths.some((path) => /[\\/]project\.json$/i.test(path));
+    const artifactIDs: string[] = [];
+    const runIDs: string[] = [];
+    const artifactPaths = (
+      await this.files.listDirectory(
+        joinPath(this.getProjectRoot(projectID), "artifacts"),
+      )
+    )
+      .filter((path) => /[\\/]artifact-[^\\/]+\.json$/i.test(path))
+      .sort();
+    for (const path of artifactPaths) {
+      try {
+        const file = await this.files.read(
+          path,
+          parseResearchWorkspaceArtifactFile,
+        );
+        if (!file) continue;
+        if (
+          file.artifact.projectID !== projectID ||
+          this.getArtifactPath(projectID, file.artifact.artifactID) !== path
+        ) {
+          throw new Error("artifact identity does not match its path");
+        }
+        artifactIDs.push(file.artifact.artifactID);
+      } catch (error) {
+        const quarantined = await this.quarantineProjectFile(path, projectID);
+        warnings.push(
+          `Artifact file ${path} was ${
+            quarantined ? "quarantined" : "left in place"
+          }: ${error instanceof Error ? error.message : String(error)}`,
+        );
       }
-    } catch (error) {
-      needsRepair = true;
-      warnings.push(
-        `Catalog validation failed: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
     }
-    if (needsRepair) {
+    const runPaths = (
+      await this.files.listDirectory(
+        joinPath(this.getProjectRoot(projectID), "runs"),
+      )
+    )
+      .filter((path) => /[\\/]run-[^\\/]+\.json$/i.test(path))
+      .sort();
+    for (const path of runPaths) {
+      try {
+        const file = await this.files.read(path, parseResearchWorkspaceRunFile);
+        if (!file) continue;
+        if (
+          (file.run.projectID && file.run.projectID !== projectID) ||
+          this.getRunPath(projectID, file.run.runID) !== path
+        ) {
+          throw new Error("run identity does not match its path");
+        }
+        runIDs.push(file.run.runID);
+      } catch (error) {
+        const quarantined = await this.quarantineProjectFile(path, projectID);
+        warnings.push(
+          `Run file ${path} was ${
+            quarantined ? "quarantined" : "left in place"
+          }: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+    const validArtifacts = new Set(artifactIDs);
+    const validRuns = new Set(runIDs);
+    const nextArtifactIDs = [
+      ...bundle.project.artifactIDs.filter((id) => validArtifacts.has(id)),
+      ...artifactIDs.filter((id) => !bundle.project.artifactIDs.includes(id)),
+    ];
+    const nextRunIDs = [
+      ...bundle.project.runIDs.filter((id) => validRuns.has(id)),
+      ...runIDs.filter((id) => !bundle.project.runIDs.includes(id)),
+    ];
+    const activeArtifactID =
+      bundle.project.activeArtifactID &&
+      validArtifacts.has(bundle.project.activeArtifactID)
+        ? bundle.project.activeArtifactID
+        : nextArtifactIDs.at(-1);
+    const changed =
+      JSON.stringify(nextArtifactIDs) !==
+        JSON.stringify(bundle.project.artifactIDs) ||
+      JSON.stringify(nextRunIDs) !== JSON.stringify(bundle.project.runIDs) ||
+      activeArtifactID !== bundle.project.activeArtifactID;
+    if (changed) {
+      await this.files.mutate({
+        path: this.getProjectPath(projectID),
+        parser: parseResearchWorkspaceProjectFile,
+        expectedRevision: bundle.projectRevision,
+        mutate: (file) => ({
+          ...file,
+          project: {
+            ...file.project,
+            artifactIDs: nextArtifactIDs,
+            runIDs: nextRunIDs,
+            ...(activeArtifactID
+              ? { activeArtifactID }
+              : { activeArtifactID: undefined }),
+            updatedAt: this.timestamp(),
+          },
+        }),
+      });
+    }
+    return { changed, warnings };
+  }
+
+  async recoverStartup() {
+    let warnings: string[] = [];
+    let repairedCatalog = false;
+    const projectPaths = await this.files.listDirectory(this.projectsRoot);
+    if (
+      (await this.hasCatalog()) ||
+      projectPaths.some((path) => /[\\/]project\.json$/i.test(path))
+    ) {
       const repair = await this.repairCatalog();
-      repairedCatalog = true;
-      warnings.push(...repair.warnings);
+      repairedCatalog = repair.changed;
+      warnings = repair.warnings;
     }
     const runs = await this.recoverInterruptedRuns();
     warnings.push(...runs.warnings);
@@ -1611,6 +1782,7 @@ export class ResearchWorkspaceProjectRepository {
     );
     const projects: ResearchWorkspaceCatalogEntry[] = [];
     const warnings: string[] = [];
+    let repairedProjectReferences = false;
     for (const path of projectPaths) {
       try {
         const file = await this.files.read(
@@ -1618,6 +1790,11 @@ export class ResearchWorkspaceProjectRepository {
           parseResearchWorkspaceProjectFile,
         );
         if (!file) continue;
+        const repaired = await this.repairProjectReferences(
+          file.project.projectID,
+        );
+        repairedProjectReferences ||= repaired.changed;
+        warnings.push(...repaired.warnings);
         projects.push(await this.catalogEntry(file.project.projectID));
       } catch (error) {
         warnings.push(
@@ -1627,25 +1804,37 @@ export class ResearchWorkspaceProjectRepository {
         );
       }
     }
+    const sortedProjects = sortCatalogProjects(projects);
     let revision = 1;
     let createdAt = this.timestamp();
+    let current: ResearchWorkspaceCatalog | undefined;
     try {
-      const current = await this.getCatalog();
+      current = await this.getCatalog();
       revision = current.revision + 1;
       createdAt = current.createdAt;
     } catch {
       // A corrupt catalog is replaceable because project files are authoritative.
     }
+    if (
+      current &&
+      JSON.stringify(current.projects) === JSON.stringify(sortedProjects)
+    ) {
+      return {
+        catalog: current,
+        warnings,
+        changed: repairedProjectReferences,
+      };
+    }
     const catalog: ResearchWorkspaceCatalog = {
       schemaVersion: RESEARCH_WORKSPACE_CATALOG_SCHEMA_VERSION,
       revision,
-      projects: sortCatalogProjects(projects),
+      projects: sortedProjects,
       createdAt,
       updatedAt: this.timestamp(),
     };
     await this.files.ensureDirectory(this.rootDir);
     await this.files.replace(this.catalogPath, catalog);
-    return { catalog, warnings };
+    return { catalog, warnings, changed: true };
   }
 
   async pruneDerivedCache() {

@@ -213,7 +213,9 @@ function isIPAddressLiteral(value: string) {
 async function defaultResolveHost(hostname: string, signal?: AbortSignal) {
   if (parseIPv4(hostname) || hostname.includes(":")) return [hostname];
   const services = (globalThis as { Services?: any }).Services;
-  if (!services?.dns) return [];
+  if (!services?.dns) {
+    throw new Error("Official evidence DNS resolver is unavailable.");
+  }
   return new Promise<string[]>((resolve, reject) => {
     let settled = false;
     const finish = (callback: () => void) => {
@@ -342,8 +344,7 @@ async function assertPublicResolution(
     signal?.removeEventListener("abort", propagateAbort);
   }
   if (!addresses.length) {
-    // Node/test fetchers do not expose Gecko DNS. Production Zotero always does.
-    return;
+    throw new Error("Official evidence DNS resolution returned no addresses.");
   }
   if (
     addresses.some(
@@ -640,7 +641,11 @@ export async function inspectOfficialEvidenceURL(params: {
   if (!isPlausibleOfficialEvidenceURL(params.url)) {
     throw new Error("Official evidence URL is not a public HTTPS source.");
   }
-  const resolver = params.resolveHost || defaultResolveHost;
+  // An injected fetch is a trusted test boundary and cannot expose its peer
+  // address. Production calls use Zotero transport and the Gecko resolver.
+  const resolver =
+    params.resolveHost ||
+    (params.fetch ? async () => ["93.184.216.34"] : defaultResolveHost);
   const now = params.now || Date.now;
   const deadline = params.deadline ?? now() + 15_000;
   const requestTimeout = () => Math.max(1, Math.min(15_000, deadline - now()));
@@ -744,7 +749,9 @@ export async function fetchOpenReviewForumNotes(params: {
   if (!/^[A-Za-z0-9_.~-]{1,64}$/.test(params.forumID)) {
     throw new Error("OpenReview forum id is not a safe identifier.");
   }
-  const resolver = params.resolveHost || defaultResolveHost;
+  const resolver =
+    params.resolveHost ||
+    (params.fetch ? async () => ["93.184.216.34"] : defaultResolveHost);
   const now = params.now || Date.now;
   const deadline = params.deadline ?? now() + 15_000;
   const requestTimeout = () => Math.max(1, Math.min(15_000, deadline - now()));

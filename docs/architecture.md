@@ -85,13 +85,21 @@ bounding boxes are never promoted. Verified references are navigable through
 `evidenceNavigation.ts`, which performs one `libraryID + attachmentKey` lookup
 and never scans other libraries. Unverified, not-found, and unavailable-source
 references remain labelled but have no Open in PDF action.
+Structured element IDs can retain section and page metadata, but they remain
+unverified unless the response also supplies text that is matched against the
+local PDF. A locator alone never enters the verified claim or contradiction
+sets.
 
 Research Workspace durable state remains separate from transient run
 workspaces under `<Zotero profile>/paperpilot-research-workspace/`. The current
 store uses a revisioned `catalog-v1.json`, shared source records, and one
 directory per project containing `project.json`, `members.json`,
-`change-inbox.json`, artifacts, and runs. Writes are atomic and revision
-guarded. The legacy `workspace-v3.json`
+`change-inbox.json`, artifacts, and runs. Each file replacement is atomic and
+revision guarded; a workflow that touches several files is not a transaction.
+Startup recovery reconciles `project.json` with valid artifact and run files,
+re-links files left behind by an interrupted write, quarantines unreadable
+orphans, repairs missing membership files, and rebuilds stale catalog entries.
+The legacy `workspace-v3.json`
 is read only by the migration adapter, which preserves supported papers and
 artifacts while dropping companion provider settings and Research Monitor
 state.
@@ -416,6 +424,14 @@ redirect hop. It reads at most 200 KB of HTML/JSON and cancels PDF bodies.
 Timeouts and cancellation remain active through body consumption, and one
 absolute discovery deadline covers provider search, the agent run, and live
 evidence recheck. Raw pages and review text are not persisted.
+
+The Gecko DNS service is mandatory for production official-evidence requests;
+an unavailable resolver or an empty answer fails closed. The connected-remote
+address is observable only after the request begins, so a DNS-rebinding peer
+can still receive a blind GET before Paper Pilot aborts it. Response content is
+withheld in that case, preventing response-body exfiltration, but the residual
+request-delivery risk remains. Address pinning is not exposed by the Zotero
+HTTP API used here.
 
 The fetched page is authoritative only as inspected source data: Paper Pilot
 reconstructs title, venue, track, decision, and review availability from that

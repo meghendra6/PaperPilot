@@ -671,10 +671,12 @@ class ResearchWorkspaceService {
             (sum, entry) => sum + entry.maxScore,
             0,
           ),
-          feedback: duplicate.grades
-            .map((entry) => entry.feedback)
-            .filter(Boolean)
-            .join("\n"),
+          feedback:
+            duplicate.feedback ??
+            duplicate.grades
+              .map((entry) => entry.feedback)
+              .filter(Boolean)
+              .join("\n"),
           misconceptions: duplicate.misconceptions,
           graderConfidence: duplicate.graderConfidence,
         },
@@ -724,10 +726,7 @@ class ResearchWorkspaceService {
       scores: parsed.grades,
       totalScore: parsed.grades.reduce((sum, entry) => sum + entry.score, 0),
       maxScore: parsed.grades.reduce((sum, entry) => sum + entry.maxScore, 0),
-      feedback: parsed.grades
-        .map((entry) => entry.feedback)
-        .filter(Boolean)
-        .join("\n"),
+      feedback: parsed.feedback,
       misconceptions: parsed.misconceptions,
       graderConfidence: parsed.graderConfidence,
     };

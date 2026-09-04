@@ -75,7 +75,7 @@ const claimLedger = strictObject({
         "reader_inference",
         "external_evidence",
       ]),
-      confidence: { type: "number", minimum: 0, maximum: 1 },
+      confidence: nullable({ type: "number", minimum: 0, maximum: 1 }),
       support: sourceEvidenceArray,
       contradictions: sourceEvidenceArray,
       verificationStatus: enumOf([
@@ -105,7 +105,7 @@ const criticalRead = strictObject({
       finding: stringSchema,
       implication: stringSchema,
       evidence: sourceEvidenceArray,
-      confidence: { type: "number", minimum: 0, maximum: 1 },
+      confidence: nullable({ type: "number", minimum: 0, maximum: 1 }),
     }),
   ),
   discriminatingExperiments: arrayOf(
@@ -156,7 +156,7 @@ const reproducibility = strictObject({
       version: nullable(stringSchema),
       notes: nullable(stringSchema),
       evidence: sourceEvidenceArray,
-      confidence: { type: "number", minimum: 0, maximum: 1 },
+      confidence: nullable({ type: "number", minimum: 0, maximum: 1 }),
     }),
   ),
   blockers: arrayOf(
@@ -241,7 +241,7 @@ const evidenceMatrixRow = strictObject({
           { type: "null" },
         ],
       },
-      confidence: { type: "number", minimum: 0, maximum: 1 },
+      confidence: nullable({ type: "number", minimum: 0, maximum: 1 }),
       evidence: sourceEvidenceArray,
       notes: nullable(stringSchema),
     }),
@@ -275,7 +275,7 @@ const relationshipGraph = strictObject({
         "related",
       ]),
       label: nullable(stringSchema),
-      confidence: { type: "number", minimum: 0, maximum: 1 },
+      confidence: nullable({ type: "number", minimum: 0, maximum: 1 }),
       evidence: sourceEvidenceArray,
       bibliographicProvenance: nullable(
         strictObject({
@@ -322,7 +322,7 @@ const crossPaperGrade = strictObject({
   ),
   feedback: stringSchema,
   misconceptions: stringArray,
-  graderConfidence: { type: "number", minimum: 0, maximum: 1 },
+  graderConfidence: nullable({ type: "number", minimum: 0, maximum: 1 }),
 });
 
 const citationStance = strictObject({
@@ -337,7 +337,7 @@ const citationStance = strictObject({
         "background",
         "uncertain",
       ]),
-      confidence: { type: "number", minimum: 0, maximum: 1 },
+      confidence: nullable({ type: "number", minimum: 0, maximum: 1 }),
       rationale: stringSchema,
       claim: nullable(stringSchema),
       limitations: stringArray,

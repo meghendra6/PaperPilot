@@ -120,6 +120,16 @@ export class SerializedResearchWorkspaceFiles {
     return this.exclusive(path, () => this.fileOps.remove(path, options));
   }
 
+  async quarantine(path: string, quarantinePath: string) {
+    return this.exclusive(path, async () => {
+      const contents = await this.fileOps.readText(path);
+      if (contents === undefined) return false;
+      await this.fileOps.writeTextAtomic(quarantinePath, contents);
+      await this.fileOps.remove(path);
+      return true;
+    });
+  }
+
   async replace<T extends { revision: number }>(path: string, value: T) {
     return this.exclusive(path, async () => {
       const next = clone(value);

@@ -1,22 +1,66 @@
 import { splitTextIntoChunks } from "../tools/splitTextIntoChunks";
 
-function tokenize(value: string) {
-  return value
-    .toLowerCase()
-    .split(/[^a-z0-9가-힣]+/i)
-    .map((token) => token.trim())
-    .filter(Boolean);
+const STOPWORDS = new Set([
+  "a",
+  "an",
+  "and",
+  "are",
+  "for",
+  "in",
+  "is",
+  "of",
+  "on",
+  "or",
+  "the",
+  "to",
+  "with",
+  "이",
+  "그",
+  "를",
+  "을",
+  "에",
+  "의",
+]);
+
+function characterBigrams(value: string) {
+  const characters = [...value];
+  if (characters.length < 2) return characters;
+  return characters
+    .slice(0, -1)
+    .map((character, index) => [character, characters[index + 1]].join(""));
+}
+
+export function tokenizeRetrievalText(value: string) {
+  const normalized =
+    value
+      .normalize("NFKD")
+      .replace(/\p{M}+/gu, "")
+      .normalize("NFKC")
+      .toLowerCase()
+      .match(
+        /\p{Script=Han}+|\p{Script=Hiragana}+|\p{Script=Katakana}+|[가-힣]+|[\p{L}\p{N}]+/gu,
+      ) ?? [];
+  return normalized.flatMap((token) => {
+    if (STOPWORDS.has(token)) return [];
+    if (
+      /^[가-힣]+$/.test(token) ||
+      /^[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]+$/u.test(token)
+    ) {
+      return characterBigrams(token);
+    }
+    return token.length > 1 ? [token] : [];
+  });
 }
 
 function scoreChunk(chunk: string, queryTokens: string[]) {
-  const lower = chunk.toLowerCase();
-  let score = 0;
-  for (const token of queryTokens) {
-    if (lower.includes(token)) {
-      score += 1;
-    }
+  const frequencies = new Map<string, number>();
+  for (const token of tokenizeRetrievalText(chunk)) {
+    frequencies.set(token, (frequencies.get(token) ?? 0) + 1);
   }
-  return score;
+  return queryTokens.reduce(
+    (score, token) => score + (frequencies.get(token) ?? 0),
+    0,
+  );
 }
 
 export function selectRelevantChunks(params: {
@@ -39,9 +83,9 @@ export function selectRelevantChunksFromChunks(
   query: string,
   topK: number,
 ) {
-  const queryTokens = tokenize(query);
+  const queryTokens = tokenizeRetrievalText(query);
   if (!queryTokens.length) {
-    return chunks.slice(0, topK);
+    return query.trim() ? [] : chunks.slice(0, topK);
   }
 
   return chunks

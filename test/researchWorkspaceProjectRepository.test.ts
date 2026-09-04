@@ -487,6 +487,51 @@ test("artifact history versions, supersedes, and marks source changes stale", as
   );
 });
 
+test("artifact history limit prunes the oldest unreferenced superseded version", async () => {
+  const setup = repository();
+  const preferences = await setup.repository.getPreferences();
+  await setup.repository.updatePreferences(preferences.revision, (current) => ({
+    ...current,
+    artifactHistoryLimit: 2,
+  }));
+  const project = await setup.repository.createProject({
+    projectID: "project-history-limit",
+    name: "History limit",
+  });
+  const sourceA = source("H");
+  await setup.repository.putSource(sourceA);
+  await setup.repository.addMembers(
+    project.project.projectID,
+    project.membersRevision,
+    [{ sourceID: sourceA.sourceID }],
+  );
+  for (const artifactID of ["history-one", "history-two", "history-three"]) {
+    await setup.repository.createArtifact(project.project.projectID, {
+      artifactID,
+      type: "claim-ledger",
+      title: artifactID,
+      status: "complete",
+      sourceIDs: [sourceA.sourceID],
+      lineage: lineage([sourceA], `run-${artifactID}`),
+      payload: { artifactID },
+    });
+  }
+
+  assert.equal(
+    await setup.repository.getArtifact(
+      project.project.projectID,
+      "history-one",
+    ),
+    undefined,
+  );
+  assert.deepEqual(
+    (await setup.repository.listArtifacts(project.project.projectID)).artifacts
+      .map((artifact) => artifact.artifactID)
+      .sort(),
+    ["history-three", "history-two"],
+  );
+});
+
 test("an artifact update never rewrites another project's durable files", async () => {
   const setup = repository();
   await setup.repository.createProject({
@@ -527,6 +572,77 @@ test("an artifact update never rewrites another project's durable files", async 
   assert.deepEqual(
     setup.files.writes.map((path) => path.split("/").pop()).sort(),
     ["artifact-artifact-one.json", "catalog-v1.json"],
+  );
+});
+
+test("an unchanged artifact update is a true no-op with a moving clock", async () => {
+  const setup = repository();
+  const project = await setup.repository.createProject({
+    projectID: "project-artifact-noop",
+    name: "No-op update",
+  });
+  const sourceA = source("N");
+  await setup.repository.putSource(sourceA);
+  await setup.repository.addMembers(
+    project.project.projectID,
+    project.membersRevision,
+    [{ sourceID: sourceA.sourceID }],
+  );
+  const upstream = await setup.repository.createArtifact(
+    project.project.projectID,
+    {
+      artifactID: "artifact-noop-upstream",
+      type: "claim-ledger",
+      title: "Claims",
+      status: "complete",
+      sourceIDs: [sourceA.sourceID],
+      lineage: lineage([sourceA]),
+      payload: { claims: [] },
+    },
+  );
+  const dependent = await setup.repository.createArtifact(
+    project.project.projectID,
+    {
+      artifactID: "artifact-noop-dependent",
+      type: "synthesis",
+      title: "Synthesis",
+      status: "complete",
+      sourceIDs: [sourceA.sourceID],
+      lineage: {
+        ...lineage([sourceA], "run-dependent"),
+        operation: "project-synthesis",
+        artifactInputs: [
+          {
+            artifactID: upstream.artifact.artifactID,
+            artifactType: upstream.artifact.type,
+            version: upstream.artifact.version,
+            updatedAt: upstream.artifact.updatedAt,
+            payloadFingerprint: "payload-fingerprint",
+          },
+        ],
+      },
+      payload: { text: "unchanged" },
+    },
+  );
+  setup.files.writes.splice(0);
+
+  const result = await setup.repository.updateArtifact(
+    project.project.projectID,
+    upstream.artifact.artifactID,
+    upstream.revision,
+    (current) => current,
+  );
+
+  assert.equal(result.revision, upstream.revision);
+  assert.deepEqual(setup.files.writes, []);
+  assert.equal(
+    (
+      await setup.repository.getArtifact(
+        project.project.projectID,
+        dependent.artifact.artifactID,
+      )
+    )?.artifact.status,
+    "complete",
   );
 });
 
@@ -614,6 +730,87 @@ test("catalog repair discovers a project left behind by a catalog failure", asyn
     repaired.catalog.projects.map((entry) => entry.projectID),
     ["project-repair"],
   );
+});
+
+test("startup recovery re-links valid orphan artifact and run files", async () => {
+  const setup = repository();
+  const project = await setup.repository.createProject({
+    projectID: "project-orphan-repair",
+    name: "Orphan repair",
+  });
+  const sourceA = source("O");
+  await setup.repository.putSource(sourceA);
+  await setup.repository.addMembers(
+    project.project.projectID,
+    project.membersRevision,
+    [{ sourceID: sourceA.sourceID }],
+  );
+  setup.files.failWrite = (path) => path.endsWith("project.json");
+  await assert.rejects(
+    () =>
+      setup.repository.createArtifact(project.project.projectID, {
+        artifactID: "artifact-orphaned",
+        type: "claim-ledger",
+        title: "Finished but unlinked",
+        status: "complete",
+        sourceIDs: [sourceA.sourceID],
+        lineage: lineage([sourceA]),
+        payload: { claims: [] },
+      }),
+    /Injected write failure/,
+  );
+  await assert.rejects(
+    () =>
+      setup.repository.createRun(project.project.projectID, {
+        runID: "run-orphaned",
+        owner: { kind: "project", projectID: project.project.projectID },
+        projectID: project.project.projectID,
+        operation: "claims",
+        operationVersion: "1",
+        sourceSnapshot: [],
+        status: "completed",
+        progress: { phase: "done", completed: 1, total: 1 },
+      }),
+    /Injected write failure/,
+  );
+  setup.files.failWrite = undefined;
+
+  const recovery = await setup.repository.recoverStartup();
+  const repaired = await setup.repository.getProject(project.project.projectID);
+  assert.equal(recovery.repairedCatalog, true);
+  assert.deepEqual(repaired.project.artifactIDs, ["artifact-orphaned"]);
+  assert.deepEqual(repaired.project.runIDs, ["run-orphaned"]);
+  assert.deepEqual(
+    (
+      await setup.repository.listArtifacts(project.project.projectID)
+    ).artifacts.map((artifact) => artifact.artifactID),
+    ["artifact-orphaned"],
+  );
+});
+
+test("startup recovery quarantines an unreadable orphan artifact", async () => {
+  const setup = repository();
+  await setup.repository.createProject({
+    projectID: "project-orphan-quarantine",
+    name: "Orphan quarantine",
+  });
+  const path = setup.repository.getArtifactPath(
+    "project-orphan-quarantine",
+    "artifact-broken-orphan",
+  );
+  setup.files.files.set(path, "{not-json");
+
+  const recovery = await setup.repository.recoverStartup();
+
+  assert.equal(setup.files.files.has(path), false);
+  assert(
+    [...setup.files.files.keys()].some((entry) =>
+      entry.includes(
+        "quarantine/artifact-artifact-broken-orphan.json.corrupt-",
+      ),
+    ),
+  );
+  assert(recovery.warnings.some((warning) => warning.includes("quarantined")));
 });
 
 test("a corrupt artifact is isolated and does not block another project", async () => {

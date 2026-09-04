@@ -100,6 +100,7 @@ function quickProjectID(papers: readonly ResearchWorkspacePaper[]) {
 export class ResearchWorkspaceProjectController {
   private readonly now: () => Date;
   private readonly screeningIDFactory: (prefix: string) => string;
+  private readonly addPaperQueues = new Map<string, Promise<void>>();
 
   constructor(
     private readonly repository: ResearchWorkspaceProjectRepository,
@@ -221,16 +222,32 @@ export class ResearchWorkspaceProjectController {
     projectID: string,
     papers: readonly ResearchWorkspacePaper[],
   ) {
+    const previous = this.addPaperQueues.get(projectID) ?? Promise.resolve();
+    let release: () => void = () => undefined;
+    const current = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const queued = previous.then(() => current);
+    this.addPaperQueues.set(projectID, queued);
+    await previous;
+    try {
+      return await this.addPapersExclusively(projectID, papers);
+    } finally {
+      release();
+      if (this.addPaperQueues.get(projectID) === queued) {
+        this.addPaperQueues.delete(projectID);
+      }
+    }
+  }
+
+  private async addPapersExclusively(
+    projectID: string,
+    papers: readonly ResearchWorkspacePaper[],
+  ) {
     const unique = [
       ...new Map(papers.map((paper) => [paper.sourceID, paper])).values(),
     ];
     for (const paper of unique) {
-      const current = await this.repository.getSource(paper.sourceID);
-      const contentChanged = Boolean(
-        current?.source.contentFingerprint?.value &&
-          current.source.contentFingerprint.value !==
-            paper.contentFingerprint.value,
-      );
       const invalidateAffectedProjects = async () => {
         const projectIDs = await this.repository.listProjectIDsForSource(
           paper.sourceID,
@@ -244,11 +261,30 @@ export class ResearchWorkspaceProjectController {
           });
         }
       };
-      if (contentChanged) await invalidateAffectedProjects();
-      await this.repository.putSource(
-        researchWorkspaceSourceRecordFromPaper(paper, this.now()),
-        current?.revision,
-      );
+      let contentChanged = false;
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        const current = await this.repository.getSource(paper.sourceID);
+        contentChanged = Boolean(
+          current?.source.contentFingerprint?.value &&
+            current.source.contentFingerprint.value !==
+              paper.contentFingerprint.value,
+        );
+        if (contentChanged) await invalidateAffectedProjects();
+        try {
+          await this.repository.putSource(
+            researchWorkspaceSourceRecordFromPaper(paper, this.now()),
+            current?.revision,
+          );
+          break;
+        } catch (error) {
+          if (
+            !(error instanceof ResearchWorkspaceRevisionConflictError) ||
+            attempt === 2
+          ) {
+            throw error;
+          }
+        }
+      }
       // A derived artifact can be admitted while the source write is in flight.
       // Re-scan project membership after the write so that result is also made
       // stale against the newly persisted fingerprint.
@@ -266,11 +302,31 @@ export class ResearchWorkspaceProjectController {
           role: "candidate" as const,
         }));
       if (additions.length) {
-        const membersFile = await this.repository.addMembers(
-          projectID,
-          bundle.membersRevision,
-          additions,
-        );
+        let membersFile;
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+          const current =
+            attempt === 0
+              ? bundle
+              : await this.repository.getProject(projectID);
+          try {
+            membersFile = await this.repository.addMembers(
+              projectID,
+              current.membersRevision,
+              additions,
+            );
+            break;
+          } catch (error) {
+            if (
+              !(error instanceof ResearchWorkspaceRevisionConflictError) ||
+              attempt === 2
+            ) {
+              throw error;
+            }
+          }
+        }
+        if (!membersFile) {
+          throw new Error("Could not update Research Workspace membership.");
+        }
         await this.repository.markArtifactsStaleForMembersRevision({
           projectID,
           membersRevision: membersFile.revision,

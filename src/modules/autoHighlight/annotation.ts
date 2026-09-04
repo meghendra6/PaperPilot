@@ -2,12 +2,14 @@ import { normalizeQuoteText } from "./pdfMatch";
 import type { MatchedHighlight } from "./types";
 
 export const AUTO_HIGHLIGHT_COLOR = "#ffd400";
+export const AUTO_HIGHLIGHT_COMMENT = "Paper Pilot auto-highlight";
 
 export interface HighlightAnnotationSavePayload {
   key: string;
   type: "highlight";
   text: string;
   color: string;
+  comment: string;
   pageLabel: string;
   sortIndex: string;
   position: {
@@ -40,6 +42,7 @@ export function buildHighlightAnnotationJSON(
     type: "highlight",
     text: match.quote,
     color: AUTO_HIGHLIGHT_COLOR,
+    comment: AUTO_HIGHLIGHT_COMMENT,
     pageLabel: match.pageLabel,
     sortIndex: match.sortIndex,
     position: {

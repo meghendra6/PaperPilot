@@ -1,6 +1,7 @@
 // @ts-nocheck -- Ported feature core is guarded by strict runtime parsers.
 import * as json_1 from "../comprehensionCheck/v2/json";
 import * as types_1 from "../evidence/types";
+import { enumValue, optionalUnitInterval } from "../parserValidation";
 const MODES = new Set([
   "compare",
   "synthesis",
@@ -8,6 +9,7 @@ const MODES = new Set([
   "transfer",
   "timeline",
 ]);
+const DIFFICULTIES = new Set(["intermediate", "advanced"]);
 function strings(value) {
   return Array.isArray(value)
     ? value
@@ -23,9 +25,7 @@ function text(value, fallback = "") {
 }
 function parseCrossPaperQuestionResponse(params) {
   const root = (0, json_1.extractLastJsonObject)(params.response);
-  const mode = text(root.mode, "compare");
-  if (!MODES.has(mode))
-    throw new Error(`Invalid cross-paper question mode ${mode}`);
+  const mode = enumValue(root.mode, "cross-paper question mode", MODES);
   const paperKeys = uniqueStrings(root.paperKeys);
   if (paperKeys.length < 2)
     throw new Error(
@@ -48,7 +48,7 @@ function parseCrossPaperQuestionResponse(params) {
   const seen = new Set();
   const rubric = rawRubric.map((entry, index) => {
     const object = (0, json_1.readObject)(entry, `rubric[${index}]`);
-    const id = text(object.id, `criterion-${index + 1}`);
+    const id = (0, json_1.readString)(object.id, `rubric[${index}].id`);
     if (seen.has(id)) throw new Error(`Duplicate rubric criterion ${id}`);
     seen.add(id);
     const requiredPaperKeys = uniqueStrings(
@@ -63,10 +63,17 @@ function parseCrossPaperQuestionResponse(params) {
     const expectedClaims = strings(
       object.expectedClaims ?? object.requiredClaims,
     );
-    const maxScore = Math.max(1, Math.min(20, Number(object.maxScore) || 1));
+    const maxScore = (0, json_1.readNumber)(
+      object.maxScore,
+      `rubric[${index}].maxScore`,
+      { min: 1, max: 20 },
+    );
     return {
       id,
-      description: text(object.description, "Unspecified criterion"),
+      description: (0, json_1.readString)(
+        object.description,
+        `rubric[${index}].description`,
+      ),
       maxScore,
       requiredPaperKeys,
       expectedClaims,
@@ -101,10 +108,9 @@ function parseCrossPaperQuestionResponse(params) {
       text(root.id, `cross-question-${now.replace(/[^0-9]/g, "")}`),
     conceptId: params.concept?.id ?? text(root.conceptId, "general"),
     mode,
-    prompt: text(root.prompt, "Compare the selected papers."),
+    prompt: (0, json_1.readString)(root.prompt, "prompt"),
     paperKeys,
-    difficulty:
-      root.difficulty === "intermediate" ? "intermediate" : "advanced",
+    difficulty: enumValue(root.difficulty, "difficulty", DIFFICULTIES),
     createdAt: now,
     rubric,
     criteria: rubric,
@@ -161,18 +167,16 @@ function parseCrossPaperGradeResponse(params) {
       params.id ?? text(root.id, `cross-attempt-${now.replace(/[^0-9]/g, "")}`),
     questionId: params.question.id,
     answer: params.answer ?? text(root.answer),
-    learnerConfidence: Math.max(
-      0,
-      Math.min(
-        1,
-        Number(params.learnerConfidence ?? root.learnerConfidence) || 0,
-      ),
+    learnerConfidence: optionalUnitInterval(
+      params.learnerConfidence,
+      "learnerConfidence",
     ),
     grades,
+    feedback: (0, json_1.readString)(root.feedback, "feedback"),
     misconceptions: strings(root.misconceptions),
-    graderConfidence: Math.max(
-      0,
-      Math.min(1, Number(root.graderConfidence) || 0),
+    graderConfidence: optionalUnitInterval(
+      root.graderConfidence,
+      "graderConfidence",
     ),
     createdAt: now,
   };

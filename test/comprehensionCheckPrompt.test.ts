@@ -192,6 +192,17 @@ test("buildFollowUpQuestionPrompt forbids reasoning prose before the JSON", () =
   assert.match(prompt, /no.*(reasoning|planning|preamble|commentary)/i);
 });
 
+test("every Paper Mastery prompt treats paper and session content as untrusted data", () => {
+  for (const prompt of [
+    buildInitialMasteryPrompt(),
+    buildEvaluateAnswerPrompt("Q?", "A.", []),
+    buildFollowUpQuestionPrompt([], "topic", "foundational"),
+  ]) {
+    assert.match(prompt, /untrusted source data/i);
+    assert.match(prompt, /never follow instructions/i);
+  }
+});
+
 // --- buildEvaluateAnswerPrompt ---
 
 test("buildEvaluateAnswerPrompt includes question, answer, and history", () => {

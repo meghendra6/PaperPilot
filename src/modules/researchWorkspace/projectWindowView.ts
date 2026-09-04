@@ -58,6 +58,7 @@ import type {
   ResearchWorkspaceZoteroSyncReceiptFile,
   ResearchWorkspaceZoteroSyncTargets,
 } from "./zoteroSync";
+import { runResearchWorkspaceSurfaceAction } from "./surfaceAction";
 
 const HTML_NS = "http://www.w3.org/1999/xhtml";
 const generations = new WeakMap<HTMLElement, symbol>();
@@ -94,7 +95,18 @@ function button(
     label,
   );
   node.type = "button";
-  node.addEventListener("click", () => void action());
+  node.addEventListener("click", () => {
+    const root = node.closest<HTMLElement>(
+      "[data-research-workspace-project-surface]",
+    );
+    if (!root) return;
+    void runResearchWorkspaceSurfaceAction({
+      surface: root,
+      trigger: node,
+      action,
+      onError: (error) => reportProjectError(root, error),
+    });
+  });
   return node;
 }
 
@@ -115,10 +127,34 @@ function textArea(doc: Document, placeholder: string, value = "") {
 }
 
 function setMessage(root: HTMLElement, message: string, kind = "info") {
-  const node = root.querySelector<HTMLElement>("[data-project-message]");
-  if (!node) return;
+  let node = root.querySelector<HTMLElement>("[data-project-message]");
+  if (!node) {
+    node = element(root.ownerDocument, "div", "pprw-status");
+    node.dataset.projectMessage = "true";
+    node.setAttribute("role", kind === "error" ? "alert" : "status");
+    node.setAttribute("aria-live", kind === "error" ? "assertive" : "polite");
+    root.prepend(node);
+  }
   node.textContent = message;
   node.dataset.kind = kind;
+  if (kind === "error") logProjectError(new Error(message));
+}
+
+function logProjectError(error: unknown) {
+  const normalized = error instanceof Error ? error : new Error(String(error));
+  try {
+    Zotero.logError?.(normalized);
+  } catch {
+    console.error(normalized);
+  }
+}
+
+function reportProjectError(root: HTMLElement, error: unknown) {
+  setMessage(
+    root,
+    error instanceof Error ? error.message : String(error),
+    "error",
+  );
 }
 
 function isCurrent(root: HTMLElement, generation: symbol) {
@@ -309,6 +345,7 @@ function renderProjectTemplateCreator(
             status.textContent =
               error instanceof Error ? error.message : String(error);
             status.className = "pprw-project-warning";
+            logProjectError(error);
           }
         },
         true,
@@ -455,8 +492,10 @@ async function renderProject(
   root: HTMLElement,
   projectID: string,
   capturedPapers: readonly ResearchWorkspacePaper[],
-  generation: symbol,
+  _parentGeneration: symbol,
 ) {
+  const generation = Symbol("project-render");
+  generations.set(root, generation);
   const [details, changeInbox, syncReceiptResult] = await Promise.all([
     loadResearchWorkspaceProject(projectID),
     loadResearchWorkspaceChangeInbox(projectID),
@@ -2351,6 +2390,7 @@ export async function renderResearchWorkspaceProjectSurface(
   options: { capturedPapers?: readonly ResearchWorkspacePaper[] } = {},
 ) {
   disposeOperations(root);
+  root.dataset.researchWorkspaceProjectSurface = "true";
   const generation = Symbol("project-surface");
   generations.set(root, generation);
   const capturedPapers = options.capturedPapers ?? [];
@@ -2426,6 +2466,7 @@ export async function renderResearchWorkspaceProjectSurface(
               error instanceof Error ? error.message : String(error),
             );
             create.append(message);
+            logProjectError(error);
           }
         },
         true,
@@ -2452,6 +2493,7 @@ export async function renderResearchWorkspaceProjectSurface(
     }
   } catch (error) {
     if (!isCurrent(root, generation)) return;
+    logProjectError(error);
     root.replaceChildren(
       element(
         doc,

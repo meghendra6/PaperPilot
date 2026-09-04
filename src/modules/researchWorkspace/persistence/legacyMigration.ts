@@ -69,6 +69,35 @@ interface LegacyArtifactDescriptor {
   inferredScope: boolean;
 }
 
+const LEGACY_ARTIFACT_OPERATIONS: Record<
+  ResearchWorkspaceArtifactType,
+  string
+> = {
+  "claim-ledger": "claims",
+  "critical-read": "reader-critical-read",
+  "methodology-audit": "critical-read",
+  "paper-mastery": "paper-mastery",
+  reproducibility: "reproducibility",
+  "paper-to-code": "paper-to-code",
+  "evidence-matrix": "evidence-matrix",
+  "relationship-graph": "literature-graph",
+  "cross-paper-mastery": "cross-paper-mastery",
+  "citation-context": "citation-context-extraction",
+  "citation-stance": "citation-stance",
+  "citation-health": "citation-reference-health",
+  synthesis: "project-synthesis",
+  "contradiction-gap-dashboard": "contradiction-gap-dashboard",
+  "review-log": "screening-log",
+};
+
+function legacyArtifactPayload(descriptor: LegacyArtifactDescriptor) {
+  if (descriptor.type !== "paper-mastery") return descriptor.payload;
+  const payload = object(descriptor.payload);
+  return payload?.session
+    ? descriptor.payload
+    : { session: descriptor.payload };
+}
+
 function object(value: unknown): Record<string, any> | undefined {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, any>)
@@ -680,9 +709,17 @@ export class LegacyResearchWorkspaceImporter {
           };
       if (resolution !== "resolved") summary.detachedSources += 1;
       if (resolution === "ambiguous") summary.ambiguousSources += 1;
-      await this.options.repository.putSource(record);
-      summary.migratedSources += 1;
-      sourceRecords.set(record.sourceID, record);
+      const existingSource = await this.options.repository.getSource(
+        record.sourceID,
+      );
+      const persistedSource = existingSource?.source ?? record;
+      if (existingSource) {
+        summary.skippedSources += 1;
+      } else {
+        await this.options.repository.putSource(record);
+        summary.migratedSources += 1;
+      }
+      sourceRecords.set(record.sourceID, persistedSource);
       for (const key of [
         legacyKey,
         String(paper.paperKey || ""),
@@ -698,8 +735,6 @@ export class LegacyResearchWorkspaceImporter {
       project.membersRevision,
       [...sourceRecords.keys()].map((sourceID) => ({
         sourceID,
-        role: "candidate" as const,
-        reviewStatus: "unreviewed" as const,
       })),
     );
 
@@ -765,7 +800,7 @@ export class LegacyResearchWorkspaceImporter {
                 "legacy-unknown",
               contextProjectionFingerprint: "legacy-unknown",
             })),
-            operation: `legacy-import:${descriptor.type}`,
+            operation: LEGACY_ARTIFACT_OPERATIONS[descriptor.type],
             operationVersion: "legacy",
             promptVersion: "legacy-unknown",
             parserVersion: "legacy-unknown",
@@ -775,7 +810,7 @@ export class LegacyResearchWorkspaceImporter {
               descriptor.key,
             ).slice(0, 24)}`,
           },
-          payload: descriptor.payload,
+          payload: legacyArtifactPayload(descriptor),
           staleReasons: [
             "legacy-lineage-incomplete",
             "legacy-evidence-unverified",

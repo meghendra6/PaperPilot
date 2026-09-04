@@ -42,7 +42,10 @@ import {
   parseAllowedModels,
 } from "../src/modules/codex/modelOptions";
 import { buildWorkspaceArtifacts } from "../src/modules/context/workspaceArtifacts";
-import { selectRelevantChunks } from "../src/modules/context/retriever";
+import {
+  selectRelevantChunks,
+  tokenizeRetrievalText,
+} from "../src/modules/context/retriever";
 import {
   redactAbsolutePaths,
   redactPath,
@@ -703,6 +706,29 @@ test("selectRelevantChunks prioritizes chunks that match the query", () => {
 
   assert.equal(chunks.length, 2);
   assert.match(chunks[0], /attention|Transformers/i);
+});
+
+test("reader retrieval tokenizes supported scripts and ignores stopword-only queries", () => {
+  assert.deepEqual(tokenizeRetrievalText("注意机制"), ["注意", "意机", "机制"]);
+  assert.deepEqual(tokenizeRetrievalText("注意メカニズム"), [
+    "注意",
+    "メカ",
+    "カニ",
+    "ニス",
+    "スム",
+  ]);
+  assert(tokenizeRetrievalText("검색기법").includes("검색"));
+  assert(tokenizeRetrievalText("résumé").includes("resume"));
+  assert.deepEqual(
+    selectRelevantChunks({
+      text: "first chunk\n\nsecond chunk",
+      query: "the and of",
+      chunkSize: 12,
+      overlapSize: 0,
+      topK: 2,
+    }),
+    [],
+  );
 });
 
 test("redactPath keeps only the tail segments", () => {

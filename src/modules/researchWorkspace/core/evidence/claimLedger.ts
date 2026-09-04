@@ -13,7 +13,7 @@ function requiredText(value, fieldName, maxLength) {
   return normalized.slice(0, maxLength);
 }
 function normalizedConfidence(value) {
-  if (value === undefined) return 0.5;
+  if (value === undefined) return undefined;
   if (!Number.isFinite(value))
     throw new Error("Claim confidence must be finite.");
   return Math.min(1, Math.max(0, value));
@@ -73,7 +73,9 @@ function createPaperClaim(input) {
     kind: input.kind,
     support,
     contradictions,
-    confidence: normalizedConfidence(input.confidence),
+    ...(normalizedConfidence(input.confidence) !== undefined
+      ? { confidence: normalizedConfidence(input.confidence) }
+      : {}),
     verificationStatus: inferClaimVerificationStatus(support, contradictions),
     createdAt: input.now,
     updatedAt: input.now,
@@ -107,7 +109,13 @@ function mergePaperClaims(base, incoming, now) {
     kind: incoming.kind,
     support,
     contradictions,
-    confidence: Math.max(base.confidence, incoming.confidence),
+    ...([base.confidence, incoming.confidence].some(Number.isFinite)
+      ? {
+          confidence: Math.max(
+            ...[base.confidence, incoming.confidence].filter(Number.isFinite),
+          ),
+        }
+      : {}),
     verificationStatus: inferClaimVerificationStatus(support, contradictions),
     updatedAt: now,
   };

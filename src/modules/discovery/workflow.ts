@@ -121,79 +121,6 @@ function hasGenericSourceAuthority(
   );
 }
 
-const SHARED_SECOND_LEVEL_LABELS = new Set([
-  "ac",
-  "co",
-  "com",
-  "edu",
-  "gov",
-  "net",
-  "or",
-  "org",
-]);
-
-function registrableDomainLabel(hostname: string) {
-  const labels = hostname.toLowerCase().split(".").filter(Boolean);
-  if (labels.length < 2) return labels[0] || "";
-  const secondLevel = labels[labels.length - 2];
-  const usesSharedSecondLevel =
-    labels.length >= 3 &&
-    secondLevel.length <= 3 &&
-    SHARED_SECOND_LEVEL_LABELS.has(secondLevel);
-  return usesSharedSecondLevel ? labels[labels.length - 3] : secondLevel;
-}
-
-function hasVenueNamedDomainAuthority(
-  inspection: Awaited<ReturnType<typeof inspectOfficialEvidenceURL>>,
-  paper: DiscoveryResult["verifiedMain"][number],
-) {
-  const venueName =
-    paper.venueName || paper.leadingVenueAssessment.venueName || "";
-  const meaningfulWords = normalizeDiscoveryTitle(venueName)
-    .split(" ")
-    .filter(
-      (word) =>
-        word.length >= 3 &&
-        ![
-          "the",
-          "and",
-          "international",
-          "annual",
-          "conference",
-          "symposium",
-          "workshop",
-          "proceedings",
-        ].includes(word),
-    );
-  // Subdomain and path labels are attacker-choosable on shared hosts, so only
-  // the registered domain label itself may prove venue ownership, and it must
-  // equal the venue identity instead of merely containing it.
-  const ownerLabel = registrableDomainLabel(inspection.hostname).replace(
-    /[^a-z0-9]/g,
-    "",
-  );
-  const ownerLabelWithoutYear = ownerLabel.replace(/[0-9]+/g, "");
-  const joinedName = meaningfulWords.join("");
-  const nameBound =
-    meaningfulWords.length >= 2 &&
-    (ownerLabel === joinedName || ownerLabelWithoutYear === joinedName);
-  const acronym = (
-    paper.venueAcronym ||
-    paper.leadingVenueAssessment.venueAcronym ||
-    ""
-  )
-    .toLowerCase()
-    .replace(/[^a-z0-9]/g, "");
-  const acronymBound =
-    acronym.length >= 3 &&
-    (ownerLabel === acronym || ownerLabelWithoutYear === acronym);
-  const titleNamesVenue = containsNormalized(
-    inspection.pageTitle || "",
-    venueName,
-  );
-  return titleNamesVenue && (nameBound || acronymBound);
-}
-
 function inferEvidenceType(
   inspection: Awaited<ReturnType<typeof inspectOfficialEvidenceURL>>,
 ): PublicationEvidence["type"] | undefined {
@@ -1256,8 +1183,7 @@ export async function verifyDiscoveryEvidenceLive(params: {
           ? reconstructOfficialEvidence(paper, inspection, {
               authorityValidated:
                 inspection.sourceFamily !== "generic-official-web" ||
-                authorityHostnames.has(inspection.hostname) ||
-                hasVenueNamedDomainAuthority(inspection, paper),
+                authorityHostnames.has(inspection.hostname),
               openReviewStatus: openReviewStatuses.get(entry.url),
             })
           : undefined;
@@ -1275,7 +1201,7 @@ export async function verifyDiscoveryEvidenceLive(params: {
       ? providerCandidate.urls.filter((url) => paper.urls.includes(url))
       : [];
     const providerEvidence: PublicationEvidence[] = providerCandidate
-      ? providerCandidate.urls.slice(0, 1).map((url) => ({
+      ? boundProviderURLs.slice(0, 1).map((url) => ({
           type: "scholarly_index" as const,
           sourceName: `Live scholarly provider: ${providerCandidate.provider}`,
           url,

@@ -12,6 +12,10 @@ import {
   disposeResearchWorkspaceProjectSurface,
   renderResearchWorkspaceProjectSurface,
 } from "./projectWindowView";
+import {
+  replaceResearchWorkspaceDialogAfterCreate,
+  runResearchWorkspaceSurfaceAction,
+} from "./surfaceAction";
 
 declare const addon: any;
 declare const Zotero: any;
@@ -57,7 +61,22 @@ function actionButton(
     label,
   );
   node.type = "button";
-  node.addEventListener("click", () => void action());
+  node.addEventListener("click", () => {
+    const root = doc.getElementById(WINDOW_ROOT_ID);
+    void runResearchWorkspaceSurfaceAction({
+      surface: root ?? node,
+      trigger: node,
+      action,
+      onError: (error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        const banner = element(doc, "div", "pprw-window-error", message);
+        banner.setAttribute("role", "alert");
+        const body = doc.getElementById(WINDOW_BODY_ID);
+        (body ?? root)?.prepend(banner);
+        Zotero.logError?.(error);
+      },
+    });
+  });
   return node;
 }
 
@@ -278,6 +297,7 @@ async function createResearchWorkspaceDialog(
     loadedSourceIDs: Object.freeze([]),
     skipped: snapshot.skipped,
   });
+  return dialog;
 }
 
 /** Opens the singleton modeless host or focuses the existing captured run. */
@@ -306,12 +326,9 @@ export async function openResearchWorkspace(
 
 export async function replaceResearchWorkspaceSelection() {
   const current = addon.data.dialog as DialogHelper | undefined;
-  if (current) {
-    addon.data.dialog = undefined;
-    addon.data.researchWorkspaceWindowState = undefined;
-    current.window?.close();
-  }
-  await openResearchWorkspace({ origin: "workspace-new-selection" });
+  await replaceResearchWorkspaceDialogAfterCreate(current, () =>
+    createResearchWorkspaceDialog({ origin: "workspace-new-selection" }),
+  );
 }
 
 export function closeResearchWorkspaceWindow() {
