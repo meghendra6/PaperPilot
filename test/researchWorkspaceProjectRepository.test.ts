@@ -1168,8 +1168,7 @@ test("stale propagation discovers a dependent created after its initial snapshot
   const originalCreate = setup.repository.createArtifact.bind(setup.repository);
   let injected = false;
   let dependentArtifactID: string | undefined;
-  let patchedList: typeof setup.repository.listArtifacts;
-  patchedList = (async (projectID: string) => {
+  const patchedList = (async (projectID: string) => {
     const listed = await originalList(projectID);
     if (!injected && projectID === project.project.projectID) {
       injected = true;

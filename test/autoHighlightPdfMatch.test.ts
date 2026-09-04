@@ -197,9 +197,7 @@ test("matchQuoteInPages matches across whitespace and punctuation normalization"
   ]);
 
   assert.ok(match);
-  assert.deepEqual(match?.rects, [
-    [0, 0, 22, 10],
-  ]);
+  assert.deepEqual(match?.rects, [[0, 0, 22, 10]]);
 });
 
 test("matchQuoteInPages chooses the earliest repeated quote deterministically", () => {
@@ -241,9 +239,7 @@ test("matchQuoteInPages chooses the earliest repeated quote deterministically", 
   ];
 
   const match = matchQuoteInPages("Alpha Beta", pages);
-  assert.deepEqual(match?.rects, [
-    [1, 1, 4, 2],
-  ]);
+  assert.deepEqual(match?.rects, [[1, 1, 4, 2]]);
 });
 
 test("buildSortIndex is deterministic and changes with position", () => {
@@ -255,19 +251,21 @@ test("buildSortIndex is deterministic and changes with position", () => {
 });
 
 test("matchQuoteInPages calculates sub-span rects for partial span matches", () => {
-  const pages = [{
-    pageIndex: 0,
-    pageLabel: "1",
-    spans: [
-      {
-        pageIndex: 0,
-        pageLabel: "1",
-        text: "The novel approach works",
-        normalizedText: normalizeQuoteText("The novel approach works"),
-        rect: [0, 10, 100, 20],
-      },
-    ],
-  }];
+  const pages = [
+    {
+      pageIndex: 0,
+      pageLabel: "1",
+      spans: [
+        {
+          pageIndex: 0,
+          pageLabel: "1",
+          text: "The novel approach works",
+          normalizedText: normalizeQuoteText("The novel approach works"),
+          rect: [0, 10, 100, 20],
+        },
+      ],
+    },
+  ];
 
   const match = matchQuoteInPages("novel approach", pages);
   assert.ok(match);
@@ -278,15 +276,35 @@ test("matchQuoteInPages calculates sub-span rects for partial span matches", () 
 });
 
 test("matchQuoteInPages merges adjacent rects on the same line", () => {
-  const pages = [{
-    pageIndex: 0,
-    pageLabel: "1",
-    spans: [
-      { pageIndex: 0, pageLabel: "1", text: "One", normalizedText: "one", rect: [0, 50, 20, 60] },
-      { pageIndex: 0, pageLabel: "1", text: "Two", normalizedText: "two", rect: [22, 50, 42, 60] },
-      { pageIndex: 0, pageLabel: "1", text: "Three", normalizedText: "three", rect: [44, 50, 70, 60] },
-    ],
-  }];
+  const pages = [
+    {
+      pageIndex: 0,
+      pageLabel: "1",
+      spans: [
+        {
+          pageIndex: 0,
+          pageLabel: "1",
+          text: "One",
+          normalizedText: "one",
+          rect: [0, 50, 20, 60],
+        },
+        {
+          pageIndex: 0,
+          pageLabel: "1",
+          text: "Two",
+          normalizedText: "two",
+          rect: [22, 50, 42, 60],
+        },
+        {
+          pageIndex: 0,
+          pageLabel: "1",
+          text: "Three",
+          normalizedText: "three",
+          rect: [44, 50, 70, 60],
+        },
+      ],
+    },
+  ];
 
   const match = matchQuoteInPages("One Two Three", pages);
   assert.ok(match);
@@ -295,18 +313,36 @@ test("matchQuoteInPages merges adjacent rects on the same line", () => {
 });
 
 test("matchQuoteInPages keeps separate rects for different lines", () => {
-  const pages = [{
-    pageIndex: 0,
-    pageLabel: "1",
-    spans: [
-      { pageIndex: 0, pageLabel: "1", text: "End of line one", normalizedText: normalizeQuoteText("End of line one"), rect: [50, 200, 300, 210] },
-      { pageIndex: 0, pageLabel: "1", text: "Start of line two", normalizedText: normalizeQuoteText("Start of line two"), rect: [10, 180, 250, 190] },
-    ],
-  }];
+  const pages = [
+    {
+      pageIndex: 0,
+      pageLabel: "1",
+      spans: [
+        {
+          pageIndex: 0,
+          pageLabel: "1",
+          text: "End of line one",
+          normalizedText: normalizeQuoteText("End of line one"),
+          rect: [50, 200, 300, 210],
+        },
+        {
+          pageIndex: 0,
+          pageLabel: "1",
+          text: "Start of line two",
+          normalizedText: normalizeQuoteText("Start of line two"),
+          rect: [10, 180, 250, 190],
+        },
+      ],
+    },
+  ];
 
   const match = matchQuoteInPages("End of line one Start of line two", pages);
   assert.ok(match);
-  assert.equal(match?.rects.length, 2, "rects on different lines should remain separate");
+  assert.equal(
+    match?.rects.length,
+    2,
+    "rects on different lines should remain separate",
+  );
 });
 
 test("mergeRectsOnSameLine merges overlapping rects on same y-line", () => {
@@ -335,53 +371,70 @@ test("mergeRectsOnSameLine does not merge same-line rects with large x-gap", () 
     [300, 50, 400, 60],
   ];
   const merged = mergeRectsOnSameLine(rects);
-  assert.equal(merged.length, 2, "rects far apart on same line should stay separate");
+  assert.equal(
+    merged.length,
+    2,
+    "rects far apart on same line should stay separate",
+  );
 });
 
 test("matchQuoteInPages uses original text length for sub-span fraction", () => {
-  const pages = [{
-    pageIndex: 0,
-    pageLabel: "1",
-    spans: [
-      {
-        pageIndex: 0,
-        pageLabel: "1",
-        text: "Hello, world! Amazing",
-        normalizedText: normalizeQuoteText("Hello, world! Amazing"),
-        rect: [0, 10, 210, 20],
-      },
-    ],
-  }];
+  const pages = [
+    {
+      pageIndex: 0,
+      pageLabel: "1",
+      spans: [
+        {
+          pageIndex: 0,
+          pageLabel: "1",
+          text: "Hello, world! Amazing",
+          normalizedText: normalizeQuoteText("Hello, world! Amazing"),
+          rect: [0, 10, 210, 20],
+        },
+      ],
+    },
+  ];
 
   const match = matchQuoteInPages("amazing", pages);
   assert.ok(match);
   const rect = match!.rects[0];
   // "Amazing" starts at original char index 14 out of 21 (NFKC) chars
   // fraction ≈ 14/21 ≈ 0.667 → x ≈ 140
-  assert.ok(rect[0] >= 135 && rect[0] <= 145, `left edge ${rect[0]} should be near 140`);
+  assert.ok(
+    rect[0] >= 135 && rect[0] <= 145,
+    `left edge ${rect[0]} should be near 140`,
+  );
 });
 
 test("matchQuoteInPages handles bracket-containing text correctly", () => {
-  const pages = [{
-    pageIndex: 0,
-    pageLabel: "1",
-    spans: [
-      {
-        pageIndex: 0,
-        pageLabel: "1",
-        text: "the [1] result is strong",
-        normalizedText: normalizeQuoteText("the [1] result is strong"),
-        rect: [0, 10, 240, 20],
-      },
-    ],
-  }];
+  const pages = [
+    {
+      pageIndex: 0,
+      pageLabel: "1",
+      spans: [
+        {
+          pageIndex: 0,
+          pageLabel: "1",
+          text: "the [1] result is strong",
+          normalizedText: normalizeQuoteText("the [1] result is strong"),
+          rect: [0, 10, 240, 20],
+        },
+      ],
+    },
+  ];
 
   const match = matchQuoteInPages("result is strong", pages);
   assert.ok(match);
   const rect = match!.rects[0];
   // "result" starts at NFKC index 8 out of 24 chars → fraction ≈ 0.333 → x ≈ 80
-  assert.ok(rect[0] > 50, `left edge ${rect[0]} should start after bracket region`);
-  assert.ok(rect[2] <= 240, `right edge ${rect[2]} should not exceed span width`);
+  assert.ok(
+    rect[0] > 50,
+    `left edge ${rect[0]} should start after bracket region`,
+  );
+  assert.ok(
+    rect[2] <= 240,
+    `right edge ${rect[2]} should not exceed span width`,
+  );
 });
 
 // --- buildNormalizedToOriginalMap direct tests ---
@@ -390,35 +443,55 @@ test("buildNormalizedToOriginalMap length matches normalizeQuoteText length (no 
   const input = "Hello World 123";
   const map = buildNormalizedToOriginalMap(input);
   const normalized = normalizeQuoteText(input);
-  assert.equal(map.length, normalized.length, `map length ${map.length} !== normalized length ${normalized.length} for "${input}"`);
+  assert.equal(
+    map.length,
+    normalized.length,
+    `map length ${map.length} !== normalized length ${normalized.length} for "${input}"`,
+  );
 });
 
 test("buildNormalizedToOriginalMap length matches normalizeQuoteText length (matched brackets)", () => {
   const input = "the [1] result";
   const map = buildNormalizedToOriginalMap(input);
   const normalized = normalizeQuoteText(input);
-  assert.equal(map.length, normalized.length, `map length ${map.length} !== normalized length ${normalized.length} for "${input}"`);
+  assert.equal(
+    map.length,
+    normalized.length,
+    `map length ${map.length} !== normalized length ${normalized.length} for "${input}"`,
+  );
 });
 
 test("buildNormalizedToOriginalMap length matches normalizeQuoteText length (unmatched open bracket)", () => {
   const input = "the result [1";
   const map = buildNormalizedToOriginalMap(input);
   const normalized = normalizeQuoteText(input);
-  assert.equal(map.length, normalized.length, `map length ${map.length} !== normalized length ${normalized.length} for "${input}"`);
+  assert.equal(
+    map.length,
+    normalized.length,
+    `map length ${map.length} !== normalized length ${normalized.length} for "${input}"`,
+  );
 });
 
 test("buildNormalizedToOriginalMap length matches normalizeQuoteText length (nested brackets)", () => {
   const input = "a[[b]]c";
   const map = buildNormalizedToOriginalMap(input);
   const normalized = normalizeQuoteText(input);
-  assert.equal(map.length, normalized.length, `map length ${map.length} !== normalized length ${normalized.length} for "${input}"`);
+  assert.equal(
+    map.length,
+    normalized.length,
+    `map length ${map.length} !== normalized length ${normalized.length} for "${input}"`,
+  );
 });
 
 test("buildNormalizedToOriginalMap length matches normalizeQuoteText length (empty brackets)", () => {
   const input = "before[]after";
   const map = buildNormalizedToOriginalMap(input);
   const normalized = normalizeQuoteText(input);
-  assert.equal(map.length, normalized.length, `map length ${map.length} !== normalized length ${normalized.length} for "${input}"`);
+  assert.equal(
+    map.length,
+    normalized.length,
+    `map length ${map.length} !== normalized length ${normalized.length} for "${input}"`,
+  );
 });
 
 test("buildNormalizedToOriginalMap returns empty for empty string", () => {

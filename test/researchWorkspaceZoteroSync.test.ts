@@ -316,9 +316,10 @@ test("receipt parsing accepts exact per-item ownership and rejects overclaims", 
     (result) => ({
       libraryID: result.libraryID,
       itemKey: result.itemKey,
-      status: result.collectionAdded || result.tagNamesAdded.length
-        ? ("blocked" as const)
-        : ("no-op" as const),
+      status:
+        result.collectionAdded || result.tagNamesAdded.length
+          ? ("blocked" as const)
+          : ("no-op" as const),
       collectionRemoved: false,
       tagNamesRemoved: [],
       notifierDataIncluded: false,

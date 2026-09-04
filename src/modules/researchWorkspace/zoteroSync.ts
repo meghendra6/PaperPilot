@@ -1119,12 +1119,10 @@ export function parseResearchWorkspaceZoteroSyncReceiptFile(
       "Undo receipts require one result for every committed preview item.",
     );
   }
-  if (
-    receipt.status === "partially-undone" ||
-    receipt.status === "undone"
-  ) {
+  if (receipt.status === "partially-undone" || receipt.status === "undone") {
     const allOwnershipCleared = (applyResults ?? []).every((applied) => {
-      if (!applied.collectionAdded && !applied.tagNamesAdded.length) return true;
+      if (!applied.collectionAdded && !applied.tagNamesAdded.length)
+        return true;
       const undone = undoByIdentity.get(
         researchWorkspaceZoteroItemIdentityKey(applied),
       );

@@ -23,19 +23,19 @@ const FULL_HISTORY_PREFS: SessionHistoryPrefsResolution = {
 };
 
 export function resolveSessionHistoryPrefs(): SessionHistoryPrefsResolution {
-  if (!Boolean(getPref("saveDocumentSessions"))) {
+  if (!getPref("saveDocumentSessions")) {
     return DISABLED_HISTORY_PREFS;
   }
 
-  if (!Boolean(getPref("privacyStoreLocalHistory"))) {
+  if (!getPref("privacyStoreLocalHistory")) {
     return DISABLED_HISTORY_PREFS;
   }
 
-  if (Boolean(getPref("privacySavePromptsOnly"))) {
+  if (getPref("privacySavePromptsOnly")) {
     return PROMPTS_ONLY_HISTORY_PREFS;
   }
 
-  if (!Boolean(getPref("privacySaveResponses"))) {
+  if (!getPref("privacySaveResponses")) {
     return PROMPTS_ONLY_HISTORY_PREFS;
   }
 
