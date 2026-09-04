@@ -1,11 +1,20 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { execFileSync } from "node:child_process";
 import { test } from "node:test";
 import * as assert from "node:assert/strict";
 
 function keys(source: string, pattern: RegExp) {
   return new Set([...source.matchAll(pattern)].map((match) => match[1]));
+}
+
+function readTypeScriptBelow(directory: string): string[] {
+  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const path = join(directory, entry.name);
+    if (entry.isDirectory()) return readTypeScriptBelow(path);
+    return entry.isFile() && entry.name.endsWith(".ts")
+      ? [readFileSync(path, "utf8")]
+      : [];
+  });
 }
 
 test("preference defaults, types, UI declarations, and source usage stay in sync", () => {
@@ -20,11 +29,7 @@ test("preference defaults, types, UI declarations, and source usage stay in sync
     join(root, "test", "preferenceSync.test.ts"),
     "utf8",
   );
-  const source = execFileSync(
-    "rg",
-    ["-g", "*.ts", "--no-filename", ".", "src"],
-    { cwd: root, encoding: "utf8", maxBuffer: 4 * 1024 * 1024 },
-  );
+  const source = readTypeScriptBelow(join(root, "src")).join("\n");
 
   const defaultKeys = keys(defaults, /__prefsPrefix__\.([A-Za-z0-9]+)["']/g);
   const typeKeys = keys(types, /"([A-Za-z0-9]+)"\s*:/g);
