@@ -99,13 +99,15 @@ export function createResearchWorkspaceStorage() {
         : path.replace(/[\\/][^\\/]+$/, "");
       await zotero.File.createDirectoryIfMissingAsync(parent);
       const ioUtils = getGlobalIOUtils();
-      if (ioUtils?.writeUTF8 && ioUtils?.move) {
+      if (ioUtils?.writeUTF8) {
         const temporaryPath = `${path}.tmp-${Date.now()}-${Math.random()
           .toString(36)
           .slice(2)}`;
         try {
-          await ioUtils.writeUTF8(temporaryPath, contents);
-          await ioUtils.move(temporaryPath, path, { noOverwrite: false });
+          await ioUtils.writeUTF8(path, contents, {
+            tmpPath: temporaryPath,
+            flush: true,
+          });
         } finally {
           try {
             await ioUtils.remove?.(temporaryPath, { ignoreAbsent: true });
@@ -115,7 +117,9 @@ export function createResearchWorkspaceStorage() {
         }
         return;
       }
-      await zotero.File.putContentsAsync(path, contents, "utf-8");
+      throw new Error(
+        "Atomic Research Workspace writes require IOUtils.writeUTF8.",
+      );
     },
     async remove(path: string, options?: { recursive?: boolean }) {
       const ioUtils = getGlobalIOUtils();

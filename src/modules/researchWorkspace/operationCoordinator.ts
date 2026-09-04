@@ -580,8 +580,11 @@ export class ResearchWorkspaceOperationCoordinator {
           (candidate.status === "partial" || candidate.status === "stale") &&
           candidate.lineage.operation === params.operation &&
           candidate.lineage.operationVersion === params.operationVersion &&
+          candidate.lineage.promptVersion ===
+            (params.promptVersion ?? `${params.operation}-prompt-v1`) &&
           candidate.lineage.parserVersion ===
             (params.parserVersion ?? `${params.operation}-parser-v1`) &&
+          candidate.lineage.schemaVersion === params.schemaVersion &&
           candidate.sourceIDs.length === params.papers.length &&
           params.papers.every((paper) =>
             candidate.sourceIDs.includes(paper.sourceID),
@@ -835,7 +838,8 @@ export class ResearchWorkspaceOperationCoordinator {
       }
 
       const completedAt = new Date().toISOString();
-      const status = failedUnits.length ? "partial" : "complete";
+      const status =
+        failedUnits.length || pendingUnits.length ? "partial" : "complete";
       const latestArtifact = await this.repository.getArtifact(
         params.projectID,
         artifact.artifact.artifactID,

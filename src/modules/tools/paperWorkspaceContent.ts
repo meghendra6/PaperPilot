@@ -3,6 +3,7 @@ import { shellEscape } from "../codex/shell";
 import { getZoteroProfilePath } from "../../utils/zoteroProfile";
 import { launchDetachedShellScript } from "../ai/launchScript";
 import { stopDetachedRunProcess } from "../ai/runCompletion";
+import { version as openDataLoaderVersion } from "../../../node_modules/@opendataloader/pdf/package.json";
 
 declare const Zotero: any;
 declare const IOUtils: any;
@@ -43,7 +44,10 @@ interface StructuredExtractionResult {
   structuredContent: unknown;
 }
 
-const EXTRACTOR_VERSION = "opendataloader-pdf@2.2.0|zotero-attachment-text@1";
+export const OPEN_DATA_LOADER_EXTRACTOR_VERSION = `opendataloader-pdf@${openDataLoaderVersion}`;
+export const ZOTERO_ATTACHMENT_TEXT_EXTRACTOR_VERSION =
+  "zotero-attachment-text@1";
+const EXTRACTOR_VERSION = `${OPEN_DATA_LOADER_EXTRACTOR_VERSION}|${ZOTERO_ATTACHMENT_TEXT_EXTRACTOR_VERSION}`;
 const EXTRACTION_OPTIONS_VERSION = "reading-order-xycut-v1";
 const MAX_CACHE_ENTRIES = 12;
 export const STRUCTURED_EXTRACTION_TIMEOUT_MS = 2 * 60 * 1000;

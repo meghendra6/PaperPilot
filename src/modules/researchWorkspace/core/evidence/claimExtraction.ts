@@ -3,6 +3,7 @@ import * as claimLedger_1 from "./claimLedger";
 import * as types_1 from "./types";
 import * as json_1 from "../comprehensionCheck/v2/json";
 import { enumValue, optionalUnitInterval } from "../parserValidation";
+import { buildEvidenceReferencePromptExample } from "../../outputSchemas";
 const CLAIM_KINDS = new Set([
   "author_claim",
   "empirical_result",
@@ -32,7 +33,12 @@ function buildClaimExtractionPrompt(params) {
   const sourceIdentity = params.sourceID
     ? `Every evidence reference must also use sourceID ${JSON.stringify(params.sourceID)} and libraryID ${JSON.stringify(params.libraryID)}.`
     : "";
-  return `Extract an evidence-grounded claim ledger in ${params.responseLanguage || "English"}. Return JSON only: {claims:[{id,text,kind,confidence,support,contradictions,verificationStatus}]}.
+  const evidenceExample = buildEvidenceReferencePromptExample({
+    attachmentKey: params.attachmentKey,
+    sourceID: params.sourceID,
+    libraryID: params.libraryID,
+  });
+  return `Extract an evidence-grounded claim ledger in ${params.responseLanguage || "English"}. Return JSON only, following this complete example: ${JSON.stringify({ claims: [{ id: "claim-1", text: "...", kind: "author_claim", confidence: null, support: [evidenceExample], contradictions: [], verificationStatus: "unverified" }] })}.
 Kinds: author_claim, empirical_result, assumption, reader_inference, external_evidence. Verification status: verified, partially_verified, unverified, conflicting.
 Use attachmentKey ${JSON.stringify(params.attachmentKey)}. Separate what authors state from reader inference. Do not treat abstract rhetoric as verified without evidence.
 ${sourceIdentity}

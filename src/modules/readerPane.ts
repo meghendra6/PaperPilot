@@ -170,6 +170,7 @@ import {
   PAPER_PILOT_PREF_PANE_ID,
   type RunProgressCardHandle,
 } from "./ui/runProgressCard";
+import { installPopoverDismissal } from "./ui/popoverDismissal";
 import { getRunProgressState } from "./ai/runProgress";
 import { cancelActiveEngineRun } from "./ai/runControl";
 import { retryLastEngineQuestion } from "./ai/retryEngineRequest";
@@ -185,6 +186,7 @@ import {
 const paneCleanupByBody = new WeakMap<HTMLElement, () => void>();
 const activePaneBodies = new Set<HTMLElement>();
 const paneTemplateByBody = new WeakMap<HTMLElement, HTMLElement>();
+const paneItemByBody = new WeakMap<HTMLElement, number>();
 const runProgressCardByContainer = new WeakMap<
   HTMLElement,
   RunProgressCardHandle
@@ -199,6 +201,26 @@ interface ReaderPaneLayoutState {
 
 const paneLayoutByBody = new WeakMap<HTMLElement, ReaderPaneLayoutState>();
 
+function logReaderPaneError(context: string, error: unknown) {
+  const normalized = error instanceof Error ? error : new Error(String(error));
+  addon.data.ztoolkit?.log(`Paper Pilot ${context}:`, normalized);
+  Zotero.logError?.(normalized);
+}
+
+export function pruneReaderPaneItemState(itemID: number) {
+  addon.data.modeOverrides?.delete(itemID);
+  addon.data.relatedRecommendationStates?.delete(itemID);
+  addon.data.autoHighlightStates?.delete(itemID);
+  addon.data.paperArtifactStates?.delete(itemID);
+  addon.data.comprehensionCheckStates?.delete(itemID);
+  addon.data.criticalReadStates?.delete(itemID);
+  addon.data.pendingReaderActions?.delete(itemID);
+  addon.data.pendingDiscoveryConcerns?.delete(itemID);
+  addon.data.readerActionDrafts?.delete(itemID);
+  addon.data.applyReaderActionToPane?.delete(itemID);
+  addon.data.activateReaderCapability?.delete(itemID);
+}
+
 export function disposeReaderPaneRunProgressCards(): void {
   for (const card of activeRunProgressCards) card.dispose();
   activeRunProgressCards.clear();
@@ -209,6 +231,7 @@ export function unregisterPaperPilotPaneSection(): void {
     paneCleanupByBody.get(body)?.();
     paneCleanupByBody.delete(body);
     paneTemplateByBody.delete(body);
+    paneItemByBody.delete(body);
     paneLayoutByBody.delete(body);
   }
   activePaneBodies.clear();
@@ -341,6 +364,7 @@ export function registerPaperPilotPaneSection() {
     `,
     onRender: ({ body, item, setSectionSummary: setHostSectionSummary }) => {
       paneCleanupByBody.get(body)?.();
+      paneItemByBody.set(body, item.id);
       const template = paneTemplateByBody.get(body);
       if (template) {
         body.replaceChildren(
@@ -699,6 +723,50 @@ export function registerPaperPilotPaneSection() {
           statusElement: paperToolStatus,
           cardsElement: paperToolCards,
         };
+        const paneElements: PaneElements = {
+          currentDocumentLabel,
+          autoHighlightStatus,
+          autoHighlightButton,
+          researchBriefButton,
+          contributionsButton,
+          limitationsButton,
+          followUpsButton,
+          compareButton,
+          compareHelper,
+          saveWorkbenchNoteButton,
+          saveWorkbenchCollectionButton,
+          clearWorkbenchButton,
+          paperToolStatus,
+          paperToolCards,
+          modeChip,
+          modeStatus,
+          runStateCard,
+          codexActions,
+          policyWarning,
+          geminiFallbackCard,
+          geminiEmbedCard,
+          modelRow,
+          modelInput,
+          codexOptionsRow,
+          codexWebSearchToggle,
+          modelHistory,
+          chatMessages,
+          draftCard,
+          streamingIndicator,
+          setSectionSummary,
+        };
+        const refreshPaneState = (
+          options: {
+            isCurrent?: () => boolean;
+            renderTranscript?: boolean;
+          } = {},
+        ) =>
+          renderPaneState({
+            itemID: item.id,
+            itemTitle: String(item.getField("title") || ""),
+            elements: paneElements,
+            ...options,
+          });
         const runProgressCard = createRunProgressCard({
           container: runStateCard,
           actions: {
@@ -758,6 +826,21 @@ export function registerPaperPilotPaneSection() {
 
         let sessionHistoryOpen = sessionsSection.isExpanded();
         let renamingSessionId: string | undefined;
+        let activeKebabClose: (() => void) | undefined;
+        let activeKebabRoot: HTMLElement | undefined;
+        cleanupTasks.push(
+          installPopoverDismissal({
+            doc: body.ownerDocument,
+            getRoot: () => activeKebabRoot,
+            dismiss: (restoreFocus) => {
+              const trigger = activeKebabRoot?.querySelector(
+                '[aria-haspopup="menu"]',
+              ) as HTMLButtonElement | null;
+              activeKebabClose?.();
+              if (restoreFocus) trigger?.focus();
+            },
+          }),
+        );
 
         const beginSessionRuntimeTransition = async () => {
           const activeMode = getActiveReaderRunMode(item.id);
@@ -900,6 +983,7 @@ export function registerPaperPilotPaneSection() {
           notifyReaderPaneStateChanged(item.id);
         };
 
+        let startPaperMastery: () => Promise<void> = async () => undefined;
         const renderCriticalRead = () => {
           const state = getCriticalReadStateForItem();
           criticalReadButton.textContent =
@@ -929,7 +1013,7 @@ export function registerPaperPilotPaneSection() {
                 await cancelActiveEngineRun(item.id);
               },
               onStartMastery: () => {
-                paperMasteryBtn?.click();
+                void startPaperMastery();
               },
               onStart: async () => {
                 let orientations: ReturnType<
@@ -949,7 +1033,11 @@ export function registerPaperPilotPaneSection() {
                     ...content,
                     abstract: String(item.getField("abstractNote") || ""),
                   });
-                } catch {
+                } catch (error) {
+                  logReaderPaneError(
+                    "Critical Read orientation extraction failed",
+                    error,
+                  );
                   const { buildCriticalReadOrientations } = await import(
                     "./criticalRead/orientation"
                   );
@@ -1209,52 +1297,19 @@ export function registerPaperPilotPaneSection() {
           });
         };
 
-        criticalReadButton.addEventListener("click", () => {
+        const openCriticalRead = () => {
           const visible = criticalReadRoot.style.display !== "none";
           criticalReadRoot.style.display = visible ? "none" : "block";
           if (!visible) renderCriticalRead();
-        });
+        };
+        criticalReadButton.addEventListener("click", openCriticalRead);
         if (addon.data.criticalReadStates?.has(item.id)) {
           criticalReadRoot.style.display = "block";
         }
         renderCriticalRead();
 
         const rerenderPane = async () => {
-          await renderPaneState({
-            itemID: item.id,
-            itemTitle: item.getField("title"),
-            currentDocumentLabel,
-            autoHighlightStatus,
-            autoHighlightButton,
-            researchBriefButton,
-            contributionsButton,
-            limitationsButton,
-            followUpsButton,
-            compareButton,
-            compareHelper,
-            saveWorkbenchNoteButton,
-            saveWorkbenchCollectionButton,
-            clearWorkbenchButton,
-            paperToolStatus,
-            paperToolCards,
-            modeChip,
-            modeStatus,
-            runStateCard,
-            codexActions,
-            policyWarning,
-            geminiFallbackCard,
-            geminiEmbedCard,
-            modelRow,
-            modelInput,
-            codexOptionsRow,
-            codexWebSearchToggle,
-            modelHistory,
-            chatMessages,
-            draftCard,
-            streamingIndicator,
-            setSectionSummary,
-            isCurrent: isCurrentRender,
-          });
+          await refreshPaneState({ isCurrent: isCurrentRender });
           if (disposed) return;
           renderRelatedRecommendationState(
             relatedRecommendButton,
@@ -1293,8 +1348,6 @@ export function registerPaperPilotPaneSection() {
           const doc = sessionHistoryPanel.ownerDocument;
           sessionHistoryPanel.style.display = "block";
           sessionHistoryPanel.replaceChildren();
-
-          let activeKebabClose: (() => void) | undefined;
 
           if (entries.length) {
             const header = doc.createElement("div");
@@ -1463,6 +1516,7 @@ export function registerPaperPilotPaneSection() {
               "aria-label",
               `More actions for session "${entry.title}"`,
             );
+            kebabButton.setAttribute("aria-haspopup", "menu");
 
             let kebabMenu: HTMLElement | undefined;
             const closeKebab = () => {
@@ -1470,6 +1524,7 @@ export function registerPaperPilotPaneSection() {
               kebabMenu = undefined;
               if (activeKebabClose === closeKebab) {
                 activeKebabClose = undefined;
+                activeKebabRoot = undefined;
               }
             };
 
@@ -1482,6 +1537,7 @@ export function registerPaperPilotPaneSection() {
 
               activeKebabClose?.();
               activeKebabClose = closeKebab;
+              activeKebabRoot = kebabContainer;
 
               kebabMenu = doc.createElement("div");
               kebabMenu.className = "pp-session-history__kebab-menu";
@@ -1597,157 +1653,25 @@ export function registerPaperPilotPaneSection() {
         modeGeminiButton.addEventListener("click", async () => {
           if (!canChangeProvider()) return;
           setModeOverrideForItem(item.id, "gemini_cli");
-          await renderPaneState({
-            itemID: item.id,
-            itemTitle: item.getField("title"),
-            currentDocumentLabel,
-            autoHighlightStatus,
-            autoHighlightButton,
-            researchBriefButton,
-            contributionsButton,
-            limitationsButton,
-            followUpsButton,
-            compareButton,
-            compareHelper,
-            saveWorkbenchNoteButton,
-            saveWorkbenchCollectionButton,
-            clearWorkbenchButton,
-            paperToolStatus,
-            paperToolCards,
-            modeChip,
-            modeStatus,
-            runStateCard,
-            codexActions,
-            policyWarning,
-            geminiFallbackCard,
-            geminiEmbedCard,
-            modelRow,
-            modelInput,
-            codexOptionsRow,
-            codexWebSearchToggle,
-            modelHistory,
-            chatMessages,
-            draftCard,
-            streamingIndicator,
-            setSectionSummary,
-          });
+          await refreshPaneState({ renderTranscript: false });
         });
 
         modeClaudeButton.addEventListener("click", async () => {
           if (!canChangeProvider()) return;
           setModeOverrideForItem(item.id, "claude_code");
-          await renderPaneState({
-            itemID: item.id,
-            itemTitle: item.getField("title"),
-            currentDocumentLabel,
-            autoHighlightStatus,
-            autoHighlightButton,
-            researchBriefButton,
-            contributionsButton,
-            limitationsButton,
-            followUpsButton,
-            compareButton,
-            compareHelper,
-            saveWorkbenchNoteButton,
-            saveWorkbenchCollectionButton,
-            clearWorkbenchButton,
-            paperToolStatus,
-            paperToolCards,
-            modeChip,
-            modeStatus,
-            runStateCard,
-            codexActions,
-            policyWarning,
-            geminiFallbackCard,
-            geminiEmbedCard,
-            modelRow,
-            modelInput,
-            codexOptionsRow,
-            codexWebSearchToggle,
-            modelHistory,
-            chatMessages,
-            draftCard,
-            streamingIndicator,
-            setSectionSummary,
-          });
+          await refreshPaneState({ renderTranscript: false });
         });
 
         modeCodexButton.addEventListener("click", async () => {
           if (!canChangeProvider()) return;
           setModeOverrideForItem(item.id, "codex_cli");
-          await renderPaneState({
-            itemID: item.id,
-            itemTitle: item.getField("title"),
-            currentDocumentLabel,
-            autoHighlightStatus,
-            autoHighlightButton,
-            researchBriefButton,
-            contributionsButton,
-            limitationsButton,
-            followUpsButton,
-            compareButton,
-            compareHelper,
-            saveWorkbenchNoteButton,
-            saveWorkbenchCollectionButton,
-            clearWorkbenchButton,
-            paperToolStatus,
-            paperToolCards,
-            modeChip,
-            modeStatus,
-            runStateCard,
-            codexActions,
-            policyWarning,
-            geminiFallbackCard,
-            geminiEmbedCard,
-            modelRow,
-            modelInput,
-            codexOptionsRow,
-            codexWebSearchToggle,
-            modelHistory,
-            chatMessages,
-            draftCard,
-            streamingIndicator,
-            setSectionSummary,
-          });
+          await refreshPaneState({ renderTranscript: false });
         });
 
         modeResetButton.addEventListener("click", async () => {
           if (!canChangeProvider()) return;
           clearModeOverrideForItem(item.id);
-          await renderPaneState({
-            itemID: item.id,
-            itemTitle: item.getField("title"),
-            currentDocumentLabel,
-            autoHighlightStatus,
-            autoHighlightButton,
-            researchBriefButton,
-            contributionsButton,
-            limitationsButton,
-            followUpsButton,
-            compareButton,
-            compareHelper,
-            saveWorkbenchNoteButton,
-            saveWorkbenchCollectionButton,
-            clearWorkbenchButton,
-            paperToolStatus,
-            paperToolCards,
-            modeChip,
-            modeStatus,
-            runStateCard,
-            codexActions,
-            policyWarning,
-            geminiFallbackCard,
-            geminiEmbedCard,
-            modelRow,
-            modelInput,
-            codexOptionsRow,
-            codexWebSearchToggle,
-            modelHistory,
-            chatMessages,
-            draftCard,
-            streamingIndicator,
-            setSectionSummary,
-          });
+          await refreshPaneState({ renderTranscript: false });
         });
 
         autoHighlightButton.addEventListener("click", async () => {
@@ -1786,6 +1710,7 @@ export function registerPaperPilotPaneSection() {
               item.id,
             );
           } catch (error) {
+            logReaderPaneError("auto-highlight workflow failed", error);
             const message =
               error instanceof Error ? error.message : "Auto-highlight failed.";
             setAutoHighlightState(item.id, {
@@ -1895,6 +1820,7 @@ export function registerPaperPilotPaneSection() {
               status: `Saved ${latestCard.title.toLowerCase()} to Zotero note`,
             });
           } catch (error) {
+            logReaderPaneError("workbench note save failed", error);
             setPaperArtifactState(item.id, {
               ...getPaperArtifactState(item.id),
               status:
@@ -1938,6 +1864,7 @@ export function registerPaperPilotPaneSection() {
                   : `Saved ${cards.length} workbench artifacts for collection reuse`,
             });
           } catch (error) {
+            logReaderPaneError("workbench collection save failed", error);
             setPaperArtifactState(item.id, {
               ...getPaperArtifactState(item.id),
               status:
@@ -2107,6 +2034,7 @@ export function registerPaperPilotPaneSection() {
               },
             });
           } catch (error) {
+            logReaderPaneError("related-paper discovery failed", error);
             if (!reservationOwned) {
               addMessage(
                 chatMessages,
@@ -2156,6 +2084,7 @@ export function registerPaperPilotPaneSection() {
               status: "Discovery report saved to a Zotero note.",
             });
           } catch (error) {
+            logReaderPaneError("discovery note save failed", error);
             addon.data.relatedRecommendationStates?.set(item.id, {
               ...state,
               status:
@@ -2741,7 +2670,8 @@ export function registerPaperPilotPaneSection() {
                 },
               },
             );
-          } catch {
+          } catch (error) {
+            logReaderPaneError("structured workflow failed", error);
             await onFailure?.();
             await sessionHistoryService.persistActiveSession({
               itemID,
@@ -2754,7 +2684,7 @@ export function registerPaperPilotPaneSection() {
           }
         }
 
-        paperMasteryBtn?.addEventListener("click", async () => {
+        startPaperMastery = async () => {
           if (!masterySection) {
             return;
           }
@@ -2771,7 +2701,7 @@ export function registerPaperPilotPaneSection() {
           if (
             existingState?.phase === "complete" &&
             !confirmDestructive(
-              paperMasteryBtn.ownerDocument,
+              body.ownerDocument,
               "Restart Paper Mastery",
               "Start Paper Mastery over? The current questions, answers, and final report will be replaced.",
             )
@@ -2800,7 +2730,8 @@ export function registerPaperPilotPaneSection() {
               attachmentKey: content.source?.attachmentKey,
               contentFingerprint: content.contentFingerprint?.value,
             };
-          } catch {
+          } catch (error) {
+            logReaderPaneError("Paper Mastery source extraction failed", error);
             // The question runner will surface extraction errors. Preserve the
             // stable item identity so a failed preparation cannot bind elsewhere.
           }
@@ -2868,6 +2799,27 @@ export function registerPaperPilotPaneSection() {
             markAdmitted,
             MASTERY_QUESTION_OUTPUT_SCHEMA,
           );
+        };
+        paperMasteryBtn?.addEventListener("click", startPaperMastery);
+        const activateCapability = async (
+          capability: import("./readerCapabilityBridge").ReaderCapabilityAction,
+        ) => {
+          if (capability === "critical-read") {
+            openCriticalRead();
+          } else {
+            if (!masterySection) return false;
+            await startPaperMastery();
+          }
+          return true;
+        };
+        addon.data.activateReaderCapability?.set(item.id, activateCapability);
+        cleanupTasks.push(() => {
+          if (
+            addon.data.activateReaderCapability?.get(item.id) ===
+            activateCapability
+          ) {
+            addon.data.activateReaderCapability.delete(item.id);
+          }
         });
 
         masterySubmit?.addEventListener("click", async () => {
@@ -3124,40 +3076,7 @@ export function registerPaperPilotPaneSection() {
         });
 
         codexRecheckButton.addEventListener("click", async () => {
-          await renderPaneState({
-            itemID: item.id,
-            itemTitle: item.getField("title"),
-            currentDocumentLabel,
-            autoHighlightStatus,
-            autoHighlightButton,
-            researchBriefButton,
-            contributionsButton,
-            limitationsButton,
-            followUpsButton,
-            compareButton,
-            compareHelper,
-            saveWorkbenchNoteButton,
-            saveWorkbenchCollectionButton,
-            clearWorkbenchButton,
-            paperToolStatus,
-            paperToolCards,
-            modeChip,
-            modeStatus,
-            runStateCard,
-            codexActions,
-            policyWarning,
-            geminiFallbackCard,
-            geminiEmbedCard,
-            modelRow,
-            modelInput,
-            codexOptionsRow,
-            codexWebSearchToggle,
-            modelHistory,
-            chatMessages,
-            draftCard,
-            streamingIndicator,
-            setSectionSummary,
-          });
+          await refreshPaneState({ renderTranscript: false });
         });
 
         modelSaveButton.addEventListener("click", async () => {
@@ -3185,78 +3104,12 @@ export function registerPaperPilotPaneSection() {
           rememberRecentCodexModel(
             normalizeModelForMode(activeMode, savedModel),
           );
-          await renderPaneState({
-            itemID: item.id,
-            itemTitle: item.getField("title"),
-            currentDocumentLabel,
-            autoHighlightStatus,
-            autoHighlightButton,
-            researchBriefButton,
-            contributionsButton,
-            limitationsButton,
-            followUpsButton,
-            compareButton,
-            compareHelper,
-            saveWorkbenchNoteButton,
-            saveWorkbenchCollectionButton,
-            clearWorkbenchButton,
-            paperToolStatus,
-            paperToolCards,
-            modeChip,
-            modeStatus,
-            runStateCard,
-            codexActions,
-            policyWarning,
-            geminiFallbackCard,
-            geminiEmbedCard,
-            modelRow,
-            modelInput,
-            codexOptionsRow,
-            codexWebSearchToggle,
-            modelHistory,
-            chatMessages,
-            draftCard,
-            streamingIndicator,
-            setSectionSummary,
-          });
+          await refreshPaneState({ renderTranscript: false });
         });
 
         codexWebSearchToggle.addEventListener("change", async () => {
           setPref("codexEnableWebSearch", codexWebSearchToggle.checked);
-          await renderPaneState({
-            itemID: item.id,
-            itemTitle: item.getField("title"),
-            currentDocumentLabel,
-            autoHighlightStatus,
-            autoHighlightButton,
-            researchBriefButton,
-            contributionsButton,
-            limitationsButton,
-            followUpsButton,
-            compareButton,
-            compareHelper,
-            saveWorkbenchNoteButton,
-            saveWorkbenchCollectionButton,
-            clearWorkbenchButton,
-            paperToolStatus,
-            paperToolCards,
-            modeChip,
-            modeStatus,
-            runStateCard,
-            codexActions,
-            policyWarning,
-            geminiFallbackCard,
-            geminiEmbedCard,
-            modelRow,
-            modelInput,
-            codexOptionsRow,
-            codexWebSearchToggle,
-            modelHistory,
-            chatMessages,
-            draftCard,
-            streamingIndicator,
-            setSectionSummary,
-          });
+          await refreshPaneState({ renderTranscript: false });
         });
 
         const submitCurrentInput = async () => {
@@ -3343,9 +3196,12 @@ export function registerPaperPilotPaneSection() {
     },
     onDestroy: ({ body }) => {
       paneCleanupByBody.get(body)?.();
+      const itemID = paneItemByBody.get(body);
+      if (itemID !== undefined) pruneReaderPaneItemState(itemID);
       activePaneBodies.delete(body);
       paneCleanupByBody.delete(body);
       paneTemplateByBody.delete(body);
+      paneItemByBody.delete(body);
       paneLayoutByBody.delete(body);
     },
   });
@@ -3393,9 +3249,7 @@ function getModeLabel(mode: EngineMode) {
   return "Codex CLI";
 }
 
-async function renderPaneState(params: {
-  itemID: number;
-  itemTitle: string;
+interface PaneElements {
   currentDocumentLabel: HTMLElement;
   autoHighlightStatus: HTMLElement;
   autoHighlightButton: HTMLButtonElement;
@@ -3426,8 +3280,16 @@ async function renderPaneState(params: {
   draftCard: HTMLElement;
   streamingIndicator: HTMLElement;
   setSectionSummary: (summary: string) => void;
+}
+
+async function renderPaneState(options: {
+  itemID: number;
+  itemTitle: string;
+  elements: PaneElements;
   isCurrent?: () => boolean;
+  renderTranscript?: boolean;
 }) {
+  const params = { ...options, ...options.elements };
   const defaultMode = getDefaultMode();
   const mode = getModeForItem(params.itemID);
   const descriptor = getCurrentProviderDescriptor(params.itemID);
@@ -3466,7 +3328,6 @@ async function renderPaneState(params: {
     params.itemTitle,
   );
 
-  params.chatMessages.replaceChildren();
   renderRunStateCard(
     params.runStateCard,
     descriptor.mode,
@@ -3491,11 +3352,14 @@ async function renderPaneState(params: {
     descriptor.label,
     descriptor.status,
   );
-  renderMessageHistory(
-    params.chatMessages,
-    session.sessionId,
-    descriptor.placeholderResponse,
-  );
+  if (params.renderTranscript !== false) {
+    params.chatMessages.replaceChildren();
+    renderMessageHistory(
+      params.chatMessages,
+      session.sessionId,
+      descriptor.placeholderResponse,
+    );
+  }
   renderDraftCard(params.draftCard, params.itemID);
   renderStreamingIndicator(params.streamingIndicator, false);
   params.setSectionSummary(`${descriptor.label} · ${descriptor.status}`);
@@ -3779,7 +3643,8 @@ function buildPaperArtifactCardElement(
         findPriorWork.textContent = "Find prior work";
         findPriorWork.addEventListener("click", () => {
           addon.data.pendingDiscoveryConcerns?.set(itemID, {
-            sessionId: sessionStore.get(itemID)?.sessionId,
+            sessionId: sessionStore.getOrCreate(itemID, getModeForItem(itemID))
+              .sessionId,
             text: item,
             origin:
               card.kind === "extract-limitations" ? "limitation" : "follow_up",
@@ -4133,9 +3998,14 @@ async function refreshCodexStatus(
       loginState,
       workspaceWritable,
     );
-  } catch {
+  } catch (error) {
+    logReaderPaneError("Codex status probe failed", error);
     if (!isCurrent() || getActiveReaderRunMode(itemID)) return;
     renderModeHeader(chip, status, "Codex CLI", "error");
+    const detail =
+      addon.data.codexLastProbeError ||
+      (error instanceof Error ? error.message : String(error));
+    if (detail) status.textContent = `${status.textContent} · ${detail}`;
     setSectionSummary("Codex CLI · Error");
     renderRunStateCard(
       runStateCard,
@@ -4414,6 +4284,7 @@ async function runPaperArtifactRequest(params: {
               cards,
             });
           } catch (error) {
+            logReaderPaneError("paper artifact response parsing failed", error);
             setPaperArtifactState(params.item.id, {
               running: false,
               status:
@@ -4481,6 +4352,7 @@ async function runPaperCompareRequest(params: {
       responseLanguage: normalizeResponseLanguage(getPref("responseLanguage")),
     });
   } catch (error) {
+    logReaderPaneError("paper comparison preparation failed", error);
     setPaperArtifactState(params.item.id, {
       ...getPaperArtifactState(params.item.id),
       running: false,
@@ -4554,6 +4426,10 @@ async function runPaperCompareRequest(params: {
               cards,
             });
           } catch (error) {
+            logReaderPaneError(
+              "paper comparison response parsing failed",
+              error,
+            );
             setPaperArtifactState(params.item.id, {
               running: false,
               status:

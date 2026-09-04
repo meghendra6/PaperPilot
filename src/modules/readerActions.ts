@@ -4,10 +4,17 @@ import {
   buildReaderActionQuestion,
   type ReaderActionName,
 } from "./readerActionPrompt";
+import { getModeForItem } from "./ai/modeStore";
 import { clearReaderActionDraft, setReaderActionDraft } from "./readerPane";
 import { sessionStore } from "./session/sessionStore";
 
+export {
+  activateReaderCapability,
+  type ReaderCapabilityAction,
+} from "./readerCapabilityBridge";
+
 declare const Zotero: any;
+declare const addon: import("../addon").default;
 
 type DraftSource = "selection-popup" | "annotation-menu";
 
@@ -24,6 +31,13 @@ type AnnotationContextMenuEvent = {
   append: (params: { label: string; onCommand: () => void }) => void;
 };
 
+function ensureReaderActionSession(itemID: number) {
+  const item = Zotero.Items?.get?.(itemID);
+  const title = String(item?.getField?.("title") || "");
+  return sessionStore.getOrCreate(itemID, getModeForItem(itemID), title)
+    .sessionId;
+}
+
 function saveDraft(params: {
   itemID: number;
   source: DraftSource;
@@ -33,7 +47,7 @@ function saveDraft(params: {
 }) {
   setReaderActionDraft({
     ...params,
-    sessionId: sessionStore.get(params.itemID)?.sessionId,
+    sessionId: ensureReaderActionSession(params.itemID),
     updatedAt: new Date().toISOString(),
   });
 }
@@ -54,7 +68,7 @@ function queueReaderAction(
   autoSubmit: boolean,
 ) {
   addon.data.pendingReaderActions?.set(itemID, {
-    sessionId: sessionStore.get(itemID)?.sessionId,
+    sessionId: ensureReaderActionSession(itemID),
     question,
     autoSubmit,
     updatedAt: new Date().toISOString(),
@@ -76,7 +90,7 @@ function triggerAction(params: {
 
   if (params.action === "find-prior-work" && params.text) {
     addon.data.pendingDiscoveryConcerns?.set(params.itemID, {
-      sessionId: sessionStore.get(params.itemID)?.sessionId,
+      sessionId: ensureReaderActionSession(params.itemID),
       text: params.text,
       origin: "selection",
       updatedAt: new Date().toISOString(),
@@ -99,14 +113,7 @@ function buildSelectionActionButton(params: {
 }) {
   const button = params.doc.createElement("button");
   button.textContent = params.label;
-  button.style.cssText = [
-    "padding: 4px 8px",
-    "border-radius: 6px",
-    "border: 1px solid #d0d0d0",
-    "background: #fff",
-    "cursor: pointer",
-    "font-size: 12px",
-  ].join("; ");
+  button.className = "pp-btn pp-btn--secondary pp-selection-action";
   button.addEventListener("click", () => {
     triggerAction({
       source: "selection-popup",

@@ -57,7 +57,7 @@ class Addon {
       number,
       {
         itemID: number;
-        sessionId?: string;
+        sessionId: string;
         source: "selection-popup" | "annotation-menu" | "page-context";
         action: string;
         text?: string;
@@ -78,7 +78,7 @@ class Addon {
     pendingReaderActions?: Map<
       number,
       {
-        sessionId?: string;
+        sessionId: string;
         question: string;
         autoSubmit: boolean;
         updatedAt: string;
@@ -87,7 +87,7 @@ class Addon {
     pendingDiscoveryConcerns?: Map<
       number,
       {
-        sessionId?: string;
+        sessionId: string;
         text: string;
         origin: import("./modules/discovery/types").ResearchConcernOrigin;
         updatedAt: string;
@@ -107,6 +107,12 @@ class Addon {
       }
     >;
     applyReaderActionToPane?: Map<number, () => Promise<void> | void>;
+    activateReaderCapability?: Map<
+      number,
+      (
+        capability: import("./modules/readerCapabilityBridge").ReaderCapabilityAction,
+      ) => Promise<boolean>
+    >;
     aiReaderPaneRegistered?: boolean;
     autoHighlightStates?: Map<number, { running: boolean; status: string }>;
     paperArtifactStates?: Map<
@@ -162,6 +168,7 @@ class Addon {
       pendingDiscoveryConcerns: new Map(),
       readerActionDrafts: new Map(),
       applyReaderActionToPane: new Map(),
+      activateReaderCapability: new Map(),
     };
     this.hooks = hooks;
     this.api = {};

@@ -1,4 +1,5 @@
 import {
+  ResearchWorkspaceFileMissingError,
   ResearchWorkspaceRevisionConflictError,
   type ResearchWorkspaceChangeInboxFile,
   type ResearchWorkspaceLivingReviewSnapshot,
@@ -189,11 +190,8 @@ export class ResearchWorkspaceLivingReviewService {
     } catch (error) {
       if (
         error instanceof ResearchWorkspaceRevisionConflictError ||
-        (error instanceof Error &&
-          error.message ===
-            `Research Workspace file is missing: ${this.repository.getSourcePath(
-              sourceID,
-            )}`)
+        (error instanceof ResearchWorkspaceFileMissingError &&
+          error.path === this.repository.getSourcePath(sourceID))
       ) {
         return false;
       }

@@ -1,4 +1,4 @@
-import katex from "katex";
+import * as katex from "katex";
 
 function escapeHtml(value: string) {
   return value
@@ -22,21 +22,35 @@ function renderKatex(tex: string, displayMode: boolean): string {
   }
 }
 
-function renderInlineMarkdown(value: string) {
+export function renderInlineMarkdown(value: string) {
+  const safeValue = Array.from(value)
+    .filter((character) => {
+      const codePoint = character.codePointAt(0) ?? 0;
+      return (
+        codePoint === 9 ||
+        codePoint === 10 ||
+        codePoint === 13 ||
+        codePoint > 31
+      );
+    })
+    .filter((character) => character.codePointAt(0) !== 127)
+    .join("");
   // 1. Extract and render math BEFORE HTML escaping to avoid
   //    encode-then-decode round-trips (defense-in-depth against XSS).
   const mathPlaceholders: string[] = [];
+  let placeholderPrefix = "PP_MATH_PLACEHOLDER_";
+  while (safeValue.includes(placeholderPrefix)) placeholderPrefix += "_";
   // Extract \(...\) inline math first
-  let withMathExtracted = value.replace(/\\\((.+?)\\\)/g, (_match, tex) => {
-    const placeholder = `\x00MATH${mathPlaceholders.length}\x00`;
+  let withMathExtracted = safeValue.replace(/\\\((.+?)\\\)/g, (_match, tex) => {
+    const placeholder = `${placeholderPrefix}${mathPlaceholders.length}__`;
     mathPlaceholders.push(renderKatex(tex, false));
     return placeholder;
   });
   // Then extract $...$ inline math
   withMathExtracted = withMathExtracted.replace(
-    /(?<!\$)\$(?!\$)([^$]+?)\$(?!\$)/g,
+    /(?<!\$)\$(?![\s$])([^$\n]*?\S)\$(?![$\d])/g,
     (_match, tex) => {
-      const placeholder = `\x00MATH${mathPlaceholders.length}\x00`;
+      const placeholder = `${placeholderPrefix}${mathPlaceholders.length}__`;
       mathPlaceholders.push(renderKatex(tex, false));
       return placeholder;
     },
@@ -52,9 +66,10 @@ function renderInlineMarkdown(value: string) {
   rendered = rendered.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, "$1");
 
   // 4. Restore math placeholders
-  for (let i = 0; i < mathPlaceholders.length; i++) {
-    rendered = rendered.replace(`\x00MATH${i}\x00`, mathPlaceholders[i]);
-  }
+  rendered = rendered.replace(
+    new RegExp(`${placeholderPrefix}(\\d+)__`, "g"),
+    (_match, index) => mathPlaceholders[Number(index)] ?? "",
+  );
 
   return rendered;
 }

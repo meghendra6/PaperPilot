@@ -289,6 +289,16 @@ async function existingTagNames(
   );
 }
 
+async function selectedExistingTagNames(
+  runtime: ZoteroSyncRuntimeGlobals,
+  libraryID: number,
+  selectedTagNames: readonly string[],
+) {
+  if (!selectedTagNames.length) return [];
+  const available = new Set(await existingTagNames(runtime, libraryID));
+  return selectedTagNames.filter((tagName) => available.has(tagName));
+}
+
 function runtimeItemID(item: ZoteroSyncItem) {
   const id = positiveInteger(item.id);
   if (!id) throw new Error("The stable Zotero item has no runtime ID.");
@@ -407,7 +417,11 @@ export function createResearchWorkspaceZoteroSyncRuntime(
             },
           }
         : {}),
-      existingTagNames: await existingTagNames(runtime, selection.libraryID),
+      existingTagNames: await selectedExistingTagNames(
+        runtime,
+        selection.libraryID,
+        selection.tagNames,
+      ),
       items,
     };
   };

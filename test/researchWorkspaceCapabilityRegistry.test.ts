@@ -93,26 +93,21 @@ test("Screening Log is an explicit local project workflow", () => {
 
 test("canonical Reader bridge opens the captured PDF before activating one workflow", async () => {
   const events: string[] = [];
-  let searches = 0;
   const result = await openCanonicalReaderCapability({
-    paper: { attachmentID: 42, sourceID: "zotero:1:ITEM:PDF" },
+    paper: { itemID: 7, attachmentID: 42, sourceID: "zotero:1:ITEM:PDF" },
     capability: "critical-read",
     dependencies: {
       openReader: async (attachmentID) => {
         events.push(`open:${attachmentID}`);
       },
-      findControl: (controlID) => {
-        searches += 1;
-        if (searches < 2) return undefined;
-        return { click: () => events.push(`click:${controlID}`) };
-      },
-      wait: async () => {
-        events.push("wait");
+      activateCapability: (itemID, capability) => {
+        events.push(`activate:${itemID}:${capability}`);
+        return true;
       },
     },
   });
   assert.equal(result.activated, true);
-  assert.deepEqual(events, ["open:42", "wait", "click:chat-critical-read"]);
+  assert.deepEqual(events, ["open:42", "activate:7:critical-read"]);
 });
 
 test("legacy capability reads are side-effect free and preserve stored payloads", () => {

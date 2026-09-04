@@ -4,6 +4,7 @@ import * as assert from "node:assert/strict";
 import {
   applyContradictionGapReview,
   buildContradictionGapDashboard,
+  classifyMetricDirection,
 } from "../src/modules/researchWorkspace/contradictionGap";
 import { EVIDENCE_VERIFIER_VERSION } from "../src/modules/researchWorkspace/evidenceVerification";
 import { createResearchWorkspaceArtifactView } from "../src/modules/researchWorkspace/artifactRenderer";
@@ -14,6 +15,27 @@ import type {
 import type { ResearchWorkspaceProjectDetails } from "../src/modules/researchWorkspace/projectController";
 
 const NOW = "2026-08-30T12:00:00.000Z";
+
+test("metric direction handles negation, metric polarity, and bare values", () => {
+  assert.equal(
+    classifyMetricDirection("no improvement", "accuracy"),
+    "neutral",
+  );
+  assert.equal(
+    classifyMetricDirection("did not outperform", "F1 score"),
+    "neutral",
+  );
+  assert.equal(
+    classifyMetricDirection("higher latency", "latency"),
+    "negative",
+  );
+  assert.equal(
+    classifyMetricDirection("reduced error", "error rate"),
+    "positive",
+  );
+  assert.equal(classifyMetricDirection(12, "accuracy"), undefined);
+  assert.equal(classifyMetricDirection(-2, "error delta"), "positive");
+});
 
 function source(suffix: string): ResearchWorkspaceSourceRecord {
   return {

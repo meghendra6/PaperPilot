@@ -19,6 +19,8 @@ type ResponseWithConnection = Response & {
 };
 
 const MAX_OFFICIAL_BODY_BYTES = 200_000;
+const MAX_OPENREVIEW_API_BODY_BYTES = 2_000_000;
+const MAX_HTML_HEURISTIC_BYTES = 64_000;
 
 function normalizedHostname(value: string) {
   return value
@@ -74,7 +76,7 @@ export function classifyOfficialEvidenceURL(urlValue: string) {
   const parsed = new URL(normalized);
   const rawHostname = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, "");
   const hostname = normalizedHostname(rawHostname);
-  if (!hostname || hostname !== rawHostname) return undefined;
+  if (!hostname || hostname !== rawHostname || parsed.port) return undefined;
   const family = SOURCE_FAMILIES.find((entry) =>
     entry.domains.some(
       (domain) => hostname === domain || hostname.endsWith(`.${domain}`),
@@ -101,6 +103,7 @@ export function isPlausibleOfficialEvidenceURL(urlValue: string) {
   const hostname = normalizedHostname(rawHostname);
   return (
     parsed.protocol === "https:" &&
+    parsed.port === "" &&
     Boolean(hostname) &&
     hostname === rawHostname &&
     !NON_OFFICIAL_DOMAINS.some(
@@ -554,6 +557,7 @@ async function secureZoteroRequest(
 
 function stripHtml(value: string) {
   return value
+    .slice(0, MAX_HTML_HEURISTIC_BYTES)
     .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
     .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ")
     .replace(/<[^>]+>/g, " ")
@@ -565,9 +569,11 @@ function stripHtml(value: string) {
 
 function linkedHostnames(value: string, baseURL: string) {
   const hosts = new Set<string>();
-  for (const match of value.matchAll(
-    /<a\b[^>]*\bhref\s*=\s*["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi,
-  )) {
+  for (const match of value
+    .slice(0, MAX_HTML_HEURISTIC_BYTES)
+    .matchAll(
+      /<a\b[^>]*\bhref\s*=\s*["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi,
+    )) {
     const label = stripHtml(match[2]);
     if (
       !/\bofficial\b/i.test(label) ||
@@ -599,6 +605,12 @@ async function readResponseTextBounded(
   },
 ) {
   const maxBytes = params.maxBytes ?? MAX_OFFICIAL_BODY_BYTES;
+  const declaredLength = Number(response.headers.get("content-length"));
+  if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
+    throw new Error(
+      `Official evidence response exceeded the ${maxBytes}-byte body limit.`,
+    );
+  }
   if (!response.body) return "";
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
@@ -621,7 +633,11 @@ async function readResponseTextBounded(
         value.byteLength > remaining ? value.slice(0, remaining) : value;
       bytesRead += chunk.byteLength;
       output += decoder.decode(chunk, { stream: bytesRead < maxBytes });
-      if (chunk.byteLength < value.byteLength) break;
+      if (chunk.byteLength < value.byteLength) {
+        throw new Error(
+          `Official evidence response exceeded the ${maxBytes}-byte body limit.`,
+        );
+      }
     }
     output += decoder.decode();
     return output;
@@ -801,6 +817,7 @@ export async function fetchOpenReviewForumNotes(params: {
         );
       }
       const body = await readResponseTextBounded(response, {
+        maxBytes: MAX_OPENREVIEW_API_BODY_BYTES,
         signal: params.signal,
         deadline,
         now,

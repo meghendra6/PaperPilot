@@ -1,6 +1,7 @@
 import * as assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  installPopoverDismissal,
   isNativeSelectInteraction,
   shouldDismissPopover,
 } from "../src/modules/ui/popoverDismissal";
@@ -71,4 +72,33 @@ test("native model select interactions include Zotero's dropdown popup", () => {
     ),
     false,
   );
+});
+
+test("shared popover dismissal removes its outside-click and Escape listeners", () => {
+  const listeners = new Map<string, EventListener>();
+  const doc = {
+    addEventListener(type: string, listener: EventListener) {
+      listeners.set(type, listener);
+    },
+    removeEventListener(type: string, listener: EventListener) {
+      if (listeners.get(type) === listener) listeners.delete(type);
+    },
+  } as unknown as Document;
+  const root = makeRoot();
+  const dismissals: boolean[] = [];
+  const dispose = installPopoverDismissal({
+    doc,
+    getRoot: () => root,
+    dismiss: (restoreFocus) => dismissals.push(restoreFocus),
+  });
+
+  listeners.get("click")?.(makeEvent({}, [{}]));
+  listeners.get("keydown")?.({
+    key: "Escape",
+    preventDefault() {},
+  } as unknown as Event);
+  assert.deepEqual(dismissals, [false, true]);
+
+  dispose();
+  assert.equal(listeners.size, 0);
 });

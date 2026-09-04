@@ -506,6 +506,13 @@ export class ResearchWorkspaceRevisionConflictError extends Error {
   }
 }
 
+export class ResearchWorkspaceFileMissingError extends Error {
+  constructor(public readonly path: string) {
+    super(`Research Workspace file is missing: ${path}`);
+    this.name = "ResearchWorkspaceFileMissingError";
+  }
+}
+
 export class ResearchWorkspaceNotFoundError extends Error {
   constructor(kind: string, id: string) {
     super(`${kind} ${id} was not found.`);

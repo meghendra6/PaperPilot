@@ -17,6 +17,7 @@ export type EvidenceVerificationMethod =
   | "pdf-exact-quote"
   | "structured-element"
   | "zotero-annotation"
+  | "local-index-hit"
   | "metadata-only"
   | "none";
 
@@ -40,7 +41,7 @@ export interface EvidenceReferenceV2 {
     status: EvidenceVerificationStatus;
     method: EvidenceVerificationMethod;
     verifiedAt?: string;
-    verifierVersion: string;
+    verifierVersion?: string;
     detail?: string;
   };
 }

@@ -1,4 +1,5 @@
 import {
+  ResearchWorkspaceFileMissingError,
   ResearchWorkspaceRevisionConflictError,
   type ResearchWorkspaceFileOps,
 } from "./contracts";
@@ -90,8 +91,7 @@ export class SerializedResearchWorkspaceFiles {
         }
       }
       if (!current) current = params.create?.();
-      if (!current)
-        throw new Error(`Research Workspace file is missing: ${params.path}`);
+      if (!current) throw new ResearchWorkspaceFileMissingError(params.path);
       if (
         params.expectedRevision !== undefined &&
         current.revision !== params.expectedRevision

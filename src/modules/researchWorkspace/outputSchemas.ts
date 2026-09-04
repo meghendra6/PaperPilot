@@ -63,6 +63,28 @@ const attachmentEvidenceReference = strictObject({
 const sourceEvidenceArray = arrayOf(sourceEvidenceReference);
 const attachmentEvidenceArray = arrayOf(attachmentEvidenceReference);
 
+export function buildEvidenceReferencePromptExample(params: {
+  attachmentKey: string;
+  sourceID?: string;
+  libraryID?: number;
+}) {
+  return {
+    ...(params.sourceID
+      ? {
+          sourceID: params.sourceID,
+          libraryID: params.libraryID ?? 1,
+        }
+      : {}),
+    attachmentKey: params.attachmentKey,
+    pageIndex: 0,
+    pageLabel: null,
+    sectionPath: ["Methods"],
+    elementType: "paragraph",
+    quote: null,
+    confidence: null,
+  };
+}
+
 const claimLedger = strictObject({
   claims: arrayOf(
     strictObject({

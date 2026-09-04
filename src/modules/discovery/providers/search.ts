@@ -71,13 +71,14 @@ async function searchWithRetry(params: {
   limit: number;
   signal?: AbortSignal;
   deadline: number;
+  now: () => number;
 }) {
   let lastError: unknown;
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
       if (params.signal?.aborted)
         throw new Error("Research discovery cancelled.");
-      const remaining = params.deadline - Date.now();
+      const remaining = params.deadline - params.now();
       if (remaining <= 0) throw new Error("Research discovery timed out.");
       return await params.provider.search(params.query, {
         fetch: withDiscoveryFetchTimeout(
@@ -90,7 +91,11 @@ async function searchWithRetry(params: {
     } catch (error) {
       lastError = error;
       if (params.signal?.aborted) throw error;
-      if (Date.now() >= params.deadline) throw error;
+      const status = Number(
+        (error as { status?: unknown } | undefined)?.status,
+      );
+      if (status >= 400 && status < 500) throw error;
+      if (params.now() >= params.deadline) throw error;
       if (attempt < 2) {
         await new Promise((resolve) => setTimeout(resolve, 150 * 2 ** attempt));
       }
@@ -112,8 +117,12 @@ export async function searchCandidateProviders(params: {
   if (!query)
     return { candidates: [], limitations: ["Search query was empty."] };
   const providers = params.providers || BUILT_IN_CANDIDATE_PROVIDERS;
-  const now = params.now?.() ?? Date.now();
-  const deadline = params.deadline ?? Date.now() + 60_000;
+  const clock = params.now ?? Date.now;
+  const now = clock();
+  const deadline = params.deadline ?? now + 60_000;
+  for (const [key, entry] of cache) {
+    if (entry.expiresAt <= now) cache.delete(key);
+  }
   const results = await Promise.all(
     providers.map(async (provider) => {
       if (params.signal?.aborted)
@@ -131,11 +140,17 @@ export async function searchCandidateProviders(params: {
           limit: params.limitPerProvider || 10,
           signal: params.signal,
           deadline,
+          now: clock,
         });
         cache.set(key, {
           expiresAt: now + 5 * 60_000,
           candidates,
         });
+        while (cache.size > 128) {
+          const oldest = cache.keys().next().value as string | undefined;
+          if (!oldest) break;
+          cache.delete(oldest);
+        }
         return { candidates, limitation: undefined };
       } catch (error) {
         if (params.signal?.aborted) throw error;

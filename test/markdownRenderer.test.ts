@@ -1,6 +1,9 @@
 import * as assert from "node:assert/strict";
 import { test } from "node:test";
-import { renderMarkdownFragment } from "../src/modules/components/markdownRenderer";
+import {
+  renderInlineMarkdown,
+  renderMarkdownFragment,
+} from "../src/modules/components/markdownRenderer";
 
 class FakeElement {
   children: FakeElement[] = [];
@@ -91,4 +94,21 @@ test("Markdown preserves headings, blockquotes, fenced code, and nested-list tex
   assert.equal(descendants(fragment, "pre").length, 1);
   assert.match(fragment.textContent, /nested/);
   assert.match(fragment.textContent, /const answer = 42;/);
+});
+
+test("inline math does not consume currency ranges", () => {
+  const rendered = renderInlineMarkdown(
+    "It costs $5 and $10 per unit, while $x + 1$ is math.",
+  );
+  assert.match(rendered, /It costs \$5 and \$10 per unit/);
+  assert.match(rendered, /<math/);
+  assert.doesNotMatch(rendered, /\$x \+ 1\$/);
+});
+
+test("Markdown strips input control characters without accepting literal placeholders", () => {
+  const rendered = renderInlineMarkdown(
+    "before\u0000MATH0\u0007 after and $x$",
+  );
+  assert.match(rendered, /beforeMATH0 after/);
+  assert.equal(rendered.includes(String.fromCharCode(7)), false);
 });

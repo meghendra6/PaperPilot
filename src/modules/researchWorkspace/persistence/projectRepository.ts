@@ -7,6 +7,7 @@ import {
   RESEARCH_WORKSPACE_PREFERENCES_SCHEMA_VERSION,
   RESEARCH_WORKSPACE_RUN_SCHEMA_VERSION,
   RESEARCH_WORKSPACE_SOURCE_SCHEMA_VERSION,
+  ResearchWorkspaceFileMissingError,
   ResearchWorkspaceNotFoundError,
   ResearchWorkspaceRevisionConflictError,
   assertResearchWorkspaceID,
@@ -1229,12 +1230,8 @@ export class ResearchWorkspaceProjectRepository {
       });
     } catch (error) {
       if (
-        error instanceof Error &&
-        error.message ===
-          `Research Workspace file is missing: ${this.getArtifactPath(
-            params.projectID,
-            params.artifactID,
-          )}`
+        error instanceof ResearchWorkspaceFileMissingError &&
+        error.path === this.getArtifactPath(params.projectID, params.artifactID)
       ) {
         return { matched: false, changed: false };
       }
@@ -1722,7 +1719,24 @@ export class ResearchWorkspaceProjectRepository {
   async recoverStartup() {
     let warnings: string[] = [];
     let repairedCatalog = false;
-    const projectPaths = await this.files.listDirectory(this.projectsRoot);
+    const repositoryPaths = await this.files.listDirectory(this.rootDir);
+    const temporaryPaths = repositoryPaths.filter((path) =>
+      /\.tmp-[^/]+$/i.test(path),
+    );
+    for (const path of temporaryPaths) {
+      try {
+        await this.files.remove(path);
+      } catch (error) {
+        warnings.push(
+          `Temporary file ${path} could not be removed: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    }
+    const projectPaths = repositoryPaths.filter((path) =>
+      path.startsWith(`${this.projectsRoot}/`),
+    );
     if (
       (await this.hasCatalog()) ||
       projectPaths.some((path) => /[\\/]project\.json$/i.test(path))

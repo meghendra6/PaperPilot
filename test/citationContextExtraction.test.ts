@@ -106,6 +106,42 @@ test("local citation extraction resolves numeric and author-year contexts determ
   );
 });
 
+test("citation titles do not resolve through a loose substring", () => {
+  const citing = paper("A", {
+    structuredChunks: [
+      {
+        id: "body",
+        text: "The survey summarizes prior work [1].",
+        attachmentKey: "PDF-A",
+        metadata: { paperKey: "A" },
+      },
+      {
+        id: "references",
+        title: "References",
+        text: "[1] Transformer Models. (2020).",
+        attachmentKey: "PDF-A",
+        sectionPath: ["References"],
+        metadata: { paperKey: "A" },
+      },
+    ],
+  });
+  const result = extractResearchWorkspaceCitationContexts({
+    papers: [citing],
+    libraryCandidates: [
+      {
+        id: 99,
+        libraryID: 1,
+        itemKey: "OTHER",
+        title: "A Survey of Transformer Models in Clinical Practice",
+        authors: [],
+        year: 2020,
+      },
+    ],
+  });
+
+  assert.equal(result.contexts[0].resolution.status, "unresolved");
+});
+
 test("citation correction is append-only, revision-guarded, and payload-bound", () => {
   const payload = {
     schemaVersion: 1,

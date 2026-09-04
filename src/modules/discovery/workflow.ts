@@ -1072,23 +1072,26 @@ export async function verifyDiscoveryEvidenceLive(params: {
   ];
 
   const openReviewStatuses = new Map<string, OpenReviewOfficialStatus>();
-  for (const url of urls) {
+  const inspectOne = async (url: string) => {
+    const errors: string[] = [];
+    let inspection: EvidenceInspection;
     try {
-      evidenceInspections.set(
+      inspection = await inspectWithRetry(
         url,
-        await inspectWithRetry(url, params.fetch, params.signal, deadline),
+        params.fetch,
+        params.signal,
+        deadline,
       );
     } catch (error) {
       if (params.signal?.aborted) throw error;
-      failures.push(
+      errors.push(
         `${url}: ${error instanceof Error ? error.message : "unavailable"}`,
       );
-      continue;
+      return { url, errors };
     }
     // The status forum id must come from the inspected final URL so a
     // redirecting claimed URL cannot pair another forum's page with its own
     // decision record.
-    const inspection = evidenceInspections.get(url)!;
     let forumID = openReviewForumID(inspection.url);
     let identityFromRegistrar = false;
     if (
@@ -1104,7 +1107,7 @@ export async function verifyDiscoveryEvidenceLive(params: {
       forumID = openReviewForumID(url);
       identityFromRegistrar = Boolean(forumID);
     }
-    if (!forumID) continue;
+    if (!forumID) return { url, inspection, errors };
     try {
       const status = deriveOpenReviewOfficialStatus(
         await fetchOpenReviewForumNotes({
@@ -1115,13 +1118,12 @@ export async function verifyDiscoveryEvidenceLive(params: {
         }),
         forumID,
       );
-      openReviewStatuses.set(url, status);
       if (identityFromRegistrar && status.submissionTitle) {
         // Identity is validated field-by-field against this record instead of
         // a flattened text surface: authors must match the registrar author
         // list and the claimed year must appear in the registrar
         // venue/venueid/invitation edition surface.
-        evidenceInspections.set(url, {
+        inspection = {
           ...inspection,
           url: `https://openreview.net/forum?id=${forumID}`,
           pageTitle: status.submissionTitle,
@@ -1137,16 +1139,37 @@ export async function verifyDiscoveryEvidenceLive(params: {
             authors: status.submissionAuthors,
             editionSurface: status.officialVenueText,
           },
-        });
+        };
       }
+      return { url, inspection, status, errors };
     } catch (error) {
       if (params.signal?.aborted) throw error;
-      failures.push(
+      errors.push(
         `${url}: official OpenReview status was unavailable (${
           error instanceof Error ? error.message : "unavailable"
         }).`,
       );
+      return { url, inspection, errors };
     }
+  };
+  const inspectionResults: Array<Awaited<ReturnType<typeof inspectOne>>> = [];
+  let nextURLIndex = 0;
+  const workerCount = Math.min(4, urls.length);
+  await Promise.all(
+    Array.from({ length: workerCount }, async () => {
+      while (nextURLIndex < urls.length) {
+        const index = nextURLIndex;
+        nextURLIndex += 1;
+        inspectionResults[index] = await inspectOne(urls[index]);
+      }
+    }),
+  );
+  for (const result of inspectionResults) {
+    if (result.inspection) {
+      evidenceInspections.set(result.url, result.inspection);
+    }
+    if (result.status) openReviewStatuses.set(result.url, result.status);
+    failures.push(...result.errors);
   }
 
   const papersWithLiveEvidence = allPapers.map((paper) => {

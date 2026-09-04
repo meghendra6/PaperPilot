@@ -348,6 +348,16 @@ function metadataSignals(params: {
   for (const entry of values) {
     for (const pattern of CORRECTION_SIGNAL_PATTERNS) {
       if (!pattern.expression.test(entry.value)) continue;
+      if (entry.field === "title") {
+        const prefix = entry.value.trim().slice(0, 80);
+        if (
+          !/^\[(?:retracted|withdrawn|corrected|erratum|corrigendum|expression of concern)\]|^(?:retracted|withdrawn|withdrawal|corrected|correction|erratum|corrigendum|expression of concern)\s*[:—-]/i.test(
+            prefix,
+          )
+        ) {
+          continue;
+        }
+      }
       const key = `${pattern.kind}|${entry.field}|${entry.value}`;
       if (seen.has(key)) continue;
       seen.add(key);
@@ -1176,7 +1186,8 @@ export function buildCitationHealthReport(params: {
         finding({
           kind: "local-correction-retraction-signal",
           severity:
-            signal.kind === "retraction" || signal.kind === "withdrawal"
+            signal.field !== "title" &&
+            (signal.kind === "retraction" || signal.kind === "withdrawal")
               ? "high"
               : "review",
           title: `Local Zotero metadata contains a ${signal.kind.replace(/-/g, " ")} signal`,

@@ -1,5 +1,9 @@
 import type { ResearchWorkspacePaper } from "./paperSource";
 import {
+  OPEN_DATA_LOADER_EXTRACTOR_VERSION,
+  ZOTERO_ATTACHMENT_TEXT_EXTRACTOR_VERSION,
+} from "../tools/paperWorkspaceContent";
+import {
   ResearchWorkspaceNotFoundError,
   ResearchWorkspaceRevisionConflictError,
   type ResearchProject,
@@ -78,8 +82,8 @@ export function researchWorkspaceSourceRecordFromPaper(
           : "zotero-attachment-text",
       extractorVersion:
         paper.extractionQuality === "structured"
-          ? "opendataloader-pdf@2.2.0"
-          : "zotero-attachment-text@1",
+          ? OPEN_DATA_LOADER_EXTRACTOR_VERSION
+          : ZOTERO_ATTACHMENT_TEXT_EXTRACTOR_VERSION,
       extractionOptionsVersion: "reading-order-xycut-v1",
     },
     extractionQuality: paper.extractionQuality,
@@ -396,6 +400,9 @@ export class ResearchWorkspaceProjectController {
     const previous = bundle.members.find(
       (member) => member.sourceID === params.sourceID,
     );
+    if (!previous) {
+      throw new ResearchWorkspaceNotFoundError("Source", params.sourceID);
+    }
     const membersFile = await this.repository.updateMembers(
       params.projectID,
       bundle.membersRevision,
@@ -416,16 +423,14 @@ export class ResearchWorkspaceProjectController {
             : member,
         ),
     );
-    if (previous) {
-      await this.repository.markArtifactsStaleForMembersRevision({
-        projectID: params.projectID,
-        membersRevision: membersFile.revision,
-        reason:
-          previous.reviewStatus !== params.reviewStatus
-            ? "project-review-scope-changed"
-            : "project-member-record-changed",
-      });
-    }
+    await this.repository.markArtifactsStaleForMembersRevision({
+      projectID: params.projectID,
+      membersRevision: membersFile.revision,
+      reason:
+        previous.reviewStatus !== params.reviewStatus
+          ? "project-review-scope-changed"
+          : "project-member-record-changed",
+    });
     return this.details(params.projectID);
   }
 

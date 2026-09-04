@@ -19,3 +19,25 @@ export function isNativeSelectInteraction(
     );
   });
 }
+
+export function installPopoverDismissal(params: {
+  doc: Document;
+  getRoot: () => HTMLElement | undefined;
+  dismiss: (restoreFocus: boolean) => void;
+}) {
+  const onDocumentClick = (event: MouseEvent) => {
+    const root = params.getRoot();
+    if (root && shouldDismissPopover(root, event)) params.dismiss(false);
+  };
+  const onDocumentKeyDown = (event: KeyboardEvent) => {
+    if (!params.getRoot() || event.key !== "Escape") return;
+    event.preventDefault();
+    params.dismiss(true);
+  };
+  params.doc.addEventListener("click", onDocumentClick);
+  params.doc.addEventListener("keydown", onDocumentKeyDown, true);
+  return () => {
+    params.doc.removeEventListener("click", onDocumentClick);
+    params.doc.removeEventListener("keydown", onDocumentKeyDown, true);
+  };
+}

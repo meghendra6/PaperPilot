@@ -1,17 +1,18 @@
 import type { ResearchWorkspacePaper } from "./paperSource";
+import {
+  activateReaderCapability,
+  type ReaderCapabilityAction,
+} from "../readerCapabilityBridge";
 
-export type CanonicalReaderCapability = "critical-read" | "paper-mastery";
+export type CanonicalReaderCapability = ReaderCapabilityAction;
 
 export interface CanonicalReaderCapabilityDependencies {
   openReader: (attachmentID: number) => unknown | Promise<unknown>;
-  findControl: (controlID: string) => { click: () => void } | undefined;
-  wait: (milliseconds: number) => Promise<void>;
+  activateCapability: (
+    itemID: number,
+    capability: CanonicalReaderCapability,
+  ) => boolean | Promise<boolean>;
 }
-
-const CONTROL_IDS: Record<CanonicalReaderCapability, string> = {
-  "critical-read": "chat-critical-read",
-  "paper-mastery": "chat-paper-mastery",
-};
 
 function defaultDependencies(): CanonicalReaderCapabilityDependencies {
   const zotero = (globalThis as typeof globalThis & { Zotero?: any }).Zotero;
@@ -22,16 +23,13 @@ function defaultDependencies(): CanonicalReaderCapabilityDependencies {
       }
       await zotero.Reader.open(attachmentID, {});
     },
-    findControl: (controlID) =>
-      zotero?.getMainWindow?.()?.document?.getElementById?.(controlID) ??
-      undefined,
-    wait: (milliseconds) =>
-      new Promise((resolve) => globalThis.setTimeout(resolve, milliseconds)),
+    activateCapability: (itemID, capability) =>
+      activateReaderCapability(itemID, capability),
   };
 }
 
 export async function openCanonicalReaderCapability(params: {
-  paper: Pick<ResearchWorkspacePaper, "attachmentID" | "sourceID">;
+  paper: Pick<ResearchWorkspacePaper, "attachmentID" | "itemID" | "sourceID">;
   capability: CanonicalReaderCapability;
   dependencies?: CanonicalReaderCapabilityDependencies;
 }) {
@@ -43,24 +41,14 @@ export async function openCanonicalReaderCapability(params: {
   }
   const dependencies = params.dependencies ?? defaultDependencies();
   await dependencies.openReader(params.paper.attachmentID);
-  const controlID = CONTROL_IDS[params.capability];
-  for (let attempt = 0; attempt < 8; attempt += 1) {
-    const control = dependencies.findControl(controlID);
-    if (control) {
-      control.click();
-      return {
-        capability: params.capability,
-        sourceID: params.paper.sourceID,
-        attachmentID: params.paper.attachmentID,
-        activated: true,
-      } as const;
-    }
-    if (attempt < 7) await dependencies.wait(125);
-  }
+  const activated = await dependencies.activateCapability(
+    params.paper.itemID,
+    params.capability,
+  );
   return {
     capability: params.capability,
     sourceID: params.paper.sourceID,
     attachmentID: params.paper.attachmentID,
-    activated: false,
+    activated,
   } as const;
 }

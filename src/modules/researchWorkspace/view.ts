@@ -436,15 +436,14 @@ export async function renderResearchWorkspaceView(
             matchedTerms: entry.matchedTerms,
             verification: entry.chunk.metadata?.elementId
               ? {
-                  status: "verified",
-                  method: "structured-element",
-                  verifiedAt: new Date().toISOString(),
-                  verifierVersion: "paperpilot-evidence-v2",
+                  status: "unverified",
+                  method: "local-index-hit",
+                  detail:
+                    "Located by local hybrid search; use evidence verification before treating this as verified.",
                 }
               : {
                   status: "unverified",
                   method: "metadata-only",
-                  verifierVersion: "paperpilot-evidence-v2",
                   detail: "No page-level structured element is available.",
                 },
           })),
@@ -1010,7 +1009,8 @@ export function registerResearchWorkspacePaneSection() {
       '<html:div xmlns:html="http://www.w3.org/1999/xhtml" class="paperpilot-research-workspace-root" />',
     onItemChange: ({ setEnabled, item, tabType }: any) => {
       setEnabled(
-        Boolean(item) && (tabType === "reader" || tabType === "library"),
+        supportsResearchWorkspacePaneItem(item) &&
+          (tabType === "reader" || tabType === "library"),
       );
       return true;
     },
@@ -1019,6 +1019,23 @@ export function registerResearchWorkspacePaneSection() {
     },
   });
   registered = true;
+}
+
+export function supportsResearchWorkspacePaneItem(item: any) {
+  if (!item) return false;
+  if (typeof item.isRegularItem === "function" && item.isRegularItem()) {
+    return true;
+  }
+  if (typeof item.isPDFAttachment === "function") {
+    return Boolean(item.isPDFAttachment());
+  }
+  return (
+    typeof item.isAttachment === "function" &&
+    item.isAttachment() &&
+    String(item.attachmentContentType || item.getField?.("contentType") || "")
+      .toLowerCase()
+      .includes("pdf")
+  );
 }
 
 export function unregisterResearchWorkspacePaneSection() {

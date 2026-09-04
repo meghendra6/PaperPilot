@@ -427,11 +427,20 @@ function resolveReference(
     const resolved = select(
       candidates.filter((entry) => {
         const candidate = normalizeTitle(entry.title ?? "");
+        const referenceTokens = new Set(title.split(" ").filter(Boolean));
+        const candidateTokens = new Set(candidate.split(" ").filter(Boolean));
+        const shared = [...referenceTokens].filter((token) =>
+          candidateTokens.has(token),
+        ).length;
+        const overlap =
+          shared /
+          Math.max(1, Math.max(referenceTokens.size, candidateTokens.size));
         return (
           candidate.length >= 8 &&
           (candidate === title ||
-            candidate.includes(title) ||
-            title.includes(candidate))
+            (Boolean(reference.year) &&
+              entry.year === reference.year &&
+              overlap >= 0.8))
         );
       }),
       "project-title",
@@ -503,17 +512,25 @@ export function extractResearchWorkspaceCitationContexts(params: {
             skippedMarkers += 1;
             continue;
           }
-          const reference =
+          const parsedReference =
             references.get(marker.key) ??
             parseReference(
               marker.raw,
               marker.numericIndex ? String(marker.numericIndex) : marker.key,
             );
-          if (!reference.firstAuthor && marker.firstAuthor) {
-            reference.firstAuthor = marker.firstAuthor;
-            reference.authors = [marker.firstAuthor];
-          }
-          if (!reference.year && marker.year) reference.year = marker.year;
+          const reference = {
+            ...parsedReference,
+            authors: [...parsedReference.authors],
+            ...(!parsedReference.firstAuthor && marker.firstAuthor
+              ? {
+                  firstAuthor: marker.firstAuthor,
+                  authors: [marker.firstAuthor],
+                }
+              : {}),
+            ...(!parsedReference.year && marker.year
+              ? { year: marker.year }
+              : {}),
+          };
           const resolution = resolveReference(
             reference,
             params.papers,
