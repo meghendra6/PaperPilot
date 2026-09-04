@@ -1,5 +1,4 @@
-// @ts-nocheck -- Ported feature core is guarded by strict runtime parsers.
-function isRecord(value) {
+function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 /**
@@ -7,9 +6,9 @@ function isRecord(value) {
  * The last successfully parsed object is returned because CLI agents often emit
  * progress prose before the final structured answer.
  */
-function extractLastJsonObject(text) {
-  const candidates = [];
-  const starts = [];
+function extractLastJsonObject(text: string): Record<string, unknown> {
+  const candidates: Array<{ start: number; end: number; value: string }> = [];
+  const starts: number[] = [];
   let inString = false;
   let escaped = false;
   for (let index = 0; index < text.length; index += 1) {
@@ -34,6 +33,7 @@ function extractLastJsonObject(text) {
     }
     if (character === "}" && starts.length > 0) {
       const start = starts.pop();
+      if (start === undefined) continue;
       candidates.push({
         start,
         end: index,
@@ -54,29 +54,36 @@ function extractLastJsonObject(text) {
   }
   throw new Error("No valid JSON object was found in the agent response.");
 }
-function readObject(value, fieldName) {
+function readObject(
+  value: unknown,
+  fieldName: string,
+): Record<string, unknown> {
   if (!isRecord(value)) throw new Error(`${fieldName} must be an object.`);
   return value;
 }
-function readString(value, fieldName) {
+function readString(value: unknown, fieldName: string): string {
   if (typeof value !== "string" || value.trim().length === 0) {
     throw new Error(`${fieldName} must be a non-empty string.`);
   }
   return value.trim();
 }
-function readOptionalString(value) {
+function readOptionalString(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
   const normalized = value.trim();
   return normalized.length > 0 ? normalized : undefined;
 }
-function readArray(value, fieldName) {
+function readArray(value: unknown, fieldName: string): unknown[] {
   if (!Array.isArray(value)) throw new Error(`${fieldName} must be an array.`);
   return value;
 }
-function readBoolean(value, defaultValue = false) {
+function readBoolean(value: unknown, defaultValue = false): boolean {
   return typeof value === "boolean" ? value : defaultValue;
 }
-function readNumber(value, fieldName, options = {}) {
+function readNumber(
+  value: unknown,
+  fieldName: string,
+  options: { defaultValue?: number; min?: number; max?: number } = {},
+): number {
   const number =
     typeof value === "number" && Number.isFinite(value)
       ? value

@@ -7,7 +7,7 @@ Related notes:
 
 - [`prompt-contracts.md`](./prompt-contracts.md) — required output shapes per prompt surface
 - [`manual-qa.md`](./manual-qa.md) — real-Zotero runtime checklist
-- [`research-workspace-redesign-spec.md`](./research-workspace-redesign-spec.md) — proposed selection-independent Research Workspace redesign and migration plan
+- [`research-workspace-redesign-spec.md`](./research-workspace-redesign-spec.md) — delivered Research Workspace phases plus remaining rollout and runtime-verification proposals
 - [`agent-led-research-discovery-and-critical-read-spec.md`](./agent-led-research-discovery-and-critical-read-spec.md) — implemented verified-discovery and seven-step critical-reading specification
 - [`../AGENTS.md`](../AGENTS.md) — working agreements and verification expectations
 
@@ -21,7 +21,7 @@ already installed and authenticated on the user's machine.
 Zotero item panes
   ├── src/modules/readerPane.ts              reader chat and workbench
   └── modules/researchWorkspace/view.ts      single- and multi-paper tools
-        └── modules/researchWorkspace/       feature service and typed core
+        └── modules/researchWorkspace/       feature service and partially typed ported core
               └── modules/ai/workspaceRun.ts
                     └── <engine>/runner.ts   workspace build + process launch
                           └── codex | claude | gemini CLI
@@ -41,8 +41,8 @@ is the most common regression in this codebase.
 
 The pane itself uses a bounded flex column. `ui/paneHeader.ts` owns the compact
 engine/model header and its settings popover, while `ui/collapsibleSection.ts`
-owns the accessible Workbench, Find verified prior work, Critical Read, and Past
-sessions surfaces. `ui/chatComposerSizing.ts` preserves textarea auto-sizing
+owns the accessible Workbench, Find verified prior work, and Past sessions
+surfaces. Critical Read is rendered within Workbench. `ui/chatComposerSizing.ts` preserves textarea auto-sizing
 without changing the pane height. Disclosure state is serialized in the internal
 `paneSectionState` preference through the pure helpers in
 `ui/paneSectionState.ts`. The chat transcript takes the remaining space and
@@ -56,12 +56,13 @@ detached.
 ## Integrated Research Workspace boundary
 
 `src/modules/researchWorkspace/` owns the paper- and project-level research
-features. `view.ts` keeps a compact item-pane launcher, while
-`projectWindow.ts` owns the persistent modeless project window. Library
-selection is captured once by `selectionCapture.ts` and handed to the project
-controller; project actions never depend on a later live-selection read. This
-keeps the workflow reachable when Zotero replaces the ordinary item pane for a
-multi-selection.
+features. `view.ts` renders the full single-paper operation surface and is also
+embedded in the project window. `projectWindowView.ts` renders project UI,
+`window.ts` owns the modeless-window singleton and captured state, and `menu.ts`
+registers its launchers. Library selection is captured once by
+`selectionSnapshot.ts` and handed to the project controller; project actions
+never depend on a later live-selection read. This keeps the workflow reachable
+when Zotero replaces the ordinary item pane for a multi-selection.
 
 The feature service reuses `ai/workspaceRun.ts` with the `analysis` profile.
 It therefore follows the active Paper Pilot engine choice, never resumes or
@@ -92,10 +93,12 @@ sets.
 
 Research Workspace durable state remains separate from transient run
 workspaces under `<Zotero profile>/paperpilot-research-workspace/`. The current
-store uses a revisioned `catalog-v1.json`, shared source records, and one
-directory per project containing `project.json`, `members.json`,
-`change-inbox.json`, artifacts, and runs. Each file replacement is atomic and
-revision guarded; a workflow that touches several files is not a transaction.
+store uses revisioned `catalog-v1.json` and `preferences-v1.json`, shared source
+records, a legacy migration marker, and one directory per project containing
+`project.json`, `members.json`, `change-inbox.json`, `sync-receipts/`, artifacts,
+and runs. Derived caches and user-requested exports live under separate `cache/`
+and `exports/` directories. Each file replacement is atomic and revision
+guarded; a workflow that touches several files is not a transaction.
 Startup recovery reconciles `project.json` with valid artifact and run files,
 re-links files left behind by an interrupted write, quarantines unreadable
 orphans, repairs missing membership files, and rebuilds stale catalog entries.
@@ -181,11 +184,12 @@ directory. Apply and undo both require `Zotero.DB.executeTransaction`; missing
 transaction support fails closed. The runtime never creates or deletes items,
 collections, tags, attachments, notes, or annotations and never writes
 bibliographic fields, PDF data, or annotation data. Per-item results record the
-collection/tag additions actually made and include PaperPilot-originated
-notifier data where the Zotero API accepts it. Undo may remove only additions
-recorded as owned by that receipt and preserves pre-existing and later unrelated
-collection/tag state. A prepared receipt without committed ownership results is
-shown as unresolved and is not eligible for undo or reapplication.
+collection/tag additions actually made. The runtime records that it passed
+Paper Pilot notifier metadata to APIs with an options position; it does not
+claim Zotero consumed that metadata. Undo may remove only additions recorded as
+owned by that receipt and preserves pre-existing and later unrelated
+collection/tag state. A prepared receipt without committed ownership results
+is shown as unresolved and is not eligible for undo or reapplication.
 
 ## Engine abstraction
 
@@ -370,30 +374,35 @@ Per-engine file names inside the workspace:
 | Claude | `claude-prompt.txt` | `claude-output.txt`  | `claude-stderr.log` | `claude-exit.txt` | `claude-pid.txt` |
 | Gemini | `gemini-prompt.txt` | `gemini-output.txt`  | `gemini-stderr.log` | `gemini-exit.txt` | `gemini-pid.txt` |
 
-Codex emits JSONL events, so `outputParser.ts` extracts the assistant text and
-the resumable `thread_id`. Claude runs with `-p --output-format text` and Gemini
-returns plain text, so both are read directly.
+Codex emits JSONL events, so `outputParser.ts` extracts assistant text and
+`codex/controller.ts` extracts the resumable `thread_id`. Claude runs with
+`-p --output-format text` and Gemini returns plain text, so both are read
+directly.
+
+The current local-process adapter is macOS/POSIX-specific: it launches
+`/bin/zsh` and uses `/usr/bin/pgrep` and `/bin/ps`. Windows is not a supported
+runtime until those process-control assumptions have a platform adapter.
 
 ## Paper workspace artifacts
 
 `context/workspaceArtifacts.ts` builds the payload; the runner writes the files.
 
-| File                        | Written by                      | Contents                                                                  |
-| --------------------------- | ------------------------------- | ------------------------------------------------------------------------- |
-| `paper.md`                  | all engines                     | structured Markdown, or full text if extraction fell back                 |
-| `paper.json`                | all engines                     | structured elements + `extractionMethod` + `extractionNotes`              |
-| `paper.txt`                 | all engines                     | compatibility snapshot: metadata header plus text                         |
-| `metadata.json`             | all engines                     | title, authors, year, item/attachment key, abstract                       |
-| `selection.json`            | all engines                     | selected text, actual nearby context, page, annotations, retrieved chunks |
-| `recent-turns.json`         | all engines                     | last 3 privacy-eligible turns for follow-up continuity                    |
-| `annotations.json`          | all engines                     | annotation ids tied to this request                                       |
-| `CONTEXT_INDEX.md`          | all engines                     | reading-order file map                                                    |
-| `discovery-request.json`    | discovery runs                  | normalized research concern and current-paper context                     |
-| `discovery-plan.json`       | discovery runs                  | agent-owned field, venue, and query planning scaffold                     |
-| `discovery-candidates.json` | discovery runs                  | deterministic scholarly-provider candidates                               |
-| `discovery-evidence.json`   | discovery runs                  | official-evidence collection scaffold                                     |
-| `figures/`                  | Codex only                      | empty directory for image assets                                          |
-| `output-schema.json`        | supported Codex structured runs | native final-output JSON Schema                                           |
+| File                        | Written by                      | Contents                                                                         |
+| --------------------------- | ------------------------------- | -------------------------------------------------------------------------------- |
+| `paper.md`                  | all engines                     | structured Markdown, or full text if extraction fell back                        |
+| `paper.json`                | all engines                     | structured elements + `extractionMethod` + `extractionNotes`                     |
+| `paper.txt`                 | all engines                     | compatibility snapshot: metadata header plus text                                |
+| `metadata.json`             | all engines                     | title, authors, year, item/attachment key, abstract, extraction method and notes |
+| `selection.json`            | all engines                     | selected text, actual nearby context, page, annotations, retrieved chunks        |
+| `recent-turns.json`         | all engines                     | last 3 privacy-eligible turns for follow-up continuity                           |
+| `annotations.json`          | all engines                     | annotation ids tied to this request                                              |
+| `CONTEXT_INDEX.md`          | all engines                     | reading-order file map                                                           |
+| `discovery-request.json`    | discovery runs                  | normalized research concern and current-paper context                            |
+| `discovery-plan.json`       | discovery runs                  | agent-owned field, venue, and query planning scaffold                            |
+| `discovery-candidates.json` | discovery runs                  | deterministic scholarly-provider candidates                                      |
+| `discovery-evidence.json`   | discovery runs                  | official-evidence collection scaffold                                            |
+| `figures/`                  | Codex only                      | empty directory for image assets                                                 |
+| `output-schema.json`        | supported Codex structured runs | native final-output JSON Schema                                                  |
 
 All three engine prompts instruct the agent to read `CONTEXT_INDEX.md`. Discovery
 runs additionally stage the four `discovery-*.json` files for a reproducible

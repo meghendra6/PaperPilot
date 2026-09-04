@@ -321,7 +321,7 @@ profile and data directory. Structured Firefox RDP inspection confirmed:
   plural-selection compatibility path.
 
 This is a focused Zotero 10 compatibility smoke, not a complete rerun of the
-full engine, discovery, Critical Read, operating-system, or Zotero 7-9 matrix.
+full engine, discovery, Critical Read, operating-system, or Zotero 7-10 matrix.
 
 ### Delivery runtime record — 2026-08-13
 

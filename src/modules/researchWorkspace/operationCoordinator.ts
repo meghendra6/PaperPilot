@@ -113,7 +113,7 @@ function clone<T>(value: T): T {
 function safeError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
   return message
-    .replace(/(?:[A-Za-z]:\\|\/Users\/|\/home\/)[^\s"']+/g, "[local-path]")
+    .replace(/[A-Za-z]:\\[^\s"'<>]+|(?<![:/])\/[^\s"'<>]+/g, "[local-path]")
     .slice(0, 800);
 }
 

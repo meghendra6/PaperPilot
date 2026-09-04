@@ -21,7 +21,15 @@ Read [`docs/architecture.md`](./docs/architecture.md) before changing engine, wo
   - `modules/ai/`: `EngineMode` union, per-item mode overrides, provider registry, and the mode-dispatching `workspaceRun.ts` helpers
   - `modules/codex/`, `modules/claude/`, `modules/gemini/`: one near-duplicate module per engine (`runner`, `controller`, `runState`, `poller`, `stopRun`); Codex carries the extra command/executable/model/status surface
   - `modules/context/`: retrieval, chunk indexing, and workspace artifact construction
-  - `modules/workspace/`: workspace path building, writability probe, cleanup, redaction, collection artifact bundles
+  - `modules/workspace/`: workspace path building, writability probe, cleanup, and collection artifact bundles
+  - `modules/researchWorkspace/`: project persistence, selection capture, verified evidence, project capabilities, and modeless-window UI
+  - `modules/discovery/`: provider search, live evidence verification, ranking, and discovery prompt/parsing contracts
+  - `modules/criticalRead/`: the seven-step reader-first Critical Read workflow
+  - `modules/ui/`: reusable pane controls, transcript windowing, disclosure state, and popover behavior
+  - `modules/components/`, `message/`, `note/`: rendered messages, note output, and reusable view helpers
+  - `modules/tools/`: PDF extraction, paper workspace content, and built-in paper actions
+  - `modules/translation/`: response-language selection and translation prompt helpers
+  - `modules/autoHighlight/`: exact local PDF matching and owned Zotero highlight creation
   - `modules/researchBrief.ts`, `paperTools.ts`, `paperCompare.ts`, `relatedRecommendations.ts`: structured paper workflows
   - `modules/comprehensionCheck/`: Paper Mastery prompts, parser, and round/topic state
   - `modules/session/`: paper-scoped session history service, snapshot capture/apply, and the silent-turn filter that keeps tool JSON out of replayed chat
@@ -91,7 +99,7 @@ CLI flag-ordering integration test. When unset, the test uses `codex` from
 - Engine behavior that should be identical across the three belongs in `modules/ai/workspaceRun.ts`, not in cross-engine imports. The engine modules are deliberately near-duplicates for isolation.
 - Runs are file-based and polled, not streamed: the runner spawns a detached shell job that writes output, exit-code, and pid files, and the controller polls them every 800 ms. Preserve that contract when touching a runner or controller.
 - Preserve workspace grounding behavior and compatibility fallbacks, including the `extractionMethod` distinction between `opendataloader-pdf` and `zotero-attachment-text`.
-- A new workspace artifact is dead weight unless the prompt tells the engine to read it. Update the runner and the prompt together, and note that `CONTEXT_INDEX.md` and `figures/` are Codex-only today.
+- A new workspace artifact is dead weight unless the prompt tells the engine to read it. Update the runner and the prompt together. All engines receive `CONTEXT_INDEX.md`; only `figures/` is Codex-only today.
 - If you touch OpenDataLoader or packaging flow, verify the build path still vendors the runtime correctly.
 - Review changed `.mjs` files carefully and use targeted checks such as `node --check <file>` when relevant.
 

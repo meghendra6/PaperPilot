@@ -366,6 +366,7 @@ export async function handleGeminiQuestion(params: {
       return;
     }
 
+    setGeminiRunStateForItem(params.itemID, {});
     clearGeminiPollerForItem(params.itemID);
     advanceRunProgress(params.itemID, runToken, { type: "finishing" });
 

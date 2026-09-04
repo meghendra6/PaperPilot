@@ -41,6 +41,7 @@ export function buildKillProcessTreeScript(processId: string): string {
     "  local attempt",
     "  local pid",
     "  local running",
+    '  is_run_pid_alive "$root_pid" || return 0',
     '  signal_run_tree "$root_pid" TERM',
     "  for attempt in {1..10}; do",
     "    running=0",

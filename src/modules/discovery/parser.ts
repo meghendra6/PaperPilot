@@ -7,6 +7,7 @@ import {
   normalizeWhitespace,
   stripSpelledOrdinalSequences,
 } from "./normalize";
+import { extractJsonCandidates } from "../ai/jsonCandidates";
 import type {
   AgentSearchPlan,
   DiscoveredPaper,
@@ -185,41 +186,6 @@ function venueAliasKeys(venue: { venueName?: string; venueAcronym?: string }) {
 
 function venueAliasesOverlap(left: Set<string>, right: Set<string>) {
   return [...left].some((value) => right.has(value));
-}
-
-function extractJsonCandidates(raw: string) {
-  const trimmed = raw.trim();
-  const candidates = new Set<string>();
-  if (trimmed) candidates.add(trimmed);
-  for (const match of trimmed.matchAll(/```(?:json)?\s*([\s\S]*?)\s*```/gi)) {
-    if (match[1]?.trim()) candidates.add(match[1].trim());
-  }
-
-  let start = -1;
-  let depth = 0;
-  let inString = false;
-  let escaped = false;
-  for (let index = 0; index < trimmed.length; index += 1) {
-    const char = trimmed[index];
-    if (inString) {
-      if (escaped) escaped = false;
-      else if (char === "\\") escaped = true;
-      else if (char === '"') inString = false;
-      continue;
-    }
-    if (char === '"') inString = true;
-    else if (char === "{") {
-      if (depth === 0) start = index;
-      depth += 1;
-    } else if (char === "}" && depth > 0) {
-      depth -= 1;
-      if (depth === 0 && start >= 0) {
-        candidates.add(trimmed.slice(start, index + 1));
-        start = -1;
-      }
-    }
-  }
-  return [...candidates];
 }
 
 function parseVenue(value: unknown): LeadingVenueAssessment | undefined {

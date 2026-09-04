@@ -124,15 +124,19 @@ export class PaperWorkspaceContentCache {
           contentFingerprint,
         };
       } catch (error) {
+        const reason = classifyStructuredExtractionFailure(error);
+        if (reason !== "java-missing") {
+          Zotero.logError?.(
+            error instanceof Error ? error : new Error(String(error)),
+          );
+        }
         extractionNotes.push(
-          `OpenDataLoader PDF extraction unavailable; fell back to Zotero attachment text. ${String(
-            error instanceof Error ? error.message : error,
-          )}`,
+          `OpenDataLoader PDF extraction unavailable; fell back to Zotero attachment text (${reason}).`,
         );
       }
     } else {
       extractionNotes.push(
-        "OpenDataLoader PDF extraction unavailable because the local PDF file path could not be resolved.",
+        "OpenDataLoader PDF extraction unavailable; fell back to Zotero attachment text (file-path-missing).",
       );
     }
 
@@ -144,6 +148,24 @@ export class PaperWorkspaceContentCache {
       contentFingerprint,
     };
   }
+}
+
+export function classifyStructuredExtractionFailure(error: unknown) {
+  const message = String(
+    error instanceof Error ? error.message : error,
+  ).toLowerCase();
+  if (message.includes("java-missing") || message.includes("java runtime")) {
+    return "java-missing";
+  }
+  if (message.includes("could not locate") && message.includes("runtime")) {
+    return "jar-missing";
+  }
+  if (message.includes("timed out")) return "timeout";
+  if (message.includes("invalid json")) return "invalid-json";
+  if (message.includes("did not produce") || message.includes("empty")) {
+    return "no-output";
+  }
+  return "extraction-failed";
 }
 
 function buildPaperWorkspaceContentSource(
@@ -409,6 +431,50 @@ async function readTextFile(path: string) {
   );
 }
 
+let javaRuntimeAvailable: boolean | undefined;
+let javaFailureLogged = false;
+
+export async function probeJavaRuntime(
+  probe: () => Promise<unknown> = () =>
+    Zotero.Utilities.Internal.subprocess("/bin/zsh", [
+      "-lc",
+      "command -v java >/dev/null 2>&1 && java -version >/dev/null 2>&1",
+    ]),
+) {
+  if (javaRuntimeAvailable !== undefined) return javaRuntimeAvailable;
+  try {
+    await probe();
+    javaRuntimeAvailable = true;
+  } catch (error) {
+    javaRuntimeAvailable = false;
+    if (!javaFailureLogged) {
+      javaFailureLogged = true;
+      (globalThis as any).Zotero?.logError?.(
+        error instanceof Error ? error : new Error(String(error)),
+      );
+    }
+  }
+  return javaRuntimeAvailable;
+}
+
+export function resetJavaRuntimeProbeForTests() {
+  javaRuntimeAvailable = undefined;
+  javaFailureLogged = false;
+}
+
+export async function withOpenDataLoaderOutputCleanup<T>(
+  outputDir: string,
+  action: () => Promise<T>,
+  remove: (path: string) => Promise<unknown> = (path) =>
+    IOUtils.remove(path, { recursive: true, ignoreAbsent: true }),
+): Promise<T> {
+  try {
+    return await action();
+  } finally {
+    await remove(outputDir);
+  }
+}
+
 export async function waitForExtractorCompletion(params: {
   exitCodePath: string;
   pidPath: string;
@@ -457,6 +523,7 @@ export async function waitForExtractorCompletion(params: {
 async function extractStructuredPdf(
   filePath: string,
 ): Promise<StructuredExtractionResult> {
+  if (!(await probeJavaRuntime())) throw new Error("java-missing");
   const jarPath = await resolveOpenDataLoaderJarPath();
   const outputDir = await IOUtils.createUniqueDirectory(
     `${Zotero.getTempDirectory().path}/paper-pilot-opendataloader`,
@@ -466,57 +533,59 @@ async function extractStructuredPdf(
   const pidPath = `${outputDir}/extractor-pid.txt`;
   const stderrPath = `${outputDir}/extractor-stderr.log`;
 
-  try {
-    const launch = await launchDetachedShellScript(
-      buildOpenDataLoaderScript({
-        jarPath,
-        inputPath: filePath,
-        outputDir,
-        exitCodePath,
-        pidPath,
-        stderrPath,
-      }),
-      (executable, args) => Zotero.Utilities.Internal.exec(executable, args),
-    );
-    if (!launch.ok) {
-      throw new Error(launch.error);
+  return withOpenDataLoaderOutputCleanup(outputDir, async () => {
+    try {
+      const launch = await launchDetachedShellScript(
+        buildOpenDataLoaderScript({
+          jarPath,
+          inputPath: filePath,
+          outputDir,
+          exitCodePath,
+          pidPath,
+          stderrPath,
+        }),
+        (executable, args) => Zotero.Utilities.Internal.exec(executable, args),
+      );
+      if (!launch.ok) {
+        throw new Error(launch.error);
+      }
+      await waitForExtractorCompletion({ exitCodePath, pidPath, stderrPath });
+    } catch (error) {
+      throw new Error(String(error));
     }
-    await waitForExtractorCompletion({ exitCodePath, pidPath, stderrPath });
-  } catch (error) {
-    throw new Error(String(error));
-  }
 
-  const files = await listDirectoryFiles(outputDir);
-  const markdownPath = files.find((path) => path.endsWith(".md"));
-  const jsonPath = files.find((path) => path.endsWith(".json"));
+    const files = await listDirectoryFiles(outputDir);
+    const markdownPath = files.find((path) => path.endsWith(".md"));
+    const jsonPath = files.find((path) => path.endsWith(".json"));
 
-  if (!markdownPath || !jsonPath) {
-    throw new Error(
-      "OpenDataLoader PDF did not produce both Markdown and JSON outputs.",
-    );
-  }
+    if (!markdownPath || !jsonPath) {
+      throw new Error(
+        "OpenDataLoader PDF did not produce both Markdown and JSON outputs.",
+      );
+    }
 
-  const markdownText = await readTextFile(markdownPath);
-  const jsonText = await readTextFile(jsonPath);
+    const markdownText = await readTextFile(markdownPath);
+    const jsonText = await readTextFile(jsonPath);
 
-  if (!markdownText.trim() || !jsonText.trim()) {
-    throw new Error(
-      "OpenDataLoader PDF produced empty Markdown or JSON output.",
-    );
-  }
+    if (!markdownText.trim() || !jsonText.trim()) {
+      throw new Error(
+        "OpenDataLoader PDF produced empty Markdown or JSON output.",
+      );
+    }
 
-  try {
-    return {
-      markdownText,
-      structuredContent: JSON.parse(jsonText),
-    };
-  } catch (error) {
-    throw new Error(
-      `OpenDataLoader PDF returned invalid JSON output. ${String(
-        error instanceof Error ? error.message : error,
-      )}`,
-    );
-  }
+    try {
+      return {
+        markdownText,
+        structuredContent: JSON.parse(jsonText),
+      };
+    } catch (error) {
+      throw new Error(
+        `OpenDataLoader PDF returned invalid JSON output. ${String(
+          error instanceof Error ? error.message : error,
+        )}`,
+      );
+    }
+  });
 }
 
 export const paperWorkspaceContentCache = new PaperWorkspaceContentCache();

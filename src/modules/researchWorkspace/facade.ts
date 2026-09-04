@@ -140,7 +140,7 @@ async function createBoundService(params: {
     preferences.preferences.maxPaperCharacters;
   params.seed?.(state);
   const repository = createMemoryRepository(state);
-  const service = new (ResearchWorkspaceService as any)({
+  const service = new ResearchWorkspaceService({
     repository,
     indexes: sharedHybridIndexes,
     exportTextFile: exportResearchWorkspaceTextFile,

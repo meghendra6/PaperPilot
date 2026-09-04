@@ -1,4 +1,4 @@
-import { getPref, setPref } from "../../utils/prefs";
+import { getPref } from "../../utils/prefs";
 import { buildCliCommandEnvironment } from "../ai/cliEnvironment";
 import {
   launchDetachedShellScript,
@@ -39,6 +39,7 @@ import {
   type WorkspaceSupplementalFiles,
 } from "../workspace/supplementalFiles";
 import { buildWorkspaceArtifacts } from "../context/workspaceArtifacts";
+import { readOptionalRunTextFile } from "../ai/runFileReader";
 
 declare const Zotero: any;
 
@@ -80,17 +81,6 @@ function normalizeClaudePermissionMode(permissionMode: string) {
   ].includes(normalized)
     ? normalized
     : "default";
-}
-
-async function readTextFile(path: string) {
-  try {
-    const contents = await Promise.resolve(
-      Zotero.File.getContentsAsync(path, "utf-8"),
-    );
-    return String(contents || "");
-  } catch {
-    return "";
-  }
 }
 
 export function buildClaudeCommand(params: {
@@ -157,10 +147,6 @@ export async function startClaudeRunForQuestion(params: {
     profile === "chat"
       ? String(getPref("claudePermissionMode") || "default").trim()
       : "plan";
-
-  if (model !== preferredModel) {
-    setPref("claudeDefaultModel", model);
-  }
 
   const workspaceRoot = resolvePaperWorkspaceRoot(
     getPref("codexWorkspaceRoot"),
@@ -379,7 +365,7 @@ export async function startClaudeRunForQuestion(params: {
     };
   }
 
-  const processId = (await readTextFile(pidPath)).trim();
+  const processId = (await readOptionalRunTextFile(pidPath))?.trim();
   return {
     ok: true,
     workspacePath,
@@ -397,18 +383,24 @@ export async function readClaudeRunProgress(paths: {
   stderrPath: string;
   exitCodePath: string;
 }) {
-  const stdout = await readTextFile(paths.outputPath);
-  const stderr = await readTextFile(paths.stderrPath);
+  const stdout = (await readOptionalRunTextFile(paths.outputPath)) ?? "";
+  const stderr = (await readOptionalRunTextFile(paths.stderrPath)) ?? "";
   const rawOutput = [stdout, stderr].filter(Boolean).join("\n");
-  const exitCode = (await readTextFile(paths.exitCodePath)).trim();
+  const exitCodeText = await readOptionalRunTextFile(paths.exitCodePath);
+  const exitCode = exitCodeText?.trim() ?? "file-read-error";
 
   return {
     rawOutput,
-    diagnosticOutput: stderr,
+    diagnosticOutput:
+      exitCodeText === undefined
+        ? [stderr, "The run exit-code file could not be read."]
+            .filter(Boolean)
+            .join("\n")
+        : stderr,
     parsedOutput: stdout.trim(),
     structuredOutput: false,
     latestEventType: stdout ? "text" : stderr ? "diagnostic" : "unknown",
-    completed: exitCode.length > 0,
+    completed: exitCodeText === undefined || exitCode.length > 0,
     exitCode,
   };
 }

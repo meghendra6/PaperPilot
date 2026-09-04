@@ -60,6 +60,17 @@ test("buildCodexLoginStatusCommand uses codex login status", () => {
   ]);
 });
 
+test("Codex sandbox preferences reject unknown values", () => {
+  assert.equal(
+    codexRunner.normalizeCodexSandboxMode("workspace-write"),
+    "workspace-write",
+  );
+  assert.equal(
+    codexRunner.normalizeCodexSandboxMode("unsupported"),
+    "read-only",
+  );
+});
+
 test("Codex launch reports a rejected shell exec as a start failure", async () => {
   const result = await codexRunner.launchCodexRunScript("exit 1", async () => {
     throw new Error("codex launch rejected");

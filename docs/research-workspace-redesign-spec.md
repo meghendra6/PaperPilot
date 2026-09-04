@@ -1,6 +1,6 @@
 # Research Workspace redesign specification
 
-Status: Proposed implementation specification
+Status: Core redesign and Sections 25.1-25.5 and 27 delivered in source; remaining rollout, telemetry, and full Zotero 7-10 runtime-matrix items remain proposed
 Last updated: 2026-08-30
 Target: Paper Pilot for Zotero 7-10
 
@@ -47,13 +47,13 @@ Related repository documents:
 - architecture.md describes the currently implemented runtime;
 - prompt-contracts.md describes currently implemented output contracts;
 - manual-qa.md records real-Zotero verification; and
-- this specification remains proposed until its delivery phases are implemented.
+- this specification records delivered source phases explicitly while retaining proposed status for outstanding rollout and runtime-verification work.
 
 ## 2. Status and normative language
 
-This document describes proposed behavior. It must not be interpreted as
-shipped functionality until the corresponding implementation and verification
-are complete.
+This document combines delivered source behavior with remaining proposals.
+Only sections carrying an explicit `Implementation status: delivered` line are
+implemented; real-Zotero readiness remains bounded by `manual-qa.md`.
 
 The terms MUST, MUST NOT, SHOULD, SHOULD NOT, and MAY are normative:
 

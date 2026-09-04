@@ -48,8 +48,23 @@ import {
 } from "./modelOptions";
 import { parseCodexOutput } from "./outputParser";
 import { buildBackgroundCodexShellScript } from "./shell";
+import { readOptionalRunTextFile } from "../ai/runFileReader";
 
 declare const Zotero: any;
+
+export type CodexSandboxMode =
+  | "read-only"
+  | "workspace-write"
+  | "danger-full-access";
+
+export function normalizeCodexSandboxMode(value: string): CodexSandboxMode {
+  const normalized = value.trim() as CodexSandboxMode;
+  return ["read-only", "workspace-write", "danger-full-access"].includes(
+    normalized,
+  )
+    ? normalized
+    : "read-only";
+}
 
 export interface StartedCodexRun {
   ok: true;
@@ -75,17 +90,6 @@ export function launchCodexRunScript(
     Zotero.Utilities.Internal.exec(executable, args),
 ) {
   return launchDetachedShellScript(script, execute);
-}
-
-async function readTextFile(path: string) {
-  try {
-    const contents = await Promise.resolve(
-      Zotero.File.getContentsAsync(path, "utf-8"),
-    );
-    return String(contents || "");
-  } catch {
-    return "";
-  }
 }
 
 export async function startCodexRunForQuestion(params: {
@@ -124,11 +128,11 @@ export async function startCodexRunForQuestion(params: {
         ? true
         : (params.webSearchEnabledOverride ??
           Boolean(getPref("codexEnableWebSearch")));
-  const sandbox = (
+  const sandbox = normalizeCodexSandboxMode(
     profile === "chat"
       ? String(getPref("codexSandboxMode") || "read-only")
-      : "read-only"
-  ) as "read-only" | "workspace-write" | "danger-full-access";
+      : "read-only",
+  );
   const approvalMode = String(getPref("codexApprovalMode") || "never");
   const workspacePath = buildPaperWorkspacePath({
     root: workspaceRoot,
@@ -379,7 +383,7 @@ export async function startCodexRunForQuestion(params: {
     };
   }
 
-  const processId = (await readTextFile(pidPath)).trim();
+  const processId = (await readOptionalRunTextFile(pidPath))?.trim();
 
   return {
     ok: true,
@@ -398,12 +402,34 @@ export async function readCodexRunProgress(paths: {
   stderrPath: string;
   exitCodePath: string;
 }) {
-  const stdout = await readTextFile(paths.outputPath);
-  const stderr = await readTextFile(paths.stderrPath);
+  const exitCodeText = await readOptionalRunTextFile(paths.exitCodePath);
+  if (exitCodeText === undefined) {
+    return {
+      rawOutput: "",
+      diagnosticOutput: "The run exit-code file could not be read.",
+      parsedOutput: "",
+      structuredOutput: undefined,
+      latestEventType: "file_read_error",
+      completed: true,
+      exitCode: "file-read-error",
+    };
+  }
+  const exitCode = exitCodeText.trim();
+  if (!exitCode) {
+    return {
+      rawOutput: "",
+      diagnosticOutput: "",
+      parsedOutput: "",
+      structuredOutput: undefined,
+      latestEventType: "running",
+      completed: false,
+      exitCode: "",
+    };
+  }
+  const stdout = (await readOptionalRunTextFile(paths.outputPath)) ?? "";
+  const stderr = (await readOptionalRunTextFile(paths.stderrPath)) ?? "";
   const rawOutput = [stdout, stderr].filter(Boolean).join("\n");
   const parsed = parseCodexOutput(stdout);
-  const exitCode = (await readTextFile(paths.exitCodePath)).trim();
-
   return {
     rawOutput,
     diagnosticOutput: [stderr, parsed.errorText].filter(Boolean).join("\n"),

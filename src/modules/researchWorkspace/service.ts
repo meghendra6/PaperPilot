@@ -40,6 +40,8 @@ import {
   type EvidenceMatrixPresetID,
 } from "./evidenceMatrixPresets";
 import { verifyResearchWorkspaceEvidence } from "./evidenceVerification";
+import type { EvidenceVerificationDependencies } from "./evidenceVerification";
+import type { StructuredOutputSchema } from "../ai/structuredOutput";
 import {
   buildCrossPaperMasterySourceSnapshot,
   isCrossPaperMasterySubmissionReplay,
@@ -65,10 +67,31 @@ function contentFingerprintValue(fingerprint) {
   if (typeof fingerprint === "string") return fingerprint;
   return typeof fingerprint?.value === "string" ? fingerprint.value : "";
 }
+
+export interface ResearchWorkspaceServiceEnvironment {
+  repository: {
+    load(): Promise<any>;
+    update(mutator: (draft: any) => unknown | Promise<unknown>): Promise<any>;
+  };
+  indexes?: Map<string, unknown>;
+  agent: {
+    run(
+      prompt: string,
+      purpose: string,
+      outputSchema: StructuredOutputSchema,
+    ): Promise<string>;
+  };
+  evidenceVerification?: EvidenceVerificationDependencies;
+  exportTextFile(name: string, contents: string): Promise<string>;
+}
+
 class ResearchWorkspaceService {
-  constructor(env) {
+  readonly env: ResearchWorkspaceServiceEnvironment;
+  readonly indexes: Map<string, any>;
+
+  constructor(env: ResearchWorkspaceServiceEnvironment) {
     this.env = env;
-    this.indexes = env.indexes ?? new Map();
+    this.indexes = env.indexes ?? new Map<string, any>();
   }
   async state() {
     return this.env.repository.load();
@@ -743,9 +766,9 @@ class ResearchWorkspaceService {
     };
   }
   async classifyCitationContexts(
-    contexts,
-    papers = [],
-    extraction,
+    contexts: any[],
+    papers: any[] = [],
+    extraction?: any,
     approvedForModel = false,
   ) {
     if (approvedForModel !== true) {

@@ -233,6 +233,8 @@ export class SessionHistoryService {
     const createdAt = this.now().toISOString();
 
     if (!session || session.sessionId !== params.sessionId) {
+      const prefs = resolveSessionHistoryPrefs();
+      if (!prefs.persistHistory) return undefined;
       const snapshot = await this.repository.readSessionSnapshot(
         params.itemID,
         params.sessionId,
@@ -242,7 +244,6 @@ export class SessionHistoryService {
       }
 
       const messages = [...(snapshot.messages ?? [])];
-      const prefs = resolveSessionHistoryPrefs();
       if (prefs.persistAssistantMessages && !params.suppressMessage) {
         messages.push(
           buildAssistantMessageRecord({

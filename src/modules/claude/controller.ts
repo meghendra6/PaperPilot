@@ -366,6 +366,7 @@ export async function handleClaudeQuestion(params: {
       return;
     }
 
+    setClaudeRunStateForItem(params.itemID, {});
     clearClaudePollerForItem(params.itemID);
     advanceRunProgress(params.itemID, runToken, { type: "finishing" });
 

@@ -132,6 +132,13 @@ test("resolveCodexUserHome derives the macOS home path from the Zotero profile p
   );
 });
 
+test("resolveCodexUserHome falls back to the inherited home outside Library profiles", () => {
+  assert.equal(
+    resolveCodexUserHome("/custom/zotero/profile"),
+    process.env.HOME,
+  );
+});
+
 test("buildCodexCommandEnvironment prepends the executable directory so codex shims can find node", () => {
   const environment = buildCodexCommandEnvironment(
     "/opt/homebrew/bin/codex",

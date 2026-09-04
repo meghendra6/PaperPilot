@@ -1,5 +1,6 @@
 import type { MasteryRound, MasteryTopic } from "./types";
 import type { StructuredOutputSchema } from "../ai/structuredOutput";
+import { tryParseFirstJsonObject } from "../ai/jsonCandidates";
 
 export const MASTERY_DIFFICULTIES = [
   "foundational",
@@ -271,115 +272,10 @@ export interface MasteryEvaluationResponse {
   nextDifficulty: MasteryDifficulty;
 }
 
-function stripMarkdownFence(raw: string): string {
-  const trimmed = raw.trim();
-  const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
-  return fenced ? fenced[1].trim() : trimmed;
-}
-
-/**
- * Walk `raw` character-by-character and yield each balanced top-level `{...}`
- * object, ignoring braces that appear inside JSON string literals (including
- * escaped quotes). The naive depth counter previously used here broke on
- * questions/evaluations that quoted a lone `}`.
- */
-function* extractBalancedJsonObjects(raw: string): Generator<string> {
-  let start = -1;
-  let depth = 0;
-  let inString = false;
-  let escaped = false;
-
-  for (let i = 0; i < raw.length; i += 1) {
-    const char = raw[i];
-
-    if (inString) {
-      if (escaped) {
-        escaped = false;
-      } else if (char === "\\") {
-        escaped = true;
-      } else if (char === '"') {
-        inString = false;
-      }
-      continue;
-    }
-
-    if (char === '"') {
-      inString = true;
-      continue;
-    }
-
-    if (char === "{") {
-      if (depth === 0) {
-        start = i;
-      }
-      depth += 1;
-      continue;
-    }
-
-    if (char === "}") {
-      if (depth === 0) {
-        continue;
-      }
-      depth -= 1;
-      if (depth === 0 && start >= 0) {
-        yield raw.slice(start, i + 1);
-        start = -1;
-      }
-    }
-  }
-}
-
-function* extractJsonCandidates(raw: string): Generator<string> {
-  const trimmed = raw.trim();
-  if (!trimmed) {
-    return;
-  }
-
-  const seen = new Set<string>();
-  const pushCandidate = function* (candidate: string) {
-    const normalized = candidate.trim();
-    if (normalized && !seen.has(normalized)) {
-      seen.add(normalized);
-      yield normalized;
-    }
-  };
-
-  yield* pushCandidate(trimmed);
-  yield* pushCandidate(stripMarkdownFence(trimmed));
-
-  for (const match of trimmed.matchAll(/```(?:json)?\s*([\s\S]*?)\s*```/gi)) {
-    if (match[1]) {
-      yield* pushCandidate(match[1]);
-    }
-  }
-
-  for (const candidate of extractBalancedJsonObjects(trimmed)) {
-    yield* pushCandidate(candidate);
-  }
-}
-
-function tryParseFirstObject<T>(
-  raw: string,
-  validate: (parsed: unknown) => T | undefined,
-): T | undefined {
-  for (const candidate of extractJsonCandidates(raw)) {
-    try {
-      const parsed = JSON.parse(candidate);
-      const result = validate(parsed);
-      if (result) {
-        return result;
-      }
-    } catch {
-      // Try the next candidate.
-    }
-  }
-  return undefined;
-}
-
 export function parseMasteryQuestionResponse(
   raw: string,
 ): MasteryQuestionResponse | undefined {
-  return tryParseFirstObject<MasteryQuestionResponse>(raw, (parsed) => {
+  return tryParseFirstJsonObject<MasteryQuestionResponse>(raw, (parsed) => {
     if (!parsed || typeof parsed !== "object") {
       return undefined;
     }
@@ -403,7 +299,7 @@ export function parseMasteryQuestionResponse(
 export function parseMasteryEvaluationResponse(
   raw: string,
 ): MasteryEvaluationResponse | undefined {
-  return tryParseFirstObject<MasteryEvaluationResponse>(raw, (parsed) => {
+  return tryParseFirstJsonObject<MasteryEvaluationResponse>(raw, (parsed) => {
     if (!parsed || typeof parsed !== "object") {
       return undefined;
     }

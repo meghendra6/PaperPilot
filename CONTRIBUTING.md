@@ -4,13 +4,13 @@ Thanks for contributing to Paper Pilot.
 
 ## Scope
 
-This repository contains a Zotero 7-9 plugin that adds an AI reader workbench with local CLI integrations: Codex CLI, Claude Code, and Gemini CLI.
+This repository contains a Zotero 7-10 plugin that adds an AI reader workbench with local CLI integrations: Codex CLI, Claude Code, and Gemini CLI.
 
 ## Development environment
 
 Recommended baseline:
 
-- Zotero 7, 8, or 9
+- Zotero 7, 8, 9, or 10
 - Node.js 20+
 - npm
 - Java 11+ if you want OpenDataLoader-backed structured PDF extraction instead of the text fallback
@@ -41,6 +41,13 @@ Important areas to understand before making changes:
 - `src/modules/gemini/` — Gemini CLI execution flow
 - `src/modules/context/` — paper context retrieval and workspace artifact generation
 - `src/modules/workspace/` — workspace paths, writability probe, cleanup, collection artifact bundles
+- `src/modules/researchWorkspace/` — project persistence, verified evidence, multi-paper capabilities, and project-window UI
+- `src/modules/discovery/` — provider search, evidence verification, ranking, prompts, and parsing
+- `src/modules/criticalRead/` — reader-first Critical Read workflow
+- `src/modules/ui/` — reusable pane controls, transcript windowing, and popover behavior
+- `src/modules/components/`, `message/`, `note/` — reusable rendering and note/message output
+- `src/modules/tools/` — PDF extraction, paper workspace content, and paper actions
+- `src/modules/translation/` — response-language and translation helpers
 - `src/modules/autoHighlight/` — highlight extraction workflow
 - `src/modules/researchBrief.ts` — structured brief generation
 - `src/modules/paperTools.ts` — contributions/limitations/follow-ups prompts and parsing
@@ -104,6 +111,7 @@ The repo now includes multilingual README files:
 - `README.zh-TW.md`
 
 If you change shared product positioning, major feature descriptions, installation guidance, or known limitations, update the translated README files as well.
+Keep the four `At a glance` lists aligned to the same number of product capabilities.
 
 ## Screenshot and demo assets
 

@@ -6,9 +6,24 @@ function getProfilePath(profilePath?: string) {
 
 export function resolveCliUserHome(profilePath?: string) {
   const resolvedProfilePath = getProfilePath(profilePath);
-  return resolvedProfilePath.includes("/Library/")
-    ? resolvedProfilePath.split("/Library/")[0]
-    : "";
+  if (resolvedProfilePath.includes("/Library/")) {
+    return resolvedProfilePath.split("/Library/")[0];
+  }
+  try {
+    const runtime = globalThis as any;
+    const home = runtime.Services?.dirsvc?.get(
+      "Home",
+      runtime.Ci?.nsIFile,
+    )?.path;
+    if (typeof home === "string" && home.trim()) return home.trim();
+    const inherited = runtime.process?.env?.HOME;
+    if (typeof inherited === "string" && inherited.trim()) {
+      return inherited.trim();
+    }
+  } catch {
+    // Fall through to an empty optional environment value.
+  }
+  return "";
 }
 
 export function buildCliCommandEnvironment(

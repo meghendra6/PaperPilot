@@ -145,7 +145,9 @@ export async function cliSupportsFlag(params: {
       | { subprocess?: (path: string, args: string[]) => Promise<string> }
       | undefined;
     if (typeof internal?.subprocess !== "function") {
-      capabilityCache.set(cacheKey, false);
+      (globalThis as any).ztoolkit?.log?.(
+        `Native structured output probe unavailable for ${params.executablePath}; using parser validation.`,
+      );
       return false;
     }
     const environment = Object.entries(params.environment || {})
@@ -163,10 +165,13 @@ export async function cliSupportsFlag(params: {
       [...environment, `${command} 2>&1`].join(" && "),
     ]);
     const supported = helpSupportsFlag(helpText, params.flag);
-    capabilityCache.set(cacheKey, supported);
+    if (supported) capabilityCache.set(cacheKey, true);
     return supported;
-  } catch {
-    capabilityCache.set(cacheKey, false);
+  } catch (error) {
+    (globalThis as any).ztoolkit?.log?.(
+      `Native structured output probe failed for ${params.executablePath}; using parser validation.`,
+      error,
+    );
     return false;
   }
 }

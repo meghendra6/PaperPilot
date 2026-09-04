@@ -507,7 +507,7 @@ test("operation failures retain a redacted failed run without a fake artifact", 
         providerMode: "claude_code",
         execute: async () => {
           throw new Error(
-            "Provider failed at /Users/example/private/paper.pdf",
+            "Provider failed at /private/var/folders/secret/paper.pdf and /Volumes/research/data.json",
           );
         },
       });
@@ -521,7 +521,8 @@ test("operation failures retain a redacted failed run without a fake artifact", 
   assert.equal(runs.runs.length, 1);
   assert.equal(runs.runs[0].status, "failed");
   assert.match(runs.runs[0].safeError ?? "", /\[local-path\]/);
-  assert.equal(runs.runs[0].safeError?.includes("/Users/example"), false);
+  assert.equal(runs.runs[0].safeError?.includes("/private/var"), false);
+  assert.equal(runs.runs[0].safeError?.includes("/Volumes/research"), false);
   assert.equal(artifacts.artifacts.length, 0);
 });
 

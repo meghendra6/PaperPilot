@@ -45,6 +45,14 @@ test("run completion removes the old workspace before a nested completion starts
   ]);
 });
 
+test("kill scripts verify the recorded pid is still alive before signaling", () => {
+  const script = buildKillProcessTreeScript("4321");
+  assert.match(
+    script,
+    /is_run_pid_alive "\$root_pid" \|\| return 0[\s\S]*signal_run_tree "\$root_pid" TERM/,
+  );
+});
+
 test("run completion does not clean again after a nested callback throws", async () => {
   let cleanupCalls = 0;
   let finalized = false;

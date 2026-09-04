@@ -51,6 +51,7 @@ import {
   normalizeHttpURL,
 } from "./discovery/normalize";
 import { RUN_TIMEOUT_MS } from "./ai/runProgress";
+import { parseFirstJsonObject } from "./ai/jsonCandidates";
 
 declare const Zotero: any;
 
@@ -278,26 +279,6 @@ export function normalizeDOI(value: string) {
   return normalizeDiscoveryDOI(value) ?? "";
 }
 
-function extractJSONObject(raw: string) {
-  const trimmed = raw.trim();
-  if (!trimmed) {
-    throw new Error("Recommendation response was empty.");
-  }
-
-  const fencedMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  if (fencedMatch?.[1]) {
-    return fencedMatch[1].trim();
-  }
-
-  const firstBrace = trimmed.indexOf("{");
-  const lastBrace = trimmed.lastIndexOf("}");
-  if (firstBrace >= 0 && lastBrace > firstBrace) {
-    return trimmed.slice(firstBrace, lastBrace + 1);
-  }
-
-  return trimmed;
-}
-
 function toOptionalString(value: unknown) {
   if (typeof value !== "string") {
     return undefined;
@@ -370,7 +351,7 @@ export function sortRecommendationGroups(groups: RecommendationGroup[]) {
 export function parseRelatedPaperResponse(raw: string): RelatedPaperResponse {
   let parsed: unknown;
   try {
-    parsed = JSON.parse(extractJSONObject(raw));
+    parsed = parseFirstJsonObject(raw);
   } catch (error) {
     throw new Error(
       `Invalid related paper recommendation JSON: ${error instanceof Error ? error.message : String(error)}`,

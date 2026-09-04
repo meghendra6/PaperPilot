@@ -1,4 +1,4 @@
-import { getPref, setPref } from "../../utils/prefs";
+import { getPref } from "../../utils/prefs";
 import { getZoteroProfilePath } from "../../utils/zoteroProfile";
 import type {
   CandidateSource,
@@ -15,6 +15,14 @@ interface CodexExecutableCandidate {
   path: string;
   source: CandidateSource;
 }
+
+let resolvedExecutableCache:
+  | {
+      configured: string;
+      path: string;
+      probes: CodexExecutableProbe[];
+    }
+  | undefined;
 
 type InternalWithSubprocess = typeof Zotero.Utilities.Internal & {
   subprocess(command: string, args?: string[]): Promise<string>;
@@ -174,6 +182,11 @@ export async function resolveCodexExecutablePath(configuredPath?: string) {
   const configured = (
     configuredPath || String(getPref("codexExecutablePath") || "")
   ).trim();
+  if (resolvedExecutableCache?.configured === configured) {
+    addon.data.codexExecutableCandidates = resolvedExecutableCache.probes;
+    addon.data.codexExecutableResolvedPath = resolvedExecutableCache.path;
+    return resolvedExecutableCache.path;
+  }
   const candidates = await collectCodexExecutableCandidates(configured);
   const probes: CodexExecutableProbe[] = [];
 
@@ -186,9 +199,11 @@ export async function resolveCodexExecutablePath(configuredPath?: string) {
   const resolvedPath = best?.path || configured || "codex";
 
   addon.data.codexExecutableResolvedPath = resolvedPath;
-  if (resolvedPath && resolvedPath !== configured) {
-    setPref("codexExecutablePath", resolvedPath);
-  }
+  resolvedExecutableCache = { configured, path: resolvedPath, probes };
 
   return resolvedPath;
+}
+
+export function clearResolvedCodexExecutableCache() {
+  resolvedExecutableCache = undefined;
 }
