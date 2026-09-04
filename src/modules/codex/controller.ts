@@ -212,7 +212,8 @@ export async function handleCodexQuestion(params: {
       source: "workspace",
       canRetry: !params.suppressChatMessages,
     });
-    const assistantText = state!.failure!.userMessage;
+    const assistantText =
+      state?.failure?.userMessage ?? "Codex CLI run failed.";
     try {
       await sessionHistoryService
         .persistAssistantTurn({
@@ -489,7 +490,10 @@ export async function handleCodexQuestion(params: {
               paperTitle: params.paperTitle || params.sessionTitle,
               assistantText,
               success: false,
-              rawEvent: terminalFailure!.rawError,
+              rawEvent:
+                terminalFailure?.rawError ||
+                progress.diagnosticOutput ||
+                rawAssistantText,
               suppressMessage: params.suppressChatMessages,
               updateResumeMetadata: profile === "chat",
             });
@@ -506,7 +510,7 @@ export async function handleCodexQuestion(params: {
             continuationToken: runToken,
           }),
         incomplete: (error) => {
-          const message = failRunProgress({
+          const failedProgress = failRunProgress({
             itemID: params.itemID,
             engine: "codex_cli",
             token: runToken,
@@ -514,7 +518,9 @@ export async function handleCodexQuestion(params: {
               error instanceof Error ? error.message : String(error || ""),
             source: "process_exit",
             canRetry: !params.suppressChatMessages,
-          })!.failure!.userMessage;
+          });
+          const message =
+            failedProgress?.failure?.userMessage ?? "Codex CLI run failed.";
           return params.onComplete?.({
             success: false,
             assistantText: message,
@@ -534,7 +540,10 @@ export async function handleCodexQuestion(params: {
                 itemID: params.itemID,
                 engine: "codex_cli",
                 token: runToken,
-                rawError: terminalFailure!.rawError,
+                rawError:
+                  terminalFailure?.rawError ||
+                  progress.diagnosticOutput ||
+                  rawAssistantText,
                 source: "process_exit",
                 canRetry: !params.suppressChatMessages,
               });

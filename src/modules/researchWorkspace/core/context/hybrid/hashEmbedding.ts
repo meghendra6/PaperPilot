@@ -10,7 +10,7 @@ function hash(value) {
 }
 function createHashEmbedding(text, dimensions = 192) {
   const vector = Array.from({ length: dimensions }, () => 0);
-  const tokens = (0, tokenizer_1.tokenizeHybridOccurrences)(text, true);
+  const tokens = (0, tokenizer_1.tokenizeHybridOccurrences)(text);
   for (const token of tokens) {
     const bucket = hash(token) % dimensions;
     const sign = (hash(`${token}:sign`) & 1) === 0 ? 1 : -1;

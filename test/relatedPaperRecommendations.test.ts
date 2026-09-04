@@ -1,4 +1,4 @@
-import { test } from "node:test";
+import { afterEach, test } from "node:test";
 import * as assert from "node:assert/strict";
 
 import {
@@ -20,6 +20,14 @@ import {
   type RelatedRunSubmission,
 } from "../src/modules/relatedRecommendations";
 import { releaseReservationAfterConfirmedCleanup } from "../src/modules/ai/workspaceRun";
+import { createGlobalStateRestorer } from "./helpers/globalState";
+
+const restoreGlobals = createGlobalStateRestorer([
+  "Services",
+  "Zotero",
+  "Zotero_Tabs",
+]);
+afterEach(restoreGlobals);
 
 test("related-run states stay bound to the submitted concern, not later edits", () => {
   const submission: RelatedRunSubmission = {

@@ -187,9 +187,14 @@ export async function startCodexRunForQuestion(params: {
     }));
   const fullText = paperContent.fullText;
   payload.surroundingText = getPref("retrievalIncludeNearbyContext")
-    ? findNearbyContext({ fullText, selectedText: params.selectedText })
+    ? findNearbyContext({
+        fullText,
+        selectedText: params.selectedText,
+        pageIndex: readerContext.pageIndex,
+      })
     : undefined;
   const indexedChunks = getIndexedChunks({
+    libraryID: item.libraryID,
     itemKey: String(item.key || params.itemID),
     text: fullText,
     chunkSize: Number(getPref("retrievalChunkSize") || 1100),

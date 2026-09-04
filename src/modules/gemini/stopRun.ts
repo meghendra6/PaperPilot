@@ -7,7 +7,6 @@ import { clearGeminiPollerForItem } from "./poller";
 import { clearGeminiRunStateForItem } from "./runState";
 
 declare const addon: any;
-declare const Zotero: any;
 
 export async function stopGeminiRunSilently(params: {
   itemID: number;

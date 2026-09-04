@@ -22,14 +22,11 @@ import {
   type ResearchWorkspaceMembersFile,
   type ResearchWorkspacePortableExport,
   type ResearchWorkspaceProjectBundle,
-  type ResearchWorkspaceProjectFile,
   type ResearchWorkspaceProjectMember,
   type ResearchWorkspacePreferences,
   type ResearchWorkspaceRepositoryOptions,
   type ResearchWorkspaceRun,
-  type ResearchWorkspaceRunFile,
   type ResearchWorkspaceRunList,
-  type ResearchWorkspaceSourceFile,
   type ResearchWorkspaceSourceRecord,
 } from "./contracts";
 import {
@@ -381,6 +378,7 @@ export class ResearchWorkspaceProjectRepository {
   private async catalogEntry(projectID: string) {
     const bundle = await this.getProject(projectID);
     const artifacts = await this.listArtifacts(projectID);
+    const now = this.timestamp();
     return {
       projectID,
       name: bundle.project.name,
@@ -392,6 +390,20 @@ export class ResearchWorkspaceProjectRepository {
       staleArtifactCount: artifacts.artifacts.filter(
         (artifact) => artifact.status === "stale",
       ).length,
+      dueMasteryReviewCount: artifacts.artifacts.filter((artifact) => {
+        if (artifact.type !== "paper-mastery") return false;
+        const payload = artifact.payload as {
+          session?: { nextReviewAt?: string; phase?: string };
+          nextReviewAt?: string;
+          phase?: string;
+        };
+        const session = payload.session ?? payload;
+        return Boolean(
+          session.phase !== "completed" &&
+            session.nextReviewAt &&
+            session.nextReviewAt <= now,
+        );
+      }).length,
     } satisfies ResearchWorkspaceCatalogEntry;
   }
 

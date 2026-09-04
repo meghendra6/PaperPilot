@@ -29,6 +29,7 @@ import {
   migrateLegacyResearchWorkspace,
   recoverResearchWorkspaceProjectPersistence,
 } from "./modules/researchWorkspace/storage";
+import { clearResearchWorkspaceHybridIndexCache } from "./modules/researchWorkspace/facade";
 import {
   registerResearchWorkspaceLivingReviewNotifier,
   unregisterResearchWorkspaceLivingReviewNotifier,
@@ -149,6 +150,7 @@ function onShutdown(): void {
   unregisterResearchWorkspacePaneSection();
   unregisterResearchWorkspaceLaunchers();
   closeResearchWorkspaceWindow();
+  clearResearchWorkspaceHybridIndexCache();
   ztoolkit.unregisterAll();
   // Remove plugin stylesheet from all windows
   for (const win of Zotero.getMainWindows()) {
@@ -157,15 +159,6 @@ function onShutdown(): void {
   // Remove addon object
   addon.data.alive = false;
   delete (Zotero as any)[config.addonInstance];
-}
-
-async function onNotify(
-  event: string,
-  type: string,
-  ids: Array<string | number>,
-  extraData: { [key: string]: any },
-) {
-  ztoolkit.log("notify", event, type, ids, extraData);
 }
 
 async function onPrefsEvent(type: string, data: { [key: string]: any }) {
@@ -183,6 +176,5 @@ export default {
   onShutdown,
   onMainWindowLoad,
   onMainWindowUnload,
-  onNotify,
   onPrefsEvent,
 };

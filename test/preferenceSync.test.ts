@@ -1,47 +1,50 @@
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { execFileSync } from "node:child_process";
 import { test } from "node:test";
 import * as assert from "node:assert/strict";
 
-function matches(text: string, pattern: RegExp) {
-  return [...text.matchAll(pattern)].map((match) => match[1]).sort();
+function keys(source: string, pattern: RegExp) {
+  return new Set([...source.matchAll(pattern)].map((match) => match[1]));
 }
 
-function readTypeScriptTree(root: string): string {
-  return readdirSync(root, { withFileTypes: true })
-    .map((entry) => {
-      const path = join(root, entry.name);
-      if (entry.isDirectory()) return readTypeScriptTree(path);
-      return entry.isFile() && entry.name.endsWith(".ts")
-        ? readFileSync(path, "utf8")
-        : "";
-    })
-    .join("\n");
-}
-
-test("runtime defaults, generated preference types, and settings UI stay in sync", () => {
-  const defaults = readFileSync("addon/prefs.js", "utf8");
-  const types = readFileSync("typings/prefs.d.ts", "utf8");
-  const ui = readFileSync("addon/chrome/content/preferences.xhtml", "utf8");
-  const source = readTypeScriptTree("src");
-
-  const defaultKeys = matches(defaults, /pref\(\s*"__prefsPrefix__\.([^"]+)"/g);
-  const typeKeys = matches(types, /^\s*"([^"]+)":/gm);
-  const uiKeys = matches(
-    ui,
-    /preference="extensions\.zotero\.__addonRef__\.([^"]+)"/g,
+test("preference defaults, types, UI declarations, and source usage stay in sync", () => {
+  const root = process.cwd();
+  const defaults = readFileSync(join(root, "addon", "prefs.js"), "utf8");
+  const types = readFileSync(join(root, "typings", "prefs.d.ts"), "utf8");
+  const ui = readFileSync(
+    join(root, "addon", "chrome", "content", "preferences.xhtml"),
+    "utf8",
+  );
+  const sourceFiles = readFileSync(
+    join(root, "test", "preferenceSync.test.ts"),
+    "utf8",
+  );
+  const source = execFileSync(
+    "rg",
+    ["-g", "*.ts", "--no-filename", ".", "src"],
+    { cwd: root, encoding: "utf8", maxBuffer: 4 * 1024 * 1024 },
   );
 
-  const uiExemptions = new Set(["paneSectionState"]);
-  const expectedUiKeys = defaultKeys.filter((key) => !uiExemptions.has(key));
+  const defaultKeys = keys(defaults, /__prefsPrefix__\.([A-Za-z0-9]+)["']/g);
+  const typeKeys = keys(types, /"([A-Za-z0-9]+)"\s*:/g);
+  const uiKeys = keys(
+    ui,
+    /preference="extensions\.zotero\.__addonRef__\.([A-Za-z0-9]+)"/g,
+  );
+  const internalOnly = new Set(["paneSectionState"]);
 
   assert.deepEqual(typeKeys, defaultKeys);
-  assert.deepEqual(uiKeys, expectedUiKeys);
+  assert.deepEqual(
+    new Set([...defaultKeys].filter((key) => !internalOnly.has(key))),
+    uiKeys,
+  );
   for (const key of defaultKeys) {
     assert.match(
       source,
       new RegExp(`["']${key}["']`),
-      `Preference ${key} must have a source call site.`,
+      `unused preference: ${key}`,
     );
   }
+  assert.doesNotMatch(sourceFiles, /extensions\.zotero\.paperpilot\./);
 });

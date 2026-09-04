@@ -2,11 +2,15 @@
   "compilerOptions": {
     "experimentalDecorators": true,
     "module": "commonjs",
-    "target": "ES2016",
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "resolveJsonModule": true,
     "skipLibCheck": true,
-    "strict": true
+    "strict": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitReturns": true
   },
-  "include": ["src", "typings", "node_modules/zotero-types", "node_modules/*"],
+  "include": ["src", "typings", "node_modules/zotero-types"],
   "exclude": ["build", "addon"]
 }

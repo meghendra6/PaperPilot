@@ -6,9 +6,6 @@ import {
 import { getRunWorkspaceTitle, type RunProfile } from "../ai/runProfile";
 import { resolveSessionHistoryPrefs } from "../session/historyPrefs";
 
-declare const IOUtils: any;
-declare const Zotero: any;
-
 function isSafeWorkspacePath(workspacePath: string) {
   const normalized = workspacePath.trim().replace(/[\\/]+$/g, "");
   const segment = normalized.split(/[\\/]/).pop() || "";

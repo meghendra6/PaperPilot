@@ -172,6 +172,7 @@ export class ResearchWorkspaceLivingReviewService {
     observation: ResearchWorkspaceLivingReviewSnapshot,
     resolvedAt: string,
     observedRevision: number | undefined,
+    observedSource?: ResearchWorkspaceSourceRecord,
   ) {
     if (observedRevision === undefined) {
       const current = await this.repository.getSource(sourceID);
@@ -179,6 +180,17 @@ export class ResearchWorkspaceLivingReviewService {
       const invalidation = this.invalidationFor(observation);
       if (invalidation) await this.invalidateSharedSource(invalidation);
       return true;
+    }
+
+    if (observedSource) {
+      const { contentChanged, availabilityChanged } = sameSourceObservation(
+        observedSource,
+        observation,
+      );
+      if (!contentChanged && !availabilityChanged) {
+        const current = await this.repository.getSource(sourceID);
+        return current?.revision === observedRevision;
+      }
     }
 
     try {
@@ -234,6 +246,7 @@ export class ResearchWorkspaceLivingReviewService {
         observation,
         checkedAt,
         observedRevision,
+        sourceFile?.source,
       );
       if (accepted) return observation;
     }

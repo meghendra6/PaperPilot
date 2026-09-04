@@ -68,6 +68,8 @@ function contentFingerprintValue(fingerprint) {
   return typeof fingerprint?.value === "string" ? fingerprint.value : "";
 }
 
+const MAX_HYBRID_INDEXES = 12;
+
 export interface ResearchWorkspaceServiceEnvironment {
   repository: {
     load(): Promise<any>;
@@ -195,7 +197,11 @@ class ResearchWorkspaceService {
   indexPaper(paper) {
     const key = `${paper.paperKey}:${paper.attachmentKey}`;
     const existing = this.indexes.get(key);
-    if (existing?.source === paper.context) return existing.index;
+    if (existing?.source === paper.context) {
+      this.indexes.delete(key);
+      this.indexes.set(key, existing);
+      return existing.index;
+    }
     const fingerprint = sourceFingerprint(paper.context);
     const index = (0, indexExports_1.buildHybridIndex)({
       paperKey: paper.paperKey,
@@ -210,6 +216,11 @@ class ResearchWorkspaceService {
           }),
     });
     this.indexes.set(key, { source: paper.context, index });
+    while (this.indexes.size > MAX_HYBRID_INDEXES) {
+      const oldestKey = this.indexes.keys().next().value;
+      if (oldestKey === undefined) break;
+      this.indexes.delete(oldestKey);
+    }
     return index;
   }
   searchPaper(paper, query) {

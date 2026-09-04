@@ -30,9 +30,9 @@ import {
   normalizeClaudeModel,
   normalizeCodexModel,
   normalizeCodexReasoningEffort,
-  normalizeGeminiModel,
 } from "./codex/modelOptions";
 import { getCurrentReaderContext } from "./context/readerContext";
+import { clearIndexedChunks } from "./context/indexStore";
 import { messageStore } from "./message/messageStore";
 import { sessionStore } from "./session/sessionStore";
 import { sessionHistoryService } from "./session/sessionHistoryService";
@@ -208,6 +208,13 @@ function logReaderPaneError(context: string, error: unknown) {
 }
 
 export function pruneReaderPaneItemState(itemID: number) {
+  const item = Zotero.Items?.get?.(itemID);
+  if (item?.key && item.libraryID !== undefined) {
+    clearIndexedChunks({
+      libraryID: item.libraryID,
+      itemKey: String(item.key),
+    });
+  }
   addon.data.modeOverrides?.delete(itemID);
   addon.data.relatedRecommendationStates?.delete(itemID);
   addon.data.autoHighlightStates?.delete(itemID);

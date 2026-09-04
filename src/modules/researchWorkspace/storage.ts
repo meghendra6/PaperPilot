@@ -4,10 +4,6 @@ import { LegacyResearchWorkspaceImporter } from "./persistence/legacyMigration";
 import { ResearchWorkspaceLivingReviewService } from "./livingReviewService";
 import { ResearchWorkspaceZoteroSyncService } from "./zoteroSyncService";
 
-declare const Zotero: any;
-declare const IOUtils: any;
-declare const PathUtils: any;
-
 const STORAGE_DIRECTORY = "paperpilot-research-workspace";
 const STORAGE_FILE = "workspace-v3.json";
 
@@ -97,6 +93,11 @@ export function createResearchWorkspaceStorage() {
       const parent = pathUtils?.parent
         ? pathUtils.parent(path)
         : path.replace(/[\\/][^\\/]+$/, "");
+      if (!parent) {
+        throw new Error(
+          "Could not resolve the Research Workspace parent path.",
+        );
+      }
       await zotero.File.createDirectoryIfMissingAsync(parent);
       const ioUtils = getGlobalIOUtils();
       if (ioUtils?.writeUTF8) {

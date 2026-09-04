@@ -8,10 +8,6 @@ import {
 } from "./historyTypes";
 import { getZoteroProfilePath } from "../../utils/zoteroProfile";
 
-declare const Zotero: any;
-declare const IOUtils: any;
-declare const PathUtils: any;
-
 function getGlobalZotero() {
   return (globalThis as typeof globalThis & { Zotero?: typeof Zotero }).Zotero;
 }
@@ -299,6 +295,7 @@ export class SessionHistoryRepository {
   private readonly fileOps: SessionHistoryFileOps;
   private readonly now: () => Date;
   private readonly warn: (message: string) => void;
+  private readonly indexCache = new Map<number, SessionHistoryIndex>();
 
   constructor(options: SessionHistoryRepositoryOptions = {}) {
     this.rootDir = options.rootDir;
@@ -382,18 +379,27 @@ export class SessionHistoryRepository {
     await this.fileOps.ensureDirectory(this.getSessionsRoot(itemID));
   }
 
-  private async recoverSessionsFromDisk(itemID: number) {
+  private async recoverSessionsFromDisk(
+    itemID: number,
+    indexedSessionIDs: readonly string[] = [],
+  ) {
     const sessionsRoot = this.getSessionsRoot(itemID);
     let filePaths: string[] = [];
 
     try {
       filePaths = await this.fileOps.listDirectory(sessionsRoot);
     } catch {
-      return [];
+      filePaths = [];
     }
 
     const recoveredEntries: SessionHistoryListEntry[] = [];
-    for (const filePath of filePaths) {
+    const candidatePaths = new Set([
+      ...filePaths,
+      ...indexedSessionIDs.map((sessionID) =>
+        this.getSessionSnapshotPath(itemID, sessionID),
+      ),
+    ]);
+    for (const filePath of candidatePaths) {
       if (!filePath.endsWith(".json")) {
         continue;
       }
@@ -408,22 +414,6 @@ export class SessionHistoryRepository {
     }
 
     return recoveredEntries;
-  }
-
-  private async loadReadableIndexSessions(
-    itemID: number,
-    indexSessions: SessionHistoryListEntry[],
-  ) {
-    const readableEntries: SessionHistoryListEntry[] = [];
-
-    for (const entry of indexSessions) {
-      const snapshot = await this.readSessionSnapshot(itemID, entry.sessionId);
-      if (snapshot) {
-        readableEntries.push(toSessionEntry(snapshot));
-      }
-    }
-
-    return readableEntries;
   }
 
   private mergeRecoveredSessions(
@@ -457,6 +447,8 @@ export class SessionHistoryRepository {
   }
 
   async readPaperIndex(itemID: number): Promise<SessionHistoryIndex> {
+    const cached = this.indexCache.get(itemID);
+    if (cached) return structuredClone(cached);
     const indexPath = this.getPaperIndexPath(itemID);
     const candidate = await this.readJson(indexPath);
     const index = isSessionHistoryIndex(candidate, itemID)
@@ -467,26 +459,21 @@ export class SessionHistoryRepository {
         this.warn(`Ignoring invalid session history index at ${indexPath}.`);
       }
     }
-    const recoveredSessions = await this.recoverSessionsFromDisk(itemID);
-    if (!index) {
-      return {
-        ...emptyIndex(itemID),
-        sessions: sortSessionEntries(recoveredSessions),
-      };
-    }
-
-    const readableIndexSessions = await this.loadReadableIndexSessions(
+    const recoveredSessions = await this.recoverSessionsFromDisk(
       itemID,
-      index.sessions,
+      index?.sessions.map((entry) => entry.sessionId),
     );
-
-    return this.normalizeIndex({
-      ...index,
-      sessions: this.mergeRecoveredSessions(
-        readableIndexSessions,
-        recoveredSessions,
-      ),
-    });
+    const normalized = !index
+      ? {
+          ...emptyIndex(itemID),
+          sessions: sortSessionEntries(recoveredSessions),
+        }
+      : this.normalizeIndex({
+          ...index,
+          sessions: this.mergeRecoveredSessions([], recoveredSessions),
+        });
+    this.indexCache.set(itemID, normalized);
+    return structuredClone(normalized);
   }
 
   async writePaperIndex(index: SessionHistoryIndex) {
@@ -496,6 +483,7 @@ export class SessionHistoryRepository {
       this.getPaperIndexPath(normalized.paperItemID),
       JSON.stringify(normalized, null, 2),
     );
+    this.indexCache.set(normalized.paperItemID, normalized);
   }
 
   async readSessionSnapshot(
@@ -557,6 +545,7 @@ export class SessionHistoryRepository {
     await this.fileOps.remove(this.getSessionSnapshotPath(itemID, sessionId));
     if (!remainingSessions.length) {
       await this.fileOps.remove(this.getPaperIndexPath(itemID));
+      this.indexCache.delete(itemID);
       return;
     }
 
@@ -576,6 +565,7 @@ export class SessionHistoryRepository {
       ),
     );
     await this.fileOps.remove(this.getPaperIndexPath(itemID));
+    this.indexCache.delete(itemID);
   }
 
   async listSessions(itemID: number) {

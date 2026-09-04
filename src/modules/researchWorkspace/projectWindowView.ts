@@ -31,6 +31,7 @@ import {
 } from "./facade";
 import { renderResearchWorkspaceArtifactEnvelope } from "./artifactRenderer";
 import { copyTextToClipboard } from "../components/ChatMessage";
+import { getPref } from "../../utils/prefs";
 import { openVerifiedResearchWorkspaceEvidence } from "./evidenceNavigation";
 import type { EvidenceReferenceV2 } from "./evidenceVerification";
 import { readResearchWorkspaceArtifact } from "./legacyCapabilityAdapters";
@@ -2302,6 +2303,7 @@ function renderArtifactHistory(
     }
     item.append(
       renderResearchWorkspaceArtifactEnvelope(doc, artifact, {
+        responseLanguage: String(getPref("responseLanguage") || "English"),
         onCopyText: (text) => copyTextToClipboard(text, doc),
         onOpenEvidence: async (reference) => {
           try {

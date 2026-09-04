@@ -48,7 +48,6 @@ import {
   deduplicateProviderCandidates,
   isPublicReviewURL,
   normalizeDiscoveryDOI,
-  normalizeHttpURL,
 } from "./discovery/normalize";
 import { RUN_TIMEOUT_MS } from "./ai/runProgress";
 import { parseFirstJsonObject } from "./ai/jsonCandidates";
@@ -298,25 +297,6 @@ function toOptionalYear(value: unknown) {
     }
   }
   return undefined;
-}
-
-function toAuthors(value: unknown) {
-  if (!Array.isArray(value)) {
-    return [] as string[];
-  }
-  return value
-    .map((author) =>
-      typeof author === "string" ? normalizeWhitespace(author) : "",
-    )
-    .filter(Boolean);
-}
-
-function toRelevanceScore(value: unknown) {
-  const parsed = typeof value === "number" ? value : Number(value);
-  if (!Number.isFinite(parsed)) {
-    return 0;
-  }
-  return Math.max(0, Math.min(1, parsed));
 }
 
 export function sortRecommendationGroups(groups: RecommendationGroup[]) {

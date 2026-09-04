@@ -198,14 +198,16 @@ export async function handleClaudeQuestion(params: {
     }
     markPendingEnginePreparationSettled(params.itemID, runToken);
     const detail = error instanceof Error ? error.message : String(error);
-    const assistantText = failRunProgress({
+    const failedProgress = failRunProgress({
       itemID: params.itemID,
       engine: "claude_code",
       token: runToken,
       rawError: detail,
       source: "workspace",
       canRetry: !params.suppressChatMessages,
-    })!.failure!.userMessage;
+    });
+    const assistantText =
+      failedProgress?.failure?.userMessage ?? "Claude Code run failed.";
     try {
       await sessionHistoryService
         .persistAssistantTurn({
@@ -383,7 +385,7 @@ export async function handleClaudeQuestion(params: {
         });
     let assistantText = success
       ? sanitizeAssistantText(rawAssistantText)
-      : terminalFailure!.userMessage;
+      : (terminalFailure?.userMessage ?? "Claude Code run failed.");
 
     if (assistantMessage) {
       setMessageContent(assistantMessage, assistantText, "ai");
@@ -420,7 +422,7 @@ export async function handleClaudeQuestion(params: {
             continuationToken: runToken,
           }),
         incomplete: (error) => {
-          assistantText = failRunProgress({
+          const failedProgress = failRunProgress({
             itemID: params.itemID,
             engine: "claude_code",
             token: runToken,
@@ -428,7 +430,9 @@ export async function handleClaudeQuestion(params: {
               error instanceof Error ? error.message : String(error || ""),
             source: "process_exit",
             canRetry: !params.suppressChatMessages,
-          })!.failure!.userMessage;
+          });
+          assistantText =
+            failedProgress?.failure?.userMessage ?? "Claude Code run failed.";
           return params.onComplete?.({
             success: false,
             assistantText,
@@ -448,7 +452,10 @@ export async function handleClaudeQuestion(params: {
                 itemID: params.itemID,
                 engine: "claude_code",
                 token: runToken,
-                rawError: terminalFailure!.rawError,
+                rawError:
+                  terminalFailure?.rawError ||
+                  progress.diagnosticOutput ||
+                  rawAssistantText,
                 source: "process_exit",
                 canRetry: !params.suppressChatMessages,
               });

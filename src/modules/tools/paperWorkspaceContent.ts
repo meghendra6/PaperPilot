@@ -112,14 +112,13 @@ export class PaperWorkspaceContentCache {
     contentFingerprint: PaperContentFingerprint,
     filePath: string | undefined,
   ): Promise<PaperWorkspaceContent> {
-    const fallbackText = await Promise.resolve(attachment.attachmentText || "");
     const extractionNotes: string[] = [];
 
     if (filePath) {
       try {
         const structured = await extractStructuredPdf(filePath);
         return {
-          fullText: structured.markdownText || fallbackText,
+          fullText: structured.markdownText,
           markdownText: structured.markdownText,
           structuredContent: structured.structuredContent,
           extractionMethod: "opendataloader-pdf",
@@ -144,6 +143,7 @@ export class PaperWorkspaceContentCache {
       );
     }
 
+    const fallbackText = await Promise.resolve(attachment.attachmentText || "");
     return {
       fullText: fallbackText,
       extractionMethod: "zotero-attachment-text",

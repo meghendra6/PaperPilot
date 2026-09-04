@@ -310,6 +310,9 @@ export function parseResearchWorkspaceCatalog(
       isoDate(project.archivedAt, "catalog project archivedAt");
     revision(project.memberCount, "catalog memberCount");
     revision(project.staleArtifactCount, "catalog staleArtifactCount");
+    if (project.dueMasteryReviewCount !== undefined) {
+      revision(project.dueMasteryReviewCount, "catalog dueMasteryReviewCount");
+    }
   }
   return normalizedCopy(value) as ResearchWorkspaceCatalog;
 }

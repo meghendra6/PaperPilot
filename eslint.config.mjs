@@ -5,7 +5,7 @@ import tseslint from "typescript-eslint";
 
 export default tseslint.config(
   {
-    ignores: ["build/**", "dist/**", "node_modules/**", "scripts/"],
+    ignores: ["build/**", "dist/**", "node_modules/**"],
   },
   {
     extends: [eslint.configs.recommended, ...tseslint.configs.recommended],
@@ -19,14 +19,28 @@ export default tseslint.config(
           "ts-check": "allow-with-description",
         },
       ],
-      "@typescript-eslint/no-unused-vars": "off",
-      "@typescript-eslint/no-explicit-any": [
-        "off",
+      "@typescript-eslint/no-unused-vars": [
+        "error",
         {
-          ignoreRestArgs: true,
+          argsIgnorePattern: "^_",
+          caughtErrorsIgnorePattern: "^_",
+          varsIgnorePattern: "^_",
         },
       ],
-      "@typescript-eslint/no-non-null-assertion": "off",
+      "@typescript-eslint/no-explicit-any": "off",
+      "@typescript-eslint/no-non-null-assertion": "warn",
+    },
+  },
+  {
+    files: ["scripts/**/*.mjs"],
+    languageOptions: {
+      globals: {
+        Buffer: "readonly",
+        console: "readonly",
+        process: "readonly",
+        setTimeout: "readonly",
+        URL: "readonly",
+      },
     },
   },
 );

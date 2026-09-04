@@ -1,16 +1,4 @@
 // @ts-nocheck -- Ported feature core is guarded by strict runtime parsers.
-const ALIASES = {
-  ttft: ["time-to-first-token", "first-token-latency", "prefill-latency"],
-  tpot: ["time-per-output-token", "inter-token-latency", "decode-latency"],
-  itl: ["inter-token-latency", "time-per-output-token"],
-  kv: ["key-value", "kv-cache", "cache"],
-  llm: ["large-language-model", "language-model"],
-  rag: ["retrieval-augmented-generation", "retrieval"],
-  swa: ["sliding-window-attention", "window-attention"],
-  sd: ["speculative-decoding", "draft-verification"],
-  npu: ["neural-processing-unit", "accelerator"],
-  gpu: ["graphics-processing-unit", "accelerator"],
-};
 const STOPWORDS = new Set([
   "a",
   "an",
@@ -87,7 +75,7 @@ function eastAsianNgrams(word) {
   }
   return result;
 }
-function tokenizeHybridOccurrences(text, expandAliases = true) {
+function tokenizeHybridOccurrences(text) {
   const normalized = normalize(String(text || ""));
   const raw =
     normalized.match(
@@ -110,21 +98,10 @@ function tokenizeHybridOccurrences(text, expandAliases = true) {
       if (normalizedToken !== token) tokens.push(normalizedToken);
     }
   }
-  if (expandAliases) {
-    const snapshot = [...tokens];
-    for (const token of snapshot) {
-      const aliases = ALIASES[token];
-      if (aliases) tokens.push(...aliases);
-      for (const [key, values] of Object.entries(ALIASES)) {
-        if (values.includes(token))
-          tokens.push(key, ...values.filter((value) => value !== token));
-      }
-    }
-  }
   return tokens.filter((token) => token.length > 0);
 }
-function tokenizeHybrid(text, expandAliases = true) {
-  return [...new Set(tokenizeHybridOccurrences(text, expandAliases))];
+function tokenizeHybrid(text) {
+  return [...new Set(tokenizeHybridOccurrences(text))];
 }
 function queryPhrases(text) {
   const normalized = normalize(text).replace(/[^\p{L}\p{N}\s-]/gu, " ");

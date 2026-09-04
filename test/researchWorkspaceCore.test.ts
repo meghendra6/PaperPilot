@@ -131,10 +131,15 @@ test("claim verification is reconciled from local evidence checks", () => {
   assert.equal(reconciled.updatedAt, "after");
 });
 
-test("hybrid retrieval keeps technical aliases and ranks the mechanism", () => {
-  const tokens = tokenizeHybrid("qk_scale affects TTFT and TPOT", true);
+test("hybrid retrieval keeps identifiers without injecting domain aliases", () => {
+  const tokens = tokenizeHybrid("qk_scale affects TTFT and TPOT");
   assert(tokens.includes("qk_scale"));
-  assert(tokens.includes("time-to-first-token"));
+  assert(tokens.includes("ttft"));
+  assert.equal(tokens.includes("time-to-first-token"), false);
+  assert.equal(
+    tokenizeHybrid("sd of the mean").includes("speculative-decoding"),
+    false,
+  );
 
   const index = buildHybridIndex({
     documentKey: "paper:A",
@@ -158,10 +163,35 @@ test("hybrid retrieval keeps technical aliases and ranks the mechanism", () => {
 });
 
 test("hybrid tokenization covers CJK, Korean, and folded Latin scripts", () => {
-  assert(tokenizeHybrid("注意机制", false).includes("注意"));
-  assert(tokenizeHybrid("注意機構", false).includes("注意"));
-  assert(tokenizeHybrid("어텐션메커니즘", false).includes("어텐"));
-  assert(tokenizeHybrid("résumé naïve", false).includes("resume"));
+  assert(tokenizeHybrid("注意机制").includes("注意"));
+  assert(tokenizeHybrid("注意機構").includes("注意"));
+  assert(tokenizeHybrid("어텐션메커니즘").includes("어텐"));
+  assert(tokenizeHybrid("résumé naïve").includes("resume"));
+});
+
+test("Research Workspace hybrid indexes are bounded and omit build-only tokens", () => {
+  const indexes = new Map<string, unknown>();
+  const service = new ResearchWorkspaceService({
+    repository: {
+      load: async () => ({}),
+      update: async () => ({}),
+    },
+    indexes,
+    agent: { run: async () => "{}" },
+    exportTextFile: async () => "",
+  });
+  let lastIndex: any;
+  for (let index = 0; index < 14; index += 1) {
+    lastIndex = service.indexPaper({
+      paperKey: `paper-${index}`,
+      attachmentKey: `attachment-${index}`,
+      context: `Title ${index}\nBody ${index}`,
+    });
+  }
+  assert.equal(indexes.size, 12);
+  assert.equal("tokens" in lastIndex.chunks[0], false);
+  assert.deepEqual(lastIndex.chunks[0].titleTokens, []);
+  assert.equal(typeof lastIndex.chunks[0].searchText, "string");
 });
 
 test("evidence references clamp safe geometry and reject foreign attachments", () => {

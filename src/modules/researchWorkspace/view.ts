@@ -1,5 +1,6 @@
 import { config } from "../../../package.json";
 import { getLocaleID } from "../../utils/locale";
+import { getPref } from "../../utils/prefs";
 import { copyTextToClipboard } from "../components/ChatMessage";
 import { renderResearchWorkspaceArtifactValue } from "./artifactRenderer";
 import {
@@ -287,6 +288,7 @@ function renderOutput(
   panel.append(
     renderResearchWorkspaceArtifactValue(root.ownerDocument, value, {
       artifactType,
+      responseLanguage: String(getPref("responseLanguage") || "English"),
       onCopyText: (text) => copyTextToClipboard(text, root.ownerDocument),
       onOpenEvidence: (reference) =>
         guarded(root, "Opening evidence", async () => {

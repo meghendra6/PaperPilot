@@ -31,7 +31,7 @@ function searchHybridIndex(index, query, options = {}) {
     Math.min(index.chunks.length || 1, Math.floor(options.topK ?? 5)),
   );
   if (!query.trim() || index.chunks.length === 0) return [];
-  const queryTokens = (0, tokenizer_1.tokenizeHybrid)(query, true);
+  const queryTokens = (0, tokenizer_1.tokenizeHybrid)(query);
   const queryEmbedding = (0, hashEmbedding_1.createHashEmbedding)(
     query,
     index.embeddingDimensions,
@@ -59,14 +59,12 @@ function searchHybridIndex(index, query, options = {}) {
         ) +
           1) /
         2;
-      const titleTokens = new Set(
-        (0, tokenizer_1.tokenizeHybrid)(chunk.title || "", true),
-      );
+      const titleTokens = new Set(chunk.titleTokens || []);
       const title = queryTokens.length
         ? queryTokens.filter((token) => titleTokens.has(token)).length /
           queryTokens.length
         : 0;
-      const textLower = `${chunk.title || ""}\n${chunk.text}`.toLowerCase();
+      const textLower = chunk.searchText;
       const exact = phrases.length
         ? Math.max(
             ...phrases.map((phrase) => (textLower.includes(phrase) ? 1 : 0)),

@@ -128,24 +128,10 @@ export class ResearchWorkspaceProjectController {
     });
     const projects = entries.filter((entry) => !entry.archivedAt);
     const archivedProjects = entries.filter((entry) => entry.archivedAt);
-    let dueMasteryReviews = 0;
-    for (const entry of projects) {
-      const artifacts = await this.repository.listArtifacts(entry.projectID);
-      dueMasteryReviews += artifacts.artifacts.filter((artifact) => {
-        if (artifact.type !== "paper-mastery") return false;
-        const payload = artifact.payload as {
-          session?: { nextReviewAt?: string; phase?: string };
-          nextReviewAt?: string;
-          phase?: string;
-        };
-        const session = payload.session ?? payload;
-        return Boolean(
-          session.phase !== "completed" &&
-            session.nextReviewAt &&
-            session.nextReviewAt <= timestamp(this.now),
-        );
-      }).length;
-    }
+    const dueMasteryReviews = projects.reduce(
+      (total, entry) => total + (entry.dueMasteryReviewCount ?? 0),
+      0,
+    );
     return {
       projects,
       archivedProjects,

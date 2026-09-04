@@ -95,6 +95,10 @@ export type ResearchWorkspaceMultiOperation =
 
 const sharedHybridIndexes = new Map<string, unknown>();
 
+export function clearResearchWorkspaceHybridIndexCache() {
+  sharedHybridIndexes.clear();
+}
+
 function clone<T>(value: T): T {
   return typeof globalThis.structuredClone === "function"
     ? globalThis.structuredClone(value)

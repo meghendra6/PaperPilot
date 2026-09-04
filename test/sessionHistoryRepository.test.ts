@@ -40,6 +40,7 @@ function withPrefs(
 class MemoryFileOps implements SessionHistoryFileOps {
   files = new Map<string, string>();
   directories = new Set<string>();
+  reads: string[] = [];
   throwOnMissingRead = true;
 
   async ensureDirectory(path: string) {
@@ -47,6 +48,7 @@ class MemoryFileOps implements SessionHistoryFileOps {
   }
 
   async readText(path: string) {
+    this.reads.push(path);
     if (!this.files.has(path)) {
       if (this.throwOnMissingRead) {
         throw new Error(`ENOENT: no such file or directory, open '${path}'`);
@@ -346,6 +348,56 @@ test("SessionHistoryRepository recovers valid snapshots when index.json is malfo
     (await repo.listSessions(42)).map((entry) => entry.sessionId),
     [secondSnapshot.sessionId],
   );
+});
+
+test("SessionHistoryRepository reads each indexed snapshot once and caches the index", async () => {
+  const fileOps = new MemoryFileOps();
+  const repo = new SessionHistoryRepository({
+    rootDir: "/session-history",
+    fileOps,
+  });
+  const first = buildSnapshot();
+  const second = {
+    ...buildSnapshot(),
+    sessionId: "paper-42-session-b",
+    updatedAt: "2026-04-14T00:30:00.000Z",
+  };
+  const entries = [first, second].map((snapshot) => ({
+    storageVersion: SESSION_HISTORY_STORAGE_VERSION,
+    sessionId: snapshot.sessionId,
+    title: snapshot.title,
+    createdAt: snapshot.createdAt,
+    updatedAt: snapshot.updatedAt,
+    messageCount: snapshot.messages.length,
+    lastMode: snapshot.messages.at(-1)?.sourceMode,
+    hasArtifacts: true,
+    hasRecommendations: true,
+    hasMasteryState: true,
+  }));
+  fileOps.files.set(
+    repo.getPaperIndexPath(42),
+    JSON.stringify({
+      storageVersion: SESSION_HISTORY_STORAGE_VERSION,
+      paperItemID: 42,
+      paperTitle: "Paper",
+      sessions: entries,
+    }),
+  );
+  for (const snapshot of [first, second]) {
+    fileOps.files.set(
+      repo.getSessionSnapshotPath(42, snapshot.sessionId),
+      JSON.stringify(snapshot),
+    );
+  }
+
+  await repo.readPaperIndex(42);
+  assert.equal(
+    fileOps.reads.filter((path) => path.includes("/sessions/")).length,
+    2,
+  );
+  const readsAfterFirst = fileOps.reads.length;
+  await repo.readPaperIndex(42);
+  assert.equal(fileOps.reads.length, readsAfterFirst);
 });
 
 test("SessionHistoryRepository prunes index rows whose snapshot is missing", async () => {

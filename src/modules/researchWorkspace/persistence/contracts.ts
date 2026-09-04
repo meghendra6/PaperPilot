@@ -363,6 +363,7 @@ export interface ResearchWorkspaceCatalogEntry {
   archivedAt?: string;
   memberCount: number;
   staleArtifactCount: number;
+  dueMasteryReviewCount?: number;
 }
 
 export interface ResearchWorkspaceCatalog {

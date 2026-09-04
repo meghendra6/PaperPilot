@@ -272,15 +272,6 @@ function cleanText(value: unknown, maximum = 2_000) {
     : "";
 }
 
-function boundedStringList(value: unknown, maximum = 200) {
-  return Array.isArray(value)
-    ? value
-        .map((entry) => cleanText(entry))
-        .filter(Boolean)
-        .slice(0, maximum)
-    : [];
-}
-
 function normalizeDOI(value: unknown) {
   return cleanText(value, 512)
     .replace(/^https?:\/\/(?:dx\.)?doi\.org\//i, "")
@@ -607,40 +598,36 @@ function contextIdentity(context: UnknownRecord) {
 
 function localLibraryMatches(
   context: UnknownRecord,
-  items: readonly CitationHealthLocalLibraryItem[],
+  indexes: {
+    byLibraryItem: ReadonlyMap<string, CitationHealthLocalLibraryItem[]>;
+    byDOI: ReadonlyMap<string, CitationHealthLocalLibraryItem[]>;
+    byTitle: ReadonlyMap<string, CitationHealthLocalLibraryItem[]>;
+    byAuthorYear: ReadonlyMap<string, CitationHealthLocalLibraryItem[]>;
+  },
 ) {
   const resolution = record(context.resolution) ?? {};
   const reference = record(context.reference) ?? {};
   const resolvedLibraryID = Number(resolution.zoteroLibraryID);
   const resolvedItemKey = cleanText(resolution.zoteroItemKey, 256);
   if (Number.isInteger(resolvedLibraryID) && resolvedItemKey) {
-    return items.filter(
-      (item) =>
-        item.libraryID === resolvedLibraryID &&
-        item.itemKey === resolvedItemKey,
+    return (
+      indexes.byLibraryItem.get(`${resolvedLibraryID}:${resolvedItemKey}`) ?? []
     );
   }
   const doi = normalizeDOI(reference.doi ?? resolution.doi);
-  if (doi) return items.filter((item) => item.doi === doi);
+  if (doi) return indexes.byDOI.get(doi) ?? [];
   const title = normalizeTitle(reference.title ?? resolution.title);
   const year = optionalYear(reference.year);
   if (title) {
-    return items.filter(
+    return (indexes.byTitle.get(title) ?? []).filter(
       (item) =>
-        normalizeTitle(item.title) === title &&
-        (year === undefined || item.year === undefined || item.year === year),
+        year === undefined || item.year === undefined || item.year === year,
     );
   }
   if (year !== undefined) {
     const firstAuthor = normalizeAuthor(reference.firstAuthor);
     if (firstAuthor) {
-      return items.filter(
-        (item) =>
-          item.year === year &&
-          item.authors.some(
-            (author) => normalizeAuthor(author) === firstAuthor,
-          ),
-      );
+      return indexes.byAuthorYear.get(`${firstAuthor}:${year}`) ?? [];
     }
   }
   return [];
@@ -713,12 +700,11 @@ function draftStatements(value: string) {
 
 function hasArtifactSupport(
   statement: string,
-  supportCorpus: readonly string[],
+  supportTokenSets: readonly ReadonlySet<string>[],
 ) {
   const statementTokens = tokens(statement);
   if (statementTokens.size < 3) return true;
-  for (const candidate of supportCorpus) {
-    const candidateTokens = tokens(candidate);
+  for (const candidateTokens of supportTokenSets) {
     let shared = 0;
     for (const token of statementTokens) {
       if (candidateTokens.has(token)) shared += 1;
@@ -938,6 +924,39 @@ export function buildCitationHealthReport(params: {
       `${right.libraryID}|${right.itemKey}`,
     ),
   );
+  const appendIndex = <Key>(
+    map: Map<Key, CitationHealthLocalLibraryItem[]>,
+    key: Key,
+    item: CitationHealthLocalLibraryItem,
+  ) => map.set(key, [...(map.get(key) ?? []), item]);
+  const localLibraryIndexes = {
+    byLibraryItem: new Map<string, CitationHealthLocalLibraryItem[]>(),
+    byDOI: new Map<string, CitationHealthLocalLibraryItem[]>(),
+    byTitle: new Map<string, CitationHealthLocalLibraryItem[]>(),
+    byAuthorYear: new Map<string, CitationHealthLocalLibraryItem[]>(),
+  };
+  for (const item of localLibraryItems) {
+    appendIndex(
+      localLibraryIndexes.byLibraryItem,
+      `${item.libraryID}:${item.itemKey}`,
+      item,
+    );
+    const doi = normalizeDOI(item.doi);
+    if (doi) appendIndex(localLibraryIndexes.byDOI, doi, item);
+    const title = normalizeTitle(item.title);
+    if (title) appendIndex(localLibraryIndexes.byTitle, title, item);
+    if (item.year !== undefined) {
+      for (const author of new Set(item.authors.map(normalizeAuthor))) {
+        if (author) {
+          appendIndex(
+            localLibraryIndexes.byAuthorYear,
+            `${author}:${item.year}`,
+            item,
+          );
+        }
+      }
+    }
+  }
   const eligible = params.details.artifacts
     .filter((artifact) => ELIGIBLE_ARTIFACT_TYPES.has(artifact.type))
     .sort((left, right) => {
@@ -1016,7 +1035,7 @@ export function buildCitationHealthReport(params: {
     contextsByIdentity.set(identity, grouped);
     const resolution = record(context.resolution) ?? {};
     const resolutionStatus = cleanText(resolution.status, 80) || "unresolved";
-    const localMatches = localLibraryMatches(context, localLibraryItems);
+    const localMatches = localLibraryMatches(context, localLibraryIndexes);
     for (const item of localMatches) {
       const itemKey = `${item.libraryID}:${item.itemKey}`;
       matchedLocalItemKeys.add(itemKey);
@@ -1251,10 +1270,12 @@ export function buildCitationHealthReport(params: {
 
   const draft = prepareDraft(params.draft);
   if (draft) {
-    const supportCorpus = admitted.flatMap(supportStringsFromArtifact);
+    const supportTokenSets = admitted
+      .flatMap(supportStringsFromArtifact)
+      .map(tokens);
     let unsupported = 0;
     for (const statement of draft.statements) {
-      if (hasArtifactSupport(statement.excerpt, supportCorpus)) continue;
+      if (hasArtifactSupport(statement.excerpt, supportTokenSets)) continue;
       unsupported += 1;
       if (unsupported > MAX_DRAFT_FINDINGS) continue;
       findings.push(

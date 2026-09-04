@@ -7,7 +7,6 @@ import { clearCodexPollerForItem } from "./poller";
 import { clearCodexRunStateForItem } from "./runState";
 
 declare const addon: any;
-declare const Zotero: any;
 
 export async function stopCodexRunSilently(params: {
   itemID: number;

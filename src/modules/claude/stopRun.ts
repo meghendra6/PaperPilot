@@ -7,7 +7,6 @@ import { clearClaudePollerForItem } from "./poller";
 import { clearClaudeRunStateForItem } from "./runState";
 
 declare const addon: any;
-declare const Zotero: any;
 
 export async function stopClaudeRunSilently(params: {
   itemID: number;

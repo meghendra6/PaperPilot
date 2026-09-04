@@ -757,6 +757,7 @@ export class ResearchWorkspaceOperationCoordinator {
                 lastCheckpointAt: new Date().toISOString(),
               },
             }),
+            false,
           );
           run = await this.repository.updateRun(
             params.projectID,
@@ -798,6 +799,7 @@ export class ResearchWorkspaceOperationCoordinator {
                 lastCheckpointAt: new Date().toISOString(),
               },
             }),
+            false,
           );
           run = await this.repository.updateRun(
             params.projectID,

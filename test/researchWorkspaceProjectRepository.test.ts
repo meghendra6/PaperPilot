@@ -359,6 +359,7 @@ test("project updates are revision guarded and catalog stays lightweight", async
       updatedAt: created.project.updatedAt,
       memberCount: 0,
       staleArtifactCount: 0,
+      dueMasteryReviewCount: 0,
     },
   ]);
 
