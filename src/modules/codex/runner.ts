@@ -24,7 +24,10 @@ import {
   paperWorkspaceContentCache,
   type PaperWorkspaceContent,
 } from "../tools/paperWorkspaceContent";
-import { buildPaperWorkspacePath } from "../workspace/pathBuilder";
+import {
+  buildPaperWorkspacePath,
+  resolvePaperWorkspaceRoot,
+} from "../workspace/pathBuilder";
 import {
   writeWorkspaceSupplementalFiles,
   type WorkspaceSupplementalFiles,
@@ -99,8 +102,8 @@ export async function startCodexRunForQuestion(params: {
     String(getPref("codexReasoningEffort") || "medium"),
     model,
   );
-  const workspaceRoot = String(
-    getPref("codexWorkspaceRoot") || "/tmp/zotero-paper-ai",
+  const workspaceRoot = resolvePaperWorkspaceRoot(
+    getPref("codexWorkspaceRoot"),
   );
   const webSearchEnabled =
     profile === "analysis"
@@ -199,11 +202,13 @@ export async function startCodexRunForQuestion(params: {
     extractionNotes: paperContent.extractionNotes,
     payload,
     annotations: params.annotationIDs ?? [],
-    recentTurns: messageStore.recentRaw(params.sessionId, 3).map((message) => ({
-      role: message.role,
-      text: message.text,
-      createdAt: message.createdAt,
-    })),
+    recentTurns: messageStore
+      .recentForWorkspace(params.sessionId, 3)
+      .map((message) => ({
+        role: message.role,
+        text: message.text,
+        createdAt: message.createdAt,
+      })),
     requestText: params.question,
   });
 

@@ -218,6 +218,7 @@ export function getResearchWorkspaceProjectRepository() {
     projectRepository = new ResearchWorkspaceProjectRepository({
       rootDir: getResearchWorkspaceStorageRoot(),
       fileOps: createResearchWorkspaceStorage(),
+      warn: (message) => getGlobalZotero()?.debug?.(`[Paper Pilot] ${message}`),
     });
   }
   return projectRepository;

@@ -177,6 +177,14 @@ function requiredText(value: unknown, label: string, maximum = 1_000) {
   return normalized;
 }
 
+function requiredTagName(value: unknown, label: string, maximum = 500) {
+  if (typeof value !== "string") throw new Error(`${label} must be text.`);
+  const trimmed = value.trim();
+  if (!trimmed) throw new Error(`${label} is required.`);
+  if (trimmed.length > maximum) throw new Error(`${label} is too long.`);
+  return trimmed;
+}
+
 function optionalText(value: unknown, label: string, maximum = 1_000) {
   if (value === undefined) return undefined;
   return requiredText(value, label, maximum);
@@ -213,6 +221,16 @@ function isoDate(value: unknown, label: string) {
 function uniqueTexts(value: unknown, label: string, maximum: number) {
   const result = boundedArray(value, label, maximum).map((entry, index) =>
     requiredText(entry, `${label} ${index + 1}`, 500),
+  );
+  if (new Set(result).size !== result.length) {
+    throw new Error(`${label} must not contain duplicates.`);
+  }
+  return [...result].sort((left, right) => left.localeCompare(right));
+}
+
+function uniqueTagNames(value: unknown, label: string, maximum: number) {
+  const result = boundedArray(value, label, maximum).map((entry, index) =>
+    requiredTagName(entry, `${label} ${index + 1}`),
   );
   if (new Set(result).size !== result.length) {
     throw new Error(`${label} must not contain duplicates.`);
@@ -286,7 +304,7 @@ export function normalizeResearchWorkspaceZoteroSyncSelection(
     "Zotero sync collectionKey",
     100,
   );
-  const tagNames = uniqueTexts(
+  const tagNames = uniqueTagNames(
     selection.tagNames,
     "Zotero sync tag names",
     RESEARCH_WORKSPACE_ZOTERO_SYNC_MAX_TAGS,
@@ -371,7 +389,7 @@ function normalizeObservedState(
         `Zotero sync observed item ${index + 1} collection keys`,
         10_000,
       ),
-      tagNames: uniqueTexts(
+      tagNames: uniqueTagNames(
         item.tagNames,
         `Zotero sync observed item ${index + 1} tag names`,
         10_000,
@@ -403,7 +421,7 @@ function normalizeObservedState(
           ),
         }
       : {}),
-    existingTagNames: uniqueTexts(
+    existingTagNames: uniqueTagNames(
       observed.existingTagNames,
       "Zotero sync existing tag names",
       100_000,
@@ -669,12 +687,12 @@ function parsePreviewItem(
     `${label} before collection keys`,
     10_000,
   );
-  const beforeTagNames = uniqueTexts(
+  const beforeTagNames = uniqueTagNames(
     item.beforeTagNames,
     `${label} before tag names`,
     10_000,
   );
-  const addTagNames = uniqueTexts(
+  const addTagNames = uniqueTagNames(
     item.addTagNames,
     `${label} added tag names`,
     RESEARCH_WORKSPACE_ZOTERO_SYNC_MAX_TAGS,
@@ -842,7 +860,7 @@ function parseApplyResult(value: unknown, label: string) {
   if (typeof result.notifierDataIncluded !== "boolean") {
     throw new Error(`${label} notifierDataIncluded must be boolean.`);
   }
-  const tagNamesAdded = uniqueTexts(
+  const tagNamesAdded = uniqueTagNames(
     result.tagNamesAdded,
     `${label} added tags`,
     RESEARCH_WORKSPACE_ZOTERO_SYNC_MAX_TAGS,
@@ -852,7 +870,7 @@ function parseApplyResult(value: unknown, label: string) {
     `${label} after collection keys`,
     10_000,
   );
-  const afterTagNames = uniqueTexts(
+  const afterTagNames = uniqueTagNames(
     result.afterTagNames,
     `${label} after tag names`,
     10_000,
@@ -900,7 +918,7 @@ function parseUndoResult(value: unknown, label: string) {
   if (typeof result.notifierDataIncluded !== "boolean") {
     throw new Error(`${label} notifierDataIncluded must be boolean.`);
   }
-  const tagNamesRemoved = uniqueTexts(
+  const tagNamesRemoved = uniqueTagNames(
     result.tagNamesRemoved,
     `${label} removed tags`,
     RESEARCH_WORKSPACE_ZOTERO_SYNC_MAX_TAGS,

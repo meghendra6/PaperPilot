@@ -6,7 +6,7 @@
     "addonName": "Paper Pilot",
     "addonID": "paperpilot@harampark.com",
     "addonRef": "paperpilot",
-    "addonInstance": "AddonTemplate",
+    "addonInstance": "PaperPilot",
     "prefsPrefix": "extensions.zotero.paperpilot"
   },
   "repository": {

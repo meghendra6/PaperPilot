@@ -2,6 +2,9 @@ import type { MatchedHighlight, PDFPageText, PDFTextSpan } from "./types";
 import { buildCodexCommandEnvironment } from "../codex/environment";
 import { shellEscape } from "../codex/shell";
 
+export const MIN_HIGHLIGHT_NORMALIZED_LENGTH = 24;
+export const MIN_HIGHLIGHT_RETAINED_RATIO = 0.6;
+
 async function dynamicImportPdfJs() {
   const dynamicImport = new Function(
     "specifier",
@@ -106,9 +109,21 @@ export function normalizeQuoteText(text: string) {
     .replace(/[\u201C\u201D\u201E\u201F]/g, '"')
     .replace(/[\u2010-\u2015]/g, "-")
     .replace(/\u00ad/g, "")
-    .replace(/[^0-9a-z가-힣]+/gi, "")
+    .replace(/[^\p{L}\p{N}]+/gu, "")
     .toLowerCase()
     .trim();
+}
+
+export function isSafeHighlightQuote(quote: string) {
+  const normalizedLength = Array.from(normalizeQuoteText(quote)).length;
+  const sourceLength = Array.from(
+    quote.normalize("NFKC").replace(/\s+/gu, ""),
+  ).length;
+  const retainedRatio = sourceLength > 0 ? normalizedLength / sourceLength : 0;
+  return (
+    normalizedLength >= MIN_HIGHLIGHT_NORMALIZED_LENGTH &&
+    retainedRatio >= MIN_HIGHLIGHT_RETAINED_RATIO
+  );
 }
 
 function toRect(item: {
@@ -302,9 +317,15 @@ export function buildNormalizedToOriginalMap(original: string): number[] {
     }
   }
   const afterBrackets: { ch: string; origIndex: number }[] = [];
-  for (let i = 0; i < nfkc.length; i += 1) {
+  for (let i = 0; i < nfkc.length; ) {
     if (!bracketRanges.has(i)) {
-      afterBrackets.push({ ch: nfkc[i], origIndex: i });
+      const codePoint = nfkc.codePointAt(i);
+      const ch =
+        codePoint === undefined ? nfkc[i] : String.fromCodePoint(codePoint);
+      afterBrackets.push({ ch, origIndex: i });
+      i += ch.length;
+    } else {
+      i += 1;
     }
   }
 
@@ -317,10 +338,12 @@ export function buildNormalizedToOriginalMap(original: string): number[] {
       .replace(/[\u201C\u201D\u201E\u201F]/g, '"')
       .replace(/[\u2010-\u2015]/g, "-")
       .replace(/\u00ad/g, "")
-      .replace(/[^0-9a-z가-힣]/gi, "")
+      .replace(/[^\p{L}\p{N}]/gu, "")
       .toLowerCase();
     if (replaced) {
-      map.push(origIndex);
+      for (let index = 0; index < replaced.length; index += 1) {
+        map.push(origIndex);
+      }
     }
   }
   return map;
@@ -392,7 +415,7 @@ function normalizeQuoteText(text) {
     .replace(/[\\u201C\\u201D\\u201E\\u201F]/g, '"')
     .replace(/[\\u2010-\\u2015]/g, "-")
     .replace(/\\u00ad/g, "")
-    .replace(/[^0-9a-z가-힣]+/gi, "")
+    .replace(/[^\\p{L}\\p{N}]+/gu, "")
     .toLowerCase()
     .trim();
 }
@@ -612,97 +635,108 @@ export function matchQuoteInPages(
   pages: PDFPageText[],
 ): MatchedHighlight | undefined {
   const normalizedQuote = normalizeQuoteText(quote);
-  if (!normalizedQuote) {
+  if (!normalizedQuote || !isSafeHighlightQuote(quote)) {
     return undefined;
   }
 
+  const matches: Array<{
+    page: PDFPageText;
+    indexed: ReturnType<typeof buildPageIndex>;
+    start: number;
+  }> = [];
   for (const page of pages) {
     const indexed = buildPageIndex(page);
-    const start = indexed.combined.indexOf(normalizedQuote);
-    if (start < 0) {
-      continue;
+    let start = indexed.combined.indexOf(normalizedQuote);
+    while (start >= 0) {
+      matches.push({ page, indexed, start });
+      if (matches.length > 1) {
+        return undefined;
+      }
+      start = indexed.combined.indexOf(normalizedQuote, start + 1);
     }
-
-    const end = start + normalizedQuote.length;
-
-    const spanMatchRanges = new Map<
-      number,
-      { startInSpan: number; endInSpan: number }
-    >();
-    for (let cursor = start; cursor < end; cursor += 1) {
-      const spanIndex = indexed.charToSpanIndex[cursor];
-      if (typeof spanIndex !== "number" || spanIndex < 0) {
-        continue;
-      }
-      const offsetInSpan = cursor - indexed.spanStartOffsets[spanIndex];
-      const existing = spanMatchRanges.get(spanIndex);
-      if (!existing) {
-        spanMatchRanges.set(spanIndex, {
-          startInSpan: offsetInSpan,
-          endInSpan: offsetInSpan + 1,
-        });
-      } else {
-        existing.endInSpan = Math.max(existing.endInSpan, offsetInSpan + 1);
-      }
-    }
-
-    const rawRects: number[][] = [];
-    for (const [spanIndex, range] of [...spanMatchRanges].sort(
-      ([a], [b]) => a - b,
-    )) {
-      const span = page.spans[spanIndex];
-      if (!span?.rect || span.rect.length !== 4) {
-        continue;
-      }
-      const totalChars = span.normalizedText.length;
-      if (totalChars <= 0) {
-        continue;
-      }
-
-      const [x1, y1, x2, y2] = span.rect;
-      const spanWidth = x2 - x1;
-
-      if (spanWidth <= 0) {
-        rawRects.push([x1, y1, x2, y2]);
-        continue;
-      }
-
-      if (range.startInSpan === 0 && range.endInSpan >= totalChars) {
-        rawRects.push([x1, y1, x2, y2]);
-      } else {
-        const n2oMap = buildNormalizedToOriginalMap(span.text);
-        const origLen = span.text.normalize("NFKC").length;
-        const origStart =
-          range.startInSpan < n2oMap.length
-            ? n2oMap[range.startInSpan]
-            : n2oMap.length
-              ? n2oMap[n2oMap.length - 1]
-              : 0;
-        const origEnd =
-          range.endInSpan < n2oMap.length ? n2oMap[range.endInSpan] : origLen;
-        const startFraction = origLen > 0 ? origStart / origLen : 0;
-        const endFraction = origLen > 0 ? origEnd / origLen : 1;
-        const newX1 = x1 + startFraction * spanWidth;
-        const newX2 = x1 + endFraction * spanWidth;
-        rawRects.push([newX1, y1, newX2, y2]);
-      }
-    }
-
-    const rects = mergeRectsOnSameLine(rawRects);
-
-    if (!rects.length) {
-      continue;
-    }
-
-    return {
-      quote,
-      normalizedQuote,
-      pageIndex: page.pageIndex,
-      pageLabel: page.pageLabel,
-      rects,
-      sortIndex: buildSortIndex(page.pageIndex, rects),
-    };
+  }
+  if (matches.length !== 1) {
+    return undefined;
   }
 
-  return undefined;
+  const { page, indexed, start } = matches[0];
+  const end = start + normalizedQuote.length;
+
+  const spanMatchRanges = new Map<
+    number,
+    { startInSpan: number; endInSpan: number }
+  >();
+  for (let cursor = start; cursor < end; cursor += 1) {
+    const spanIndex = indexed.charToSpanIndex[cursor];
+    if (typeof spanIndex !== "number" || spanIndex < 0) {
+      continue;
+    }
+    const offsetInSpan = cursor - indexed.spanStartOffsets[spanIndex];
+    const existing = spanMatchRanges.get(spanIndex);
+    if (!existing) {
+      spanMatchRanges.set(spanIndex, {
+        startInSpan: offsetInSpan,
+        endInSpan: offsetInSpan + 1,
+      });
+    } else {
+      existing.endInSpan = Math.max(existing.endInSpan, offsetInSpan + 1);
+    }
+  }
+
+  const rawRects: number[][] = [];
+  for (const [spanIndex, range] of [...spanMatchRanges].sort(
+    ([a], [b]) => a - b,
+  )) {
+    const span = page.spans[spanIndex];
+    if (!span?.rect || span.rect.length !== 4) {
+      continue;
+    }
+    const totalChars = span.normalizedText.length;
+    if (totalChars <= 0) {
+      continue;
+    }
+
+    const [x1, y1, x2, y2] = span.rect;
+    const spanWidth = x2 - x1;
+
+    if (spanWidth <= 0) {
+      rawRects.push([x1, y1, x2, y2]);
+      continue;
+    }
+
+    if (range.startInSpan === 0 && range.endInSpan >= totalChars) {
+      rawRects.push([x1, y1, x2, y2]);
+    } else {
+      const n2oMap = buildNormalizedToOriginalMap(span.text);
+      const origLen = span.text.normalize("NFKC").length;
+      const origStart =
+        range.startInSpan < n2oMap.length
+          ? n2oMap[range.startInSpan]
+          : n2oMap.length
+            ? n2oMap[n2oMap.length - 1]
+            : 0;
+      const origEnd =
+        range.endInSpan < n2oMap.length ? n2oMap[range.endInSpan] : origLen;
+      const startFraction = origLen > 0 ? origStart / origLen : 0;
+      const endFraction = origLen > 0 ? origEnd / origLen : 1;
+      const newX1 = x1 + startFraction * spanWidth;
+      const newX2 = x1 + endFraction * spanWidth;
+      rawRects.push([newX1, y1, newX2, y2]);
+    }
+  }
+
+  const rects = mergeRectsOnSameLine(rawRects);
+
+  if (!rects.length) {
+    return undefined;
+  }
+
+  return {
+    quote,
+    normalizedQuote,
+    pageIndex: page.pageIndex,
+    pageLabel: page.pageLabel,
+    rects,
+    sortIndex: buildSortIndex(page.pageIndex, rects),
+  };
 }

@@ -53,6 +53,27 @@ export class SerializedResearchWorkspaceFiles {
     });
   }
 
+  async writeMissing<T extends { revision: number }>(
+    path: string,
+    value: T,
+    parser: (value: unknown) => T,
+  ) {
+    return this.exclusive(path, async () => {
+      if (await this.fileOps.exists(path)) {
+        const contents = await this.fileOps.readText(path);
+        if (contents !== undefined) {
+          return clone(parseStoredJSON(contents, path, parser));
+        }
+      }
+      const next = clone(value);
+      await this.fileOps.writeTextAtomic(
+        path,
+        `${JSON.stringify(next, null, 2)}\n`,
+      );
+      return clone(next);
+    });
+  }
+
   async mutate<T extends { revision: number }>(params: {
     path: string;
     parser: (value: unknown) => T;

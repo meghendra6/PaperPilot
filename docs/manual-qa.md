@@ -179,9 +179,15 @@ Use this checklist inside real Zotero 7, 8, 9, and 10 runtimes before claiming r
 - [ ] For each engine, send two visible chat turns, run one Workbench action, then send another chat turn; confirm the final turn resumes the visible chat context and never the hidden workflow
 - [ ] Confirm the chat, analysis, and discovery runs use distinct workspace folders and hidden completion does not change the saved provider resume id
 - [ ] Inspect an analysis run for each engine: Codex uses a read-only sandbox without search, Claude uses plan permission mode, and Gemini uses plan approval mode without `--yolo`
+- [ ] On a fresh profile with no custom workspace root, confirm workspaces are created below `Zotero.getTempDirectory()/paperpilot-workspaces`, not shared `/tmp/zotero-paper-ai`
+- [ ] Run Gemini chat with the default approval mode and confirm actions require approval; when `gemini --help` advertises `--sandbox`, confirm the launched command includes it
+- [ ] Turn off local history while workspace auto-clean is off; complete a run and confirm its workspace is still removed
 - [ ] With current Codex/Claude CLIs, run one structured Workbench action and confirm native schema output succeeds; with a wrapper whose help omits the schema flag, confirm the same action succeeds through parser-only fallback
 
 ## 9. Verified discovery / Critical Read / auto-highlight checks
+
+- [ ] Ask auto-highlight to process a short residue such as `Δ = 0.5` and a quote repeated twice; confirm neither produces an annotation
+- [ ] Auto-highlight one sufficiently long Greek quote and one sufficiently long CJK quote; confirm each lands on the unique exact passage
 
 ### Selection Explain transcript-rerender runtime record — 2026-08-23
 
@@ -655,6 +661,7 @@ and the same fail-closed outcome.
 - [ ] Disable or simulate absence of `Zotero.DB.executeTransaction`; confirm apply and undo fail closed and no collection membership or tag association changes
 - [ ] Approve one collection addition and one existing-tag association; confirm a prepared write-ahead receipt exists before the transaction, the committed receipt contains one result per preview item, and the receipt is stored outside Research Workspace artifact history
 - [ ] Confirm the approved sync creates no Zotero item, collection, tag, note, attachment, annotation, or PDF and changes no bibliographic field; only the previewed collection membership and tag associations may change
+- [ ] Create an existing tag containing two consecutive spaces, select that exact tag for sync, and confirm Paper Pilot attaches the byte-identical name without creating a collapsed one-space tag
 - [ ] Inspect Zotero notifier events where supported and confirm PaperPilot-originated receipt/action data is attached to collection/tag changes without being treated as proof for unrelated events
 - [ ] After apply, add a different collection and tag manually, then run Undo receipt-owned additions; confirm only the receipt-owned collection/tag additions are removed and both pre-existing and later unrelated state remain
 - [ ] Interrupt or force a failure between receipt preparation, Zotero apply, and receipt finalization; confirm failed or unresolved receipts never fabricate ownership, the exact preview cannot be blindly reapplied, and unsafe undo remains disabled

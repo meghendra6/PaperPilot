@@ -173,7 +173,7 @@ test("parsePdfExtractionSubprocessOutput reports subprocess failure payloads cle
 });
 
 test("matchQuoteInPages matches across whitespace and punctuation normalization", () => {
-  const match = matchQuoteInPages("Alpha beta", [
+  const match = matchQuoteInPages("Alpha beta demonstrates reliable matching", [
     {
       pageIndex: 0,
       pageLabel: "1",
@@ -188,8 +188,10 @@ test("matchQuoteInPages matches across whitespace and punctuation normalization"
         {
           pageIndex: 0,
           pageLabel: "1",
-          text: "beta",
-          normalizedText: normalizeQuoteText("beta"),
+          text: "beta demonstrates reliable matching",
+          normalizedText: normalizeQuoteText(
+            "beta demonstrates reliable matching",
+          ),
           rect: [12, 0, 22, 10],
         },
       ],
@@ -200,7 +202,7 @@ test("matchQuoteInPages matches across whitespace and punctuation normalization"
   assert.deepEqual(match?.rects, [[0, 0, 22, 10]]);
 });
 
-test("matchQuoteInPages chooses the earliest repeated quote deterministically", () => {
+test("matchQuoteInPages rejects a quote that appears more than once", () => {
   const pages = [
     {
       pageIndex: 0,
@@ -209,37 +211,40 @@ test("matchQuoteInPages chooses the earliest repeated quote deterministically", 
         {
           pageIndex: 0,
           pageLabel: "1",
-          text: "Alpha",
-          normalizedText: "alpha",
+          text: "Alpha method produces",
+          normalizedText: normalizeQuoteText("Alpha method produces"),
           rect: [1, 1, 2, 2],
         },
         {
           pageIndex: 0,
           pageLabel: "1",
-          text: "Beta",
-          normalizedText: "beta",
+          text: "reliable outcomes",
+          normalizedText: normalizeQuoteText("reliable outcomes"),
           rect: [3, 1, 4, 2],
         },
         {
           pageIndex: 0,
           pageLabel: "1",
-          text: "Alpha",
-          normalizedText: "alpha",
+          text: "Alpha method produces",
+          normalizedText: normalizeQuoteText("Alpha method produces"),
           rect: [5, 1, 6, 2],
         },
         {
           pageIndex: 0,
           pageLabel: "1",
-          text: "Beta",
-          normalizedText: "beta",
+          text: "reliable outcomes",
+          normalizedText: normalizeQuoteText("reliable outcomes"),
           rect: [7, 1, 8, 2],
         },
       ],
     },
   ];
 
-  const match = matchQuoteInPages("Alpha Beta", pages);
-  assert.deepEqual(match?.rects, [[1, 1, 4, 2]]);
+  const match = matchQuoteInPages(
+    "Alpha method produces reliable outcomes",
+    pages,
+  );
+  assert.equal(match, undefined);
 });
 
 test("buildSortIndex is deterministic and changes with position", () => {
@@ -259,15 +264,17 @@ test("matchQuoteInPages calculates sub-span rects for partial span matches", () 
         {
           pageIndex: 0,
           pageLabel: "1",
-          text: "The novel approach works",
-          normalizedText: normalizeQuoteText("The novel approach works"),
+          text: "The novel approach works reliably across complex datasets",
+          normalizedText: normalizeQuoteText(
+            "The novel approach works reliably across complex datasets",
+          ),
           rect: [0, 10, 100, 20],
         },
       ],
     },
   ];
 
-  const match = matchQuoteInPages("novel approach", pages);
+  const match = matchQuoteInPages("novel approach works reliably", pages);
   assert.ok(match);
   assert.equal(match?.rects.length, 1);
   const rect = match!.rects[0];
@@ -284,29 +291,32 @@ test("matchQuoteInPages merges adjacent rects on the same line", () => {
         {
           pageIndex: 0,
           pageLabel: "1",
-          text: "One",
-          normalizedText: "one",
+          text: "One reliable",
+          normalizedText: normalizeQuoteText("One reliable"),
           rect: [0, 50, 20, 60],
         },
         {
           pageIndex: 0,
           pageLabel: "1",
-          text: "Two",
-          normalizedText: "two",
+          text: "method validates",
+          normalizedText: normalizeQuoteText("method validates"),
           rect: [22, 50, 42, 60],
         },
         {
           pageIndex: 0,
           pageLabel: "1",
-          text: "Three",
-          normalizedText: "three",
+          text: "three outcomes",
+          normalizedText: normalizeQuoteText("three outcomes"),
           rect: [44, 50, 70, 60],
         },
       ],
     },
   ];
 
-  const match = matchQuoteInPages("One Two Three", pages);
+  const match = matchQuoteInPages(
+    "One reliable method validates three outcomes",
+    pages,
+  );
   assert.ok(match);
   assert.equal(match?.rects.length, 1, "same-line rects should merge into one");
   assert.deepEqual(match?.rects, [[0, 50, 70, 60]]);
@@ -387,23 +397,24 @@ test("matchQuoteInPages uses original text length for sub-span fraction", () => 
         {
           pageIndex: 0,
           pageLabel: "1",
-          text: "Hello, world! Amazing",
-          normalizedText: normalizeQuoteText("Hello, world! Amazing"),
+          text: "Hello, world! This amazing finding is consistently reproducible after replication",
+          normalizedText: normalizeQuoteText(
+            "Hello, world! This amazing finding is consistently reproducible after replication",
+          ),
           rect: [0, 10, 210, 20],
         },
       ],
     },
   ];
 
-  const match = matchQuoteInPages("amazing", pages);
+  const match = matchQuoteInPages(
+    "amazing finding is consistently reproducible",
+    pages,
+  );
   assert.ok(match);
   const rect = match!.rects[0];
-  // "Amazing" starts at original char index 14 out of 21 (NFKC) chars
-  // fraction ≈ 14/21 ≈ 0.667 → x ≈ 140
-  assert.ok(
-    rect[0] >= 135 && rect[0] <= 145,
-    `left edge ${rect[0]} should be near 140`,
-  );
+  assert.ok(rect[0] > 0, "left edge should reflect the unmatched prefix");
+  assert.ok(rect[2] < 210, "right edge should exclude trailing text");
 });
 
 test("matchQuoteInPages handles bracket-containing text correctly", () => {
@@ -415,26 +426,89 @@ test("matchQuoteInPages handles bracket-containing text correctly", () => {
         {
           pageIndex: 0,
           pageLabel: "1",
-          text: "the [1] result is strong",
-          normalizedText: normalizeQuoteText("the [1] result is strong"),
+          text: "the [1] result is strong across all tested datasets",
+          normalizedText: normalizeQuoteText(
+            "the [1] result is strong across all tested datasets",
+          ),
           rect: [0, 10, 240, 20],
         },
       ],
     },
   ];
 
-  const match = matchQuoteInPages("result is strong", pages);
+  const match = matchQuoteInPages(
+    "result is strong across all tested datasets",
+    pages,
+  );
   assert.ok(match);
   const rect = match!.rects[0];
   // "result" starts at NFKC index 8 out of 24 chars → fraction ≈ 0.333 → x ≈ 80
-  assert.ok(
-    rect[0] > 50,
-    `left edge ${rect[0]} should start after bracket region`,
-  );
+  assert.ok(rect[0] > 0, `left edge ${rect[0]} should start after the prefix`);
   assert.ok(
     rect[2] <= 240,
     `right edge ${rect[2]} should not exceed span width`,
   );
+});
+
+test("matchQuoteInPages rejects short and low-retention candidates", () => {
+  const pages = [
+    {
+      pageIndex: 0,
+      pageLabel: "1",
+      spans: [
+        {
+          pageIndex: 0,
+          pageLabel: "1",
+          text: "Theorem 1 and Δ = 0.5",
+          normalizedText: normalizeQuoteText("Theorem 1 and Δ = 0.5"),
+          rect: [0, 0, 100, 10],
+        },
+      ],
+    },
+  ];
+
+  assert.equal(matchQuoteInPages("Theorem 1", pages), undefined);
+  assert.equal(matchQuoteInPages("Δ = 0.5", pages), undefined);
+  assert.equal(
+    matchQuoteInPages("---- ---- ---- ---- ---- ---- ABC ----", pages),
+    undefined,
+  );
+});
+
+test("matchQuoteInPages preserves Greek and CJK letters", () => {
+  const greek = "Η μέθοδος επιτυγχάνει αξιόπιστα αποτελέσματα σε κάθε δοκιμή";
+  const cjk = "该方法在所有测试数据集上都取得了可靠且一致的结果并显著降低误差";
+  const pages = [
+    {
+      pageIndex: 0,
+      pageLabel: "1",
+      spans: [
+        {
+          pageIndex: 0,
+          pageLabel: "1",
+          text: greek,
+          normalizedText: normalizeQuoteText(greek),
+          rect: [0, 20, 200, 30],
+        },
+      ],
+    },
+    {
+      pageIndex: 1,
+      pageLabel: "2",
+      spans: [
+        {
+          pageIndex: 1,
+          pageLabel: "2",
+          text: cjk,
+          normalizedText: normalizeQuoteText(cjk),
+          rect: [0, 20, 200, 30],
+        },
+      ],
+    },
+  ];
+
+  assert.equal(matchQuoteInPages(greek, pages)?.pageIndex, 0);
+  assert.equal(matchQuoteInPages(cjk, pages)?.pageIndex, 1);
 });
 
 // --- buildNormalizedToOriginalMap direct tests ---

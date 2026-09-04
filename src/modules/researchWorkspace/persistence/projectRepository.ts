@@ -184,12 +184,14 @@ export class ResearchWorkspaceProjectRepository {
   private readonly rootDir: string;
   private readonly now: () => Date;
   private readonly idFactory: (prefix: string) => string;
+  private readonly warn: (message: string) => void;
 
   constructor(options: ResearchWorkspaceRepositoryOptions) {
     this.rootDir = options.rootDir;
     this.files = new SerializedResearchWorkspaceFiles(options.fileOps);
     this.now = options.now ?? (() => new Date());
     this.idFactory = options.idFactory ?? defaultID;
+    this.warn = options.warn ?? (() => undefined);
   }
 
   private timestamp() {
@@ -484,10 +486,9 @@ export class ResearchWorkspaceProjectRepository {
     ]);
     if (!projectFile)
       throw new ResearchWorkspaceNotFoundError("Project", projectID);
-    if (!membersFile) {
-      throw new Error(`Project ${projectID} is missing members.json.`);
-    }
-    if (membersFile.projectID !== projectID) {
+    const repairedMembersFile =
+      membersFile ?? (await this.repairMissingMembersFile(projectID));
+    if (repairedMembersFile.projectID !== projectID) {
       throw new Error(
         `Project ${projectID} members are bound to another project.`,
       );
@@ -495,9 +496,39 @@ export class ResearchWorkspaceProjectRepository {
     return {
       project: projectFile.project,
       projectRevision: projectFile.revision,
-      members: membersFile.members,
-      membersRevision: membersFile.revision,
+      members: repairedMembersFile.members,
+      membersRevision: repairedMembersFile.revision,
     };
+  }
+
+  private async repairMissingMembersFile(projectID: string) {
+    const path = this.getMembersPath(projectID);
+    const emptyMembersFile: ResearchWorkspaceMembersFile = {
+      schemaVersion: RESEARCH_WORKSPACE_MEMBERS_SCHEMA_VERSION,
+      revision: 0,
+      projectID,
+      members: [],
+    };
+    try {
+      const repaired = await this.files.writeMissing(
+        path,
+        emptyMembersFile,
+        parseResearchWorkspaceMembersFile,
+      );
+      this.warn(
+        `Project ${projectID} was missing members.json; restored an empty revision-0 membership file.`,
+      );
+      return repaired;
+    } catch (error) {
+      const concurrentlyRepaired = await this.files.read(
+        path,
+        parseResearchWorkspaceMembersFile,
+      );
+      if (concurrentlyRepaired) {
+        return concurrentlyRepaired;
+      }
+      throw error;
+    }
   }
 
   async getChangeInbox(

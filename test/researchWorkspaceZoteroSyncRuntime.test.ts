@@ -326,6 +326,46 @@ test("runtime apply and undo use transactions, notifier data, and only receipt-o
   }
 });
 
+test("runtime preserves internal tag whitespace and never materializes a normalized name", async () => {
+  const fake = fakeZotero();
+  (
+    fake.zotero.Tags as { getAll: (libraryID: number) => Promise<string[]> }
+  ).getAll = async (libraryID: number) =>
+    libraryID === 1 ? ["review  tag"] : [];
+  const runtime = createResearchWorkspaceZoteroSyncRuntime(fake.zotero);
+  const selection = { libraryID: 1, tagNames: ["review  tag"] };
+  const observed = await runtime.observe(selection, [
+    { libraryID: 1, itemKey: "ITEM-A" },
+  ]);
+  const preview = buildResearchWorkspaceZoteroSyncPreview({
+    projectID: "project-raw-tag-sync",
+    membersRevision: 1,
+    sources: [source("ITEM-A")],
+    selection,
+    observedState: observed,
+    previewID: "preview-raw-tag-sync",
+    createdAt: "2026-08-30T04:01:00.000Z",
+  });
+
+  await runtime.apply(preview, "receipt-raw-tag-sync");
+
+  assert(fake.regular.tags.includes("review  tag"));
+  assert.equal(fake.regular.tags.includes("review tag"), false);
+  assert.throws(
+    () =>
+      buildResearchWorkspaceZoteroSyncPreview({
+        projectID: "project-normalized-tag-sync",
+        membersRevision: 1,
+        sources: [source("ITEM-A")],
+        selection: { libraryID: 1, tagNames: ["review tag"] },
+        observedState: observed,
+        previewID: "preview-normalized-tag-sync",
+        createdAt: "2026-08-30T04:01:00.000Z",
+      }),
+    /selected Zotero tags no longer exist: review tag/,
+  );
+});
+
 test("undo uses the current unrelated-state baseline instead of restoring the apply-time snapshot", async () => {
   const prior = (globalThis as { Zotero?: unknown }).Zotero;
   const fake = fakeZotero();

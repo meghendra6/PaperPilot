@@ -244,8 +244,9 @@ polled**:
      session, while hidden `analysis` and `discovery` runs never resume or
      update it and use separate profile-suffixed workspace paths
    - computes the workspace path: `{workspaceRoot}/{itemID}-{slugified-title}`
-     (`workspace/pathBuilder.ts`); analysis and discovery add their profile to
-     the title before slugging
+     (`workspace/pathBuilder.ts`); an empty preference resolves below
+     `Zotero.getTempDirectory()` instead of a shared `/tmp` root, and analysis
+     and discovery add their profile to the title before slugging
    - extracts paper content via `tools/paperWorkspaceContent.ts` — OpenDataLoader
      when Java is available, falling back to Zotero `attachmentText`
    - chunks and retrieves top-K passages (`context/indexStore.ts`,
@@ -334,11 +335,13 @@ workflow error instead of exposing stderr. `ui/runProgressCard.ts` renders the
 same progress, cancel, retry, settings, and login-help surface for every engine.
 Only normal chat turns enter `addon.data.lastEngineRequests`; silent Workbench
 Paper Mastery, and Critical Read runs continue to use their own workflow buttons.
-Normal chat uses the configured provider permissions. Analysis is read-only
-(Codex read-only sandbox, Claude plan permission, Gemini plan approval) and has
-no web search. Discovery keeps the same filesystem boundary while admitting the
-verified web-search path. Hidden completion can persist workflow state without
-changing the visible session's provider resume id.
+Normal chat uses the configured provider permissions. Gemini's default approval
+mode prompts instead of accepting actions automatically, and Paper Pilot adds
+Gemini's sandbox flag when the installed CLI advertises it. Analysis is
+read-only (Codex read-only sandbox, Claude plan permission, Gemini plan
+approval) and has no web search. Discovery keeps the same filesystem boundary
+while admitting the verified web-search path. Hidden completion can persist
+workflow state without changing the visible session's provider resume id.
 
 Per-engine file names inside the workspace:
 
@@ -363,7 +366,7 @@ returns plain text, so both are read directly.
 | `paper.txt`                 | all engines                     | compatibility snapshot: metadata header plus text                         |
 | `metadata.json`             | all engines                     | title, authors, year, item/attachment key, abstract                       |
 | `selection.json`            | all engines                     | selected text, actual nearby context, page, annotations, retrieved chunks |
-| `recent-turns.json`         | all engines                     | last 3 turns for follow-up continuity                                     |
+| `recent-turns.json`         | all engines                     | last 3 privacy-eligible turns for follow-up continuity                    |
 | `annotations.json`          | all engines                     | annotation ids tied to this request                                       |
 | `CONTEXT_INDEX.md`          | all engines                     | reading-order file map                                                    |
 | `discovery-request.json`    | discovery runs                  | normalized research concern and current-paper context                     |
@@ -383,7 +386,10 @@ applicable runner _and_ to the prompt that tells the model to read it.
 The prompt preview owns only the explicit request and response-language
 instruction. Selection, retrieval, and annotation data appear once in
 `selection.json`; visible conversation context appears once in
-`recent-turns.json`. When nearby context is enabled, the runner finds the
+`recent-turns.json`. Prompts-only persistence omits assistant turns from that
+file. Disabling history persistence forces workspace cleanup after the run even
+when the general auto-clean preference is off. When nearby context is enabled,
+the runner finds the
 selection inside extracted full text and writes bounded text before and after
 it. A failed match omits nearby context instead of copying the selection.
 

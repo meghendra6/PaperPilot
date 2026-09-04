@@ -490,6 +490,7 @@ export interface ResearchWorkspaceRepositoryOptions {
   fileOps: ResearchWorkspaceFileOps;
   now?: () => Date;
   idFactory?: (prefix: string) => string;
+  warn?: (message: string) => void;
 }
 
 export class ResearchWorkspaceRevisionConflictError extends Error {

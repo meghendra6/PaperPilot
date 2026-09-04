@@ -7,6 +7,8 @@ import {
   SESSION_HISTORY_STORAGE_VERSION,
   type SessionHistorySnapshot,
 } from "./historyTypes";
+import { getPref } from "../../utils/prefs";
+import { redactPersistenceFields } from "../workspace/redaction";
 import { buildSessionTitle } from "./sessionTitle";
 import type { PaperSession } from "./types";
 import { migrateDiscoveryResult } from "../discovery/parser";
@@ -552,7 +554,7 @@ export function captureSessionSnapshot(params: {
     return undefined;
   }
 
-  return {
+  const snapshot: SessionHistorySnapshot = {
     storageVersion: SESSION_HISTORY_STORAGE_VERSION,
     sessionId: params.session.sessionId,
     paperItemID: params.session.itemID,
@@ -578,6 +580,9 @@ export function captureSessionSnapshot(params: {
     ...(mastery ? { mastery } : {}),
     ...(criticalRead ? { criticalRead } : {}),
   };
+  return getPref("privacyRedactLocalFilePaths")
+    ? redactPersistenceFields(snapshot)
+    : snapshot;
 }
 
 export function applySessionSnapshot(

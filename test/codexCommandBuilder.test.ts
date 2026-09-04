@@ -7,7 +7,10 @@ import {
   buildCodexResumeCommand,
   normalizeCodexApprovalMode,
 } from "../src/modules/codex/commandBuilder";
-import { buildPaperWorkspacePath } from "../src/modules/workspace/pathBuilder";
+import {
+  buildPaperWorkspacePath,
+  resolvePaperWorkspaceRoot,
+} from "../src/modules/workspace/pathBuilder";
 import {
   buildClaudeWorkspacePrompt,
   buildCodexWorkspacePrompt,
@@ -35,7 +38,11 @@ import {
 } from "../src/modules/codex/modelOptions";
 import { buildWorkspaceArtifacts } from "../src/modules/context/workspaceArtifacts";
 import { selectRelevantChunks } from "../src/modules/context/retriever";
-import { redactPath } from "../src/modules/workspace/redaction";
+import {
+  redactAbsolutePaths,
+  redactPath,
+  redactPersistenceFields,
+} from "../src/modules/workspace/redaction";
 
 test("buildCodexLoginStatusCommand uses codex login status", () => {
   assert.deepEqual(buildCodexLoginStatusCommand(), [
@@ -43,6 +50,27 @@ test("buildCodexLoginStatusCommand uses codex login status", () => {
     "login",
     "status",
   ]);
+});
+
+test("redactAbsolutePaths removes POSIX and Windows absolute path prefixes", () => {
+  const redacted = redactAbsolutePaths(
+    "ENOENT /private/var/tmp/paper.txt and C:\\Users\\me\\paper.txt; keep https://example.com/paper",
+  );
+  assert.doesNotMatch(redacted, /\/private\/var/);
+  assert.doesNotMatch(redacted, /C:\\Users/);
+  assert.match(redacted, /https:\/\/example\.com\/paper/);
+});
+
+test("redactPersistenceFields scrubs persisted failures and extraction notes", () => {
+  const redacted = redactPersistenceFields({
+    failure: { rawError: "failed at /private/var/tmp/output.json" },
+    extractionNotes: ["read C:\\Users\\reader\\paper.pdf"],
+    visibleSummary: "Keep /explicit/user/content unchanged here.",
+  });
+
+  assert.doesNotMatch(redacted.failure.rawError, /\/private\/var/);
+  assert.doesNotMatch(redacted.extractionNotes[0], /C:\\Users/);
+  assert.match(redacted.visibleSummary, /\/explicit\/user\/content/);
 });
 
 test("buildCodexExecCommand builds the expected first-question command", () => {
@@ -206,6 +234,23 @@ test("buildPaperWorkspacePath creates a stable per-paper workspace path", () => 
       title: "Attention Is All You Need",
     }),
     "/tmp/workspaces/42-attention-is-all-you-need",
+  );
+});
+
+test("resolvePaperWorkspaceRoot uses an explicit root or Zotero's private temp directory", () => {
+  assert.equal(
+    resolvePaperWorkspaceRoot("/custom/workspaces/", undefined),
+    "/custom/workspaces",
+  );
+  assert.equal(
+    resolvePaperWorkspaceRoot("", {
+      getTempDirectory: () => ({ path: "/private/user-temp" }),
+    }),
+    "/private/user-temp/paperpilot-workspaces",
+  );
+  assert.throws(
+    () => resolvePaperWorkspaceRoot("", undefined),
+    /private Paper Pilot workspace root/,
   );
 });
 

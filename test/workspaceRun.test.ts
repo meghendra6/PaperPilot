@@ -161,6 +161,7 @@ test("workspace preparation cancellation returns promptly and owns late cleanup"
   };
   (globalThis as { Zotero?: unknown }).Zotero = {
     Prefs: { get: () => false },
+    getTempDirectory: () => ({ path: "/private/test-profile/tmp" }),
   };
   try {
     const token = claimWorkspaceRunReservation("codex_cli", 91)!;

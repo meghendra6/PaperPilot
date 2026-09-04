@@ -63,8 +63,10 @@ class MemoryWorkspaceFiles implements ResearchWorkspaceFileOps {
 function repository(files = new MemoryWorkspaceFiles()) {
   let clock = Date.parse("2026-08-29T00:00:00.000Z");
   const ids = new Map<string, number>();
+  const warnings: string[] = [];
   return {
     files,
+    warnings,
     repository: new ResearchWorkspaceProjectRepository({
       rootDir: "/profile/paperpilot-research-workspace",
       fileOps: files,
@@ -74,6 +76,7 @@ function repository(files = new MemoryWorkspaceFiles()) {
         ids.set(prefix, value);
         return `${prefix}-${value}`;
       },
+      warn: (message) => warnings.push(message),
     }),
   };
 }
@@ -198,6 +201,25 @@ test("reading an empty project store performs no durable write", async () => {
   assert.deepEqual(await setup.repository.listProjects(), []);
   assert.equal((await setup.repository.getCatalog()).revision, 0);
   assert.deepEqual(setup.files.writes, []);
+});
+
+test("a project left without members.json repairs itself on open", async () => {
+  const setup = repository();
+  setup.files.failWrite = (path) => path.endsWith("members.json");
+
+  await assert.rejects(
+    setup.repository.createProject({
+      projectID: "project-partial-create",
+      name: "Partial create recovery",
+    }),
+    /Injected write failure.*members\.json/,
+  );
+  setup.files.failWrite = undefined;
+
+  const recovered = await setup.repository.getProject("project-partial-create");
+  assert.deepEqual(recovered.members, []);
+  assert.equal(recovered.membersRevision, 0);
+  assert.match(setup.warnings[0], /restored an empty revision-0 membership/);
 });
 
 test("new artifacts are validated before their first durable write", async () => {

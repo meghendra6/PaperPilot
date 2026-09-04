@@ -24,6 +24,7 @@ import {
 } from "./ai/runPresentation";
 import { isCodexRunActiveForItem } from "./codex/runState";
 import { probeWorkspaceWritable } from "./workspace/status";
+import { resolvePaperWorkspaceRoot } from "./workspace/pathBuilder";
 import { rememberRecentCodexModel } from "./codex/modelHistory";
 import {
   normalizeClaudeModel,
@@ -4046,8 +4047,8 @@ async function refreshCodexStatus(
     renderModeHeader(chip, status, "Codex CLI", "checking");
     const loginState = await probeCodexLoginState();
     if (!isCurrent() || getActiveReaderRunMode(itemID)) return;
-    const workspaceRoot = String(
-      getPref("codexWorkspaceRoot") || "/tmp/zotero-paper-ai",
+    const workspaceRoot = resolvePaperWorkspaceRoot(
+      getPref("codexWorkspaceRoot"),
     );
     const workspaceWritable = await probeWorkspaceWritable(workspaceRoot);
     if (!isCurrent() || getActiveReaderRunMode(itemID)) return;

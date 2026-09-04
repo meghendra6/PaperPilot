@@ -51,23 +51,6 @@
         style="display: flex; align-items: center; margin-bottom: 10px"
       >
         <html:label
-          for="zotero-prefpane-__addonRef__-input-auto-open-pane"
-          data-l10n-id="pref-general-auto-open-pane"
-          style="flex: 0 0 220px; margin-right: 10px"
-        ></html:label>
-        <html:input
-          type="checkbox"
-          id="zotero-prefpane-__addonRef__-input-auto-open-pane"
-          preference="extensions.zotero.__addonRef__.autoOpenPaneOnPdfOpen"
-          data-placeholder-pref="true"
-          data-placeholder-label="Auto-open pane on PDF open"
-        ></html:input>
-      </hbox>
-      <hbox
-        align="center"
-        style="display: flex; align-items: center; margin-bottom: 10px"
-      >
-        <html:label
           for="zotero-prefpane-__addonRef__-input-save-sessions"
           data-l10n-id="pref-general-save-sessions"
           style="flex: 0 0 220px; margin-right: 10px"
@@ -230,7 +213,10 @@
           style="flex: 1"
         ></html:input>
       </hbox>
-      <hbox align="center" style="display: flex; align-items: center">
+      <hbox
+        align="center"
+        style="display: flex; align-items: center; margin-bottom: 10px"
+      >
         <html:label
           for="zotero-prefpane-__addonRef__-input-gemini-allowed-models"
           data-l10n-id="pref-gemini-allowed-models"
@@ -241,6 +227,20 @@
           id="zotero-prefpane-__addonRef__-input-gemini-allowed-models"
           preference="extensions.zotero.__addonRef__.geminiAllowedModels"
           placeholder="comma-separated Gemini model ids"
+          style="flex: 1"
+        ></html:input>
+      </hbox>
+      <hbox align="center" style="display: flex; align-items: center">
+        <html:label
+          for="zotero-prefpane-__addonRef__-input-gemini-approval-mode"
+          data-l10n-id="pref-gemini-approval-mode"
+          style="flex: 0 0 220px; margin-right: 10px"
+        ></html:label>
+        <html:input
+          type="text"
+          id="zotero-prefpane-__addonRef__-input-gemini-approval-mode"
+          preference="extensions.zotero.__addonRef__.geminiApprovalMode"
+          placeholder="default, auto_edit, yolo, or plan"
           style="flex: 1"
         ></html:input>
       </hbox>
@@ -292,6 +292,25 @@
           data-placeholder-pref="true"
           data-placeholder-label="Default model"
           placeholder="gpt-5.6-sol"
+          style="flex: 1"
+        ></html:input>
+      </hbox>
+      <hbox
+        align="center"
+        style="display: flex; align-items: center; margin-bottom: 10px"
+      >
+        <html:label
+          for="zotero-prefpane-__addonRef__-input-reasoning-effort"
+          data-l10n-id="pref-codex-reasoning-effort"
+          style="flex: 0 0 220px; margin-right: 10px"
+        ></html:label>
+        <html:input
+          type="text"
+          id="zotero-prefpane-__addonRef__-input-reasoning-effort"
+          preference="extensions.zotero.__addonRef__.codexReasoningEffort"
+          data-placeholder-pref="true"
+          data-placeholder-label="Default reasoning effort"
+          placeholder="low, medium, high, xhigh, max, or ultra"
           style="flex: 1"
         ></html:input>
       </hbox>
@@ -428,6 +447,8 @@
           type="number"
           id="zotero-prefpane-__addonRef__-input-chunk-size"
           preference="extensions.zotero.__addonRef__.retrievalChunkSize"
+          min="1"
+          max="100000"
           data-placeholder-pref="true"
           data-placeholder-label="Chunk size"
           style="flex: 1"
@@ -446,6 +467,8 @@
           type="number"
           id="zotero-prefpane-__addonRef__-input-overlap-size"
           preference="extensions.zotero.__addonRef__.retrievalOverlapSize"
+          min="0"
+          max="99999"
           data-placeholder-pref="true"
           data-placeholder-label="Overlap size"
           style="flex: 1"
@@ -464,6 +487,8 @@
           type="number"
           id="zotero-prefpane-__addonRef__-input-top-k"
           preference="extensions.zotero.__addonRef__.retrievalTopK"
+          min="1"
+          max="100"
           data-placeholder-pref="true"
           data-placeholder-label="Top-k"
           style="flex: 1"

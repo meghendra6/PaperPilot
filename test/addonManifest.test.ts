@@ -12,6 +12,12 @@ type ZoteroManifest = {
   };
 };
 
+type PackageConfig = {
+  config?: {
+    addonInstance?: string;
+  };
+};
+
 function readAddonManifest(): ZoteroManifest {
   return JSON.parse(
     readFileSync(join(process.cwd(), "addon", "manifest.json"), "utf8"),
@@ -24,4 +30,12 @@ test("addon manifest declares compatibility with Zotero 7 through 10", () => {
 
   assert.equal(zotero?.strict_min_version, "7.0");
   assert.equal(zotero?.strict_max_version, "10.0.*");
+});
+
+test("addon singleton uses a Paper Pilot-specific global name", () => {
+  const packageConfig = JSON.parse(
+    readFileSync(join(process.cwd(), "package.json"), "utf8"),
+  ) as PackageConfig;
+
+  assert.equal(packageConfig.config?.addonInstance, "PaperPilot");
 });

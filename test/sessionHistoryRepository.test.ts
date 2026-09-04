@@ -8,7 +8,10 @@ import {
 } from "../src/modules/session/historyTypes";
 import { resolveSessionHistoryPrefs } from "../src/modules/session/historyPrefs";
 import { buildSessionTitle } from "../src/modules/session/sessionTitle";
-import { SessionHistoryRepository } from "../src/modules/session/sessionHistoryRepository";
+import {
+  resolveDefaultSessionHistoryRootDir,
+  SessionHistoryRepository,
+} from "../src/modules/session/sessionHistoryRepository";
 
 function withPrefs(
   prefs: Record<string, boolean>,
@@ -75,6 +78,19 @@ class MemoryFileOps implements SessionHistoryFileOps {
     );
   }
 }
+
+test("default session history root fails closed without a Zotero profile", () => {
+  const previousZotero = (globalThis as { Zotero?: unknown }).Zotero;
+  (globalThis as { Zotero?: unknown }).Zotero = undefined;
+  try {
+    assert.throws(
+      () => resolveDefaultSessionHistoryRootDir(),
+      /Could not resolve the Zotero profile directory/,
+    );
+  } finally {
+    (globalThis as { Zotero?: unknown }).Zotero = previousZotero;
+  }
+});
 
 function buildSnapshot() {
   return {

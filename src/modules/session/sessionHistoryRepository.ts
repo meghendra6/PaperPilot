@@ -218,28 +218,34 @@ function createDefaultFileOps(): SessionHistoryFileOps {
   };
 }
 
-function resolveDefaultRootDir() {
+export function resolveDefaultSessionHistoryRootDir() {
   const profilePath = getZoteroProfilePath(getGlobalZotero());
   if (profilePath) {
     return joinPath(profilePath, "paperpilot", "session-history");
   }
 
-  return "/tmp/paperpilot/session-history";
+  throw new Error(
+    "Could not resolve the Zotero profile directory for session history.",
+  );
 }
 
 export class SessionHistoryRepository {
-  private readonly rootDir: string;
+  private readonly rootDir?: string;
   private readonly fileOps: SessionHistoryFileOps;
   private readonly now: () => Date;
 
   constructor(options: SessionHistoryRepositoryOptions = {}) {
-    this.rootDir = options.rootDir || resolveDefaultRootDir();
+    this.rootDir = options.rootDir;
     this.fileOps = options.fileOps || createDefaultFileOps();
     this.now = options.now || (() => new Date());
   }
 
   getPaperRoot(itemID: number) {
-    return joinPath(this.rootDir, "papers", String(itemID));
+    return joinPath(
+      this.rootDir || resolveDefaultSessionHistoryRootDir(),
+      "papers",
+      String(itemID),
+    );
   }
 
   getPaperIndexPath(itemID: number) {

@@ -45,7 +45,14 @@ test("cleanupWorkspaceIfEnabled leaves the workspace when the cleanup pref is di
 
   (globalThis as { Zotero?: unknown }).Zotero = {
     Prefs: {
-      get: () => false,
+      get: (key: string) => {
+        if (key.endsWith("codexAutoCleanWorkspace")) return false;
+        if (key.endsWith("saveDocumentSessions")) return true;
+        if (key.endsWith("privacyStoreLocalHistory")) return true;
+        if (key.endsWith("privacySavePromptsOnly")) return false;
+        if (key.endsWith("privacySaveResponses")) return true;
+        return undefined;
+      },
     },
   };
   (globalThis as { IOUtils?: unknown }).IOUtils = {
@@ -64,6 +71,43 @@ test("cleanupWorkspaceIfEnabled leaves the workspace when the cleanup pref is di
 
     assert.equal(cleaned, false);
     assert.equal(removeCalled, false);
+  } finally {
+    (globalThis as { Zotero?: unknown }).Zotero = previousZotero;
+    (globalThis as { IOUtils?: unknown }).IOUtils = previousIOUtils;
+  }
+});
+
+test("cleanupWorkspaceIfEnabled forces cleanup when history persistence is disabled", async () => {
+  const previousZotero = (globalThis as { Zotero?: unknown }).Zotero;
+  const previousIOUtils = (globalThis as { IOUtils?: unknown }).IOUtils;
+  const removed: string[] = [];
+
+  (globalThis as { Zotero?: unknown }).Zotero = {
+    Prefs: {
+      get: (key: string) => {
+        if (key.endsWith("codexAutoCleanWorkspace")) return false;
+        if (key.endsWith("saveDocumentSessions")) return false;
+        return true;
+      },
+    },
+  };
+  (globalThis as { IOUtils?: unknown }).IOUtils = {
+    remove: async (path: string) => removed.push(path),
+  };
+
+  try {
+    const { cleanupWorkspaceIfEnabled } = await import(
+      "../src/modules/workspace/cleanup"
+    );
+    assert.equal(
+      await cleanupWorkspaceIfEnabled(
+        "/private/user-temp/paperpilot-workspaces/42-test-paper",
+      ),
+      true,
+    );
+    assert.deepEqual(removed, [
+      "/private/user-temp/paperpilot-workspaces/42-test-paper",
+    ]);
   } finally {
     (globalThis as { Zotero?: unknown }).Zotero = previousZotero;
     (globalThis as { IOUtils?: unknown }).IOUtils = previousIOUtils;

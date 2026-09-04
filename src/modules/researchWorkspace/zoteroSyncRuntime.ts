@@ -99,6 +99,10 @@ function text(value: unknown) {
   return typeof value === "string" ? value.replace(/\s+/g, " ").trim() : "";
 }
 
+function tagText(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
 function integer(value: unknown) {
   const normalized = Number(value);
   return Number.isInteger(normalized) && normalized >= 0
@@ -117,6 +121,12 @@ function values(value: unknown) {
 }
 
 function uniqueTexts(entries: readonly string[]) {
+  return [...new Set(entries.filter(Boolean))].sort((left, right) =>
+    left.localeCompare(right),
+  );
+}
+
+function uniqueTagNames(entries: readonly string[]) {
   return [...new Set(entries.filter(Boolean))].sort((left, right) =>
     left.localeCompare(right),
   );
@@ -249,12 +259,12 @@ function collectionKeys(
 }
 
 function tagNames(item: ZoteroSyncItem) {
-  return uniqueTexts(
+  return uniqueTagNames(
     values(item.getTags?.()).map((entry) =>
       typeof entry === "string"
-        ? text(entry)
+        ? tagText(entry)
         : entry && typeof entry === "object"
-          ? text((entry as { tag?: unknown }).tag)
+          ? tagText((entry as { tag?: unknown }).tag)
           : "",
     ),
   );
@@ -265,12 +275,12 @@ async function existingTagNames(
   libraryID: number,
 ) {
   const entries = await Promise.resolve(runtime.Tags?.getAll?.(libraryID));
-  return uniqueTexts(
+  return uniqueTagNames(
     values(entries).map((entry) =>
       typeof entry === "string"
-        ? text(entry)
+        ? tagText(entry)
         : entry && typeof entry === "object"
-          ? text(
+          ? tagText(
               (entry as { tag?: unknown; name?: unknown }).tag ??
                 (entry as { name?: unknown }).name,
             )

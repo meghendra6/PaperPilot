@@ -13,6 +13,11 @@ import { buildSessionTitle } from "./sessionTitle";
 import { sanitizeAssistantText } from "../message/assistantOutput";
 import type { MessageRecord } from "../message/types";
 import { resolveSessionHistoryPrefs } from "./historyPrefs";
+import { getPref } from "../../utils/prefs";
+import {
+  redactAbsolutePaths,
+  redactPersistenceFields,
+} from "../workspace/redaction";
 
 declare const addon: { data: { currentSessionId?: string } } | undefined;
 
@@ -51,7 +56,13 @@ function buildAssistantMessageRecord(params: {
     createdAt: params.createdAt,
     sourceMode: params.mode,
     status: params.success ? "done" : "error",
-    ...(params.rawEvent ? { rawEvent: params.rawEvent } : {}),
+    ...(params.rawEvent
+      ? {
+          rawEvent: getPref("privacyRedactLocalFilePaths")
+            ? redactAbsolutePaths(params.rawEvent)
+            : params.rawEvent,
+        }
+      : {}),
   };
 }
 
@@ -257,7 +268,9 @@ export class SessionHistoryService {
       await this.repository.saveSessionSnapshot({
         paperItemID: params.itemID,
         paperTitle: params.paperTitle,
-        snapshot: updatedSnapshot,
+        snapshot: getPref("privacyRedactLocalFilePaths")
+          ? redactPersistenceFields(updatedSnapshot)
+          : updatedSnapshot,
       });
       return updatedSnapshot;
     }
