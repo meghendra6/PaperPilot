@@ -10,6 +10,10 @@ import {
   compatibleNativeOutputSchema,
   type StructuredOutputSchema,
 } from "../ai/structuredOutput";
+import {
+  launchDetachedShellScript,
+  type ShellExecutor,
+} from "../ai/launchScript";
 import { getCurrentReaderContext } from "../context/readerContext";
 import { getIndexedChunks } from "../context/indexStore";
 import { findNearbyContext } from "../context/nearbyContext";
@@ -63,6 +67,14 @@ interface FailedCodexRun {
   workspacePath: string;
   promptPreview: string;
   error: string;
+}
+
+export function launchCodexRunScript(
+  script: string,
+  execute: ShellExecutor = (executable, args) =>
+    Zotero.Utilities.Internal.exec(executable, args),
+) {
+  return launchDetachedShellScript(script, execute);
 }
 
 async function readTextFile(path: string) {
@@ -326,6 +338,8 @@ export async function startCodexRunForQuestion(params: {
             sessionId: params.resumeSessionId,
             model,
             reasoningEffort,
+            sandbox,
+            approvalMode,
             webSearchEnabled,
           },
           executablePath,
@@ -355,16 +369,13 @@ export async function startCodexRunForQuestion(params: {
     environment: buildCodexCommandEnvironment(executablePath),
   });
 
-  const result = await Zotero.Utilities.Internal.exec("/bin/zsh", [
-    "-lc",
-    script,
-  ]);
-  if (result instanceof Error) {
+  const result = await launchCodexRunScript(script);
+  if (!result.ok) {
     return {
       ok: false as const,
       workspacePath,
       promptPreview: codexPrompt,
-      error: result.message,
+      error: result.error,
     };
   }
 
@@ -395,6 +406,7 @@ export async function readCodexRunProgress(paths: {
 
   return {
     rawOutput,
+    diagnosticOutput: [stderr, parsed.errorText].filter(Boolean).join("\n"),
     parsedOutput: parsed.text,
     structuredOutput: parsed.structuredOutput,
     latestEventType: parsed.latestEventType,

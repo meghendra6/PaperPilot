@@ -19,12 +19,12 @@ export async function stopClaudeRunSilently(params: {
     addon.data.claudeRunPollers?.has(params.itemID) ||
       (runState && getActiveReaderRunMode(params.itemID) === "claude_code"),
   );
+  const pid = shouldStopProcess ? runState?.processId : undefined;
+  await stopDetachedRunProcess(pid, { requireProcessId: shouldStopProcess });
   clearClaudePollerForItem(params.itemID);
   if (params.finishPresentation !== false) {
     finishReaderRunsForMode(params.itemID, "claude_code");
   }
-  const pid = shouldStopProcess ? runState?.processId : undefined;
-  await stopDetachedRunProcess(pid, { requireProcessId: shouldStopProcess });
   if (runState && params.clearRunState !== false) {
     clearClaudeRunStateForItem(params.itemID);
   }

@@ -8,6 +8,9 @@ import { buildCodexCommandEnvironment } from "./environment";
 import { chooseBestCodexExecutable } from "./executableSelection";
 import { shellEscape } from "./shell";
 
+declare const Zotero: any;
+declare const IOUtils: any;
+
 interface CodexExecutableCandidate {
   path: string;
   source: CandidateSource;

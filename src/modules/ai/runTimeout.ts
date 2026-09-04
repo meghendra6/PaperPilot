@@ -24,12 +24,16 @@ import type { EngineMode } from "./types";
 
 export function armRunTimeout(params: {
   itemID: number;
+  minimumDelayMs?: number;
   shouldTimeout?: () => boolean;
   onTimeout: () => void | Promise<void>;
 }): () => void {
   const state = getRunProgressState(params.itemID);
   const startedAt = state?.startedAt ?? Date.now();
-  const delay = Math.max(0, RUN_TIMEOUT_MS - (Date.now() - startedAt));
+  const delay = Math.max(
+    params.minimumDelayMs ?? 0,
+    RUN_TIMEOUT_MS - (Date.now() - startedAt),
+  );
   let active = true;
   const timer = setTimeout(() => {
     if (!active) return;
@@ -78,6 +82,7 @@ export async function completeTimedOutRun(params: {
     await Promise.resolve(params.stop());
   } catch (error) {
     releasePendingEngineCompletionClaim(params.itemID, params.token, "timeout");
+    pending.rearmTimeout?.();
     const detail = error instanceof Error ? error.message : String(error);
     reportRunStopFailure({
       itemID: params.itemID,

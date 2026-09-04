@@ -248,7 +248,10 @@ polled**:
      `Zotero.getTempDirectory()` instead of a shared `/tmp` root, and analysis
      and discovery add their profile to the title before slugging
    - extracts paper content via `tools/paperWorkspaceContent.ts` — OpenDataLoader
-     when Java is available, falling back to Zotero `attachmentText`
+     when Java is available, falling back to Zotero `attachmentText`; the Java
+     subprocess records its pid and exit code and is terminated after a
+     two-minute extraction limit, with the fallback reason kept in
+     `extractionNotes`
    - chunks and retrieves top-K passages (`context/indexStore.ts`,
      `context/retriever.ts`)
    - writes the workspace artifacts (see below)
@@ -259,7 +262,9 @@ polled**:
      `--json-schema` when supported; an incompatible schema, missing flag, or
      failed probe falls back to the prompt plus validating parser without
      blocking the run
-   - builds the CLI argv and wraps it in a **detached background shell script**
+   - builds the CLI argv and wraps it in a **detached background shell script**;
+     first and resumed Codex turns carry the same configured approval and
+     sandbox modes, and every engine prepends its executable directory to PATH
      (`codex/shell.ts` for Codex; inline in the runner for Claude and Gemini)
    - runs `Zotero.Utilities.Internal.exec("/bin/zsh", ["-lc", script])`
 4. The script writes stdout and stderr to separate files, writes the exit code
@@ -271,7 +276,12 @@ polled**:
    If the executor cannot confirm termination, the active owner and pid (or the
    direct-workflow reservation) remain in place and workspace cleanup is not
    claimed; the UI reports the stop failure instead of unlocking unsafely. A
-   started result or run state must provide a numeric pid—missing pid data is a
+   failed manual stop leaves its exit-file poller and absolute watchdog armed,
+   so a later natural exit is still reconciled. Add-on shutdown snapshots all
+   run-state, poller, pending-completion, and presentation owners, starts
+   best-effort non-blocking termination for every recorded pid, and only then
+   clears local observers and state. A started result or run state must provide
+   a numeric pid—missing pid data is a
    stop failure, not a successful no-op. The no-pid no-op is reserved for a
    cancellation that happens before any process exists.
    Terminal Codex state never retains a killable pid; session cleanup only
@@ -327,7 +337,8 @@ polled**:
 
 Failures are classified in `ai/runFailure.ts`. Workspace and timeout sources
 take precedence over string matching; executable and login patterns cover all
-three CLIs. Session history stores the safe `userMessage` as replayable text and
+three CLIs. Process-exit classification reads stderr plus explicit CLI error
+events, never the full stdout/tool-event stream. Session history stores the safe `userMessage` as replayable text and
 keeps raw stderr only in `rawEvent`, which the run card exposes under a collapsed
 Raw logs disclosure. Direct workspace workflows likewise derive visible text
 only from parsed stdout; a non-zero exit without parsed stdout becomes a generic

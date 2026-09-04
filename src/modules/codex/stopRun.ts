@@ -20,14 +20,14 @@ export async function stopCodexRunSilently(params: {
       runState?.runStatus === "running" ||
       (runState && getActiveReaderRunMode(params.itemID) === "codex_cli"),
   );
-  clearCodexPollerForItem(params.itemID);
-  if (params.finishPresentation !== false) {
-    finishReaderRunsForMode(params.itemID, "codex_cli");
-  }
   const pid = shouldStopProcess ? runState?.processId : undefined;
   await stopDetachedRunProcess(pid, {
     requireProcessId: shouldStopProcess,
   });
+  clearCodexPollerForItem(params.itemID);
+  if (params.finishPresentation !== false) {
+    finishReaderRunsForMode(params.itemID, "codex_cli");
+  }
   if (runState && params.clearRunState !== false) {
     clearCodexRunStateForItem(params.itemID);
   }

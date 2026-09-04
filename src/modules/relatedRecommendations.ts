@@ -5,6 +5,7 @@ import {
   getWorkspaceEngineActiveMessage,
   getWorkspaceEngineLabel,
   readWorkspaceRunProgress,
+  releaseReservationAfterConfirmedCleanup,
   releaseWorkspaceRunReservation,
   startWorkspaceTextRun,
 } from "./ai/workspaceRun";
@@ -168,16 +169,6 @@ export function normalizeDiscoveryRunFailure(error: unknown, aborted: boolean) {
     return new Error("Research discovery cancelled.");
   }
   return error;
-}
-
-export function releaseReservationAfterConfirmedCleanup(
-  cleanup: Promise<void>,
-  release: () => void,
-) {
-  // A rejected late cleanup means the old detached process could not be
-  // confirmed stopped, so the workspace reservation stays held instead of
-  // letting a new run share the same workspace.
-  void cleanup.then(release, () => undefined);
 }
 
 export interface LibraryItemCandidate {

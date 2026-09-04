@@ -85,6 +85,21 @@ function appendList(
   fragment.appendChild(list);
 }
 
+function parseFenceOpener(line: string) {
+  const match = line.trim().match(/^(`{3,}|~{3,})(?:[A-Za-z0-9_+.-]+)?\s*$/);
+  return match ? { marker: match[1][0], length: match[1].length } : undefined;
+}
+
+function isFenceCloser(
+  line: string,
+  opener: { marker: string; length: number },
+) {
+  const match = line.trim().match(/^(`{3,}|~{3,})\s*$/);
+  return Boolean(
+    match && match[1][0] === opener.marker && match[1].length >= opener.length,
+  );
+}
+
 export function renderMarkdownFragment(text: string, doc: Document) {
   const fragment = doc.createDocumentFragment();
   const lines = text.replace(/\r\n/g, "\n").split("\n");
@@ -146,6 +161,9 @@ export function renderMarkdownFragment(text: string, doc: Document) {
         index += 1;
         continue;
       }
+    }
+
+    if (trimmed === "$$") {
       // Multi-line display math
       const mathLines: string[] = [];
       index += 1;
@@ -163,10 +181,11 @@ export function renderMarkdownFragment(text: string, doc: Document) {
       continue;
     }
 
-    if (trimmed.startsWith("```")) {
+    const fence = parseFenceOpener(trimmed);
+    if (fence) {
       const codeLines: string[] = [];
       index += 1;
-      while (index < lines.length && !lines[index].trim().startsWith("```")) {
+      while (index < lines.length && !isFenceCloser(lines[index], fence)) {
         codeLines.push(lines[index]);
         index += 1;
       }
@@ -269,8 +288,8 @@ export function renderMarkdownFragment(text: string, doc: Document) {
         const next = lines[index].trim();
         if (
           next === "\\[" ||
-          next.startsWith("$$") ||
-          next.startsWith("```") ||
+          next === "$$" ||
+          Boolean(parseFenceOpener(next)) ||
           /^#{1,6}\s/.test(next) ||
           next.startsWith(">") ||
           /^[-*+]\s/.test(next) ||
@@ -331,16 +350,10 @@ function appendTable(
   }
 
   const tbody = doc.createElement("tbody");
-  const startCells = hasSeparator ? [] : [headerCells];
-  const allDataRows = [
-    ...startCells,
-    ...rows.slice(dataStartIndex).map(parseTableCells),
-  ];
-
-  for (const cells of allDataRows) {
-    if (isSeparatorRow(rows[startCells.length ? 0 : dataStartIndex])) {
-      continue;
-    }
+  const dataRows = hasSeparator ? rows.slice(dataStartIndex) : rows;
+  for (const row of dataRows) {
+    if (isSeparatorRow(row)) continue;
+    const cells = parseTableCells(row);
     const tr = doc.createElement("tr");
     for (const cell of cells) {
       const td = doc.createElement("td");

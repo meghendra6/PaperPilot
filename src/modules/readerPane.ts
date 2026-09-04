@@ -183,6 +183,7 @@ import {
 } from "./ai/runLifecycle";
 
 const paneCleanupByBody = new WeakMap<HTMLElement, () => void>();
+const activePaneBodies = new Set<HTMLElement>();
 const paneTemplateByBody = new WeakMap<HTMLElement, HTMLElement>();
 const runProgressCardByContainer = new WeakMap<
   HTMLElement,
@@ -201,6 +202,25 @@ const paneLayoutByBody = new WeakMap<HTMLElement, ReaderPaneLayoutState>();
 export function disposeReaderPaneRunProgressCards(): void {
   for (const card of activeRunProgressCards) card.dispose();
   activeRunProgressCards.clear();
+}
+
+export function unregisterPaperPilotPaneSection(): void {
+  for (const body of [...activePaneBodies]) {
+    paneCleanupByBody.get(body)?.();
+    paneCleanupByBody.delete(body);
+    paneTemplateByBody.delete(body);
+    paneLayoutByBody.delete(body);
+  }
+  activePaneBodies.clear();
+  if (!addon.data.aiReaderPaneRegistered) return;
+  try {
+    Zotero.ItemPaneManager?.unregisterSection?.("paper-pilot-tabpanel");
+  } catch (error) {
+    Zotero.logError?.(
+      error instanceof Error ? error : new Error(String(error)),
+    );
+  }
+  addon.data.aiReaderPaneRegistered = false;
 }
 
 export function setReaderActionDraft(
@@ -450,11 +470,13 @@ export function registerPaperPilotPaneSection() {
       const cleanup = () => {
         if (disposed) return;
         disposed = true;
+        activePaneBodies.delete(body);
         // Controllers are item-scoped rather than pane-scoped so a rebuilt
         // pane can still cancel the active task. Do not abort them here.
         for (const task of cleanupTasks) task();
       };
       paneCleanupByBody.set(body, cleanup);
+      activePaneBodies.add(body);
 
       const chatContainer = body.querySelector(
         "#paper-pilot-container",
@@ -666,6 +688,17 @@ export function registerPaperPilotPaneSection() {
         codexWebSearchToggle &&
         modelHistory
       ) {
+        const workbenchElements: WorkbenchElements = {
+          researchBriefButton,
+          contributionsButton,
+          limitationsButton,
+          followUpsButton,
+          saveWorkbenchNoteButton,
+          saveWorkbenchCollectionButton,
+          clearWorkbenchButton,
+          statusElement: paperToolStatus,
+          cardsElement: paperToolCards,
+        };
         const runProgressCard = createRunProgressCard({
           container: runStateCard,
           actions: {
@@ -1305,7 +1338,7 @@ export function registerPaperPilotPaneSection() {
             return;
           }
 
-          const currentSessionId = addon.data.currentSessionId;
+          const currentSessionId = sessionStore.get(item.id)?.sessionId;
 
           for (const entry of entries) {
             const row = doc.createElement("div");
@@ -1482,7 +1515,7 @@ export function registerPaperPilotPaneSection() {
                   return;
                 }
                 const deletingCurrent =
-                  addon.data.currentSessionId === entry.sessionId;
+                  sessionStore.get(item.id)?.sessionId === entry.sessionId;
                 if (deletingCurrent) {
                   await runSessionRuntimeTransition(async () => {
                     await sessionHistoryService.deleteSavedSession({
@@ -1785,6 +1818,7 @@ export function registerPaperPilotPaneSection() {
             streamingIndicator,
             statusElement: paperToolStatus,
             cardsElement: paperToolCards,
+            elements: workbenchElements,
             onStateChange: () => updateWorkbenchSummary(true),
           });
         });
@@ -1798,6 +1832,7 @@ export function registerPaperPilotPaneSection() {
             statusElement: paperToolStatus,
             cardsElement: paperToolCards,
             compareButton,
+            elements: workbenchElements,
             onStateChange: () => updateWorkbenchSummary(true),
           });
         });
@@ -1811,6 +1846,7 @@ export function registerPaperPilotPaneSection() {
             streamingIndicator,
             statusElement: paperToolStatus,
             cardsElement: paperToolCards,
+            elements: workbenchElements,
             onStateChange: () => updateWorkbenchSummary(true),
           });
         });
@@ -1824,6 +1860,7 @@ export function registerPaperPilotPaneSection() {
             streamingIndicator,
             statusElement: paperToolStatus,
             cardsElement: paperToolCards,
+            elements: workbenchElements,
             onStateChange: () => updateWorkbenchSummary(true),
           });
         });
@@ -1837,6 +1874,7 @@ export function registerPaperPilotPaneSection() {
             streamingIndicator,
             statusElement: paperToolStatus,
             cardsElement: paperToolCards,
+            elements: workbenchElements,
             onStateChange: () => updateWorkbenchSummary(true),
           });
         });
@@ -3305,6 +3343,7 @@ export function registerPaperPilotPaneSection() {
     },
     onDestroy: ({ body }) => {
       paneCleanupByBody.get(body)?.();
+      activePaneBodies.delete(body);
       paneCleanupByBody.delete(body);
       paneTemplateByBody.delete(body);
       paneLayoutByBody.delete(body);
@@ -3535,6 +3574,36 @@ function getPaperArtifactState(itemID: number) {
       status: "",
       cards: [] as PaperArtifactCard[],
     }
+  );
+}
+
+interface WorkbenchElements {
+  researchBriefButton: HTMLButtonElement;
+  contributionsButton: HTMLButtonElement;
+  limitationsButton: HTMLButtonElement;
+  followUpsButton: HTMLButtonElement;
+  saveWorkbenchNoteButton: HTMLButtonElement;
+  saveWorkbenchCollectionButton: HTMLButtonElement;
+  clearWorkbenchButton: HTMLButtonElement;
+  statusElement: HTMLElement;
+  cardsElement: HTMLElement;
+}
+
+function renderWorkbenchArtifactState(
+  elements: WorkbenchElements,
+  itemID: number,
+) {
+  renderPaperArtifactState(
+    elements.researchBriefButton,
+    elements.contributionsButton,
+    elements.limitationsButton,
+    elements.followUpsButton,
+    elements.saveWorkbenchNoteButton,
+    elements.saveWorkbenchCollectionButton,
+    elements.clearWorkbenchButton,
+    elements.statusElement,
+    elements.cardsElement,
+    itemID,
   );
 }
 
@@ -3772,7 +3841,8 @@ function renderRelatedRecommendationState(
 ) {
   const state = getRelatedRecommendationState(itemID);
   const doc = groupsContainer.ownerDocument;
-  const saveButton = doc.querySelector(
+  const pane = groupsContainer.closest("#paper-pilot-container");
+  const saveButton = pane?.querySelector(
     "#chat-related-save",
   ) as HTMLButtonElement | null;
   if (saveButton) saveButton.disabled = state.running || !state.discovery;
@@ -4289,6 +4359,7 @@ async function runPaperArtifactRequest(params: {
   streamingIndicator: HTMLElement;
   statusElement: HTMLElement;
   cardsElement: HTMLElement;
+  elements: WorkbenchElements;
   onStateChange?: () => void;
 }) {
   const request = buildPaperArtifactRequest(params.item, params.kind);
@@ -4301,32 +4372,7 @@ async function runPaperArtifactRequest(params: {
       cards: existing.cards,
     });
 
-    renderPaperArtifactState(
-      params.statusElement.ownerDocument.querySelector(
-        "#chat-research-brief",
-      ) as HTMLButtonElement,
-      params.statusElement.ownerDocument.querySelector(
-        "#chat-tool-contributions",
-      ) as HTMLButtonElement,
-      params.statusElement.ownerDocument.querySelector(
-        "#chat-tool-limitations",
-      ) as HTMLButtonElement,
-      params.statusElement.ownerDocument.querySelector(
-        "#chat-tool-followups",
-      ) as HTMLButtonElement,
-      params.statusElement.ownerDocument.querySelector(
-        "#chat-tool-save-note",
-      ) as HTMLButtonElement,
-      params.statusElement.ownerDocument.querySelector(
-        "#chat-tool-save-collection",
-      ) as HTMLButtonElement,
-      params.statusElement.ownerDocument.querySelector(
-        "#chat-tool-clear",
-      ) as HTMLButtonElement,
-      params.statusElement,
-      params.cardsElement,
-      params.item.id,
-    );
+    renderWorkbenchArtifactState(params.elements, params.item.id);
   };
 
   params.input.value = request.prompt;
@@ -4379,32 +4425,7 @@ async function runPaperArtifactRequest(params: {
           }
         }
 
-        renderPaperArtifactState(
-          params.statusElement.ownerDocument.querySelector(
-            "#chat-research-brief",
-          ) as HTMLButtonElement,
-          params.statusElement.ownerDocument.querySelector(
-            "#chat-tool-contributions",
-          ) as HTMLButtonElement,
-          params.statusElement.ownerDocument.querySelector(
-            "#chat-tool-limitations",
-          ) as HTMLButtonElement,
-          params.statusElement.ownerDocument.querySelector(
-            "#chat-tool-followups",
-          ) as HTMLButtonElement,
-          params.statusElement.ownerDocument.querySelector(
-            "#chat-tool-save-note",
-          ) as HTMLButtonElement,
-          params.statusElement.ownerDocument.querySelector(
-            "#chat-tool-save-collection",
-          ) as HTMLButtonElement,
-          params.statusElement.ownerDocument.querySelector(
-            "#chat-tool-clear",
-          ) as HTMLButtonElement,
-          params.statusElement,
-          params.cardsElement,
-          params.item.id,
-        );
+        renderWorkbenchArtifactState(params.elements, params.item.id);
         params.onStateChange?.();
         await sessionHistoryService.persistActiveSession({
           itemID: params.item.id,
@@ -4423,6 +4444,7 @@ async function runPaperCompareRequest(params: {
   statusElement: HTMLElement;
   cardsElement: HTMLElement;
   compareButton: HTMLButtonElement;
+  elements: WorkbenchElements;
   onStateChange?: () => void;
 }) {
   const groups = getRelatedRecommendationState(params.item.id).groups;
@@ -4468,32 +4490,7 @@ async function runPaperCompareRequest(params: {
           : "Compare unavailable.",
       cards: getPaperArtifactState(params.item.id).cards,
     });
-    renderPaperArtifactState(
-      params.statusElement.ownerDocument.querySelector(
-        "#chat-research-brief",
-      ) as HTMLButtonElement,
-      params.statusElement.ownerDocument.querySelector(
-        "#chat-tool-contributions",
-      ) as HTMLButtonElement,
-      params.statusElement.ownerDocument.querySelector(
-        "#chat-tool-limitations",
-      ) as HTMLButtonElement,
-      params.statusElement.ownerDocument.querySelector(
-        "#chat-tool-followups",
-      ) as HTMLButtonElement,
-      params.statusElement.ownerDocument.querySelector(
-        "#chat-tool-save-note",
-      ) as HTMLButtonElement,
-      params.statusElement.ownerDocument.querySelector(
-        "#chat-tool-save-collection",
-      ) as HTMLButtonElement,
-      params.statusElement.ownerDocument.querySelector(
-        "#chat-tool-clear",
-      ) as HTMLButtonElement,
-      params.statusElement,
-      params.cardsElement,
-      params.item.id,
-    );
+    renderWorkbenchArtifactState(params.elements, params.item.id);
     params.onStateChange?.();
     return;
   }
@@ -4512,32 +4509,7 @@ async function runPaperCompareRequest(params: {
       params.item.id,
       currentTitle,
     );
-    renderPaperArtifactState(
-      params.statusElement.ownerDocument.querySelector(
-        "#chat-research-brief",
-      ) as HTMLButtonElement,
-      params.statusElement.ownerDocument.querySelector(
-        "#chat-tool-contributions",
-      ) as HTMLButtonElement,
-      params.statusElement.ownerDocument.querySelector(
-        "#chat-tool-limitations",
-      ) as HTMLButtonElement,
-      params.statusElement.ownerDocument.querySelector(
-        "#chat-tool-followups",
-      ) as HTMLButtonElement,
-      params.statusElement.ownerDocument.querySelector(
-        "#chat-tool-save-note",
-      ) as HTMLButtonElement,
-      params.statusElement.ownerDocument.querySelector(
-        "#chat-tool-save-collection",
-      ) as HTMLButtonElement,
-      params.statusElement.ownerDocument.querySelector(
-        "#chat-tool-clear",
-      ) as HTMLButtonElement,
-      params.statusElement,
-      params.cardsElement,
-      params.item.id,
-    );
+    renderWorkbenchArtifactState(params.elements, params.item.id);
   };
 
   params.input.value = request.prompt;
@@ -4598,32 +4570,7 @@ async function runPaperCompareRequest(params: {
           params.item.id,
           currentTitle,
         );
-        renderPaperArtifactState(
-          params.statusElement.ownerDocument.querySelector(
-            "#chat-research-brief",
-          ) as HTMLButtonElement,
-          params.statusElement.ownerDocument.querySelector(
-            "#chat-tool-contributions",
-          ) as HTMLButtonElement,
-          params.statusElement.ownerDocument.querySelector(
-            "#chat-tool-limitations",
-          ) as HTMLButtonElement,
-          params.statusElement.ownerDocument.querySelector(
-            "#chat-tool-followups",
-          ) as HTMLButtonElement,
-          params.statusElement.ownerDocument.querySelector(
-            "#chat-tool-save-note",
-          ) as HTMLButtonElement,
-          params.statusElement.ownerDocument.querySelector(
-            "#chat-tool-save-collection",
-          ) as HTMLButtonElement,
-          params.statusElement.ownerDocument.querySelector(
-            "#chat-tool-clear",
-          ) as HTMLButtonElement,
-          params.statusElement,
-          params.cardsElement,
-          params.item.id,
-        );
+        renderWorkbenchArtifactState(params.elements, params.item.id);
         params.onStateChange?.();
         await sessionHistoryService.persistActiveSession({
           itemID: params.item.id,

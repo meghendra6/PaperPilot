@@ -1,5 +1,10 @@
+/* eslint-disable @typescript-eslint/triple-slash-reference */
+/// <reference path="../typings/global.d.ts" />
+
 import { test } from "node:test";
 import * as assert from "node:assert/strict";
+import * as codexRunner from "../src/modules/codex/runner";
+import { classifyRunFailure } from "../src/modules/ai/runFailure";
 
 import {
   buildCodexExecCommand,
@@ -50,6 +55,57 @@ test("buildCodexLoginStatusCommand uses codex login status", () => {
     "login",
     "status",
   ]);
+});
+
+test("Codex launch reports a rejected shell exec as a start failure", async () => {
+  const result = await codexRunner.launchCodexRunScript("exit 1", async () => {
+    throw new Error("codex launch rejected");
+  });
+  assert.deepEqual(result, { ok: false, error: "codex launch rejected" });
+});
+
+test("Codex failure diagnostics exclude tool output from classification", async () => {
+  const previousZotero = (globalThis as { Zotero?: unknown }).Zotero;
+  const stdout = [
+    JSON.stringify({
+      type: "item.completed",
+      item: {
+        type: "command_execution",
+        output: "cat: missing: No such file or directory",
+      },
+    }),
+    JSON.stringify({ type: "error", message: "provider request failed" }),
+  ].join("\n");
+  (globalThis as { Zotero?: unknown }).Zotero = {
+    File: {
+      getContentsAsync: async (path: string) =>
+        path.endsWith("output.jsonl")
+          ? stdout
+          : path.endsWith("exit.txt")
+            ? "1"
+            : "",
+    },
+  };
+  try {
+    const progress = await codexRunner.readCodexRunProgress({
+      outputPath: "/tmp/output.jsonl",
+      stderrPath: "/tmp/stderr.log",
+      exitCodePath: "/tmp/exit.txt",
+    });
+    assert.equal(progress.exitCode, "1");
+    assert.equal(progress.diagnosticOutput, "provider request failed");
+    assert.doesNotMatch(progress.diagnosticOutput, /no such file/i);
+    assert.equal(
+      classifyRunFailure({
+        engine: "codex_cli",
+        rawError: progress.diagnosticOutput,
+        source: "process_exit",
+      }).kind,
+      "unknown",
+    );
+  } finally {
+    (globalThis as { Zotero?: unknown }).Zotero = previousZotero;
+  }
 });
 
 test("redactAbsolutePaths removes POSIX and Windows absolute path prefixes", () => {
@@ -191,18 +247,29 @@ test("buildCodexExecCommand passes a supported native output schema path", () =>
   ]);
 });
 
-test("buildCodexResumeCommand builds the expected follow-up command", () => {
-  assert.deepEqual(buildCodexResumeCommand({ cd: "/tmp/paper-workspace" }), [
-    "codex",
-    "exec",
-    "--json",
-    "--cd",
-    "/tmp/paper-workspace",
-    "--skip-git-repo-check",
-    "resume",
-    "--last",
-    "-",
-  ]);
+test("buildCodexResumeCommand preserves configured permissions on follow-up", () => {
+  assert.deepEqual(
+    buildCodexResumeCommand({
+      cd: "/tmp/paper-workspace",
+      sandbox: "workspace-write",
+      approvalMode: "on-request",
+    }),
+    [
+      "codex",
+      "--ask-for-approval",
+      "on-request",
+      "exec",
+      "--json",
+      "--cd",
+      "/tmp/paper-workspace",
+      "--sandbox",
+      "workspace-write",
+      "--skip-git-repo-check",
+      "resume",
+      "--last",
+      "-",
+    ],
+  );
 });
 
 test("buildCodexResumeCommand adds web search before exec when enabled", () => {
@@ -218,6 +285,8 @@ test("buildCodexResumeCommand adds web search before exec when enabled", () => {
       "--json",
       "--cd",
       "/tmp/paper-workspace",
+      "--sandbox",
+      "read-only",
       "--skip-git-repo-check",
       "resume",
       "--last",
@@ -655,6 +724,8 @@ test("buildCodexResumeCommand prefers explicit session ids over --last", () => {
       "--json",
       "--cd",
       "/tmp/paper-workspace",
+      "--sandbox",
+      "read-only",
       "--skip-git-repo-check",
       "resume",
       "thread-123",

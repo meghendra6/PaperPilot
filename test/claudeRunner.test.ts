@@ -49,6 +49,7 @@ test("buildClaudeCommand streams the prompt file into Claude Code print mode", (
     /cat '\/tmp\/Paper Pilot\/Smith'\\''s paper\/claude-prompt\.txt' \|/,
   );
   assert.match(script, /'\/Users\/me\/\.local\/bin\/claude' -p/);
+  assert.match(script, /export PATH='\/Users\/me\/\.local\/bin:/);
   assert.match(script, /--output-format text/);
   assert.match(script, /--model 'sonnet'/);
   assert.match(script, /--resume 'claude-thread-7'/);
@@ -58,6 +59,16 @@ test("buildClaudeCommand streams the prompt file into Claude Code print mode", (
     script,
     /2> '\/tmp\/Paper Pilot\/Smith'\\''s paper\/claude-stderr\.log'/,
   );
+});
+
+test("Claude launch reports a rejected shell exec as a start failure", async () => {
+  const result = await claudeRunner.launchClaudeRunScript(
+    "exit 1",
+    async () => {
+      throw new Error("claude launch rejected");
+    },
+  );
+  assert.deepEqual(result, { ok: false, error: "claude launch rejected" });
 });
 
 test("buildClaudeCommand uses Claude Code continue mode for the latest session marker", () => {

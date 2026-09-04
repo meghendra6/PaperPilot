@@ -17,9 +17,9 @@ import {
   normalizeDiscoveryRunFailure,
   openRecommendedPaper,
   parseRelatedPaperResponse,
-  releaseReservationAfterConfirmedCleanup,
   type RelatedRunSubmission,
 } from "../src/modules/relatedRecommendations";
+import { releaseReservationAfterConfirmedCleanup } from "../src/modules/ai/workspaceRun";
 
 test("related-run states stay bound to the submitted concern, not later edits", () => {
   const submission: RelatedRunSubmission = {

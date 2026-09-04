@@ -1,6 +1,8 @@
 import { buildCodexCommandEnvironment } from "../codex/environment";
 import { shellEscape } from "../codex/shell";
 import { getZoteroProfilePath } from "../../utils/zoteroProfile";
+import { launchDetachedShellScript } from "../ai/launchScript";
+import { stopDetachedRunProcess } from "../ai/runCompletion";
 
 declare const Zotero: any;
 declare const IOUtils: any;
@@ -44,6 +46,8 @@ interface StructuredExtractionResult {
 const EXTRACTOR_VERSION = "opendataloader-pdf@2.2.0|zotero-attachment-text@1";
 const EXTRACTION_OPTIONS_VERSION = "reading-order-xycut-v1";
 const MAX_CACHE_ENTRIES = 12;
+export const STRUCTURED_EXTRACTION_TIMEOUT_MS = 2 * 60 * 1000;
+const STRUCTURED_EXTRACTION_POLL_MS = 100;
 
 export class PaperWorkspaceContentCache {
   private readonly entries = new Map<string, PaperWorkspaceContent>();
@@ -346,10 +350,13 @@ export async function resolveOpenDataLoaderJarPath(options?: {
   );
 }
 
-function buildOpenDataLoaderScript(params: {
+export function buildOpenDataLoaderScript(params: {
   jarPath: string;
   inputPath: string;
   outputDir: string;
+  exitCodePath: string;
+  pidPath: string;
+  stderrPath: string;
 }) {
   const environment = buildCodexCommandEnvironment("java");
   const exports = Object.entries(environment)
@@ -376,7 +383,11 @@ function buildOpenDataLoaderScript(params: {
     .map(shellEscape)
     .join(" ");
 
-  return [...exports, command].join(" && ");
+  return [
+    ...exports,
+    `rm -f ${shellEscape(params.exitCodePath)} ${shellEscape(params.pidPath)} ${shellEscape(params.stderrPath)}`,
+    `(${command} > /dev/null 2> ${shellEscape(params.stderrPath)}; printf '%s' $? > ${shellEscape(params.exitCodePath)}) & echo $! > ${shellEscape(params.pidPath)}`,
+  ].join(" && ");
 }
 
 async function listDirectoryFiles(path: string) {
@@ -398,6 +409,51 @@ async function readTextFile(path: string) {
   );
 }
 
+export async function waitForExtractorCompletion(params: {
+  exitCodePath: string;
+  pidPath: string;
+  stderrPath: string;
+  timeoutMs?: number;
+  read?: (path: string) => Promise<string>;
+  stop?: typeof stopDetachedRunProcess;
+  delay?: (milliseconds: number) => Promise<void>;
+}) {
+  const read = params.read ?? readTextFile;
+  const stop = params.stop ?? stopDetachedRunProcess;
+  const delay =
+    params.delay ??
+    ((milliseconds: number) =>
+      new Promise<void>((resolve) => setTimeout(resolve, milliseconds)));
+  const deadline =
+    Date.now() + (params.timeoutMs ?? STRUCTURED_EXTRACTION_TIMEOUT_MS);
+  while (Date.now() < deadline) {
+    let exitCode = "";
+    try {
+      exitCode = (await read(params.exitCodePath)).trim();
+    } catch {
+      // The detached process may not have created its result file yet.
+    }
+    if (exitCode) {
+      if (exitCode !== "0") {
+        const stderr = await read(params.stderrPath).catch(() => "");
+        throw new Error(
+          `OpenDataLoader PDF exited with code ${exitCode}.${stderr ? ` ${stderr.trim()}` : ""}`,
+        );
+      }
+      return;
+    }
+    await delay(STRUCTURED_EXTRACTION_POLL_MS);
+  }
+
+  const processId = await read(params.pidPath).catch(() => "");
+  await stop(processId.trim(), { requireProcessId: true });
+  throw new Error(
+    `OpenDataLoader PDF extraction timed out after ${Math.round(
+      (params.timeoutMs ?? STRUCTURED_EXTRACTION_TIMEOUT_MS) / 1000,
+    )} seconds.`,
+  );
+}
+
 async function extractStructuredPdf(
   filePath: string,
 ): Promise<StructuredExtractionResult> {
@@ -406,19 +462,26 @@ async function extractStructuredPdf(
     `${Zotero.getTempDirectory().path}/paper-pilot-opendataloader`,
     "run",
   );
+  const exitCodePath = `${outputDir}/extractor-exit.txt`;
+  const pidPath = `${outputDir}/extractor-pid.txt`;
+  const stderrPath = `${outputDir}/extractor-stderr.log`;
 
   try {
-    const result = await Zotero.Utilities.Internal.exec("/bin/zsh", [
-      "-lc",
+    const launch = await launchDetachedShellScript(
       buildOpenDataLoaderScript({
         jarPath,
         inputPath: filePath,
         outputDir,
+        exitCodePath,
+        pidPath,
+        stderrPath,
       }),
-    ]);
-    if (result instanceof Error) {
-      throw result;
+      (executable, args) => Zotero.Utilities.Internal.exec(executable, args),
+    );
+    if (!launch.ok) {
+      throw new Error(launch.error);
     }
+    await waitForExtractorCompletion({ exitCodePath, pidPath, stderrPath });
   } catch (error) {
     throw new Error(String(error));
   }

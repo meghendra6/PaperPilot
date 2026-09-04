@@ -5,6 +5,7 @@ import { createZToolkit } from "./utils/ztoolkit";
 import {
   disposeReaderPaneRunProgressCards,
   registerPaperPilotPaneSection,
+  unregisterPaperPilotPaneSection,
 } from "./modules/readerPane";
 import { clearClaudePollerForItem } from "./modules/claude/poller";
 import { clearCodexPollerForItem } from "./modules/codex/poller";
@@ -32,6 +33,11 @@ import {
   registerResearchWorkspaceLivingReviewNotifier,
   unregisterResearchWorkspaceLivingReviewNotifier,
 } from "./modules/researchWorkspace/livingReviewIntegration";
+import {
+  collectShutdownRuns,
+  stopShutdownRunsBestEffort,
+} from "./modules/ai/shutdownRuns";
+import { listActiveReaderRuns } from "./modules/ai/runPresentation";
 
 async function onStartup() {
   await Promise.all([
@@ -118,7 +124,12 @@ async function registerPreferencePane() {
 }
 
 function onShutdown(): void {
+  unregisterPaperPilotPaneSection();
   disposeReaderPaneRunProgressCards();
+  stopShutdownRunsBestEffort({
+    runs: collectShutdownRuns(addon.data, listActiveReaderRuns()),
+    log: (...values) => addon.data.ztoolkit?.log(...values),
+  });
   addon.data.codexRunPollers?.forEach((_poller, itemID) =>
     clearCodexPollerForItem(itemID),
   );

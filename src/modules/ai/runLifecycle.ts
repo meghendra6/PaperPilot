@@ -39,6 +39,7 @@ export interface PendingEngineCompletion {
   workspacePath?: string;
   retryable: boolean;
   cancelTimeout?: () => void;
+  rearmTimeout?: () => void;
   onComplete?: (result: ReaderRunCompletionResult) => void | Promise<void>;
   terminalClaim?: "controller" | "cancel" | "timeout";
   cleanupClaimed?: boolean;

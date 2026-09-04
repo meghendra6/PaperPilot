@@ -20,7 +20,6 @@ export async function cancelActiveEngineRun(itemID: number): Promise<boolean> {
     return false;
   }
 
-  pending.cancelTimeout?.();
   const workspacePath = pending.workspacePath;
 
   try {
@@ -43,6 +42,7 @@ export async function cancelActiveEngineRun(itemID: number): Promise<boolean> {
     return false;
   }
 
+  pending.cancelTimeout?.();
   pending.cleanupClaimed = Boolean(workspacePath);
   advanceRunProgress(itemID, pending.token, {
     type: "cancelled",

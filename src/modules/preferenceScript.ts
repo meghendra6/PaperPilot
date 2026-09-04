@@ -2,9 +2,6 @@ import { getString } from "../utils/locale";
 import { getPref, setPref } from "../utils/prefs";
 import { normalizeResponseLanguage } from "./translation/responseLanguage";
 
-const PLACEHOLDER_PREF_NOTICE =
-  "Preference saved. Reopen or refresh the reader pane if the visible controls do not update immediately.";
-
 export async function registerPrefsScripts(_window: Window) {
   // This function is called when the prefs window is opened
   // See addon/chrome/content/preferences.xul onpaneload
@@ -29,7 +26,6 @@ export async function registerPrefsScripts(_window: Window) {
     addon.data.prefs.window = _window;
   }
   syncResponseLanguagePreference(_window.document);
-  bindPrefEvents();
 }
 
 function syncResponseLanguagePreference(doc: Document) {
@@ -50,22 +46,4 @@ function syncResponseLanguagePreference(doc: Document) {
       setPref("responseLanguage", normalizeResponseLanguage(select.value));
     });
   }
-}
-
-function bindPrefEvents() {
-  const prefInputs =
-    addon.data.prefs?.window.document.querySelectorAll<HTMLInputElement>(
-      "[data-placeholder-pref='true']",
-    );
-
-  prefInputs?.forEach((input) => {
-    if (input.dataset.prefBound === "true") {
-      return;
-    }
-
-    input.dataset.prefBound = "true";
-    input.addEventListener("change", () => {
-      addon.data.prefs?.window.alert(PLACEHOLDER_PREF_NOTICE);
-    });
-  });
 }

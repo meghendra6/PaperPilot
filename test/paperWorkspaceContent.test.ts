@@ -2,9 +2,48 @@ import { test } from "node:test";
 import * as assert from "node:assert/strict";
 
 import {
+  buildOpenDataLoaderScript,
   PaperWorkspaceContentCache,
   resolveOpenDataLoaderJarPath,
+  waitForExtractorCompletion,
 } from "../src/modules/tools/paperWorkspaceContent";
+import { checkShellSyntax } from "./helpers/shellSyntax";
+
+test("OpenDataLoader extraction records a pid and exit code", () => {
+  const script = buildOpenDataLoaderScript({
+    jarPath: "/tmp/tools/opendataloader.jar",
+    inputPath: "/tmp/papers/input.pdf",
+    outputDir: "/tmp/output",
+    exitCodePath: "/tmp/output/extractor-exit.txt",
+    pidPath: "/tmp/output/extractor-pid.txt",
+    stderrPath: "/tmp/output/extractor-stderr.log",
+  });
+  assert.equal(checkShellSyntax(script).status, 0);
+  assert.match(script, /echo \$! > '\/tmp\/output\/extractor-pid\.txt'/);
+  assert.match(
+    script,
+    /printf '%s' \$\? > '\/tmp\/output\/extractor-exit\.txt'/,
+  );
+});
+
+test("OpenDataLoader extraction stops its recorded pid on timeout", async () => {
+  const stopped: string[] = [];
+  await assert.rejects(
+    () =>
+      waitForExtractorCompletion({
+        exitCodePath: "/tmp/output/exit.txt",
+        pidPath: "/tmp/output/pid.txt",
+        stderrPath: "/tmp/output/stderr.log",
+        timeoutMs: 0,
+        read: async (path) => (path.endsWith("pid.txt") ? "4242" : ""),
+        stop: async (processId) => {
+          stopped.push(String(processId));
+        },
+      }),
+    /timed out after 0 seconds/,
+  );
+  assert.deepEqual(stopped, ["4242"]);
+});
 
 test("resolveOpenDataLoaderJarPath falls back to node_modules for file roots", async () => {
   const resolved = await resolveOpenDataLoaderJarPath({

@@ -36,6 +36,7 @@ export interface FailedWorkspaceRun {
 
 export interface WorkspaceRunProgress {
   rawOutput: string;
+  diagnosticOutput: string;
   parsedOutput: string;
   completed: boolean;
   exitCode: string;
@@ -89,6 +90,16 @@ export function releaseWorkspaceRunReservation(
   releaseDirectWorkspaceRun(itemID, token);
 }
 
+export function releaseReservationAfterConfirmedCleanup(
+  cleanup: Promise<void>,
+  release: () => void,
+  onRejected?: (error: unknown) => void,
+) {
+  // Rejection means termination or cleanup was not confirmed. Keep the
+  // reservation so a second process cannot reuse the same workspace.
+  void cleanup.then(release, (error) => onRejected?.(error));
+}
+
 export function isWorkspaceRunReservedForItem(itemID: number): boolean {
   return isDirectWorkspaceRunClaimed(itemID);
 }
@@ -107,6 +118,10 @@ export async function startWorkspaceTextRun(params: {
   requiredDiscoveryCapabilities?: import("../discovery/types").DiscoveryCapabilities;
   signal?: AbortSignal;
   deadline?: number;
+  /**
+   * Owns late cleanup after cancellation. A rejected promise MUST retain the
+   * reservation because process termination was not confirmed.
+   */
   onDeferredCleanup?: (cleanup: Promise<void>) => void;
   prepareRun?: () => Promise<WorkspaceRunResult | FailedWorkspaceRun>;
 }): Promise<WorkspaceRunResult | FailedWorkspaceRun> {

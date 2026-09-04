@@ -60,6 +60,9 @@ Use this checklist inside real Zotero 7, 8, 9, and 10 runtimes before claiming r
 - [ ] Type one and many lines in the composer; confirm it grows from 72px to at most 180px, then scrolls internally while the inset Send button never covers the placeholder or entered text
 - [ ] Confirm every resize handle has a visible hover/focus state, remains keyboard reachable, and does not change the Send button's click/Enter behavior
 - [ ] Switch away from and back to the paper (or refresh the custom section) and confirm exactly one header and three disclosure triggers remain, with no duplicate listeners or console errors
+- [ ] Open two reader tabs, finish a Workbench action in the second tab, and confirm only the second tab's buttons and status change
+- [ ] With different saved sessions open in two reader tabs, confirm Current/Open/Delete decisions remain scoped to each paper
+- [ ] Disable and re-enable Paper Pilot with a reader tab open; confirm the console stays clean and exactly one Paper Pilot section remains
 - [ ] Start a run on paper A, switch to paper B and back to A before completion, and confirm A still shows `Running` until the final persisted answer replaces it in the rebuilt pane
 - [ ] Refresh the custom section with Paper Mastery awaiting an answer and after completion; confirm the current question, score, and final report rehydrate without starting a second run
 - [ ] Click `Restart Paper Mastery` after completion and confirm cancellation preserves the old session while confirmation explicitly replaces it
@@ -73,6 +76,8 @@ Use this checklist inside real Zotero 7, 8, 9, and 10 runtimes before claiming r
 - [ ] While a chat run is preparing or a cancelled preparation is settling, try Auto Highlight and verified discovery; then reverse the order and try chat while either direct workflow is running. Confirm every overlapping request is blocked per paper
 - [ ] For a CLI wrapper that starts child processes and ignores `TERM`, cancel the run and confirm the recorded process and its descendants are no longer alive after the bounded `KILL` escalation
 - [ ] Force the process-stop executor to fail; confirm chat keeps the active pid/Cancel ownership, direct workflows keep their item reservation, no workspace cleanup/replacement starts, and the UI reports that termination was not confirmed
+- [ ] After a forced stop failure, let the process write its delayed exit-code file; confirm the retained poller reconciles completion and the original 30-minute watchdog remains based on its first start time
+- [ ] Start one long run per engine, disable the add-on, and confirm each recorded process and child is terminated with `ps`; a termination failure must be logged without blocking shutdown
 - [ ] Cancel during workspace preparation, then make the late process's first stop fail; confirm the same run returns to Running with Cancel, and a second Cancel can terminate and settle it without restarting Zotero
 - [ ] Return a started run without a numeric pid; confirm Cancel/timeout treats it as an unconfirmed stop and retains the same lifecycle barrier rather than unlocking
 - [ ] Return pid `0` or `1`; confirm it is rejected before any kill command is executed and the run remains owned for safe recovery/restart
@@ -129,6 +134,7 @@ Use this checklist inside real Zotero 7, 8, 9, and 10 runtimes before claiming r
 - [ ] Confirm `Save for collection` prompts for or uses a Zotero collection and saves the current workbench card set for collection-linked reuse
 - [ ] Confirm `Clear cards` removes rendered workbench cards without breaking chat history or the input area
 - [ ] Confirm malformed/failed structured output surfaces a clear error instead of silently breaking the pane
+- [ ] Render a table with a repeated separator, headings, blockquotes, nested lists, fenced code, and prose beginning with `$$`; confirm no content is dropped or misclassified as a block
 - [ ] Switch to another paper and back; confirm brief/paper-tool state does not leak across papers
 
 ## 5. Gemini CLI flow
@@ -162,6 +168,7 @@ Use this checklist inside real Zotero 7, 8, 9, and 10 runtimes before claiming r
 - [ ] Confirm `metadata.json` reports `extractionMethod: "opendataloader-pdf"` when Java/OpenDataLoader extraction is available
 - [ ] If Java is intentionally unavailable, confirm `metadata.json` falls back to `zotero-attachment-text` and includes a readable extraction note
 - [ ] Confirm the packaged add-on can resolve the bundled OpenDataLoader JAR without requiring a globally installed `opendataloader-pdf`
+- [ ] Run a deliberately hanging OpenDataLoader wrapper; confirm its pid is terminated after two minutes and `metadata.json` honestly records the Zotero-text fallback reason
 
 ## 8. Session correctness
 
@@ -181,6 +188,9 @@ Use this checklist inside real Zotero 7, 8, 9, and 10 runtimes before claiming r
 - [ ] Inspect an analysis run for each engine: Codex uses a read-only sandbox without search, Claude uses plan permission mode, and Gemini uses plan approval mode without `--yolo`
 - [ ] On a fresh profile with no custom workspace root, confirm workspaces are created below `Zotero.getTempDirectory()/paperpilot-workspaces`, not shared `/tmp/zotero-paper-ai`
 - [ ] Run Gemini chat with the default approval mode and confirm actions require approval; when `gemini --help` advertises `--sandbox`, confirm the launched command includes it
+- [ ] Set each CLI path to an npm/nvm shim outside the fixed system PATH and confirm Codex, Claude, and Gemini can resolve the shim's `node`
+- [ ] Configure non-default Codex sandbox and approval modes, send a follow-up turn, and confirm the resumed command retains both modes
+- [ ] Edit and tab through every preferences field; confirm no modal alert appears on change
 - [ ] Turn off local history while workspace auto-clean is off; complete a run and confirm its workspace is still removed
 - [ ] With current Codex/Claude CLIs, run one structured Workbench action and confirm native schema output succeeds; with a wrapper whose help omits the schema flag, confirm the same action succeeds through parser-only fallback
 

@@ -5,6 +5,7 @@ import {
   claimWorkspaceRunReservation,
   getWorkspaceEngineActiveMessage,
   getWorkspaceEngineLabel,
+  releaseReservationAfterConfirmedCleanup,
   releaseWorkspaceRunReservation,
   startWorkspaceTextRun,
   waitForWorkspaceTextRun,
@@ -55,8 +56,13 @@ export async function runResearchWorkspaceAnalysis(params: {
       deadline,
       onDeferredCleanup: (cleanup) => {
         releaseReservation = false;
-        void cleanup.finally(() =>
-          releaseWorkspaceRunReservation(params.itemID, reservationToken),
+        releaseReservationAfterConfirmedCleanup(
+          cleanup,
+          () => releaseWorkspaceRunReservation(params.itemID, reservationToken),
+          () =>
+            params.onStatus?.(
+              `${engineLabel} could not be stopped; the paper remains reserved until Zotero restarts.`,
+            ),
         );
       },
     });

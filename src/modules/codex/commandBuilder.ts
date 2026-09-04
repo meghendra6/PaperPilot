@@ -85,10 +85,23 @@ export function buildCodexResumeCommand(
   executablePath = "codex",
 ) {
   const parts = [executablePath];
+  const approvalMode = normalizeCodexApprovalMode(options.approvalMode);
+
+  if (approvalMode) {
+    parts.push("--ask-for-approval", approvalMode);
+  }
 
   maybePush(parts, Boolean(options.webSearchEnabled), "--search");
 
-  parts.push("exec", "--json", "--cd", options.cd, "--skip-git-repo-check");
+  parts.push(
+    "exec",
+    "--json",
+    "--cd",
+    options.cd,
+    "--sandbox",
+    options.sandbox ?? "read-only",
+    "--skip-git-repo-check",
+  );
 
   if (options.model) {
     parts.push("--model", options.model);

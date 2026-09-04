@@ -1,5 +1,9 @@
 import { getPref, setPref } from "../../utils/prefs";
-import { getZoteroProfilePath } from "../../utils/zoteroProfile";
+import { buildCliCommandEnvironment } from "../ai/cliEnvironment";
+import {
+  launchDetachedShellScript,
+  type ShellExecutor,
+} from "../ai/launchScript";
 import { normalizeClaudeModel } from "../codex/modelOptions";
 import { shellEscape } from "../codex/shell";
 import {
@@ -56,26 +60,12 @@ interface FailedClaudeRun {
   error: string;
 }
 
-function buildClaudeShellEnvironment() {
-  const profilePath = getZoteroProfilePath();
-  const userHome = profilePath.includes("/Library/")
-    ? profilePath.split("/Library/")[0]
-    : "";
-
-  return {
-    HOME: userHome || undefined,
-    XDG_CONFIG_HOME: userHome ? `${userHome}/.config` : undefined,
-    PATH: [
-      "/opt/homebrew/bin",
-      `${userHome}/.local/bin`,
-      `${userHome}/bin`,
-      "/usr/local/bin",
-      "/usr/bin",
-      "/bin",
-    ]
-      .filter(Boolean)
-      .join(":"),
-  };
+export function launchClaudeRunScript(
+  script: string,
+  execute: ShellExecutor = (executable, args) =>
+    Zotero.Utilities.Internal.exec(executable, args),
+) {
+  return launchDetachedShellScript(script, execute);
 }
 
 function normalizeClaudePermissionMode(permissionMode: string) {
@@ -116,7 +106,7 @@ export function buildClaudeCommand(params: {
   permissionMode: string;
   outputSchema?: StructuredOutputSchema;
 }) {
-  const env = buildClaudeShellEnvironment();
+  const env = buildCliCommandEnvironment(params.executablePath);
   const environmentLines = Object.entries(env)
     .filter(([, value]) => Boolean(value))
     .map(([key, value]) => `export ${key}=${shellEscape(String(value))}`);
@@ -358,7 +348,7 @@ export async function startClaudeRunForQuestion(params: {
       executablePath,
       helpArgs: ["--help"],
       flag: "--json-schema",
-      environment: buildClaudeShellEnvironment(),
+      environment: buildCliCommandEnvironment(executablePath),
     }))
       ? compatibleOutputSchema
       : undefined;
@@ -379,16 +369,13 @@ export async function startClaudeRunForQuestion(params: {
     outputSchema: nativeOutputSchema,
   });
 
-  const result = await Zotero.Utilities.Internal.exec("/bin/zsh", [
-    "-lc",
-    script,
-  ]);
-  if (result instanceof Error) {
+  const result = await launchClaudeRunScript(script);
+  if (!result.ok) {
     return {
       ok: false,
       workspacePath,
       promptPreview: claudePrompt,
-      error: result.message,
+      error: result.error,
     };
   }
 
@@ -417,6 +404,7 @@ export async function readClaudeRunProgress(paths: {
 
   return {
     rawOutput,
+    diagnosticOutput: stderr,
     parsedOutput: stdout.trim(),
     structuredOutput: false,
     latestEventType: stdout ? "text" : stderr ? "diagnostic" : "unknown",

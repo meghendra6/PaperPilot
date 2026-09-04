@@ -15,5 +15,7 @@ export interface CodexResumeOptions {
   sessionId?: string;
   model?: string;
   reasoningEffort?: string;
+  sandbox?: "read-only" | "workspace-write" | "danger-full-access";
+  approvalMode?: string;
   webSearchEnabled?: boolean;
 }

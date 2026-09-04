@@ -54,6 +54,7 @@ test("buildGeminiCommand uses plan mode for hidden analysis runs", () => {
     /cat '\/tmp\/Paper Pilot\/Smith'\\''s paper\/gemini-prompt\.txt' \|/,
   );
   assert.match(script, /'\/opt\/Homebrew Tools\/gemini'\\''s bin\/gemini'/);
+  assert.match(script, /export PATH='\/opt\/Homebrew Tools\/gemini'\\''s bin:/);
   assert.match(script, /--skip-trust/);
   assert.match(script, /--approval-mode 'plan'/);
   assert.doesNotMatch(script, /--yolo/);
@@ -63,6 +64,16 @@ test("buildGeminiCommand uses plan mode for hidden analysis runs", () => {
     script,
     /2> '\/tmp\/Paper Pilot\/Smith'\\''s paper\/gemini-stderr\.log'/,
   );
+});
+
+test("Gemini launch reports a rejected shell exec as a start failure", async () => {
+  const result = await geminiRunner.launchGeminiRunScript(
+    "exit 1",
+    async () => {
+      throw new Error("gemini launch rejected");
+    },
+  );
+  assert.deepEqual(result, { ok: false, error: "gemini launch rejected" });
 });
 
 test("buildGeminiCommand defaults chat to approval prompts without yolo", () => {

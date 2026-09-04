@@ -128,42 +128,49 @@ export async function handleClaudeQuestion(params: {
     onComplete: params.onComplete,
     workspacePath: undefined as string | undefined,
     cancelTimeout: undefined as (() => void) | undefined,
+    rearmTimeout: undefined as (() => void) | undefined,
     cleanupClaimed: false,
     terminalClaim: undefined as "controller" | "cancel" | "timeout" | undefined,
     preparationSettled: false,
     terminalSettled: false,
   };
   registerPendingEngineCompletion(params.itemID, pendingCompletion);
-  const cancelTimeout = armRunTimeout({
-    itemID: params.itemID,
-    shouldTimeout: () => isReaderRunTokenActive(params.itemID, runToken),
-    onTimeout: async () => {
-      await completeTimedOutRun({
-        itemID: params.itemID,
-        sessionId: params.sessionId,
-        sessionTitle: params.sessionTitle,
-        paperTitle: params.paperTitle,
-        engine: "claude_code",
-        engineLabel: "Claude Code",
-        token: runToken,
-        workspacePath: pendingCompletion.workspacePath,
-        suppressMessage: params.suppressChatMessages,
-        stop: () =>
-          stopClaudeRunSilently({
-            itemID: params.itemID,
-            finishPresentation: false,
-          }),
-        onMessage: (message) => {
-          if (assistantMessage) {
-            setMessageContent(assistantMessage, message, "ai");
-          }
-          params.streamingIndicator.style.display = "none";
-        },
-        onComplete: params.onComplete,
-      });
-    },
-  });
+  const armTimeout = (minimumDelayMs = 0) =>
+    armRunTimeout({
+      itemID: params.itemID,
+      minimumDelayMs,
+      shouldTimeout: () => isReaderRunTokenActive(params.itemID, runToken),
+      onTimeout: async () => {
+        await completeTimedOutRun({
+          itemID: params.itemID,
+          sessionId: params.sessionId,
+          sessionTitle: params.sessionTitle,
+          paperTitle: params.paperTitle,
+          engine: "claude_code",
+          engineLabel: "Claude Code",
+          token: runToken,
+          workspacePath: pendingCompletion.workspacePath,
+          suppressMessage: params.suppressChatMessages,
+          stop: () =>
+            stopClaudeRunSilently({
+              itemID: params.itemID,
+              finishPresentation: false,
+            }),
+          onMessage: (message) => {
+            if (assistantMessage) {
+              setMessageContent(assistantMessage, message, "ai");
+            }
+            params.streamingIndicator.style.display = "none";
+          },
+          onComplete: params.onComplete,
+        });
+      },
+    });
+  const cancelTimeout = armTimeout();
   pendingCompletion.cancelTimeout = cancelTimeout;
+  pendingCompletion.rearmTimeout = () => {
+    pendingCompletion.cancelTimeout = armTimeout(5_000);
+  };
 
   const result = await startClaudeRunForQuestion({
     itemID: params.itemID,
@@ -370,7 +377,7 @@ export async function handleClaudeQuestion(params: {
       ? undefined
       : classifyRunFailure({
           engine: "claude_code",
-          rawError: progress.rawOutput || rawAssistantText,
+          rawError: progress.diagnosticOutput || rawAssistantText,
           source: "process_exit",
         });
     let assistantText = success

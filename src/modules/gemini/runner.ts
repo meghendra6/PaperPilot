@@ -1,5 +1,9 @@
 import { getPref, setPref } from "../../utils/prefs";
-import { getZoteroProfilePath } from "../../utils/zoteroProfile";
+import { buildCliCommandEnvironment } from "../ai/cliEnvironment";
+import {
+  launchDetachedShellScript,
+  type ShellExecutor,
+} from "../ai/launchScript";
 import { normalizeGeminiModel } from "../codex/modelOptions";
 import { normalizeResponseLanguage } from "../translation/responseLanguage";
 import {
@@ -55,26 +59,12 @@ interface FailedGeminiRun {
   error: string;
 }
 
-function buildGeminiShellEnvironment() {
-  const profilePath = getZoteroProfilePath();
-  const userHome = profilePath.includes("/Library/")
-    ? profilePath.split("/Library/")[0]
-    : "";
-
-  return {
-    HOME: userHome || undefined,
-    XDG_CONFIG_HOME: userHome ? `${userHome}/.config` : undefined,
-    PATH: [
-      "/opt/homebrew/bin",
-      `${userHome}/.local/bin`,
-      `${userHome}/bin`,
-      "/usr/local/bin",
-      "/usr/bin",
-      "/bin",
-    ]
-      .filter(Boolean)
-      .join(":"),
-  };
+export function launchGeminiRunScript(
+  script: string,
+  execute: ShellExecutor = (executable, args) =>
+    Zotero.Utilities.Internal.exec(executable, args),
+) {
+  return launchDetachedShellScript(script, execute);
 }
 
 export type GeminiApprovalMode = "default" | "auto_edit" | "yolo" | "plan";
@@ -119,7 +109,7 @@ export function buildGeminiCommand(params: {
   approvalMode: string;
   sandboxSupported?: boolean;
 }) {
-  const env = buildGeminiShellEnvironment();
+  const env = buildCliCommandEnvironment(params.executablePath);
   const environmentLines = Object.entries(env)
     .filter(([, value]) => Boolean(value))
     .map(([key, value]) => `export ${key}=${shellEscape(String(value))}`);
@@ -350,7 +340,7 @@ export async function startGeminiRunForQuestion(params: {
     );
   }
 
-  const environment = buildGeminiShellEnvironment();
+  const environment = buildCliCommandEnvironment(executablePath);
   const sandboxSupported = await cliSupportsFlag({
     executablePath,
     helpArgs: ["--help"],
@@ -375,16 +365,13 @@ export async function startGeminiRunForQuestion(params: {
     sandboxSupported,
   });
 
-  const result = await Zotero.Utilities.Internal.exec("/bin/zsh", [
-    "-lc",
-    script,
-  ]);
-  if (result instanceof Error) {
+  const result = await launchGeminiRunScript(script);
+  if (!result.ok) {
     return {
       ok: false,
       workspacePath,
       promptPreview: geminiPrompt,
-      error: result.message,
+      error: result.error,
     };
   }
 
@@ -413,6 +400,7 @@ export async function readGeminiRunProgress(paths: {
 
   return {
     rawOutput,
+    diagnosticOutput: stderr,
     parsedOutput: stdout.trim(),
     structuredOutput: false,
     latestEventType: stdout ? "text" : stderr ? "diagnostic" : "unknown",

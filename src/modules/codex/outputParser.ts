@@ -62,6 +62,10 @@ function extractAssistantEventText(event: Record<string, unknown>) {
   return extractText(itemRecord);
 }
 
+function extractErrorEventText(event: Record<string, unknown>) {
+  return event.type === "error" ? extractText(event.message) : [];
+}
+
 export function parseCodexOutput(rawOutput: string) {
   const lines = rawOutput
     .split(/\r?\n/)
@@ -70,6 +74,7 @@ export function parseCodexOutput(rawOutput: string) {
 
   const chunks: string[] = [];
   const rawTextLines: string[] = [];
+  const errorChunks: string[] = [];
   let latestEventType = "unknown";
   let structuredOutput = false;
 
@@ -80,6 +85,7 @@ export function parseCodexOutput(rawOutput: string) {
       if (typeof parsed.type === "string") {
         latestEventType = parsed.type;
       }
+      errorChunks.push(...extractErrorEventText(parsed));
       chunks.push(...extractAssistantEventText(parsed));
     } catch {
       rawTextLines.push(line);
@@ -97,6 +103,11 @@ export function parseCodexOutput(rawOutput: string) {
   return {
     text: text || (!structuredOutput ? rawText : ""),
     rawText,
+    errorText: errorChunks
+      .map((chunk) => chunk.trim())
+      .filter(Boolean)
+      .join("\n")
+      .trim(),
     structuredOutput,
     latestEventType,
   };

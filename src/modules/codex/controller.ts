@@ -133,42 +133,49 @@ export async function handleCodexQuestion(params: {
     onComplete: params.onComplete,
     workspacePath: undefined as string | undefined,
     cancelTimeout: undefined as (() => void) | undefined,
+    rearmTimeout: undefined as (() => void) | undefined,
     cleanupClaimed: false,
     terminalClaim: undefined as "controller" | "cancel" | "timeout" | undefined,
     preparationSettled: false,
     terminalSettled: false,
   };
   registerPendingEngineCompletion(params.itemID, pendingCompletion);
-  const cancelTimeout = armRunTimeout({
-    itemID: params.itemID,
-    shouldTimeout: () => isReaderRunTokenActive(params.itemID, runToken),
-    onTimeout: async () => {
-      await completeTimedOutRun({
-        itemID: params.itemID,
-        sessionId: params.sessionId,
-        sessionTitle: params.sessionTitle,
-        paperTitle: params.paperTitle,
-        engine: "codex_cli",
-        engineLabel: "Codex CLI",
-        token: runToken,
-        workspacePath: pendingCompletion.workspacePath,
-        suppressMessage: params.suppressChatMessages,
-        stop: () =>
-          stopCodexRunSilently({
-            itemID: params.itemID,
-            finishPresentation: false,
-          }),
-        onMessage: (message) => {
-          if (assistantMessage) {
-            setMessageContent(assistantMessage, message, "ai");
-          }
-          params.streamingIndicator.style.display = "none";
-        },
-        onComplete: params.onComplete,
-      });
-    },
-  });
+  const armTimeout = (minimumDelayMs = 0) =>
+    armRunTimeout({
+      itemID: params.itemID,
+      minimumDelayMs,
+      shouldTimeout: () => isReaderRunTokenActive(params.itemID, runToken),
+      onTimeout: async () => {
+        await completeTimedOutRun({
+          itemID: params.itemID,
+          sessionId: params.sessionId,
+          sessionTitle: params.sessionTitle,
+          paperTitle: params.paperTitle,
+          engine: "codex_cli",
+          engineLabel: "Codex CLI",
+          token: runToken,
+          workspacePath: pendingCompletion.workspacePath,
+          suppressMessage: params.suppressChatMessages,
+          stop: () =>
+            stopCodexRunSilently({
+              itemID: params.itemID,
+              finishPresentation: false,
+            }),
+          onMessage: (message) => {
+            if (assistantMessage) {
+              setMessageContent(assistantMessage, message, "ai");
+            }
+            params.streamingIndicator.style.display = "none";
+          },
+          onComplete: params.onComplete,
+        });
+      },
+    });
+  const cancelTimeout = armTimeout();
   pendingCompletion.cancelTimeout = cancelTimeout;
+  pendingCompletion.rearmTimeout = () => {
+    pendingCompletion.cancelTimeout = armTimeout(5_000);
+  };
 
   const result = await startCodexRunForQuestion({
     itemID: params.itemID,
@@ -418,7 +425,7 @@ export async function handleCodexQuestion(params: {
       ? undefined
       : classifyRunFailure({
           engine: "codex_cli",
-          rawError: progress.rawOutput || rawAssistantText,
+          rawError: progress.diagnosticOutput || rawAssistantText,
           source: "process_exit",
         });
     if (terminalFailure) assistantText = terminalFailure.userMessage;
@@ -449,7 +456,9 @@ export async function handleCodexQuestion(params: {
         title: params.sessionTitle,
         loginState: success
           ? "ready"
-          : classifyCodexLoginFailure(progress.rawOutput),
+          : classifyCodexLoginFailure(
+              progress.diagnosticOutput || rawAssistantText,
+            ),
       }),
       runStatus: success ? "completed" : "error",
       latestEventType: progress.latestEventType,
