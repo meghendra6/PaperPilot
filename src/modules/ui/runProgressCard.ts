@@ -9,16 +9,15 @@ export interface RunProgressCardHandle {
 }
 
 export interface RunProgressCardActions {
-  onCancel(): void | Promise<void>;
   onRetry(): void | Promise<void>;
   onOpenSettings(): void | Promise<void>;
   onShowLoginHelp(engine: RunProgressState["engine"]): void | Promise<void>;
 }
 
 const PHASE_LABELS: Record<RunProgressState["phase"], string> = {
-  preparing: "Preparing workspace",
-  running: "Running",
-  finishing: "Finishing",
+  preparing: "Preparing paper context",
+  running: "Waiting for answer",
+  finishing: "Finishing answer",
   completed: "Completed",
   failed: "Failed",
   cancelled: "Cancelled",
@@ -66,7 +65,10 @@ export function createRunProgressCard(params: {
 
   const updateElapsed = () => {
     if (!state || !elapsedElement) return;
-    elapsedElement.textContent = formatRunElapsed(state.startedAt);
+    elapsedElement.textContent = formatRunElapsed(
+      state.startedAt,
+      isRunProgressActive(state) ? Date.now() : state.updatedAt,
+    );
     elapsedElement.setAttribute(
       "aria-label",
       `Elapsed ${elapsedElement.textContent}`,
@@ -122,11 +124,19 @@ export function createRunProgressCard(params: {
       }
     }
 
+    if (!state.failure && isRunProgressActive(state)) {
+      const guidance = doc.createElement("div");
+      guidance.className = "pp-run-progress__message";
+      guidance.textContent =
+        state.phase === "preparing"
+          ? "Preparing your request. Stop it before asking a new question."
+          : state.phase === "running"
+            ? "Your request is running. The answer will appear here; no need to send it again."
+            : "Saving the answer. You can send another message when this finishes.";
+      body.appendChild(guidance);
+    }
     const actions = doc.createElement("div");
     actions.className = "pp-run-progress__actions";
-    if (state.phase === "preparing" || state.phase === "running") {
-      actions.appendChild(makeButton("Cancel", params.actions.onCancel));
-    }
     if (!isRunProgressActive(state) && state.canRetry) {
       actions.appendChild(makeButton("Retry", params.actions.onRetry));
     }

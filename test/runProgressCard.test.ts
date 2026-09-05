@@ -55,6 +55,30 @@ class FakeDocument {
   }
 }
 
+test("terminal elapsed time stays fixed when a completed pane is rebuilt", () => {
+  const doc = new FakeDocument();
+  const container = new FakeElement(doc);
+  const card = createRunProgressCard({
+    container: container as unknown as HTMLElement,
+    actions: { onRetry() {}, onOpenSettings() {}, onShowLoginHelp() {} },
+  });
+  const completed = {
+    ...createRunProgressState({
+      itemID: 73,
+      engine: "codex_cli",
+      token: Symbol("completed"),
+      now: 1000,
+    }),
+    phase: "completed" as const,
+    updatedAt: 37_000,
+  };
+  card.render(completed);
+  assert.equal(container.children[0].children[2].textContent, "0:36");
+  card.render(completed);
+  assert.equal(container.children[0].children[2].textContent, "0:36");
+  card.dispose();
+});
+
 test("run progress card owns one timer and dispose is idempotent", () => {
   const originalSetInterval = globalThis.setInterval;
   const originalClearInterval = globalThis.clearInterval;
@@ -75,7 +99,6 @@ test("run progress card owns one timer and dispose is idempotent", () => {
     const card = createRunProgressCard({
       container: container as unknown as HTMLElement,
       actions: {
-        onCancel() {},
         onRetry() {},
         onOpenSettings() {},
         onShowLoginHelp() {},
@@ -120,7 +143,6 @@ test("run progress actions ignore a second click while the first is pending", as
   const card = createRunProgressCard({
     container: container as unknown as HTMLElement,
     actions: {
-      onCancel() {},
       onRetry() {
         retries += 1;
         return retryPending;

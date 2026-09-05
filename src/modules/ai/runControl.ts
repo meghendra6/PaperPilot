@@ -10,12 +10,13 @@ import {
   markPendingEngineTerminalSettled,
   releasePendingEngineCompletionClaim,
   reportRunStopFailure,
+  requestChatPreparationCancellation,
 } from "./runLifecycle";
 import { markReaderRunFinished } from "./runPresentation";
 
 export async function cancelActiveEngineRun(itemID: number): Promise<boolean> {
   const pending = getPendingEngineCompletion(itemID);
-  if (!pending) return false;
+  if (!pending) return requestChatPreparationCancellation(itemID);
   if (!claimPendingEngineCompletion(itemID, pending.token, "cancel")) {
     return false;
   }

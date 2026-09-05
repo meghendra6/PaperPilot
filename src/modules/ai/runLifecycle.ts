@@ -65,6 +65,7 @@ export interface ReaderLifecycleClaim {
   token: symbol;
   mode?: EngineMode;
   processId?: string;
+  cancelRequested?: boolean;
 }
 
 function readerLifecycleClaims(): Map<number, ReaderLifecycleClaim> {
@@ -108,6 +109,20 @@ export function claimChatEngineRequest(itemID: number): symbol | undefined {
 
 export function releaseChatEngineRequest(itemID: number, token: symbol): void {
   releaseReaderLifecycle(itemID, token);
+  notifyReaderPaneStateChanged(itemID);
+}
+
+export function requestChatPreparationCancellation(itemID: number): boolean {
+  const claim = readerLifecycleClaims().get(itemID);
+  if (claim?.kind !== "chat_admission") return false;
+  claim.cancelRequested = true;
+  notifyReaderPaneStateChanged(itemID);
+  return true;
+}
+
+export function isChatPreparationCancelled(itemID: number): boolean {
+  const claim = readerLifecycleClaims().get(itemID);
+  return claim?.kind === "chat_admission" && claim.cancelRequested === true;
 }
 
 export function isChatEngineRequestPending(itemID: number): boolean {
@@ -215,6 +230,7 @@ export function clearPendingEngineCompletion(
 ): void {
   if (pendingCompletions().get(itemID)?.token === token) {
     pendingCompletions().delete(itemID);
+    notifyReaderPaneStateChanged(itemID);
   }
 }
 
@@ -235,6 +251,7 @@ export function claimPendingEngineCompletion(
     return undefined;
   }
   pending.terminalClaim = claim;
+  notifyReaderPaneStateChanged(itemID);
   return pending;
 }
 
@@ -260,7 +277,10 @@ export function markPendingEnginePreparationSettled(
   const pending = getPendingEngineCompletion(itemID);
   if (!pending || pending.token !== token) return;
   pending.preparationSettled = true;
-  if (pending.terminalSettled) pendingCompletions().delete(itemID);
+  if (pending.terminalSettled) {
+    pendingCompletions().delete(itemID);
+    notifyReaderPaneStateChanged(itemID);
+  }
 }
 
 export function markPendingEngineTerminalSettled(
@@ -270,7 +290,10 @@ export function markPendingEngineTerminalSettled(
   const pending = getPendingEngineCompletion(itemID);
   if (!pending || pending.token !== token) return;
   pending.terminalSettled = true;
-  if (pending.preparationSettled) pendingCompletions().delete(itemID);
+  if (pending.preparationSettled) {
+    pendingCompletions().delete(itemID);
+    notifyReaderPaneStateChanged(itemID);
+  }
 }
 
 export function startRunProgress(
