@@ -288,6 +288,8 @@ export interface ResearchWorkspaceArtifactLineage {
   evidenceVerifierVersion: string;
   providerMode: ResearchWorkspaceEngineMode | "local" | "unknown";
   model?: string;
+  reasoningEffort?: string;
+  responseLanguage?: string;
   runID: string;
 }
 
@@ -333,6 +335,7 @@ export type ResearchWorkspaceRunStatus =
   | "interrupted";
 
 export interface ResearchWorkspaceRun {
+  executionSettings?: import("../../ai/executionSettings").ExecutionSettings;
   runID: string;
   owner: ResearchWorkspaceRunOwner;
   projectID?: string;
@@ -409,7 +412,6 @@ export interface ResearchWorkspacePreferences {
   responseLanguage: "English" | "Korean" | "Chinese";
   maxPaperCharacters: number;
   artifactHistoryLimit: number;
-  retainRawRunLogs: boolean;
 }
 
 export interface ResearchWorkspacePreferencesFile {

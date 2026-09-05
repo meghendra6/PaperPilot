@@ -1,18 +1,35 @@
-// @ts-nocheck -- Ported feature core is guarded by strict runtime parsers.
 import * as reviewScheduler_1 from "./reviewScheduler";
+import type {
+  Clock,
+  ConceptState,
+  CriterionGrade,
+  IdFactory,
+  MasteryAnswerInput,
+  MasteryBlueprint,
+  MasteryConcept,
+  MasteryGrade,
+  MasteryQuestion,
+  MasterySession,
+} from "./types";
 import * as types_1 from "./types";
-function iso(clock) {
+function iso(clock: Clock) {
   return clock.now().toISOString();
 }
-function clamp01(value) {
+function clamp01(value: number) {
   return Math.min(1, Math.max(0, value));
 }
-function conceptWeight(concept) {
+function conceptWeight(concept: MasteryConcept) {
   return concept.importance === "core" ? 2 : 1;
 }
-function createMasterySession(input) {
+function createMasterySession(input: {
+  clock: Clock;
+  idFactory: IdFactory;
+  blueprint: MasteryBlueprint;
+  paperKey: string;
+  responseLanguage: string;
+}): MasterySession {
   const now = iso(input.clock);
-  const conceptStates = {};
+  const conceptStates: Record<string, ConceptState> = {};
   for (const concept of input.blueprint.concepts) {
     conceptStates[concept.id] = {
       conceptId: concept.id,
@@ -35,12 +52,15 @@ function createMasterySession(input) {
     updatedAt: now,
   };
 }
-function prerequisitesReady(session, concept) {
+function prerequisitesReady(session: MasterySession, concept: MasteryConcept) {
   return concept.prerequisites.every(
     (id) => session.conceptStates[id]?.status === "mastered",
   );
 }
-function openMajorMisconceptionCount(session, conceptId) {
+function openMajorMisconceptionCount(
+  session: MasterySession,
+  conceptId?: string,
+) {
   return session.misconceptions.filter(
     (entry) =>
       entry.status === "open" &&
@@ -52,7 +72,10 @@ function openMajorMisconceptionCount(session, conceptId) {
  * Deterministic selection: misconceptions, due reviews, untested core concepts,
  * then weakest concepts. Pass the controller clock for time-aware review priority.
  */
-function selectNextConcept(session, now = new Date(session.updatedAt)) {
+function selectNextConcept(
+  session: MasterySession,
+  now = new Date(session.updatedAt),
+) {
   if (session.phase !== "active") return null;
   const nowMs = now.getTime();
   if (Number.isNaN(nowMs))
@@ -83,7 +106,11 @@ function selectNextConcept(session, now = new Date(session.updatedAt)) {
     );
   return scored[0]?.concept ?? null;
 }
-function setPendingQuestion(session, question, clock) {
+function setPendingQuestion(
+  session: MasterySession,
+  question: MasteryQuestion,
+  clock: Clock,
+) {
   if (session.phase !== "active")
     throw new Error("Cannot add a question to an inactive session.");
   if (session.pendingQuestion)
@@ -116,8 +143,8 @@ function setPendingQuestion(session, question, clock) {
   }
   return { ...session, pendingQuestion: question, updatedAt: iso(clock) };
 }
-function normalizeGrade(question, grade) {
-  const gradesById = new Map();
+function normalizeGrade(question: MasteryQuestion, grade: MasteryGrade) {
+  const gradesById = new Map<string, CriterionGrade>();
   for (const criterionGrade of grade.criterionGrades) {
     if (gradesById.has(criterionGrade.criterionId)) {
       throw new Error(
@@ -151,7 +178,7 @@ function normalizeGrade(question, grade) {
     passed: normalized >= 0.7 && essentialPassed,
   };
 }
-function successfulDelayedReviews(session, conceptId) {
+function successfulDelayedReviews(session: MasterySession, conceptId: string) {
   return session.attempts.filter(
     (attempt) =>
       attempt.question.conceptId === conceptId &&
@@ -159,7 +186,14 @@ function successfulDelayedReviews(session, conceptId) {
       attempt.normalizedScore >= 0.8,
   ).length;
 }
-function applyMasteryGrade(input) {
+function applyMasteryGrade(
+  input: MasteryAnswerInput & {
+    session: MasterySession;
+    grade: MasteryGrade;
+    clock: Clock;
+    idFactory: IdFactory;
+  },
+): MasterySession {
   const question = input.session.pendingQuestion;
   if (!question)
     throw new Error("No pending question is available for grading.");
@@ -235,7 +269,7 @@ function applyMasteryGrade(input) {
     ),
     majorMisconception,
   });
-  let next = {
+  let next: MasterySession = {
     ...input.session,
     attempts: [...input.session.attempts, attempt],
     misconceptions: [...previousMisconceptions, ...newMisconceptions],
@@ -260,7 +294,12 @@ function applyMasteryGrade(input) {
   }
   return next;
 }
-function resolveMisconception(session, misconceptionId, status, clock) {
+function resolveMisconception(
+  session: MasterySession,
+  misconceptionId: string,
+  status: string,
+  clock: Clock,
+) {
   const now = iso(clock);
   let found = false;
   const misconceptions = session.misconceptions.map((entry) => {
@@ -282,7 +321,7 @@ function resolveMisconception(session, misconceptionId, status, clock) {
   if (!found) throw new Error(`Unknown misconception: ${misconceptionId}`);
   return { ...session, misconceptions, updatedAt: now };
 }
-function calculateMasteryMetrics(session) {
+function calculateMasteryMetrics(session: MasterySession) {
   const conceptsById = new Map(
     session.blueprint.concepts.map((concept) => [concept.id, concept]),
   );
@@ -331,7 +370,7 @@ function calculateMasteryMetrics(session) {
       retentionPossible > 0 ? retentionEarned / retentionPossible : null,
   };
 }
-function calculateCompletionStatus(session) {
+function calculateCompletionStatus(session: MasterySession) {
   const metrics = calculateMasteryMetrics(session);
   const coreConcepts = session.blueprint.concepts.filter(
     (concept) => concept.importance === "core",
@@ -384,11 +423,11 @@ function calculateCompletionStatus(session) {
 }
 
 export {
+  applyMasteryGrade,
+  calculateCompletionStatus,
+  calculateMasteryMetrics,
   createMasterySession,
+  resolveMisconception,
   selectNextConcept,
   setPendingQuestion,
-  applyMasteryGrade,
-  resolveMisconception,
-  calculateMasteryMetrics,
-  calculateCompletionStatus,
 };

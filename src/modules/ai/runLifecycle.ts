@@ -1,8 +1,15 @@
+import { sessionHistoryService } from "../session/sessionHistoryService";
 import {
   classifyRunFailure,
   getEngineLabel,
   type RunFailureSource,
 } from "./runFailure";
+import {
+  notifyReaderPaneStateChanged,
+  restoreReaderRunOwnership,
+  type ReaderRunCompletionResult,
+  type ReaderRunToken,
+} from "./runPresentation";
 import {
   createRunProgressState,
   getRunProgressState,
@@ -10,14 +17,7 @@ import {
   transitionRunProgress,
   type RunProgressState,
 } from "./runProgress";
-import {
-  notifyReaderPaneStateChanged,
-  restoreReaderRunOwnership,
-  type ReaderRunCompletionResult,
-  type ReaderRunToken,
-} from "./runPresentation";
 import type { EngineMode } from "./types";
-import { sessionHistoryService } from "../session/sessionHistoryService";
 
 declare const addon: any;
 
@@ -60,9 +60,11 @@ type ReaderLifecycleClaimKind =
   | "retry"
   | "session";
 
-interface ReaderLifecycleClaim {
+export interface ReaderLifecycleClaim {
   kind: ReaderLifecycleClaimKind;
   token: symbol;
+  mode?: EngineMode;
+  processId?: string;
 }
 
 function readerLifecycleClaims(): Map<number, ReaderLifecycleClaim> {
@@ -76,7 +78,8 @@ function claimReaderLifecycle(
   itemID: number,
   kind: ReaderLifecycleClaimKind,
 ): symbol | undefined {
-  if (readerLifecycleClaims().has(itemID)) return undefined;
+  if (addon.data.shuttingDown || readerLifecycleClaims().has(itemID))
+    return undefined;
   const token = Symbol(`${itemID}:${kind}`);
   readerLifecycleClaims().set(itemID, { kind, token });
   return token;
@@ -125,6 +128,22 @@ export function isRetryEngineRequestPending(itemID: number): boolean {
 
 export function claimDirectWorkspaceRun(itemID: number): symbol | undefined {
   return claimReaderLifecycle(itemID, "direct_workspace");
+}
+
+/** Capture the claim before asynchronous preparation; shutdown can still see a late PID. */
+export function directWorkspaceRunOwner(itemID: number, token: symbol) {
+  const data = addon.data;
+  const claim = readerLifecycleClaims().get(itemID);
+  if (!claim || claim.kind !== "direct_workspace" || claim.token !== token) {
+    throw new Error("Workspace run reservation is no longer current.");
+  }
+  return {
+    isShuttingDown: () => Boolean(data.shuttingDown),
+    registerProcess: (mode: EngineMode, processId?: string) => {
+      claim.mode = mode;
+      claim.processId = processId;
+    },
+  };
 }
 
 export function releaseDirectWorkspaceRun(itemID: number, token: symbol): void {

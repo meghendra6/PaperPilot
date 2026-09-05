@@ -1,5 +1,5 @@
-// @ts-nocheck -- Ported feature core is guarded by strict runtime parsers.
 import * as json_1 from "../comprehensionCheck/v2/json";
+import type { CitationContext } from "../contracts";
 import * as types_1 from "../evidence/types";
 import { enumValue, optionalUnitInterval } from "../parserValidation";
 const STANCES = new Set([
@@ -12,7 +12,11 @@ const STANCES = new Set([
   "mentioning",
   "unclear",
 ]);
-function parse(response, contexts, allowedAttachments) {
+function parse(
+  response: string,
+  contexts: CitationContext[],
+  allowedAttachments?: string[],
+) {
   const root = (0, json_1.extractLastJsonObject)(response);
   const contextIds = new Set();
   for (const context of contexts) {
@@ -83,7 +87,16 @@ function parse(response, contexts, allowedAttachments) {
       },
   );
 }
-function parseCitationStanceResponse(responseOrParams, contexts) {
+function parseCitationStanceResponse(
+  responseOrParams:
+    | string
+    | {
+        response: string;
+        contexts: CitationContext[];
+        allowedAttachments?: string[];
+      },
+  contexts?: CitationContext[],
+) {
   return typeof responseOrParams === "string"
     ? parse(responseOrParams, contexts ?? [])
     : parse(

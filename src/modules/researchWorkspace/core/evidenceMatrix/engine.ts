@@ -1,11 +1,18 @@
-// @ts-nocheck -- Ported feature core is guarded by strict runtime parsers.
-function display(value) {
+import type {
+  EvidenceMatrix,
+  MatrixCell,
+  MatrixColumn,
+  MatrixPaper,
+  MatrixRow,
+  NamedArtifactInput,
+} from "../contracts";
+function display(value: unknown) {
   if (value === null) return "";
   if (Array.isArray(value)) return value.join("; ");
   if (typeof value === "boolean") return value ? "Yes" : "No";
   return String(value);
 }
-function normalizeColumn(column) {
+function normalizeColumn(column: MatrixColumn) {
   const extractionQuestion = (
     column.extractionQuestion ||
     column.question ||
@@ -20,7 +27,12 @@ function normalizeColumn(column) {
     enumValues: column.enumValues ? [...column.enumValues] : undefined,
   };
 }
-function createEvidenceMatrix(params) {
+function createEvidenceMatrix(
+  params: NamedArtifactInput & {
+    columns: readonly MatrixColumn[];
+    papers?: MatrixPaper[];
+  },
+): EvidenceMatrix {
   const columns = params.columns.map(normalizeColumn);
   const seen = new Set();
   for (const column of columns) {
@@ -53,7 +65,11 @@ function createEvidenceMatrix(params) {
     updatedAt: now,
   };
 }
-function normalizeEvidenceMatrixCell(column, cell) {
+function normalizeEvidenceMatrixCell(
+  column: MatrixColumn,
+  cell: Omit<MatrixCell, "displayValue" | "status"> &
+    Partial<Pick<MatrixCell, "displayValue" | "status">>,
+): MatrixCell {
   let value = cell.value;
   if (value !== null) {
     if (column.valueType === "number") {
@@ -76,7 +92,10 @@ function normalizeEvidenceMatrixCell(column, cell) {
             .filter(Boolean);
     } else {
       value = String(value);
-      if (column.valueType === "enum" && !column.enumValues?.includes(value))
+      if (
+        column.valueType === "enum" &&
+        !column.enumValues?.includes(String(value))
+      )
         throw new Error(`${column.id} has invalid enum value ${value}`);
     }
   }
@@ -94,7 +113,7 @@ function normalizeEvidenceMatrixCell(column, cell) {
     evidence: [...cell.evidence],
   };
 }
-function rebuildRows(matrix, cells, now) {
+function rebuildRows(matrix: EvidenceMatrix, cells: MatrixCell[], now: string) {
   return matrix.papers.map((paper) => ({
     paperKey: paper.paperKey,
     attachmentKey: paper.attachmentKeys[0] ?? "",
@@ -104,8 +123,9 @@ function rebuildRows(matrix, cells, now) {
   }));
 }
 function upsertEvidenceMatrixCells(
-  matrix,
-  incoming,
+  matrix: EvidenceMatrix,
+  incoming: (Omit<MatrixCell, "displayValue" | "status"> &
+    Partial<Pick<MatrixCell, "displayValue" | "status">>)[],
   now = new Date().toISOString(),
 ) {
   const columns = new Map(matrix.columns.map((column) => [column.id, column]));
@@ -141,7 +161,7 @@ function upsertEvidenceMatrixCells(
     updatedAt: now,
   };
 }
-function upsertEvidenceMatrixRow(matrix, row) {
+function upsertEvidenceMatrixRow(matrix: EvidenceMatrix, row: MatrixRow) {
   let papers = matrix.papers;
   if (!papers.some((paper) => paper.paperKey === row.paperKey)) {
     papers = [
@@ -158,7 +178,7 @@ function upsertEvidenceMatrixRow(matrix, row) {
     row.cells.map((cell) => ({ ...cell, paperKey: row.paperKey })),
   );
 }
-function calculateEvidenceMatrixCoverage(matrix) {
+function calculateEvidenceMatrixCoverage(matrix: EvidenceMatrix) {
   const cellCount = matrix.papers.length * matrix.columns.length;
   const filled = matrix.cells.filter(
     (cell) =>
@@ -195,9 +215,9 @@ function calculateEvidenceMatrixCoverage(matrix) {
 }
 
 export {
+  calculateEvidenceMatrixCoverage,
   createEvidenceMatrix,
   normalizeEvidenceMatrixCell,
   upsertEvidenceMatrixCells,
   upsertEvidenceMatrixRow,
-  calculateEvidenceMatrixCoverage,
 };

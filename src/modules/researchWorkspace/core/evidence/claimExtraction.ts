@@ -1,9 +1,9 @@
-// @ts-nocheck -- Ported feature core is guarded by strict runtime parsers.
+import { buildEvidenceReferencePromptExample } from "../../outputSchemas";
+import * as json_1 from "../comprehensionCheck/v2/json";
+import type { PaperPromptInput, PaperResponseInput } from "../contracts";
+import { enumValue, optionalUnitInterval } from "../parserValidation";
 import * as claimLedger_1 from "./claimLedger";
 import * as types_1 from "./types";
-import * as json_1 from "../comprehensionCheck/v2/json";
-import { enumValue, optionalUnitInterval } from "../parserValidation";
-import { buildEvidenceReferencePromptExample } from "../../outputSchemas";
 const CLAIM_KINDS = new Set([
   "author_claim",
   "empirical_result",
@@ -17,19 +17,19 @@ const VERIFICATION_STATUSES = new Set([
   "unverified",
   "conflicting",
 ]);
-function object(value, name) {
+function object(value: unknown, name: string): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value))
     throw new Error(`${name} must be object`);
-  return value;
+  return value as Record<string, unknown>;
 }
-function sourceBlock(tag, value) {
+function sourceBlock(tag: string, value: unknown) {
   const escaped = String(value).replace(
     new RegExp(`</${tag}`, "gi"),
     `<\\/${tag}`,
   );
   return `<${tag} trust="source-data">\n${escaped}\n</${tag}>`;
 }
-function buildClaimExtractionPrompt(params) {
+function buildClaimExtractionPrompt(params: PaperPromptInput) {
   const sourceIdentity = params.sourceID
     ? `Every evidence reference must also use sourceID ${JSON.stringify(params.sourceID)} and libraryID ${JSON.stringify(params.libraryID)}.`
     : "";
@@ -44,7 +44,9 @@ Use attachmentKey ${JSON.stringify(params.attachmentKey)}. Separate what authors
 ${sourceIdentity}
 ${sourceBlock("paper_context", params.paperContext)}`;
 }
-function parseClaimExtractionResponse(params) {
+function parseClaimExtractionResponse(
+  params: Omit<PaperResponseInput, "paperKey"> & { paperKey?: string },
+) {
   const root = (0, json_1.extractLastJsonObject)(params.response);
   const allowed = new Set([params.attachmentKey]);
   let ledger = (0, claimLedger_1.createClaimLedger)(

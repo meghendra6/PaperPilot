@@ -335,7 +335,10 @@ test("every template preset is a registered capability", () => {
 
 test("template UI exposes selector, editable preview, settings, and recommendation-only emphasis", () => {
   const projectWindowSource = readFileSync(
-    join(process.cwd(), "src/modules/researchWorkspace/projectWindowView.ts"),
+    join(
+      process.cwd(),
+      "src/modules/researchWorkspace/projectTemplatePanels.ts",
+    ),
     "utf8",
   );
   assert.match(projectWindowSource, /Create from a research project template/);

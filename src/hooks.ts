@@ -1,44 +1,44 @@
 import { config } from "../package.json";
-import { getString, initLocale } from "./utils/locale";
+import { listActiveReaderRuns } from "./modules/ai/runPresentation";
+import {
+  collectShutdownRuns,
+  stopShutdownRunsBestEffort,
+} from "./modules/ai/shutdownRuns";
+import { clearClaudePollerForItem } from "./modules/claude/poller";
+import { clearCodexPollerForItem } from "./modules/codex/poller";
+import { clearGeminiPollerForItem } from "./modules/gemini/poller";
 import { registerPrefsScripts } from "./modules/preferenceScript";
-import { createZToolkit } from "./utils/ztoolkit";
+import {
+  registerReaderActionPlaceholders,
+  unregisterReaderActionPlaceholders,
+} from "./modules/readerActions";
 import {
   disposeReaderPaneRunProgressCards,
   registerPaperPilotPaneSection,
   unregisterPaperPilotPaneSection,
 } from "./modules/readerPane";
-import { clearClaudePollerForItem } from "./modules/claude/poller";
-import { clearCodexPollerForItem } from "./modules/codex/poller";
-import { clearGeminiPollerForItem } from "./modules/gemini/poller";
-import {
-  registerReaderActionPlaceholders,
-  unregisterReaderActionPlaceholders,
-} from "./modules/readerActions";
-import { PAPER_PILOT_PREF_PANE_ID } from "./modules/ui/runProgressCard";
-import {
-  registerResearchWorkspacePaneSection,
-  unregisterResearchWorkspacePaneSection,
-} from "./modules/researchWorkspace/view";
-import {
-  registerResearchWorkspaceLaunchers,
-  unregisterResearchWorkspaceLaunchers,
-  unregisterResearchWorkspaceLaunchersForWindow,
-} from "./modules/researchWorkspace/menu";
-import { closeResearchWorkspaceWindow } from "./modules/researchWorkspace/window";
-import {
-  migrateLegacyResearchWorkspace,
-  recoverResearchWorkspaceProjectPersistence,
-} from "./modules/researchWorkspace/storage";
 import { clearResearchWorkspaceHybridIndexCache } from "./modules/researchWorkspace/facade";
 import {
   registerResearchWorkspaceLivingReviewNotifier,
   unregisterResearchWorkspaceLivingReviewNotifier,
 } from "./modules/researchWorkspace/livingReviewIntegration";
 import {
-  collectShutdownRuns,
-  stopShutdownRunsBestEffort,
-} from "./modules/ai/shutdownRuns";
-import { listActiveReaderRuns } from "./modules/ai/runPresentation";
+  registerResearchWorkspaceLaunchers,
+  unregisterResearchWorkspaceLaunchers,
+  unregisterResearchWorkspaceLaunchersForWindow,
+} from "./modules/researchWorkspace/menu";
+import {
+  migrateLegacyResearchWorkspace,
+  recoverResearchWorkspaceProjectPersistence,
+} from "./modules/researchWorkspace/storage";
+import {
+  registerResearchWorkspacePaneSection,
+  unregisterResearchWorkspacePaneSection,
+} from "./modules/researchWorkspace/view";
+import { closeResearchWorkspaceWindow } from "./modules/researchWorkspace/window";
+import { PAPER_PILOT_PREF_PANE_ID } from "./modules/ui/runProgressCard";
+import { getString, initLocale } from "./utils/locale";
+import { createZToolkit } from "./utils/ztoolkit";
 
 async function onStartup() {
   await Promise.all([
@@ -124,13 +124,22 @@ async function registerPreferencePane() {
   });
 }
 
-function onShutdown(): void {
-  unregisterPaperPilotPaneSection();
-  disposeReaderPaneRunProgressCards();
-  stopShutdownRunsBestEffort({
+let processShutdown: Promise<void> | undefined;
+
+function onApplicationShutdown(): Promise<void> {
+  if (processShutdown) return processShutdown;
+  addon.data.shuttingDown = true;
+  processShutdown = stopShutdownRunsBestEffort({
     runs: collectShutdownRuns(addon.data, listActiveReaderRuns()),
     log: (...values) => addon.data.ztoolkit?.log(...values),
   });
+  return processShutdown;
+}
+
+async function onShutdown(): Promise<void> {
+  await onApplicationShutdown();
+  unregisterPaperPilotPaneSection();
+  disposeReaderPaneRunProgressCards();
   addon.data.codexRunPollers?.forEach((_poller, itemID) =>
     clearCodexPollerForItem(itemID),
   );
@@ -174,6 +183,7 @@ async function onPrefsEvent(type: string, data: { [key: string]: any }) {
 export default {
   onStartup,
   onShutdown,
+  onApplicationShutdown,
   onMainWindowLoad,
   onMainWindowUnload,
   onPrefsEvent,

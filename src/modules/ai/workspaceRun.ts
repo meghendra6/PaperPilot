@@ -1,20 +1,22 @@
-import type { EngineMode } from "./types";
-import type { RunProfile } from "./runProfile";
-import type { StructuredOutputSchema } from "./structuredOutput";
 import { isClaudeRunActiveForItem } from "../claude/runState";
 import { isCodexRunActiveForItem } from "../codex/runState";
 import { isGeminiRunActiveForItem } from "../gemini/runState";
 import { cleanupPaperWorkspaceForItemIfEnabled } from "../workspace/cleanup";
+import type { WorkspaceSupplementalFiles } from "../workspace/supplementalFiles";
+import type { ExecutionSettings } from "./executionSettings";
+import { stopDetachedRunProcess } from "./runCompletion";
 import {
   claimDirectWorkspaceRun,
+  directWorkspaceRunOwner,
   getPendingEngineCompletion,
-  isDirectWorkspaceRunClaimed,
   isDirectWorkspaceRunClaimCurrent,
+  isDirectWorkspaceRunClaimed,
   isReaderLifecycleClaimActive,
   releaseDirectWorkspaceRun,
 } from "./runLifecycle";
-import { stopDetachedRunProcess } from "./runCompletion";
-import type { WorkspaceSupplementalFiles } from "../workspace/supplementalFiles";
+import type { RunProfile } from "./runProfile";
+import type { StructuredOutputSchema } from "./structuredOutput";
+import type { EngineMode } from "./types";
 
 export interface WorkspaceRunResult {
   ok: true;
@@ -115,6 +117,7 @@ export async function startWorkspaceTextRun(params: {
   profile: Exclude<RunProfile, "chat">;
   outputSchema?: StructuredOutputSchema;
   workspaceFiles?: WorkspaceSupplementalFiles;
+  executionSettings?: ExecutionSettings;
   requiredDiscoveryCapabilities?: import("../discovery/types").DiscoveryCapabilities;
   signal?: AbortSignal;
   deadline?: number;
@@ -136,6 +139,11 @@ export async function startWorkspaceTextRun(params: {
     );
   }
 
+  const owner = directWorkspaceRunOwner(
+    params.reservationItemID,
+    params.reservationToken,
+  );
+  if (owner.isShuttingDown()) throw new Error("Paper Pilot is shutting down.");
   const interruptionMessage = () =>
     params.signal?.aborted
       ? "Workspace run preparation cancelled."
@@ -157,6 +165,7 @@ export async function startWorkspaceTextRun(params: {
         profile: params.profile,
         outputSchema: params.outputSchema,
         workspaceFiles: params.workspaceFiles,
+        executionSettings: params.executionSettings,
       });
     } else if (params.mode === "gemini_cli") {
       const { startGeminiRunForQuestion } = await import("../gemini/runner");
@@ -168,6 +177,7 @@ export async function startWorkspaceTextRun(params: {
         profile: params.profile,
         outputSchema: params.outputSchema,
         workspaceFiles: params.workspaceFiles,
+        executionSettings: params.executionSettings,
       });
     } else {
       if (
@@ -191,12 +201,16 @@ export async function startWorkspaceTextRun(params: {
         profile: params.profile,
         outputSchema: params.outputSchema,
         workspaceFiles: params.workspaceFiles,
+        executionSettings: params.executionSettings,
       });
     }
 
     return result;
   };
-  const preparation = (params.prepareRun || prepare)();
+  const preparation = (params.prepareRun || prepare)().then((result) => {
+    if (result.ok) owner.registerProcess(params.mode, result.processId);
+    return result;
+  });
   let timer: ReturnType<typeof setTimeout> | undefined;
   let abortListener: (() => void) | undefined;
   const interrupted = new Promise<never>((_resolve, reject) => {
@@ -214,11 +228,15 @@ export async function startWorkspaceTextRun(params: {
   });
 
   try {
-    return await (params.signal || params.deadline !== undefined
+    const result = await (params.signal || params.deadline !== undefined
       ? Promise.race([preparation, interrupted])
       : preparation);
+    if (owner.isShuttingDown())
+      throw new Error("Paper Pilot is shutting down.");
+    return result;
   } catch (error) {
     const wasInterrupted =
+      owner.isShuttingDown() ||
       params.signal?.aborted ||
       (params.deadline !== undefined && Date.now() >= params.deadline);
     if (wasInterrupted) {

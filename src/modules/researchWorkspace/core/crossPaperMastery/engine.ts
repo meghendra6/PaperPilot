@@ -1,11 +1,24 @@
-// @ts-nocheck -- Ported feature core is guarded by strict runtime parsers.
 import { scheduleMasteryReview } from "../../../comprehensionCheck/analytics";
+import type {
+  CrossPaperAttempt,
+  CrossPaperConcept,
+  CrossPaperCriterionGrade,
+  CrossPaperQuestion,
+  CrossPaperSession,
+} from "./types";
 
-const clamp01 = (value) => {
+const clamp01 = (value: unknown) => {
   const number = Number(value);
   return Number.isFinite(number) ? Math.max(0, Math.min(1, number)) : 0;
 };
-function createCrossPaperMasterySession(params) {
+function createCrossPaperMasterySession(params: {
+  id: string;
+  concepts: CrossPaperConcept[];
+  sourceSnapshot?: CrossPaperSession["sourceSnapshot"];
+  collectionKey?: string;
+  projectID?: string;
+  now?: string;
+}): CrossPaperSession {
   const conceptIds = new Set();
   const concepts = params.concepts.map((concept) => {
     if (!concept.id || conceptIds.has(concept.id))
@@ -41,8 +54,8 @@ function createCrossPaperMasterySession(params) {
   };
 }
 function addCrossPaperQuestion(
-  session,
-  question,
+  session: CrossPaperSession,
+  question: CrossPaperQuestion,
   now = new Date().toISOString(),
 ) {
   if (!session.concepts.some((concept) => concept.id === question.conceptId))
@@ -58,8 +71,8 @@ function addCrossPaperQuestion(
   };
 }
 function addCrossPaperAttempt(
-  session,
-  attempt,
+  session: CrossPaperSession,
+  attempt: CrossPaperAttempt,
   now = new Date().toISOString(),
 ) {
   const question = session.questions.find(
@@ -107,7 +120,10 @@ function addCrossPaperAttempt(
     updatedAt: now,
   };
 }
-function scoreCrossPaperAttempt(question, attempt) {
+function scoreCrossPaperAttempt(
+  question: CrossPaperQuestion,
+  attempt: Pick<CrossPaperAttempt, "grades">,
+) {
   const maxScore = question.rubric.reduce(
     (sum, criterion) => sum + criterion.maxScore,
     0,
@@ -128,7 +144,7 @@ function scoreCrossPaperAttempt(question, attempt) {
     ) / maxScore
   );
 }
-function summarizeCrossPaperMastery(session) {
+function summarizeCrossPaperMastery(session: CrossPaperSession) {
   const attemptedQuestionIds = new Set(
     session.attempts.map((attempt) => attempt.questionId),
   );
@@ -144,7 +160,7 @@ function summarizeCrossPaperMastery(session) {
     return question ? scoreCrossPaperAttempt(question, attempt) : 0;
   });
   const calibrationErrors = session.attempts.map((attempt, index) =>
-    Math.abs(attempt.learnerConfidence - ratios[index]),
+    Math.abs((attempt.learnerConfidence ?? 0) - ratios[index]),
   );
   return {
     conceptCoverage: session.concepts.length
@@ -171,7 +187,15 @@ function summarizeCrossPaperMastery(session) {
     ],
   };
 }
-function gradeCrossPaperAnswer(question, input) {
+function gradeCrossPaperAnswer(
+  question: CrossPaperQuestion,
+  input: {
+    criterionScores: Omit<CrossPaperCriterionGrade, "maxScore">[];
+    feedback: string;
+    misconceptions?: string[];
+    graderConfidence?: number;
+  },
+) {
   const byId = new Map(
     input.criterionScores.map((score) => [score.criterionId, score]),
   );
@@ -195,16 +219,16 @@ function gradeCrossPaperAnswer(question, input) {
     graderConfidence: clamp01(input.graderConfidence),
   };
 }
-function crossPaperGradeRatio(grade) {
+function crossPaperGradeRatio(grade: { maxScore: number; totalScore: number }) {
   return grade.maxScore ? grade.totalScore / grade.maxScore : 0;
 }
 
 export {
-  createCrossPaperMasterySession,
-  addCrossPaperQuestion,
   addCrossPaperAttempt,
+  addCrossPaperQuestion,
+  createCrossPaperMasterySession,
+  crossPaperGradeRatio,
+  gradeCrossPaperAnswer,
   scoreCrossPaperAttempt,
   summarizeCrossPaperMastery,
-  gradeCrossPaperAnswer,
-  crossPaperGradeRatio,
 };

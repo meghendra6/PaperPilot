@@ -1,4 +1,9 @@
-// @ts-nocheck -- Ported feature core is guarded by strict runtime parsers.
+import type {
+  GraphEdge,
+  GraphNode,
+  LiteratureGraph,
+  NamedArtifactInput,
+} from "../contracts";
 const NODE_KINDS = new Set(["paper", "concept", "claim", "method", "dataset"]);
 const EDGE_KINDS = new Set([
   "introduces",
@@ -12,7 +17,11 @@ const EDGE_KINDS = new Set([
   "evaluates_on",
   "related",
 ]);
-function createLiteratureGraph(paramsOrId, legacyName, legacyNow) {
+function createLiteratureGraph(
+  paramsOrId: NamedArtifactInput | string,
+  legacyName?: string,
+  legacyNow?: string,
+): LiteratureGraph {
   const params =
     typeof paramsOrId === "string"
       ? {
@@ -34,18 +43,18 @@ function createLiteratureGraph(paramsOrId, legacyName, legacyNow) {
     updatedAt: now,
   };
 }
-function normalizeNode(node) {
+function normalizeNode(node: GraphNode) {
   const kind = node.kind ?? node.type;
-  if (!NODE_KINDS.has(kind))
+  if (!NODE_KINDS.has(kind ?? ""))
     throw new Error(`Node ${node.id} has an invalid type: ${kind}.`);
   const id = typeof node.id === "string" ? node.id.trim() : "";
   const label = typeof node.label === "string" ? node.label.trim() : "";
   if (!id || !label) throw new Error("Graph nodes require id and label.");
   return { ...node, id, label, kind, type: kind };
 }
-function normalizeEdge(edge) {
+function normalizeEdge(edge: GraphEdge) {
   const kind = edge.kind ?? edge.type;
-  if (!EDGE_KINDS.has(kind))
+  if (!EDGE_KINDS.has(kind ?? ""))
     throw new Error(`Edge ${edge.id} has an invalid type: ${kind}.`);
   const id = typeof edge.id === "string" ? edge.id.trim() : "";
   const source = typeof edge.source === "string" ? edge.source.trim() : "";
@@ -66,7 +75,11 @@ function normalizeEdge(edge) {
     verified: edge.verified === true,
   };
 }
-function addLiteratureNode(graph, rawNode, now = new Date().toISOString()) {
+function addLiteratureNode(
+  graph: LiteratureGraph,
+  rawNode: GraphNode,
+  now = new Date().toISOString(),
+) {
   const node = normalizeNode(rawNode);
   const nodes = graph.nodes.some((entry) => entry.id === node.id)
     ? graph.nodes.map((entry) =>
@@ -75,7 +88,11 @@ function addLiteratureNode(graph, rawNode, now = new Date().toISOString()) {
     : [...graph.nodes, node];
   return { ...graph, nodes, updatedAt: now };
 }
-function addLiteratureEdge(graph, rawEdge, now = new Date().toISOString()) {
+function addLiteratureEdge(
+  graph: LiteratureGraph,
+  rawEdge: GraphEdge,
+  now = new Date().toISOString(),
+) {
   const edge = normalizeEdge(rawEdge);
   const ids = new Set(graph.nodes.map((node) => node.id));
   if (!ids.has(edge.source) || !ids.has(edge.target))
@@ -88,7 +105,12 @@ function addLiteratureEdge(graph, rawEdge, now = new Date().toISOString()) {
     updatedAt: now,
   };
 }
-function mergeLiteratureGraph(params) {
+function mergeLiteratureGraph(params: {
+  graph: LiteratureGraph;
+  nodes?: GraphNode[];
+  edges?: GraphEdge[];
+  now?: string;
+}) {
   let graph = params.graph;
   for (const node of params.nodes ?? [])
     graph = addLiteratureNode(graph, node, params.now);
@@ -96,21 +118,21 @@ function mergeLiteratureGraph(params) {
     graph = addLiteratureEdge(graph, edge, params.now);
   return graph;
 }
-function validateLiteratureGraph(graph) {
+function validateLiteratureGraph(graph: LiteratureGraph) {
   const errors = [];
   const warnings = [];
   const ids = new Set();
   for (const node of graph.nodes) {
     if (ids.has(node.id)) errors.push(`Duplicate node ${node.id}`);
     ids.add(node.id);
-    if (!NODE_KINDS.has(node.kind ?? node.type))
+    if (!NODE_KINDS.has(node.kind ?? node.type ?? ""))
       errors.push(`Invalid node type ${node.id}`);
   }
   const edgeIds = new Set();
   for (const edge of graph.edges) {
     if (edgeIds.has(edge.id)) errors.push(`Duplicate edge ${edge.id}`);
     edgeIds.add(edge.id);
-    if (!EDGE_KINDS.has(edge.kind ?? edge.type))
+    if (!EDGE_KINDS.has(edge.kind ?? edge.type ?? ""))
       errors.push(`Invalid edge type ${edge.id}`);
     if (!ids.has(edge.source) || !ids.has(edge.target))
       errors.push(`Dangling edge ${edge.id}`);
@@ -120,14 +142,18 @@ function validateLiteratureGraph(graph) {
   }
   return { valid: errors.length === 0, errors, warnings };
 }
-function shortestLiteraturePath(graph, source, target) {
+function shortestLiteraturePath(
+  graph: LiteratureGraph,
+  source: string,
+  target: string,
+) {
   if (
     !graph.nodes.some((node) => node.id === source) ||
     !graph.nodes.some((node) => node.id === target)
   )
     return [];
   if (source === target) return [source];
-  const adjacency = new Map();
+  const adjacency = new Map<string, string[]>();
   for (const edge of graph.edges) {
     adjacency.set(edge.source, [
       ...(adjacency.get(edge.source) || []),
@@ -141,7 +167,7 @@ function shortestLiteraturePath(graph, source, target) {
   const queue = [[source]];
   const seen = new Set([source]);
   while (queue.length) {
-    const path = queue.shift();
+    const path = queue.shift()!;
     for (const next of adjacency.get(path[path.length - 1]) || []) {
       if (seen.has(next)) continue;
       const candidate = [...path, next];
@@ -152,7 +178,7 @@ function shortestLiteraturePath(graph, source, target) {
   }
   return [];
 }
-function connectedComponents(graph) {
+function connectedComponents(graph: LiteratureGraph) {
   const result = [];
   const seen = new Set();
   for (const node of graph.nodes) {
@@ -160,7 +186,7 @@ function connectedComponents(graph) {
     const stack = [node.id];
     const component = [];
     while (stack.length) {
-      const current = stack.pop();
+      const current = stack.pop()!;
       if (seen.has(current)) continue;
       seen.add(current);
       component.push(current);
@@ -176,22 +202,22 @@ function connectedComponents(graph) {
   return result;
 }
 
-function literatureGraphIntegrityIssues(graph) {
+function literatureGraphIntegrityIssues(graph: LiteratureGraph) {
   const integrity = validateLiteratureGraph(graph);
   return [...integrity.errors, ...integrity.warnings];
 }
 /** Backward-compatible, descriptive aliases used by the workspace UI. */
 
 export {
-  createLiteratureGraph,
-  addLiteratureNode,
   addLiteratureEdge,
-  mergeLiteratureGraph,
-  validateLiteratureGraph,
-  shortestLiteraturePath,
+  addLiteratureNode,
   connectedComponents,
-  literatureGraphIntegrityIssues,
-  shortestLiteraturePath as findShortestLiteraturePath,
+  createLiteratureGraph,
   shortestLiteraturePath as findLiteratureGraphPath,
+  shortestLiteraturePath as findShortestLiteraturePath,
   literatureGraphIntegrityIssues as graphIntegrityIssues,
+  literatureGraphIntegrityIssues,
+  mergeLiteratureGraph,
+  shortestLiteraturePath,
+  validateLiteratureGraph,
 };

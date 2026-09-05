@@ -214,3 +214,64 @@ test("paper content extraction rejects an attachment outside the requested sourc
     /does not match the requested source identity/,
   );
 });
+
+test("profile JAR cache upgrades old versions, repairs corruption, and coalesces atomic copies", async () => {
+  const globals = globalThis as any;
+  const previous = {
+    Zotero: globals.Zotero,
+    PathUtils: globals.PathUtils,
+    IOUtils: globals.IOUtils,
+    fetch: globals.fetch,
+  };
+  const files = new Map<string, Uint8Array<ArrayBuffer>>([
+    [
+      "/profile/paperpilot-tools/opendataloader-pdf-cli.jar",
+      new Uint8Array([1]),
+    ],
+  ]);
+  const bundled = new Uint8Array([80, 75, 3, 4, 5]);
+  let fetches = 0;
+  let writes = 0;
+  globals.Zotero = { Profile: { dir: "/profile" } };
+  globals.PathUtils = { join: (...parts: string[]) => parts.join("/") };
+  globals.IOUtils = {
+    exists: async (path: string) => files.has(path),
+    read: async (path: string) => files.get(path),
+    makeDirectory: async () => {},
+    write: async (
+      path: string,
+      contents: Uint8Array<ArrayBuffer>,
+      options: { tmpPath: string; flush: boolean },
+    ) => {
+      assert(options.tmpPath.startsWith(`${path}.tmp-`));
+      assert.equal(options.flush, true);
+      writes += 1;
+      files.set(path, contents);
+    },
+    remove: async () => {},
+  };
+  globals.fetch = async () => {
+    fetches += 1;
+    return { ok: true, arrayBuffer: async () => bundled.buffer };
+  };
+  try {
+    const options = { rootUri: "file:///installed-addon/" };
+    const paths = await Promise.all([
+      resolveOpenDataLoaderJarPath(options),
+      resolveOpenDataLoaderJarPath(options),
+    ]);
+    assert.equal(paths[0], paths[1]);
+    assert.match(paths[0], /opendataloader-pdf-cli-\d+\.\d+\.\d+\.jar$/);
+    assert.equal(writes, 1);
+    assert.equal(fetches, 1);
+    await resolveOpenDataLoaderJarPath(options);
+    assert.equal(writes, 1);
+    files.set(paths[0], new Uint8Array([80, 75]));
+    await resolveOpenDataLoaderJarPath(options);
+    assert.equal(writes, 2);
+    assert.deepEqual(files.get(paths[0]), bundled);
+    assert(files.has("/profile/paperpilot-tools/opendataloader-pdf-cli.jar"));
+  } finally {
+    Object.assign(globals, previous);
+  }
+});

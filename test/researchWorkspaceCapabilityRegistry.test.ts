@@ -165,7 +165,7 @@ test("project UI exposes the explicit screening workflow without prompt dialogs"
       "src",
       "modules",
       "researchWorkspace",
-      "projectWindowView.ts",
+      "projectReviewPanels.ts",
     ),
     "utf8",
   );
@@ -193,7 +193,7 @@ test("Contradictions and Evidence Gaps is a local project capability", () => {
       "src",
       "modules",
       "researchWorkspace",
-      "projectWindowView.ts",
+      "projectReviewPanels.ts",
     ),
     "utf8",
   );
@@ -219,7 +219,7 @@ test("Living Review is a local metadata-only project workflow", () => {
       "src",
       "modules",
       "researchWorkspace",
-      "projectWindowView.ts",
+      "projectReviewPanels.ts",
     ),
     "utf8",
   );
@@ -248,7 +248,7 @@ test("Citation and Reference Health is a local derived project capability", () =
       "src",
       "modules",
       "researchWorkspace",
-      "projectWindowView.ts",
+      "projectReviewPanels.ts",
     ),
     "utf8",
   );

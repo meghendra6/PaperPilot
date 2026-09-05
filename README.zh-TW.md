@@ -252,6 +252,14 @@ OpenDataLoader 打包說明：
 
 `npm start`、`npm run build` 與 `npm run release` 會透過 [`scripts/prepare-opendataloader.mjs`](./scripts/prepare-opendataloader.mjs) 自動將 OpenDataLoader 執行時 JAR 內建進外掛。
 
+本機 CLI 執行需要具有 `/bin/zsh` 和標準程序工具的 Unix 環境，不支援原生 Windows。
+執行 `bash scripts/doctor.sh .` 可檢查登入 shell 中的 CLI 路徑、版本與可確認的驗證狀態。
+第二個參數可指定 Zotero 設定檔目錄，以比較快取擷取執行環境與內建版本。Gemini 驗證在
+實際執行前維持未驗證。Research Workspace 會記錄執行時固定的 CLI 模型、推理等級與
+回應語言。來源變更會使結果過期；恢復工作只重用來源指紋、脈絡投影與執行設定皆
+一致的單元。Codex 允許模型設定同時限制選擇清單與實際模型；只含過時模型的清單會
+退回目前支援清單。
+
 ## 建立 GitHub 發布
 
 發布流程以標籤為準。請務必讓套件版本與標籤保持一致：

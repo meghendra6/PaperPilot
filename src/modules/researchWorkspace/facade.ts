@@ -1,28 +1,53 @@
-import { getPref } from "../../utils/prefs";
-import { getLibraryItemCandidates } from "../relatedRecommendations";
+import { captureExecutionSettings } from "../ai/executionSettings";
 import { getModeForItem } from "../ai/modeStore";
-import { normalizeResponseLanguage } from "../translation/responseLanguage";
+import { getLibraryItemCandidates } from "../relatedRecommendations";
+import type { WorkspaceSupplementalFiles } from "../workspace/supplementalFiles";
 import { runResearchWorkspaceAnalysis } from "./analysisRunner";
-import {
-  extractResearchWorkspaceCitationContexts as extractCitationContexts,
-  type CitationContextExtractionResult,
-} from "./citationContextExtraction";
+import { createResearchWorkspacePublicPayload } from "./artifactRenderer";
 import {
   getResearchWorkspaceCapability,
   type ResearchWorkspaceCapabilityID,
 } from "./capabilityRegistry";
 import {
+  extractResearchWorkspaceCitationContexts as extractCitationContexts,
+  type CitationContextExtractionResult,
+} from "./citationContextExtraction";
+import {
+  buildCitationHealthReport,
+  citationHealthDerivedLineage,
+  collectCitationHealthLocalLibrarySnapshot,
+  type CitationHealthDraftInput,
+  type CitationHealthExternalProviderSnapshot,
+} from "./citationHealth";
+import {
   applyResearchWorkspaceContextPlan,
   planResearchWorkspaceContext,
 } from "./contextPlanner";
-import { verifyResearchWorkspaceEvidence } from "./evidenceVerification";
+import {
+  applyContradictionGapReview,
+  buildContradictionGapDashboard,
+  type ContradictionClassification,
+  type ContradictionGapDashboard,
+} from "./contradictionGap";
+import {
+  applyCitationStanceCorrection,
+  type CitationStanceValue,
+} from "./core/citationStance/corrections";
 import { createResearchWorkspaceState } from "./core/researchWorkspace/state";
 import {
   getEvidenceMatrixPreset,
   type EvidenceMatrixPresetID,
 } from "./evidenceMatrixPresets";
+import { verifyResearchWorkspaceEvidence } from "./evidenceVerification";
+import {
+  crossPaperMasterySnapshotMatches,
+  getCrossPaperMasteryCurrentQuestion,
+  isAnalyzableCrossPaperSession,
+  isCrossPaperMasterySubmissionReplay,
+  isPersistentCrossPaperMasterySession,
+  type PersistentCrossPaperMasterySession,
+} from "./masteryPersistence";
 import { ResearchWorkspaceOperationCoordinator } from "./operationCoordinator";
-import { createResearchWorkspacePublicPayload } from "./artifactRenderer";
 import { researchWorkspaceOutputSchemaForPurpose } from "./outputSchemas";
 import type { ResearchWorkspacePaper } from "./paperSource";
 import type {
@@ -40,36 +65,15 @@ import {
 } from "./projectTemplates";
 import { buildResearchWorkspaceProjectWorkspace } from "./projectWorkspaceBuilder";
 import {
-  crossPaperMasterySnapshotMatches,
-  getCrossPaperMasteryCurrentQuestion,
-  isCrossPaperMasterySubmissionReplay,
-  isPersistentCrossPaperMasterySession,
-  type PersistentCrossPaperMasterySession,
-} from "./masteryPersistence";
-import { ResearchWorkspaceService } from "./service";
-import {
-  applyCitationStanceCorrection,
-  type CitationStanceValue,
-} from "./core/citationStance/corrections";
-import {
   serializeResearchWorkspaceScreeningLogCsv,
   type RecordResearchWorkspaceScreeningDecisionInput,
   type ResearchWorkspaceScreeningLog,
 } from "./screeningLog";
-import {
-  applyContradictionGapReview,
-  buildContradictionGapDashboard,
-  type ContradictionClassification,
-  type ContradictionGapDashboard,
-} from "./contradictionGap";
-import {
-  buildCitationHealthReport,
-  citationHealthDerivedLineage,
-  collectCitationHealthLocalLibrarySnapshot,
-  type CitationHealthDraftInput,
-  type CitationHealthExternalProviderSnapshot,
-} from "./citationHealth";
-import type { WorkspaceSupplementalFiles } from "../workspace/supplementalFiles";
+import { ResearchWorkspaceService } from "./service";
+import type {
+  CachedHybridIndex,
+  ResearchWorkspaceAnalysisState,
+} from "./serviceState";
 import {
   exportResearchWorkspaceTextFile,
   getResearchWorkspaceLivingReviewService,
@@ -93,7 +97,7 @@ export type ResearchWorkspaceMultiOperation =
   | "literature-graph"
   | "cross-paper-mastery";
 
-const sharedHybridIndexes = new Map<string, unknown>();
+const sharedHybridIndexes = new Map<string, CachedHybridIndex>();
 
 export function clearResearchWorkspaceHybridIndexCache() {
   sharedHybridIndexes.clear();
@@ -105,20 +109,22 @@ function clone<T>(value: T): T {
     : JSON.parse(JSON.stringify(value));
 }
 
-function createMemoryRepository(initialState: any) {
+function createMemoryRepository(initialState: ResearchWorkspaceAnalysisState) {
   let state = clone(initialState);
   return {
     async load() {
       return clone(state);
     },
-    async save(next: any) {
+    async save(next: ResearchWorkspaceAnalysisState) {
       state = clone(next);
       return clone(state);
     },
-    async update(mutator: (draft: any) => unknown | Promise<unknown>) {
+    async update(
+      mutator: (draft: ResearchWorkspaceAnalysisState) => void | Promise<void>,
+    ) {
       const draft = clone(state);
-      const result = await mutator(draft);
-      state = clone(result ?? draft);
+      await mutator(draft);
+      state = clone(draft);
       state.revision = Number(state.revision || 0) + 1;
       state.updatedAt = new Date().toISOString();
       return clone(state);
@@ -131,15 +137,16 @@ async function createBoundService(params: {
   papers: readonly ResearchWorkspacePaper[];
   signal?: AbortSignal;
   onStatus?: (status: string) => void;
-  seed?: (state: any) => void;
+  seed?: (state: ResearchWorkspaceAnalysisState) => void;
   workspaceFiles?: WorkspaceSupplementalFiles;
 }) {
+  const executionSettings = captureExecutionSettings(
+    getModeForItem(params.anchor.itemID),
+  );
   const preferences =
     await getResearchWorkspaceProjectRepository().getPreferences();
   const state = createResearchWorkspaceState();
-  state.preferences.responseLanguage = normalizeResponseLanguage(
-    getPref("responseLanguage") ?? preferences.preferences.responseLanguage,
-  );
+  state.preferences.responseLanguage = executionSettings.responseLanguage;
   state.preferences.maxPaperCharacters =
     preferences.preferences.maxPaperCharacters;
   params.seed?.(state);
@@ -155,13 +162,14 @@ async function createBoundService(params: {
       ) =>
         runResearchWorkspaceAnalysis({
           itemID: params.anchor.itemID,
+          executionSettings,
           itemTitle: params.anchor.title,
           prompt: params.workspaceFiles
             ? [
                 "Read PROJECT_INDEX.md before performing this operation.",
                 "Use its bounded source projections and security rules.",
                 prompt,
-              ].join("\\n\\n")
+              ].join("\n\n")
             : prompt,
           purpose,
           outputSchema,
@@ -172,7 +180,7 @@ async function createBoundService(params: {
     },
   });
   for (const paper of params.papers) await service.registerPaper(paper);
-  return { service, repository };
+  return { service, repository, executionSettings };
 }
 
 function projectController() {
@@ -256,7 +264,7 @@ export async function runResearchWorkspaceSingleOperation(params: {
   onStatus?: (status: string) => void;
 }) {
   const projectID = await prepareProject(params.projectID, [params.paper]);
-  const { service } = await createBoundService({
+  const { service, executionSettings } = await createBoundService({
     anchor: params.paper,
     papers: [params.paper],
     signal: params.signal,
@@ -280,7 +288,8 @@ export async function runResearchWorkspaceSingleOperation(params: {
     schemaVersion: descriptor.schemaVersion,
     artifactType: descriptor.artifactType,
     artifactTitle: descriptor.label,
-    providerMode: getModeForItem(params.paper.itemID),
+    providerMode: executionSettings.mode,
+    executionSettings,
     signal: params.signal,
     onStatus: params.onStatus,
     execute: () => {
@@ -306,7 +315,7 @@ export async function startOrResumeResearchWorkspaceMastery(params: {
     params.paper.sourceID,
   ]);
   const priorSession = (previous?.payload as any)?.session;
-  const { service } = await createBoundService({
+  const { service, executionSettings } = await createBoundService({
     anchor: params.paper,
     papers: [params.paper],
     signal: params.signal,
@@ -325,7 +334,8 @@ export async function startOrResumeResearchWorkspaceMastery(params: {
     operationVersion: "paper-mastery-v2",
     artifactType: "paper-mastery",
     artifactTitle: "Paper Mastery",
-    providerMode: getModeForItem(params.paper.itemID),
+    providerMode: executionSettings.mode,
+    executionSettings,
     signal: params.signal,
     onStatus: params.onStatus,
     execute: () => service.startOrResumeMastery(params.paper),
@@ -347,7 +357,7 @@ export async function submitResearchWorkspaceMastery(params: {
   ]);
   const priorSession = (previous?.payload as any)?.session;
   if (!priorSession) throw new Error("Start Paper Mastery first.");
-  const { service } = await createBoundService({
+  const { service, executionSettings } = await createBoundService({
     anchor: params.paper,
     papers: [params.paper],
     signal: params.signal,
@@ -364,7 +374,8 @@ export async function submitResearchWorkspaceMastery(params: {
     operationVersion: "paper-mastery-v2",
     artifactType: "paper-mastery",
     artifactTitle: "Paper Mastery",
-    providerMode: getModeForItem(params.paper.itemID),
+    providerMode: executionSettings.mode,
+    executionSettings,
     signal: params.signal,
     onStatus: params.onStatus,
     execute: () =>
@@ -401,7 +412,10 @@ export async function runResearchWorkspaceMultiOperation(params: {
     throw new Error("Select at least two papers in the Zotero item list.");
   }
   const projectID = await prepareProject(params.projectID, params.papers);
-  let priorCrossSession: PersistentCrossPaperMasterySession | undefined;
+  let priorCrossSession:
+    | (PersistentCrossPaperMasterySession &
+        import("./core/crossPaperMastery/types").CrossPaperSession)
+    | undefined;
   if (params.operation === "cross-paper-mastery") {
     const previous = await latestArtifact(
       projectID,
@@ -411,6 +425,7 @@ export async function runResearchWorkspaceMultiOperation(params: {
     const candidate = (previous?.payload as any)?.session;
     if (
       isPersistentCrossPaperMasterySession(candidate) &&
+      isAnalyzableCrossPaperSession(candidate) &&
       crossPaperMasterySnapshotMatches(candidate, projectID, params.papers)
     ) {
       priorCrossSession = candidate;
@@ -453,7 +468,7 @@ export async function runResearchWorkspaceMultiOperation(params: {
     },
     outputSchema: researchWorkspaceOutputSchemaForPurpose(purpose),
   });
-  const { service } = await createBoundService({
+  const { service, executionSettings } = await createBoundService({
     anchor: projectedPapers[0],
     papers: projectedPapers,
     signal: params.signal,
@@ -513,7 +528,8 @@ export async function runResearchWorkspaceMultiOperation(params: {
       schemaVersion: descriptor.schemaVersion,
       artifactType: descriptor.artifactType,
       artifactTitle: descriptor.label,
-      providerMode: getModeForItem(params.papers[0].itemID),
+      providerMode: executionSettings.mode,
+      executionSettings,
       contextProjectionFingerprints: projectionFingerprints,
       initialPayload,
       units,
@@ -549,7 +565,8 @@ export async function runResearchWorkspaceMultiOperation(params: {
     schemaVersion: descriptor.schemaVersion,
     artifactType: descriptor.artifactType,
     artifactTitle: descriptor.label,
-    providerMode: getModeForItem(params.papers[0].itemID),
+    providerMode: executionSettings.mode,
+    executionSettings,
     contextProjectionFingerprints: projectionFingerprints,
     signal: params.signal,
     onStatus: params.onStatus,
@@ -672,7 +689,7 @@ export async function runResearchWorkspaceProjectSynthesis(params: {
     descriptor,
     outputSchema: researchWorkspaceOutputSchemaForPurpose("project-synthesis"),
   });
-  const { service } = await createBoundService({
+  const { service, executionSettings } = await createBoundService({
     anchor: projectedPapers[0],
     papers: projectedPapers,
     signal: params.signal,
@@ -687,9 +704,8 @@ export async function runResearchWorkspaceProjectSynthesis(params: {
     operationVersion: descriptor.operationVersion,
     artifactType: "synthesis",
     artifactTitle: "Project Synthesis",
-    providerMode:
-      details.project.defaultEngineMode ??
-      getModeForItem(params.papers[0].itemID),
+    providerMode: executionSettings.mode,
+    executionSettings,
     contextProjectionFingerprints: new Map(
       contextPlan.projections.map((projection) => [
         projection.sourceID,
@@ -745,6 +761,7 @@ export async function submitResearchWorkspaceCrossPaperMastery(params: {
   const priorSession = (previous?.payload as any)?.session;
   if (
     !isPersistentCrossPaperMasterySession(priorSession) ||
+    !isAnalyzableCrossPaperSession(priorSession) ||
     priorSession.id !== params.sessionID ||
     !crossPaperMasterySnapshotMatches(priorSession, projectID, params.papers)
   ) {
@@ -799,7 +816,7 @@ export async function submitResearchWorkspaceCrossPaperMastery(params: {
     descriptor: gradeDescriptor,
     outputSchema: researchWorkspaceOutputSchemaForPurpose("cross-paper-grade"),
   });
-  const { service } = await createBoundService({
+  const { service, executionSettings } = await createBoundService({
     anchor: projectedPapers[0],
     papers: projectedPapers,
     signal: params.signal,
@@ -818,7 +835,8 @@ export async function submitResearchWorkspaceCrossPaperMastery(params: {
     operationVersion: gradeDescriptor.operationVersion,
     artifactType: "cross-paper-mastery",
     artifactTitle: "Cross-paper Mastery",
-    providerMode: getModeForItem(params.papers[0].itemID),
+    providerMode: executionSettings.mode,
+    executionSettings,
     contextProjectionFingerprints: new Map(
       contextPlan.projections.map((projection) => [
         projection.sourceID,
@@ -873,7 +891,7 @@ export async function extractResearchWorkspaceCitationContexts(params: {
       operationVersion: descriptor.operationVersion,
       artifactType: "citation-context",
       artifactTitle: "Citation Context Extraction",
-      providerMode: getModeForItem(params.papers[0].itemID),
+      providerMode: "local",
       signal: params.signal,
       onStatus: params.onStatus,
       execute: async () => {
@@ -907,7 +925,7 @@ export async function classifyResearchWorkspaceCitations(params: {
   }
   const papers = params.papers?.length ? params.papers : [params.anchor];
   const projectID = await prepareProject(params.projectID, papers);
-  const { service } = await createBoundService({
+  const { service, executionSettings } = await createBoundService({
     anchor: params.anchor,
     papers,
     signal: params.signal,
@@ -921,7 +939,8 @@ export async function classifyResearchWorkspaceCitations(params: {
     operationVersion: "citation-stance-v1",
     artifactType: "citation-stance",
     artifactTitle: "Citation Stance",
-    providerMode: getModeForItem(params.anchor.itemID),
+    providerMode: executionSettings.mode,
+    executionSettings,
     signal: params.signal,
     onStatus: params.onStatus,
     execute: () =>
@@ -958,7 +977,7 @@ export async function correctResearchWorkspaceCitationStance(params: {
       operationVersion: "citation-stance-correction-v1",
       artifactType: "citation-stance",
       artifactTitle: "Citation Stance",
-      providerMode: getModeForItem(params.papers[0].itemID),
+      providerMode: "local",
       signal: params.signal,
       onStatus: params.onStatus,
       execute: async () =>

@@ -1,3 +1,4 @@
+import type { ResearchWorkspaceAnalysisState } from "../../serviceState";
 const RESEARCH_WORKSPACE_SCHEMA_VERSION = 4;
 export interface ResearchWorkspaceCorePaperState {
   sourceID: string;
@@ -31,7 +32,7 @@ export interface ResearchWorkspaceCoreState {
 
 function createResearchWorkspaceState(
   now = new Date().toISOString(),
-): ResearchWorkspaceCoreState {
+): ResearchWorkspaceAnalysisState {
   return {
     schemaVersion: RESEARCH_WORKSPACE_SCHEMA_VERSION,
     revision: 0,
@@ -213,6 +214,6 @@ function summarizeResearchWorkspace(state: ResearchWorkspaceCoreState) {
 export {
   createResearchWorkspaceState,
   migrateResearchWorkspaceState,
-  summarizeResearchWorkspace,
   RESEARCH_WORKSPACE_SCHEMA_VERSION,
+  summarizeResearchWorkspace,
 };

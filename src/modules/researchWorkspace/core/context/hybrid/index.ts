@@ -1,7 +1,7 @@
-// @ts-nocheck -- Ported feature core is guarded by strict runtime parsers.
 import * as hashEmbedding_1 from "./hashEmbedding";
 import * as tokenizer_1 from "./tokenizer";
-function buildHybridIndex(params) {
+import type { HybridIndexInput } from "./types";
+function buildHybridIndex(params: HybridIndexInput) {
   const dimensions = Math.max(
     32,
     Math.min(1024, Math.floor(params.embeddingDimensions ?? 192)),
@@ -18,7 +18,7 @@ function buildHybridIndex(params) {
       const tokens = (0, tokenizer_1.tokenizeHybridOccurrences)(
         `${chunk.title || ""}\n${chunk.text}`,
       );
-      const termFrequency = {};
+      const termFrequency: Record<string, number> = {};
       for (const token of tokens)
         termFrequency[token] = (termFrequency[token] ?? 0) + 1;
       return {
@@ -33,7 +33,7 @@ function buildHybridIndex(params) {
         length: Math.max(1, tokens.length),
       };
     });
-  const documentFrequency = {};
+  const documentFrequency: Record<string, number> = {};
   for (const chunk of chunks) {
     for (const token of new Set(chunk.tokens))
       documentFrequency[token] = (documentFrequency[token] ?? 0) + 1;
@@ -62,7 +62,14 @@ function buildHybridIndex(params) {
     embeddingDimensions: dimensions,
   };
 }
-function chunkTextForHybridIndex(text, options = {}) {
+function chunkTextForHybridIndex(
+  text: string,
+  options: {
+    chunkSize?: number;
+    overlap?: number;
+    attachmentKey?: string;
+  } = {},
+) {
   const chunkSize = Math.max(300, Math.floor(options.chunkSize ?? 1400));
   const overlap = Math.max(
     0,
@@ -102,13 +109,19 @@ function chunkTextForHybridIndex(text, options = {}) {
  * every generated chunk so section-aware ranking remains available even when
  * the source extractor only produced Markdown/plain text.
  */
-function chunkPaperDocument(params) {
+function chunkPaperDocument(params: {
+  text: string;
+  paperKey: string;
+  attachmentKey: string;
+  targetCharacters?: number;
+  overlapCharacters?: number;
+}) {
   const chunks = chunkTextForHybridIndex(params.text, {
     chunkSize: params.targetCharacters,
     overlap: params.overlapCharacters,
     attachmentKey: params.attachmentKey,
   });
-  let currentSection;
+  let currentSection: string | undefined;
   return chunks.map((chunk, ordinal) => {
     const headings = [...chunk.text.matchAll(/^#{1,6}\s+(.+)$/gm)];
     if (headings.length)
@@ -123,4 +136,4 @@ function chunkPaperDocument(params) {
   });
 }
 
-export { buildHybridIndex, chunkTextForHybridIndex, chunkPaperDocument };
+export { buildHybridIndex, chunkPaperDocument, chunkTextForHybridIndex };

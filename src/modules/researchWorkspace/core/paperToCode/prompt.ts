@@ -1,12 +1,12 @@
-// @ts-nocheck -- Ported feature core is guarded by strict runtime parsers.
-function sourceBlock(tag, value) {
+import type { PaperPromptInput } from "../contracts";
+function sourceBlock(tag: string, value: unknown) {
   const escaped = String(value).replace(
     new RegExp(`</${tag}`, "gi"),
     `<\\/${tag}`,
   );
   return `<${tag} trust="source-data">\n${escaped}\n</${tag}>`;
 }
-function buildPaperToCodePrompt(params) {
+function buildPaperToCodePrompt(params: PaperPromptInput) {
   const sourceIdentity = params.sourceID
     ? `Every evidence reference must also use sourceID ${JSON.stringify(params.sourceID)} and libraryID ${JSON.stringify(params.libraryID)}.`
     : "";

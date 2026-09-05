@@ -1,7 +1,13 @@
-// @ts-nocheck -- Ported feature core is guarded by strict runtime parsers.
 import * as types_1 from "../../evidence/types";
-import * as json_1 from "./json";
 import { enumValue } from "../../parserValidation";
+import * as json_1 from "./json";
+import type {
+  MasteryBlueprint,
+  MasteryConcept,
+  MasteryQuestion,
+  MasteryValidationOptions,
+  RubricCriterion,
+} from "./types";
 const DIMENSION_VALUES = [
   "contribution",
   "mechanism",
@@ -23,13 +29,13 @@ const MODES = new Set([
   "comparison",
 ]);
 const SEVERITIES = new Set(["minor", "major"]);
-function stringArray(value) {
+function stringArray(value: unknown) {
   if (!Array.isArray(value)) return [];
   return value
     .map(json_1.readOptionalString)
     .filter((entry) => entry !== undefined);
 }
-function uniqueIds(values, fieldName) {
+function uniqueIds(values: { id: string }[], fieldName: string) {
   const seen = new Set();
   for (const value of values) {
     if (seen.has(value.id))
@@ -37,7 +43,7 @@ function uniqueIds(values, fieldName) {
     seen.add(value.id);
   }
 }
-function evidenceOptions(options) {
+function evidenceOptions(options: MasteryValidationOptions) {
   const expectedAttachmentKey = options.expectedAttachmentKey?.trim();
   return {
     ...(expectedAttachmentKey
@@ -52,7 +58,11 @@ function evidenceOptions(options) {
       : {}),
   };
 }
-function expectedClaim(value, index, normalization) {
+function expectedClaim(
+  value: unknown,
+  index: number,
+  normalization: types_1.EvidenceNormalizationOptions,
+) {
   const object = (0, json_1.readObject)(value, `expectedClaims[${index}]`);
   return {
     id: (0, json_1.readString)(object.id, `expectedClaims[${index}].id`),
@@ -64,7 +74,11 @@ function expectedClaim(value, index, normalization) {
     ),
   };
 }
-function rubricCriterion(value, index, normalization) {
+function rubricCriterion(
+  value: unknown,
+  index: number,
+  normalization: types_1.EvidenceNormalizationOptions,
+) {
   const object = (0, json_1.readObject)(value, `rubric[${index}]`);
   return {
     id: (0, json_1.readString)(object.id, `rubric[${index}].id`),
@@ -84,7 +98,11 @@ function rubricCriterion(value, index, normalization) {
     ),
   };
 }
-function masteryConcept(value, index, normalization) {
+function masteryConcept(
+  value: unknown,
+  index: number,
+  normalization: types_1.EvidenceNormalizationOptions,
+) {
   const object = (0, json_1.readObject)(value, `concepts[${index}]`);
   const expectedClaims = (0, json_1.readArray)(
     object.expectedClaims ?? [],
@@ -129,11 +147,11 @@ function masteryConcept(value, index, normalization) {
     rubric,
   };
 }
-function assertAcyclic(concepts) {
+function assertAcyclic(concepts: MasteryConcept[]) {
   const byId = new Map(concepts.map((concept) => [concept.id, concept]));
   const visiting = new Set();
   const visited = new Set();
-  const visit = (id, path) => {
+  const visit = (id: string, path: string[]): void => {
     if (visited.has(id)) return;
     if (visiting.has(id)) {
       const cycleStart = path.indexOf(id);
@@ -152,7 +170,10 @@ function assertAcyclic(concepts) {
   };
   for (const concept of concepts) visit(concept.id, []);
 }
-function validateBlueprint(blueprint, options) {
+function validateBlueprint(
+  blueprint: MasteryBlueprint,
+  options: MasteryValidationOptions,
+) {
   if (blueprint.concepts.length === 0)
     throw new Error("A mastery blueprint needs concepts.");
   if (
@@ -193,7 +214,10 @@ function validateBlueprint(blueprint, options) {
   }
   return blueprint;
 }
-function parseMasteryBlueprintResponse(text, options = {}) {
+function parseMasteryBlueprintResponse(
+  text: string,
+  options: MasteryValidationOptions = {},
+) {
   const root = (0, json_1.extractLastJsonObject)(text);
   const blueprintObject = (0, json_1.readObject)(
     root.blueprint ?? root,
@@ -217,7 +241,11 @@ function parseMasteryBlueprintResponse(text, options = {}) {
  * The question generator may choose wording, difficulty, and mode only. Hidden
  * expected claims, rubric, and evidence always come from the validated blueprint.
  */
-function parseMasteryQuestionResponse(text, fallback, generatedQuestionId) {
+function parseMasteryQuestionResponse(
+  text: string,
+  fallback: MasteryConcept,
+  generatedQuestionId?: string,
+) {
   const root = (0, json_1.extractLastJsonObject)(text);
   const object = (0, json_1.readObject)(root.question ?? root, "question");
   const conceptId =
@@ -244,17 +272,23 @@ function parseMasteryQuestionResponse(text, fallback, generatedQuestionId) {
     evidence: fallback.evidence,
   };
 }
-function evidenceKeysFromQuestion(question) {
-  const keys = new Set();
-  const add = (references) => {
-    for (const reference of references) keys.add(reference.attachmentKey);
+function evidenceKeysFromQuestion(question: MasteryQuestion) {
+  const keys = new Set<string>();
+  const add = (references: types_1.EvidenceReference[]) => {
+    for (const reference of references)
+      if (reference.attachmentKey) keys.add(reference.attachmentKey);
   };
   add(question.evidence);
   for (const claim of question.expectedClaims) add(claim.evidence);
   for (const criterion of question.rubric) add(criterion.evidence);
   return keys;
 }
-function criterionGrade(value, index, rubricById, normalization) {
+function criterionGrade(
+  value: unknown,
+  index: number,
+  rubricById: Map<string, RubricCriterion>,
+  normalization: types_1.EvidenceNormalizationOptions,
+) {
   const object = (0, json_1.readObject)(value, `criterionGrades[${index}]`);
   const criterionId = (0, json_1.readString)(
     object.criterionId,
@@ -284,7 +318,7 @@ function criterionGrade(value, index, rubricById, normalization) {
     ),
   };
 }
-function parseMasteryGradeResponse(text, question) {
+function parseMasteryGradeResponse(text: string, question: MasteryQuestion) {
   const root = (0, json_1.extractLastJsonObject)(text);
   const object = (0, json_1.readObject)(root.grade ?? root, "grade");
   const rubricById = new Map(
@@ -357,6 +391,6 @@ function parseMasteryGradeResponse(text, question) {
 
 export {
   parseMasteryBlueprintResponse,
-  parseMasteryQuestionResponse,
   parseMasteryGradeResponse,
+  parseMasteryQuestionResponse,
 };

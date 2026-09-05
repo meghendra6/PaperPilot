@@ -1,7 +1,9 @@
 import { stopDetachedRunProcess } from "./runCompletion";
+import type { ReaderLifecycleClaim } from "./runLifecycle";
 import type { EngineMode } from "./types";
 
 type ShutdownRunData = {
+  readerLifecycleClaims?: Map<number, ReaderLifecycleClaim>;
   codexRunStates?: Map<number, { processId?: string; runStatus?: string }>;
   claudeRunStates?: Map<number, { processId?: string }>;
   geminiRunStates?: Map<number, { processId?: string }>;
@@ -61,6 +63,10 @@ export function collectShutdownRuns(
           : data.geminiRunStates?.get(itemID)?.processId;
     add(itemID, pending.mode, processId);
   });
+  data.readerLifecycleClaims?.forEach((claim, itemID) => {
+    if (claim.kind === "direct_workspace" && claim.mode)
+      add(itemID, claim.mode, claim.processId);
+  });
   for (const active of activeRuns) add(active.itemID, active.mode);
   return [...keys.values()];
 }
@@ -69,8 +75,9 @@ export function stopShutdownRunsBestEffort(params: {
   runs: ShutdownRun[];
   stop?: typeof stopDetachedRunProcess;
   log?: (...values: unknown[]) => void;
-}): void {
+}): Promise<void> {
   const stop = params.stop ?? stopDetachedRunProcess;
+  const pending: Promise<void>[] = [];
   for (const run of params.runs) {
     if (!run.processId) {
       params.log?.(
@@ -78,11 +85,14 @@ export function stopShutdownRunsBestEffort(params: {
       );
       continue;
     }
-    void stop(run.processId, { requireProcessId: true }).catch((error) =>
-      params.log?.(
-        `Paper Pilot shutdown could not stop ${run.mode} item ${run.itemID}:`,
-        error,
-      ),
+    pending.push(
+      stop(run.processId, { requireProcessId: true }).catch((error) => {
+        params.log?.(
+          `Paper Pilot shutdown could not stop ${run.mode} item ${run.itemID}:`,
+          error,
+        );
+      }),
     );
   }
+  return Promise.all(pending).then(() => undefined);
 }

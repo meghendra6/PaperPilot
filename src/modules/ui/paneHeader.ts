@@ -1,9 +1,10 @@
 import { getPref } from "../../utils/prefs";
 import { getStatusLabel } from "../ai/statusLabels";
 import type { EngineMode } from "../ai/types";
-import { getRecentCodexModels } from "../codex/modelHistory";
+import { getRecentModels } from "../codex/modelHistory";
 import {
   CODEX_DEFAULT_MODEL,
+  getAllowedCodexModels,
   getClaudeBuiltInModels,
   getCodexBuiltInModelCatalog,
   getCodexBuiltInModels,
@@ -17,6 +18,7 @@ import {
   normalizeGeminiModel,
   normalizeGeminiModelList,
   parseAllowedModels,
+  resolveCodexModel,
 } from "../codex/modelOptions";
 import {
   isNativeSelectInteraction,
@@ -358,7 +360,7 @@ export function renderModelHistory(
   modelInput: HTMLSelectElement,
   mode: EngineMode,
 ) {
-  const recentModels = normalizeModelListForMode(mode, getRecentCodexModels());
+  const recentModels = normalizeModelListForMode(mode, getRecentModels(mode));
   const allowedModels = normalizeModelListForMode(
     mode,
     parseAllowedModels(
@@ -372,7 +374,13 @@ export function renderModelHistory(
   const currentValue = String(
     getPref(getDefaultModelPrefForMode(mode)) || getFallbackModelForMode(mode),
   );
-  const selectedValue = normalizeModelForMode(mode, currentValue);
+  const selectedValue =
+    mode === "codex_cli"
+      ? resolveCodexModel(
+          currentValue,
+          String(getPref("codexAllowedModels") || ""),
+        )
+      : normalizeModelForMode(mode, currentValue);
   const currentReasoningEffort =
     mode === "codex_cli"
       ? normalizeCodexReasoningEffort(
@@ -383,7 +391,12 @@ export function renderModelHistory(
   const optionMap = new Map<string, string>();
 
   if (mode === "codex_cli") {
-    for (const model of getCodexBuiltInModelCatalog()) {
+    const allowed = getAllowedCodexModels(
+      String(getPref("codexAllowedModels") || ""),
+    );
+    for (const model of getCodexBuiltInModelCatalog().filter((entry) =>
+      allowed.includes(entry.slug),
+    )) {
       const efforts = model.reasoningEfforts.length
         ? model.reasoningEfforts
         : [model.defaultReasoningEffort || "medium"];

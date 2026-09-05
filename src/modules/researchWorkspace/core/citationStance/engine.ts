@@ -1,6 +1,7 @@
-// @ts-nocheck -- Ported feature core is guarded by strict runtime parsers.
-function summarizeCitationStances(results) {
-  const count = (stance) =>
+function summarizeCitationStances(
+  results: { stance: string; confidence?: number }[],
+) {
+  const count = (stance: string) =>
     results.filter((result) => result.stance === stance).length;
   const total = results.length;
   const supporting = count("supporting");
@@ -13,9 +14,9 @@ function summarizeCitationStances(results) {
     (sum, result) =>
       sum +
       (result.stance === "supporting"
-        ? result.confidence
+        ? (result.confidence ?? 0)
         : result.stance === "contrasting"
-          ? -result.confidence
+          ? -(result.confidence ?? 0)
           : 0),
     0,
   );

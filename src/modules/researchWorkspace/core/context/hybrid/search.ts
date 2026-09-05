@@ -1,10 +1,10 @@
-// @ts-nocheck -- Ported feature core is guarded by strict runtime parsers.
 import * as hashEmbedding_1 from "./hashEmbedding";
 import * as tokenizer_1 from "./tokenizer";
-function clamp01(value) {
+import type { HybridIndex, HybridSearchOptions } from "./types";
+function clamp01(value: number) {
   return Math.max(0, Math.min(1, value));
 }
-function bm25(index, chunkIndex, queryTokens) {
+function bm25(index: HybridIndex, chunkIndex: number, queryTokens: string[]) {
   const chunk = index.chunks[chunkIndex];
   const count = Math.max(1, index.chunks.length);
   const averageLength = Math.max(1, index.averageDocumentLength);
@@ -25,7 +25,11 @@ function bm25(index, chunkIndex, queryTokens) {
   }
   return { value: score, matched };
 }
-function searchHybridIndex(index, query, options = {}) {
+function searchHybridIndex(
+  index: HybridIndex,
+  query: string,
+  options: HybridSearchOptions = {},
+) {
   const topK = Math.max(
     1,
     Math.min(index.chunks.length || 1, Math.floor(options.topK ?? 5)),
@@ -117,7 +121,7 @@ function searchHybridIndex(index, query, options = {}) {
     Math.max(topK, topK * Math.floor(options.candidateMultiplier ?? 5)),
   );
   const candidates = raw.slice(0, candidateLimit);
-  const selected = [];
+  const selected: typeof raw = [];
   const lambda = clamp01(options.mmrLambda ?? 0.82);
   while (selected.length < topK && candidates.length) {
     let bestIndex = 0;

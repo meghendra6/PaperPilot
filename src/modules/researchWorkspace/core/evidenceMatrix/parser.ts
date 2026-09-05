@@ -1,8 +1,8 @@
-// @ts-nocheck -- Ported feature core is guarded by strict runtime parsers.
 import * as json_1 from "../comprehensionCheck/v2/json";
+import type { MatrixColumn, PaperResponseInput } from "../contracts";
 import * as types_1 from "../evidence/types";
-import * as engine_1 from "./engine";
 import { enumValue, optionalUnitInterval } from "../parserValidation";
+import * as engine_1 from "./engine";
 const STATUSES = new Set([
   "extracted",
   "not_reported",
@@ -10,7 +10,12 @@ const STATUSES = new Set([
   "conflicting",
   "error",
 ]);
-function parseCells(params) {
+function parseCells(params: {
+  response: string;
+  columns: MatrixColumn[];
+  attachmentKeys: string[];
+  paperKey: string;
+}) {
   const root = (0, json_1.extractLastJsonObject)(params.response);
   const columnMap = new Map(
     params.columns.map((column) => [column.id, column]),
@@ -72,10 +77,14 @@ function parseCells(params) {
     if (!seen.has(column.id)) throw new Error(`Missing column ${column.id}`);
   return cells;
 }
-function parseEvidenceMatrixExtractionResponse(params) {
+function parseEvidenceMatrixExtractionResponse(
+  params: Parameters<typeof parseCells>[0],
+) {
   return parseCells(params);
 }
-function parseEvidenceMatrixRowResponse(params) {
+function parseEvidenceMatrixRowResponse(
+  params: PaperResponseInput & { columns: MatrixColumn[] },
+) {
   const root = (0, json_1.extractLastJsonObject)(params.response);
   return {
     paperKey: params.paperKey,

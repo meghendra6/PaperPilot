@@ -5,7 +5,7 @@ const MAX_PATH_SEGMENT_LENGTH = 160;
 const MAX_ELEMENT_ID_LENGTH = 128;
 const MAX_QUOTE_LENGTH = 1200;
 const MAX_HASH_LENGTH = 256;
-interface EvidenceNormalizationOptions {
+export interface EvidenceNormalizationOptions {
   allowedAttachmentKeys?: Set<string>;
   pageCountByAttachmentKey?: Map<string, number>;
 }
@@ -18,7 +18,7 @@ interface EvidenceBoundingBox {
   height: number;
 }
 
-interface EvidenceReference {
+export interface EvidenceReference {
   schemaVersion?: number;
   sourceID?: string;
   libraryID?: number;
@@ -283,10 +283,10 @@ function toPdfNavigationTarget(reference: EvidenceReference) {
 }
 
 export {
-  normalizeEvidenceReference,
-  normalizeEvidenceReferences,
+  EVIDENCE_REFERENCE_SCHEMA_VERSION,
   evidenceReferenceKey,
   formatEvidenceLocator,
+  normalizeEvidenceReference,
+  normalizeEvidenceReferences,
   toPdfNavigationTarget,
-  EVIDENCE_REFERENCE_SCHEMA_VERSION,
 };

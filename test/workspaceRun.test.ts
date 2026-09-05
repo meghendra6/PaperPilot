@@ -203,3 +203,87 @@ test("workspace preparation cancellation returns promptly and owns late cleanup"
     (globalThis as { Zotero?: unknown }).Zotero = previousZotero;
   }
 });
+
+test("direct workspace PIDs remain owned through shutdown and late preparation", async () => {
+  const globals = globalThis as any;
+  const previous = { addon: globals.addon, Zotero: globals.Zotero };
+  const data: any = {};
+  const commands: string[] = [];
+  globals.addon = { data };
+  globals.Zotero = {
+    getTempDirectory: () => ({ path: "/tmp/test-profile/tmp" }),
+    Prefs: { get: () => false },
+    Utilities: {
+      Internal: {
+        exec: async (_exe: unknown, args: string[]) => {
+          commands.push(args.join(" "));
+          return true;
+        },
+      },
+    },
+  };
+  const { collectShutdownRuns } = await import(
+    "../src/modules/ai/shutdownRuns"
+  );
+  try {
+    const runResult = {
+      ok: true as const,
+      processId: "424242",
+      workspacePath: "/tmp/paper",
+      promptPreview: "",
+      outputPath: "out",
+      stderrPath: "err",
+      exitCodePath: "exit",
+      pidPath: "pid",
+    };
+    const start = (
+      itemID: number,
+      prepareRun: () => Promise<typeof runResult>,
+    ) => {
+      const reservationToken = claimWorkspaceRunReservation(
+        "codex_cli",
+        itemID,
+      )!;
+      return {
+        reservationToken,
+        promise: startWorkspaceTextRun({
+          mode: "codex_cli",
+          itemID,
+          reservationItemID: itemID,
+          reservationToken,
+          title: "Paper",
+          sessionId: "session",
+          question: "Question",
+          profile: "analysis",
+          prepareRun,
+        }),
+      };
+    };
+    const first = start(501, async () => runResult);
+    await first.promise;
+    assert.deepEqual(collectShutdownRuns(data), [
+      { itemID: 501, mode: "codex_cli", processId: "424242" },
+    ]);
+    releaseWorkspaceRunReservation(501, Symbol("wrong owner"));
+    assert.equal(collectShutdownRuns(data).length, 1);
+    releaseWorkspaceRunReservation(501, first.reservationToken);
+    assert.deepEqual(collectShutdownRuns(data), []);
+    let finish!: (result: typeof runResult) => void;
+    const late = start(
+      502,
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    data.shuttingDown = true;
+    assert.equal(claimWorkspaceRunReservation("codex_cli", 503), undefined);
+    finish(runResult);
+    await assert.rejects(late.promise, /shutting down/);
+    assert(commands.some((command) => command.includes("424242")));
+    releaseWorkspaceRunReservation(502, late.reservationToken);
+    assert.deepEqual(collectShutdownRuns(data), []);
+  } finally {
+    Object.assign(globals, previous);
+  }
+});

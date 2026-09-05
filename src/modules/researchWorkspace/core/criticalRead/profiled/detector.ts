@@ -1,9 +1,8 @@
-// @ts-nocheck -- Ported feature core is guarded by strict runtime parsers.
 import * as profiles_1 from "./profiles";
-function detectCriticalReadProfile(text) {
+function detectCriticalReadProfile(text: string) {
   const normalized = String(text || "").toLowerCase();
-  const scores = {};
-  const hits = {};
+  const scores: Record<string, number> = {};
+  const hits: Record<string, string[]> = {};
   for (const profile of (0, profiles_1.listCriticalReadProfiles)()) {
     if (profile.id === "general") {
       scores[profile.id] = 0.05;

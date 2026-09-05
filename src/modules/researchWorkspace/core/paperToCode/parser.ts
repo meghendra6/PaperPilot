@@ -1,22 +1,22 @@
-// @ts-nocheck -- Ported feature core is guarded by strict runtime parsers.
 import * as json_1 from "../comprehensionCheck/v2/json";
+import type { PaperResponseInput } from "../contracts";
 import * as types_1 from "../evidence/types";
 import { enumValue } from "../parserValidation";
 const IMPACTS = new Set(["low", "medium", "high", "unknown"]);
-function text(value, fallback = "") {
+function text(value: unknown, fallback = "") {
   return typeof value === "string" ? value.trim() : fallback;
 }
-function strings(value) {
+function strings(value: unknown) {
   return Array.isArray(value)
     ? value
         .filter((entry) => typeof entry === "string" && !!entry.trim())
         .map((entry) => entry.trim())
     : [];
 }
-function asImpact(value) {
+function asImpact(value: unknown) {
   return enumValue(value, "ambiguity risk", IMPACTS);
 }
-function parsePaperToCodeResponse(params) {
+function parsePaperToCodeResponse(params: PaperResponseInput) {
   const root = (0, json_1.extractLastJsonObject)(params.response);
   const allowedAttachmentKeys = new Set([params.attachmentKey]);
   const now = params.now ?? new Date().toISOString();

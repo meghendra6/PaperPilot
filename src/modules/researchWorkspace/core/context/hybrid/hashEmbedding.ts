@@ -1,7 +1,6 @@
-// @ts-nocheck -- Ported feature core is guarded by strict runtime parsers.
-import * as tokenizer_1 from "./tokenizer";
 import { fnv1a32 as hash } from "../../../identity";
-function createHashEmbedding(text, dimensions = 192) {
+import * as tokenizer_1 from "./tokenizer";
+function createHashEmbedding(text: string, dimensions = 192) {
   const vector = Array.from({ length: dimensions }, () => 0);
   const tokens = (0, tokenizer_1.tokenizeHybridOccurrences)(text);
   for (const token of tokens) {
@@ -21,7 +20,7 @@ function createHashEmbedding(text, dimensions = 192) {
   );
   return magnitude > 0 ? vector.map((value) => value / magnitude) : vector;
 }
-function cosineSimilarity(left, right) {
+function cosineSimilarity(left: number[], right: number[]) {
   const length = Math.min(left.length, right.length);
   let dot = 0;
   let leftNorm = 0;
@@ -35,4 +34,4 @@ function cosineSimilarity(left, right) {
   return Math.max(-1, Math.min(1, dot / Math.sqrt(leftNorm * rightNorm)));
 }
 
-export { createHashEmbedding, cosineSimilarity };
+export { cosineSimilarity, createHashEmbedding };

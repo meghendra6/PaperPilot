@@ -1,6 +1,6 @@
-// @ts-nocheck -- Ported feature core is guarded by strict runtime parsers.
 import * as search_1 from "./search";
-function ndcg(returned, relevant) {
+import type { HybridIndex, RetrievalEvaluationCase } from "./types";
+function ndcg(returned: string[], relevant: Set<string>) {
   let dcg = 0;
   returned.forEach((id, index) => {
     if (relevant.has(id)) dcg += 1 / Math.log2(index + 2);
@@ -14,7 +14,11 @@ function ndcg(returned, relevant) {
     ideal += 1 / Math.log2(index + 2);
   return ideal ? dcg / ideal : 0;
 }
-function evaluateHybridRetrieval(index, cases, k = 5) {
+function evaluateHybridRetrieval(
+  index: HybridIndex,
+  cases: RetrievalEvaluationCase[],
+  k = 5,
+) {
   const effectiveK = Math.max(1, Math.floor(k));
   const perCase = cases.map((entry) => {
     const returned = (0, search_1.searchHybridIndex)(index, entry.query, {

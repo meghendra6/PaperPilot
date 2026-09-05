@@ -1,7 +1,12 @@
-// @ts-nocheck -- Ported feature core is guarded by strict runtime parsers.
 import * as json_1 from "../comprehensionCheck/v2/json";
 import * as types_1 from "../evidence/types";
 import { enumValue, optionalUnitInterval } from "../parserValidation";
+import type {
+  CrossPaperAttempt,
+  CrossPaperConcept,
+  CrossPaperParseScope,
+  CrossPaperQuestion,
+} from "./types";
 const MODES = new Set([
   "compare",
   "synthesis",
@@ -10,20 +15,25 @@ const MODES = new Set([
   "timeline",
 ]);
 const DIFFICULTIES = new Set(["intermediate", "advanced"]);
-function strings(value) {
+function strings(value: unknown) {
   return Array.isArray(value)
     ? value
         .filter((entry) => typeof entry === "string" && !!entry.trim())
         .map((entry) => entry.trim())
     : [];
 }
-function uniqueStrings(value) {
+function uniqueStrings(value: unknown) {
   return [...new Set(strings(value))];
 }
-function text(value, fallback = "") {
+function text(value: unknown, fallback = "") {
   return typeof value === "string" && value.trim() ? value.trim() : fallback;
 }
-function parseCrossPaperQuestionResponse(params) {
+function parseCrossPaperQuestionResponse(
+  params: CrossPaperParseScope & {
+    concept?: CrossPaperConcept;
+    allowedPaperKeys?: Set<string>;
+  },
+): CrossPaperQuestion {
   const root = (0, json_1.extractLastJsonObject)(params.response);
   const mode = enumValue(root.mode, "cross-paper question mode", MODES);
   const paperKeys = uniqueStrings(root.paperKeys);
@@ -84,13 +94,13 @@ function parseCrossPaperQuestionResponse(params) {
       requiredClaims: expectedClaims,
     };
   });
-  const evidence = {};
+  const evidence: Record<string, types_1.EvidenceReference[]> = {};
   if (
     root.evidence &&
     typeof root.evidence === "object" &&
     !Array.isArray(root.evidence)
   ) {
-    const rawEvidence = root.evidence;
+    const rawEvidence = root.evidence as Record<string, unknown>;
     for (const paperKey of paperKeys)
       evidence[paperKey] = (0, types_1.normalizeEvidenceReferences)(
         rawEvidence[paperKey],
@@ -117,7 +127,16 @@ function parseCrossPaperQuestionResponse(params) {
     evidence,
   };
 }
-function parseCrossPaperGradeResponse(params) {
+function parseCrossPaperGradeResponse(
+  params: CrossPaperParseScope & {
+    question: {
+      id: string;
+      rubric: { id: string; maxScore: number; requiredPaperKeys?: string[] }[];
+    };
+    answer?: string;
+    learnerConfidence?: number;
+  },
+): CrossPaperAttempt {
   const root = (0, json_1.extractLastJsonObject)(params.response);
   const rawGrades = Array.isArray(root.grades)
     ? root.grades
@@ -132,7 +151,10 @@ function parseCrossPaperGradeResponse(params) {
     params.question.rubric.map((criterion) => [criterion.id, criterion]),
   );
   const seen = new Set();
-  const supplied = new Map();
+  const supplied = new Map<
+    string,
+    Record<string, unknown> & { score: number }
+  >();
   for (const [index, entry] of rawGrades.entries()) {
     const object = (0, json_1.readObject)(entry, `grades[${index}]`);
     const criterionId = text(object.criterionId);
@@ -148,7 +170,7 @@ function parseCrossPaperGradeResponse(params) {
     if (!seen.has(criterionId))
       throw new Error(`Missing criterion ${criterionId}`);
   const grades = params.question.rubric.map((criterion) => {
-    const object = supplied.get(criterion.id);
+    const object = supplied.get(criterion.id)!;
     return {
       criterionId: criterion.id,
       score: Math.max(0, Math.min(criterion.maxScore, object.score)),
@@ -182,4 +204,4 @@ function parseCrossPaperGradeResponse(params) {
   };
 }
 
-export { parseCrossPaperQuestionResponse, parseCrossPaperGradeResponse };
+export { parseCrossPaperGradeResponse, parseCrossPaperQuestionResponse };

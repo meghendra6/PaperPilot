@@ -1,21 +1,14 @@
 import { getPref } from "../../utils/prefs";
 import { buildCliCommandEnvironment } from "../ai/cliEnvironment";
 import {
+  executionSettingsForMode,
+  type ExecutionSettings,
+} from "../ai/executionSettings";
+import {
   launchDetachedShellScript,
   type ShellExecutor,
 } from "../ai/launchScript";
-import { normalizeClaudeModel } from "../codex/modelOptions";
-import { shellEscape } from "../codex/shell";
-import {
-  buildClaudeWorkspacePrompt,
-  buildContextPayload,
-} from "../context/promptPreviewBuilder";
-import { getCurrentReaderContext } from "../context/readerContext";
-import { getIndexedChunks } from "../context/indexStore";
-import { findNearbyContext } from "../context/nearbyContext";
-import { selectRelevantChunksFromChunks } from "../context/retriever";
-import { messageStore } from "../message/messageStore";
-import { normalizeResponseLanguage } from "../translation/responseLanguage";
+import { readOptionalRunTextFile } from "../ai/runFileReader";
 import {
   canResumeProviderSession,
   getRunWorkspaceTitle,
@@ -26,6 +19,17 @@ import {
   compatibleNativeOutputSchema,
   type StructuredOutputSchema,
 } from "../ai/structuredOutput";
+import { shellEscape } from "../codex/shell";
+import { getIndexedChunks } from "../context/indexStore";
+import { findNearbyContext } from "../context/nearbyContext";
+import {
+  buildClaudeWorkspacePrompt,
+  buildContextPayload,
+} from "../context/promptPreviewBuilder";
+import { getCurrentReaderContext } from "../context/readerContext";
+import { selectRelevantChunksFromChunks } from "../context/retriever";
+import { buildWorkspaceArtifacts } from "../context/workspaceArtifacts";
+import { messageStore } from "../message/messageStore";
 import {
   paperWorkspaceContentCache,
   type PaperWorkspaceContent,
@@ -38,8 +42,6 @@ import {
   writeWorkspaceSupplementalFiles,
   type WorkspaceSupplementalFiles,
 } from "../workspace/supplementalFiles";
-import { buildWorkspaceArtifacts } from "../context/workspaceArtifacts";
-import { readOptionalRunTextFile } from "../ai/runFileReader";
 
 declare const Zotero: any;
 
@@ -135,14 +137,16 @@ export async function startClaudeRunForQuestion(params: {
   profile?: RunProfile;
   outputSchema?: StructuredOutputSchema;
   workspaceFiles?: WorkspaceSupplementalFiles;
+  executionSettings?: ExecutionSettings;
 }): Promise<StartedClaudeRun | FailedClaudeRun> {
+  const settings = executionSettingsForMode(
+    "claude_code",
+    params.executionSettings,
+  );
   const profile = params.profile || "chat";
   const executablePath =
     String(getPref("claudeExecutablePath") || "claude").trim() || "claude";
-  const preferredModel = String(
-    getPref("claudeDefaultModel") || "sonnet",
-  ).trim();
-  const model = normalizeClaudeModel(preferredModel);
+  const { model } = settings;
   const permissionMode =
     profile === "chat"
       ? String(getPref("claudePermissionMode") || "default").trim()
@@ -161,7 +165,7 @@ export async function startClaudeRunForQuestion(params: {
 
   const payload = buildContextPayload({
     question: params.question,
-    responseLanguage: normalizeResponseLanguage(getPref("responseLanguage")),
+    responseLanguage: settings.responseLanguage,
     selectedText: params.selectedText,
     annotationIDs: params.annotationIDs,
   });

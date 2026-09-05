@@ -701,3 +701,30 @@ After running mastery and one or more workbench tools (research brief, contribut
 - Reopening a session that previously ran mastery / workbench tools shows the natural chat transcript in the message list (prose markdown), with NO raw JSON lines.
 - Mastery cards, workbench cards, and recommendation groups still rehydrate when the session is reopened (existing behavior).
 - After opening a saved session, sending a fresh chat message continues to work end-to-end with Codex CLI, Claude Code, and Gemini CLI.
+
+## Analysis consistency and model provenance
+
+- Limit `codexAllowedModels` to `gpt-5.6-luna`, leave the saved default at another
+  model, and reopen the picker. Only Luna and its supported reasoning levels should
+  appear; a new run should use Luna. An obsolete-only list should fall back to the
+  current catalog. Restore the original preference afterward.
+- Switch Codex → Claude → Gemini after saving each model. Recent models must remain
+  scoped to their provider.
+- Start a multi-paper analysis, then change the preferred model, effort, and response
+  language during preparation. All units and saved lineage must retain the admitted
+  settings. On a later resumed run, changed settings or projections must cause rows
+  to be regenerated.
+- Refresh an admitted PDF while its analysis runs. No result derived from the old
+  fingerprint should become complete; completed checkpoints should remain inspectable
+  as stale. Retry with the refreshed source and check successful completion.
+- Close Zotero while a direct Research Workspace run is active, including during
+  preparation. Check the recorded detached process and descendants terminate. Repeat
+  a normal completed run to ensure no stale PID remains registered.
+- With a disposable Zotero profile, leave an old unversioned or truncated versioned
+  OpenDataLoader JAR in `paperpilot-tools`, then extract a known PDF. Confirm the
+  current bundle is used and the old unversioned file is preserved. Run the doctor
+  against that profile and check the matching-runtime report.
+- Open the project home, create a template project, inspect sync previews without
+  applying them, navigate review panels, open existing artifacts, and close/reopen
+  the window. Confirm that split modules preserve controls, cancellation, evidence
+  navigation, compact layout, and stale-view protection.

@@ -1,30 +1,30 @@
+import { parseZoteroSourceID } from "../sourceIdentity";
 import {
   RESEARCH_WORKSPACE_ARTIFACT_SCHEMA_VERSION,
   RESEARCH_WORKSPACE_CATALOG_SCHEMA_VERSION,
   RESEARCH_WORKSPACE_CHANGE_INBOX_SCHEMA_VERSION,
   RESEARCH_WORKSPACE_MEMBERS_SCHEMA_VERSION,
   RESEARCH_WORKSPACE_MIGRATION_SCHEMA_VERSION,
-  RESEARCH_WORKSPACE_PROJECT_SCHEMA_VERSION,
   RESEARCH_WORKSPACE_PREFERENCES_SCHEMA_VERSION,
+  RESEARCH_WORKSPACE_PROJECT_SCHEMA_VERSION,
   RESEARCH_WORKSPACE_RUN_SCHEMA_VERSION,
   RESEARCH_WORKSPACE_SOURCE_SCHEMA_VERSION,
   assertResearchWorkspaceID,
   assertResearchWorkspaceMember,
+  type ResearchProject,
   type ResearchWorkspaceArtifactFile,
   type ResearchWorkspaceArtifactType,
   type ResearchWorkspaceCatalog,
   type ResearchWorkspaceChangeInboxFile,
-  type ResearchWorkspaceMembersFile,
   type ResearchWorkspaceLegacyMigrationFile,
-  type ResearchProject,
-  type ResearchWorkspaceProjectFile,
+  type ResearchWorkspaceMembersFile,
   type ResearchWorkspacePreferencesFile,
+  type ResearchWorkspaceProjectFile,
   type ResearchWorkspaceRunFile,
   type ResearchWorkspaceSourceFile,
 } from "./contracts";
-import { parseZoteroSourceID } from "../sourceIdentity";
-import { validateResearchWorkspaceProjectTemplateState } from "./projectTemplateValidation";
 import { validateRegisteredResearchWorkspaceArtifactPayload } from "./payloadValidators";
+import { validateResearchWorkspaceProjectTemplateState } from "./projectTemplateValidation";
 
 function object(value: unknown, label: string): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -794,6 +794,8 @@ export function parseResearchWorkspaceArtifactFile(
   if (lineage.schemaVersion !== undefined)
     text(lineage.schemaVersion, "lineage schemaVersion");
   optionalText(lineage.model, "lineage model");
+  optionalText(lineage.reasoningEffort, "lineage reasoningEffort");
+  optionalText(lineage.responseLanguage, "lineage responseLanguage");
   oneOf(
     lineage.providerMode,
     [...ENGINE_MODES, "local", "unknown"],
@@ -933,6 +935,17 @@ export function parseResearchWorkspaceRunFile(
       "projectID",
     );
   }
+  if (run.executionSettings !== undefined) {
+    const settings = object(run.executionSettings, "run executionSettings");
+    oneOf(settings.mode, ENGINE_MODES, "run execution mode");
+    text(settings.model, "run execution model");
+    optionalText(settings.reasoningEffort, "run reasoningEffort");
+    oneOf(
+      settings.responseLanguage,
+      ["English", "Korean", "Chinese"],
+      "run responseLanguage",
+    );
+  }
   const owner = object(run.owner, "run owner");
   oneOf(owner.kind, ["paper", "project"], "run owner kind");
   if (owner.kind === "project") {
@@ -1011,9 +1024,6 @@ export function parseResearchWorkspacePreferencesFile(
   ) {
     throw new Error("artifactHistoryLimit is out of range.");
   }
-  if (typeof preferences.retainRawRunLogs !== "boolean") {
-    throw new Error("retainRawRunLogs must be boolean.");
-  }
   return {
     schemaVersion: RESEARCH_WORKSPACE_PREFERENCES_SCHEMA_VERSION,
     revision: revision(root.revision, "preferences revision"),
@@ -1024,7 +1034,6 @@ export function parseResearchWorkspacePreferencesFile(
         | "Chinese",
       maxPaperCharacters,
       artifactHistoryLimit,
-      retainRawRunLogs: preferences.retainRawRunLogs,
     },
     createdAt,
     updatedAt,

@@ -1,5 +1,10 @@
-// @ts-nocheck -- Ported feature core is guarded by strict runtime parsers.
-const check = (id, label, question, guidance, required = true) => ({
+const check = (
+  id: string,
+  label: string,
+  question: string,
+  guidance: string[],
+  required = true,
+) => ({
   id,
   label,
   question,
@@ -383,8 +388,11 @@ const PROFILES = {
     ],
   },
 };
-function getCriticalReadProfile(id) {
-  return PROFILES[id] ?? PROFILES.general;
+function getCriticalReadProfile(id: string) {
+  return (
+    Object.values(PROFILES).find((profile) => profile.id === id) ??
+    PROFILES.general
+  );
 }
 function listCriticalReadProfiles() {
   return Object.values(PROFILES);

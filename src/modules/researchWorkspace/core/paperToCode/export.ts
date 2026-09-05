@@ -1,5 +1,25 @@
-// @ts-nocheck -- Ported feature core is guarded by strict runtime parsers.
-function exportPaperToCodeMarkdown(report) {
+function exportPaperToCodeMarkdown(
+  report: Pick<
+    ReturnType<typeof import("./parser").parsePaperToCodeResponse>,
+    | "objective"
+    | "inputs"
+    | "outputs"
+    | "pseudocode"
+    | "trace"
+    | "invariants"
+    | "ambiguities"
+    | "minimalReproduction"
+    | "paperCodeDivergences"
+  > & {
+    complexity: {
+      compute: string;
+      memory: string;
+      communication?: string;
+      bottleneck?: string;
+    };
+    tests: { name: string; purpose: string; expected?: string }[];
+  },
+) {
   const lines = [
     "# Paper-to-Code Specification",
     "",

@@ -1,4 +1,3 @@
-// @ts-nocheck -- Ported feature core is guarded by strict runtime parsers.
 const STOPWORDS = new Set([
   "a",
   "an",
@@ -45,7 +44,7 @@ const STOPWORDS = new Set([
   "한다",
   "했다",
 ]);
-function normalize(value) {
+function normalize(value: string) {
   return value
     .normalize("NFKD")
     .replace(/\p{M}+/gu, "")
@@ -53,7 +52,7 @@ function normalize(value) {
     .toLowerCase()
     .replace(/[‐‑‒–—−]/g, "-");
 }
-function koreanNgrams(word) {
+function koreanNgrams(word: string) {
   const chars = [...word].filter((character) => /[가-힣]/.test(character));
   if (chars.length < 2) return chars;
   const result = [chars.join("")];
@@ -64,7 +63,7 @@ function koreanNgrams(word) {
   }
   return result;
 }
-function eastAsianNgrams(word) {
+function eastAsianNgrams(word: string) {
   const chars = [...word].filter((character) =>
     /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]/u.test(character),
   );
@@ -75,7 +74,7 @@ function eastAsianNgrams(word) {
   }
   return result;
 }
-function tokenizeHybridOccurrences(text) {
+function tokenizeHybridOccurrences(text: string) {
   const normalized = normalize(String(text || ""));
   const raw =
     normalized.match(
@@ -100,10 +99,10 @@ function tokenizeHybridOccurrences(text) {
   }
   return tokens.filter((token) => token.length > 0);
 }
-function tokenizeHybrid(text) {
+function tokenizeHybrid(text: string) {
   return [...new Set(tokenizeHybridOccurrences(text))];
 }
-function queryPhrases(text) {
+function queryPhrases(text: string) {
   const normalized = normalize(text).replace(/[^\p{L}\p{N}\s-]/gu, " ");
   const words = normalized.split(/\s+/).filter((word) => word.length > 1);
   const phrases = [];
@@ -117,8 +116,8 @@ function queryPhrases(text) {
 /** Descriptive alias used by retrieval consumers. */
 
 export {
-  tokenizeHybrid,
-  tokenizeHybridOccurrences,
   queryPhrases,
   tokenizeHybrid as tokenizeForRetrieval,
+  tokenizeHybrid,
+  tokenizeHybridOccurrences,
 };

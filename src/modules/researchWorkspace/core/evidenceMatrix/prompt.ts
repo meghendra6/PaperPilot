@@ -1,12 +1,14 @@
-// @ts-nocheck -- Ported feature core is guarded by strict runtime parsers.
-function sourceBlock(tag, value) {
+import type { MatrixColumn, PaperPromptInput } from "../contracts";
+function sourceBlock(tag: string, value: unknown) {
   const escaped = String(value).replace(
     new RegExp(`</${tag}`, "gi"),
     `<\\/${tag}`,
   );
   return `<${tag} trust="source-data">\n${escaped}\n</${tag}>`;
 }
-function buildEvidenceMatrixExtractionPrompt(params) {
+function buildEvidenceMatrixExtractionPrompt(
+  params: PaperPromptInput & { columns: MatrixColumn[] },
+) {
   const cols = params.columns
     .map(
       (c) =>

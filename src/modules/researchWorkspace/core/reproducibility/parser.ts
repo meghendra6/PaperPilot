@@ -1,5 +1,5 @@
-// @ts-nocheck -- Ported feature core is guarded by strict runtime parsers.
 import * as json_1 from "../comprehensionCheck/v2/json";
+import type { PaperResponseInput } from "../contracts";
 import * as types_1 from "../evidence/types";
 import { enumValue, optionalUnitInterval } from "../parserValidation";
 const KINDS = new Set([
@@ -29,23 +29,23 @@ const AVAILABILITY = new Set([
   "unclear",
 ]);
 const SEVERITIES = new Set(["minor", "major", "critical"]);
-function text(value, fallback = "") {
+function text(value: unknown, fallback = "") {
   return typeof value === "string" ? value.trim() : fallback;
 }
-function stringArray(value) {
+function stringArray(value: unknown) {
   return Array.isArray(value)
     ? value
         .filter((entry) => typeof entry === "string" && !!entry.trim())
         .map((entry) => entry.trim())
     : [];
 }
-function normalizedKind(value) {
+function normalizedKind(value: unknown) {
   return enumValue(value, "reproducibility artifact kind", KINDS);
 }
-function normalizedAvailability(value) {
+function normalizedAvailability(value: unknown) {
   return enumValue(value, "reproducibility availability", AVAILABILITY);
 }
-function parseReproducibilityResponse(params) {
+function parseReproducibilityResponse(params: PaperResponseInput) {
   const root = (0, json_1.extractLastJsonObject)(params.response);
   const allowedAttachmentKeys = new Set([params.attachmentKey]);
   const now = params.now ?? new Date().toISOString();
@@ -205,6 +205,6 @@ function parseReproducibilityResponse(params) {
 /** Public name used by the Research Workspace UI. */
 
 export {
-  parseReproducibilityResponse,
   parseReproducibilityResponse as parseReproducibilityAuditResponse,
+  parseReproducibilityResponse,
 };

@@ -1438,3 +1438,18 @@ test("stale propagation discovers a dependent created after its initial snapshot
     "stale",
   );
 });
+
+test("obsolete raw-log retention preferences load compatibly and are omitted on serialization", async () => {
+  const { parseResearchWorkspacePreferencesFile } = await import(
+    "../src/modules/researchWorkspace/persistence/validation"
+  );
+  const setup = repository();
+  const current = await setup.repository.getPreferences();
+  const legacy = {
+    ...current,
+    preferences: { ...current.preferences, retainRawRunLogs: true },
+  };
+  const normalized = parseResearchWorkspacePreferencesFile(legacy);
+  assert.equal("retainRawRunLogs" in normalized.preferences, false);
+  assert.deepEqual(parseResearchWorkspacePreferencesFile(current), normalized);
+});

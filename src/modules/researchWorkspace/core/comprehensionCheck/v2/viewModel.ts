@@ -1,7 +1,7 @@
-// @ts-nocheck -- Ported feature core is guarded by strict runtime parsers.
 import * as types_1 from "../../evidence/types";
 import * as engine_1 from "./engine";
-function evidenceLinks(references) {
+import type { MasteryAttempt, MasterySession } from "./types";
+function evidenceLinks(references: types_1.EvidenceReference[]) {
   return references.map((reference) => ({
     label: (0, types_1.formatEvidenceLocator)(reference),
     reference: {
@@ -19,7 +19,19 @@ function evidenceLinks(references) {
  * Returns the only question data that should enter the pre-answer DOM. Hidden
  * expected claims, rubric, evidence, and concept identity are deliberately absent.
  */
-function toLearnerQuestionView(session) {
+function toLearnerQuestionView(session: {
+  attempts: unknown[];
+  blueprint: { concepts: unknown[] };
+  pendingQuestion?: Pick<
+    MasterySession["pendingQuestion"] & {},
+    "id" | "prompt" | "difficulty" | "mode"
+  > & {
+    conceptId?: string;
+    rubric?: unknown[];
+    expectedClaims?: unknown[];
+    evidence?: unknown[];
+  };
+}) {
   const question = session.pendingQuestion;
   if (!question) return null;
   return {
@@ -32,7 +44,7 @@ function toLearnerQuestionView(session) {
   };
 }
 /** Safe post-submission view; rubric descriptions become visible only here. */
-function toLearnerAttemptFeedback(attempt) {
+function toLearnerAttemptFeedback(attempt: MasteryAttempt) {
   const rubricById = new Map(
     attempt.question.rubric.map((criterion) => [criterion.id, criterion]),
   );
@@ -61,7 +73,7 @@ function toLearnerAttemptFeedback(attempt) {
     })),
   };
 }
-function toMasteryDashboardView(session) {
+function toMasteryDashboardView(session: MasterySession) {
   const metrics = (0, engine_1.calculateMasteryMetrics)(session);
   const completion = (0, engine_1.calculateCompletionStatus)(session);
   const nextReviews = Object.values(session.conceptStates)
@@ -85,7 +97,7 @@ function toMasteryDashboardView(session) {
 }
 
 export {
-  toLearnerQuestionView,
   toLearnerAttemptFeedback,
+  toLearnerQuestionView,
   toMasteryDashboardView,
 };

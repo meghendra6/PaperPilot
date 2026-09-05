@@ -1,7 +1,12 @@
-// @ts-nocheck -- Ported feature core is guarded by strict runtime parsers.
 const DAY_MS = 24 * 60 * 60 * 1000;
 const SUCCESS_INTERVAL_DAYS = [1, 3, 7, 14, 30, 60, 120];
-function scheduleNextReview(input) {
+function scheduleNextReview(input: {
+  submittedAt: string;
+  normalizedScore: number;
+  hintLevel: number;
+  previousSuccessfulReviews: number;
+  majorMisconception: boolean;
+}) {
   const submitted = new Date(input.submittedAt);
   if (Number.isNaN(submitted.getTime()))
     throw new Error("submittedAt must be a valid ISO date.");
