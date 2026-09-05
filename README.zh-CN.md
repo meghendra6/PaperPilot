@@ -317,6 +317,7 @@ OpenDataLoader 打包说明：
 
 - 插件界面目前仅提供英文；翻译版 README 描述的是同一套英文界面。
 - 响应语言会被规范化为 **English**、**Korean** 或 **Chinese**
+- 韩语回答默认使用自然的韩语句子，同时保留论文或问题中的英语专业术语；需要术语的韩语译法时，可以明确要求。
 - 响应语言只改变模型生成的回答和 artifact，不改变界面标签
 - 运行时代码已经读取了许多与引擎、retrieval、workspace、privacy 相关的设置
 - 结构化 PDF 抽取使用内置的 OpenDataLoader JAR；Java 或运行时抽取不可用时会回退到 Zotero `attachmentText`

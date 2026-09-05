@@ -317,6 +317,7 @@ OpenDataLoader 打包說明：
 
 - 外掛介面目前僅提供英文；翻譯版 README 描述的是同一套英文介面。
 - 回應語言會被正規化為 **English**、**Korean** 或 **Chinese**
+- 韓語回答預設使用自然的韓語句子，同時保留論文或問題中的英語專業術語；需要術語的韓語譯法時，可以明確要求。
 - 回應語言只會變更模型產生的回答與 artifact，不會變更介面標籤
 - 執行時程式碼已經讀取了許多與引擎、retrieval、workspace、privacy 相關的設定
 - 結構化 PDF 擷取使用內建的 OpenDataLoader JAR；Java 或執行時擷取不可用時會退回到 Zotero `attachmentText`

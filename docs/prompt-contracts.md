@@ -18,8 +18,17 @@ findings, implications, limitations, questions, and feedback use the selected
 language even when the paper, prompt examples, or earlier responses are English.
 JSON keys, enum values, required schema literals, identifiers, code, URLs, citation
 locators, verbatim evidence quotes, original paper titles, and author names stay
-unchanged. Technical terms can retain English spelling where precision requires it;
-the surrounding explanation uses the selected language.
+unchanged.
+
+For Korean responses, preserve English technical terminology from the paper and
+the reader's question by default, including conventional concept, method, metric,
+and acronym names. For example, keep `probability distribution`, `rejection
+sampling`, and `KV cache` in English. Use natural Korean sentences to explain the
+concepts without forced literal translation, Korean transliteration, or routine
+bilingual parenthetical glosses. A reader's explicit request for a term's Korean
+wording overrides this default. This applies to chat, Explain, summaries, and
+natural-language JSON fields, including both Mastery and Critical Read surfaces.
+Other response languages retain English terminology when needed for precision.
 
 Changing the preference affects new requests. Previously saved outputs retain their
 original text; rerun the analysis to generate them in the newly selected language.

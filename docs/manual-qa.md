@@ -109,6 +109,13 @@ Use this checklist inside real Zotero 7, 8, 9, and 10 runtimes before claiming r
 - [ ] Confirm Astra offers `low`, `medium`, `high`, `xhigh`, `max`, and `ultra` as supported by the installed Codex CLI, with invalid effort values falling back to `medium`
 - [ ] Confirm per-paper mode override does not affect another document unexpectedly
 
+### Korean terminology in generated answers
+
+- [ ] With response language Korean, ask about `probability distribution` and another English term from the selected passage; confirm natural Korean explanations retain the English terms without routine Korean translations or bilingual glosses
+- [ ] Repeat in an existing chat whose earlier answers translated the terms; confirm new answers follow the current terminology policy
+- [ ] Run a structured summary or Mastery question and confirm its prose keeps English technical terms while JSON keys, enums, and verbatim evidence remain unchanged
+- [ ] Explicitly request the Korean wording of a technical term; confirm the model may provide it
+
 ## 3. Reader actions
 
 - [ ] Select text in the PDF
