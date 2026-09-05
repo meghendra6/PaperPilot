@@ -66,3 +66,18 @@ test("run failure keeps unknown raw diagnostics out of its user message", () => 
     assert.equal(failure.rawError, rawError);
   }
 });
+
+test("pre-controller errors do not suggest changing model authentication or workspace permissions", () => {
+  const failure = classifyRunFailure({
+    engine: "codex_cli",
+    source: "request",
+    rawError: "ReferenceError: structuredClone is not defined",
+  });
+  assert.equal(failure.kind, "unknown");
+  assert.equal(failure.action, undefined);
+  assert.match(failure.userMessage, /could not start this request/);
+  assert.equal(
+    failure.rawError,
+    "ReferenceError: structuredClone is not defined",
+  );
+});

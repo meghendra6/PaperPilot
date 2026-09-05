@@ -244,6 +244,14 @@ This is the single most important non-obvious mechanism in the repo.
 Zotero's environment cannot stream a child process, so runs are **file-based and
 polled**:
 
+Before controller admission, reader chat locks its composer, changes Send to
+Stop, and shows progress while resolving selection and saving the user turn.
+Cancellation retains the per-paper admission until this preparation settles,
+and a cancelled preparation never starts a CLI. Preparation errors become a
+visible terminal status and restore the composer. Selection popup styles are
+installed in the reader's own document because the pane stylesheet cannot cross
+that document boundary.
+
 1. `controller.handleXQuestion` refuses to start if a run is already active for
    this `itemID`.
 2. Before workspace preparation, the controller registers an item-scoped

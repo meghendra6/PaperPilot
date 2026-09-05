@@ -11,7 +11,12 @@ import { getProviderDescriptorForItem } from "./ai/providerRegistry";
 import { retryLastEngineQuestion } from "./ai/retryEngineRequest";
 import { cancelActiveEngineRun } from "./ai/runControl";
 import {
+  advanceRunProgress,
   claimChatEngineRequest,
+  failRunProgress,
+  isChatEngineRequestPending,
+  isChatPreparationCancelled,
+  startRunProgress,
   claimReaderSessionTransition,
   getPendingEngineCompletion,
   isReaderLifecycleClaimActive,
@@ -28,6 +33,7 @@ import {
 } from "./ai/runPresentation";
 import type { RunProfile } from "./ai/runProfile";
 import { getRunProgressState } from "./ai/runProgress";
+import { renderChatComposer } from "./ui/chatComposer";
 import { getStatusLabel } from "./ai/statusLabels";
 import type { StructuredOutputSchema } from "./ai/structuredOutput";
 import type { EngineMode } from "./ai/types";
@@ -367,7 +373,7 @@ export function registerPaperPilotPaneSection() {
           <span class="pp-streaming-dot"></span>
           <span class="pp-streaming-dot"></span>
           <span class="pp-streaming-dot"></span>
-          <span class="pp-streaming-text">Thinking…</span>
+          <span class="pp-streaming-text">Waiting for answer…</span>
         </div>
         <div id="chat-messages" role="log" aria-live="polite" aria-relevant="additions text" aria-label="Paper conversation"></div>
         <div id="paper-pilot-composer">
@@ -771,27 +777,30 @@ export function registerPaperPilotPaneSection() {
             elements: paneElements,
             ...options,
           });
+        const cancelCurrentRun = async () => {
+          const state = getRunProgressState(item.id);
+          const cancelled = await cancelActiveEngineRun(item.id);
+          const updatedState = getRunProgressState(item.id);
+          addMessage(
+            chatMessages,
+            cancelled
+              ? isReaderChatBusy(item.id)
+                ? "Stopping the current request. Wait for it to settle before sending another message."
+                : `${getModeLabel(state?.engine ?? getModeForItem(item.id))} run cancelled.`
+              : updatedState?.failure?.userMessage ||
+                  "No cancellable run is active for this paper.",
+            "ai",
+          );
+          renderStreamingIndicator(
+            streamingIndicator,
+            Boolean(getActiveReaderRunMode(item.id)),
+          );
+          runProgressCard.render(getRunProgressState(item.id));
+          renderChatComposerForItem(input, item.id);
+        };
         const runProgressCard = createRunProgressCard({
           container: runStateCard,
           actions: {
-            onCancel: async () => {
-              const state = getRunProgressState(item.id);
-              const cancelled = await cancelActiveEngineRun(item.id);
-              const updatedState = getRunProgressState(item.id);
-              addMessage(
-                chatMessages,
-                cancelled
-                  ? `${getModeLabel(state?.engine ?? getModeForItem(item.id))} run cancelled.`
-                  : updatedState?.failure?.userMessage ||
-                      "No cancellable run is active for this paper.",
-                "ai",
-              );
-              renderStreamingIndicator(
-                streamingIndicator,
-                Boolean(getActiveReaderRunMode(item.id)),
-              );
-              runProgressCard.render(getRunProgressState(item.id));
-            },
             onRetry: () =>
               retryLastEngineQuestion({
                 itemID: item.id,
@@ -1637,11 +1646,14 @@ export function registerPaperPilotPaneSection() {
           }
         };
 
+        renderChatComposerForItem(input, item.id);
         const cleanupComposerSizing = installChatComposerAutosize(input);
         const unsubscribeFromRunEvents = subscribeToReaderRunEvents(
           item.id,
           (event) => {
             if (!isCurrentRender()) return;
+            renderChatComposerForItem(input, item.id);
+            runProgressCard.render(getRunProgressState(item.id));
             if (event.type === "started") {
               const activeLabel = getModeLabel(event.mode);
               renderModeHeader(modeChip, modeStatus, activeLabel, "running");
@@ -3147,6 +3159,7 @@ export function registerPaperPilotPaneSection() {
         });
 
         const submitCurrentInput = async () => {
+          if (isReaderChatBusy(item.id)) return;
           const descriptor = getCurrentProviderDescriptor(item.id);
           await handleUserInput(
             input,
@@ -3167,7 +3180,13 @@ export function registerPaperPilotPaneSection() {
             await submitCurrentInput();
           }
         });
-        sendButton.addEventListener("click", submitCurrentInput);
+        sendButton.addEventListener("click", () => {
+          if (isReaderChatBusy(item.id)) {
+            void cancelCurrentRun();
+          } else {
+            void submitCurrentInput();
+          }
+        });
 
         const applyReaderActionToPane = async () => {
           const pendingDiscovery = addon.data.pendingDiscoveryConcerns?.get(
@@ -3200,6 +3219,11 @@ export function registerPaperPilotPaneSection() {
             return;
           }
 
+          addon.data.pendingReaderActions?.delete(item.id);
+          if (isReaderChatBusy(item.id)) {
+            renderDraftCard(draftCard, item.id);
+            return;
+          }
           input.value = pending.question;
           input.dispatchEvent(
             new input.ownerDocument.defaultView!.Event("input"),
@@ -3210,8 +3234,6 @@ export function registerPaperPilotPaneSection() {
           if (pending.autoSubmit) {
             await submitCurrentInput();
           }
-
-          addon.data.pendingReaderActions?.delete(item.id);
         };
         addon.data.applyReaderActionToPane?.set(
           item.id,
@@ -3260,7 +3282,7 @@ function renderDraftCard(draftCard: HTMLElement, itemID: number) {
       : "No text attached";
 
   draftCard.style.display = "block";
-  draftCard.textContent = `Pending ${draft.source} action: ${draft.action} — ${detail}`;
+  draftCard.textContent = `Selected passage: ${detail}`;
 }
 
 function getCurrentProviderDescriptor(itemID?: number) {
@@ -3959,7 +3981,11 @@ function renderStreamingIndicator(
   streamingIndicator: HTMLElement,
   visible: boolean,
 ) {
-  streamingIndicator.style.display = visible ? "flex" : "none";
+  const progressCard = streamingIndicator
+    .closest("#paper-pilot-container")
+    ?.querySelector<HTMLElement>("#paper-pilot-run-state");
+  streamingIndicator.style.display =
+    visible && progressCard?.style.display !== "block" ? "flex" : "none";
 }
 
 function getActiveRunMessage(mode: EngineMode, itemID: number) {
@@ -4315,8 +4341,18 @@ async function handleUserInput(
     return;
   }
 
+  const activeSessionID = sessionStore.get(itemID)?.sessionId;
+  const candidateDraft = addon.data.readerActionDrafts?.get(itemID);
+  const draft =
+    candidateDraft &&
+    (!candidateDraft.sessionId || candidateDraft.sessionId === activeSessionID)
+      ? candidateDraft
+      : undefined;
+  if (candidateDraft) clearReaderActionDraft(itemID);
   try {
     const profile = options?.profile || "chat";
+    if (!continuingParent) startRunProgress(itemID, mode, admissionToken);
+    renderChatComposerForItem(input, itemID);
     options?.onAdmitted?.();
     ztoolkit.log("Placeholder question:", question);
     if (!options?.silentUserMessage) {
@@ -4329,15 +4365,6 @@ async function handleUserInput(
     input.disabled = true;
     renderStreamingIndicator(streamingIndicator, true);
 
-    const activeSessionID = sessionStore.get(itemID)?.sessionId;
-    const candidateDraft = addon.data.readerActionDrafts?.get(itemID);
-    const draft =
-      candidateDraft &&
-      (!candidateDraft.sessionId ||
-        candidateDraft.sessionId === activeSessionID)
-        ? candidateDraft
-        : undefined;
-    if (candidateDraft && !draft) clearReaderActionDraft(itemID);
     const readerContext: { selectedText?: string } | undefined = draft
       ? undefined
       : await getCurrentReaderContext().catch(() => ({
@@ -4348,6 +4375,7 @@ async function handleUserInput(
       (readerContext?.selectedText
         ? String(readerContext.selectedText)
         : undefined);
+    if (isChatPreparationCancelled(itemID)) return;
     const session = options?.silentUserMessage
       ? sessionStore.touch(itemID, mode, itemTitle)
       : await sessionHistoryService.persistUserMessage({
@@ -4356,18 +4384,8 @@ async function handleUserInput(
           paperTitle: itemTitle,
           text: question,
         });
+    if (isChatPreparationCancelled(itemID)) return;
     if (mode === "codex_cli") {
-      if (draft) {
-        if (!options?.suppressChatMessages) {
-          addMessage(
-            chatMessages,
-            `Attached draft from ${draft.source}: ${draft.action}`,
-            "ai",
-          );
-        }
-        clearReaderActionDraft(itemID);
-      }
-
       await handleCodexQuestion({
         itemID,
         sessionId: session.sessionId,
@@ -4391,17 +4409,6 @@ async function handleUserInput(
     }
 
     if (mode === "claude_code") {
-      if (draft) {
-        if (!options?.suppressChatMessages) {
-          addMessage(
-            chatMessages,
-            `Attached draft from ${draft.source}: ${draft.action}`,
-            "ai",
-          );
-        }
-        clearReaderActionDraft(itemID);
-      }
-
       await handleClaudeQuestion({
         itemID,
         sessionId: session.sessionId,
@@ -4424,17 +4431,6 @@ async function handleUserInput(
     }
 
     if (mode === "gemini_cli") {
-      if (draft) {
-        if (!options?.suppressChatMessages) {
-          addMessage(
-            chatMessages,
-            `Attached draft from ${draft.source}: ${draft.action}`,
-            "ai",
-          );
-        }
-        clearReaderActionDraft(itemID);
-      }
-
       await handleGeminiQuestion({
         itemID,
         sessionId: session.sessionId,
@@ -4456,16 +4452,6 @@ async function handleUserInput(
       return;
     }
 
-    if (draft) {
-      if (!options?.suppressChatMessages) {
-        addMessage(
-          chatMessages,
-          `Attached draft from ${draft.source}: ${draft.action}`,
-          "ai",
-        );
-      }
-      clearReaderActionDraft(itemID);
-    }
     const assistantText = `${placeholderResponse}\n\nGemini CLI mode is active.`;
     if (!options?.suppressChatMessages) {
       addMessage(chatMessages, assistantText, "ai");
@@ -4480,16 +4466,81 @@ async function handleUserInput(
       success: true,
       assistantText,
     });
-  } finally {
-    releaseChatEngineRequest(itemID, admissionToken);
-    if (
-      mode !== "codex_cli" &&
-      mode !== "claude_code" &&
-      mode !== "gemini_cli"
-    ) {
-      renderStreamingIndicator(streamingIndicator, false);
+  } catch (error) {
+    logReaderPaneError("Chat request failed", error);
+    if (isChatPreparationCancelled(itemID)) return;
+    const state = failRunProgress({
+      itemID,
+      engine: mode,
+      token: admissionToken,
+      source: "request",
+      rawError: error instanceof Error ? error.message : String(error),
+      canRetry: false,
+    });
+    const assistantText =
+      state?.failure?.userMessage ||
+      "The request could not start. Try sending it again; details are in the run status.";
+    if (!options?.suppressChatMessages) {
+      const session = sessionStore.get(itemID);
+      if (session)
+        messageStore.append(session.sessionId, {
+          role: "assistant",
+          text: assistantText,
+          sourceMode: mode,
+          status: "error",
+        });
+      addMessage(chatMessages, assistantText, "ai");
     }
-    input.disabled = false;
-    input.focus();
+    await options?.onComplete?.({ success: false, assistantText });
+  } finally {
+    try {
+      if (isChatPreparationCancelled(itemID)) {
+        advanceRunProgress(itemID, admissionToken, {
+          type: "cancelled",
+          canRetry: false,
+        });
+        await options?.onComplete?.({
+          success: false,
+          assistantText: "Request cancelled before model execution.",
+        });
+      }
+    } finally {
+      releaseChatEngineRequest(itemID, admissionToken);
+      renderStreamingIndicator(
+        streamingIndicator,
+        Boolean(getActiveReaderRunMode(itemID)),
+      );
+      renderChatComposerForItem(input, itemID);
+      if (!isReaderChatBusy(itemID)) input.focus();
+    }
   }
+}
+
+function isReaderChatBusy(itemID: number): boolean {
+  return Boolean(
+    getActiveReaderRunMode(itemID) ||
+      getPendingEngineCompletion(itemID) ||
+      isReaderLifecycleClaimActive(itemID),
+  );
+}
+
+function renderChatComposerForItem(
+  input: HTMLTextAreaElement,
+  itemID: number,
+): void {
+  const button = input
+    .closest("#paper-pilot-container")
+    ?.querySelector<HTMLButtonElement>("#chat-send");
+  if (!button) return;
+  const pending = getPendingEngineCompletion(itemID);
+  renderChatComposer({
+    input,
+    button,
+    busy: isReaderChatBusy(itemID),
+    stopping:
+      isChatPreparationCancelled(itemID) || pending?.terminalClaim === "cancel",
+    canStop: pending
+      ? !pending.terminalClaim
+      : isChatEngineRequestPending(itemID),
+  });
 }

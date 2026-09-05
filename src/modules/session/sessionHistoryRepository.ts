@@ -448,7 +448,7 @@ export class SessionHistoryRepository {
 
   async readPaperIndex(itemID: number): Promise<SessionHistoryIndex> {
     const cached = this.indexCache.get(itemID);
-    if (cached) return structuredClone(cached);
+    if (cached) return this.normalizeIndex(cached);
     const indexPath = this.getPaperIndexPath(itemID);
     const candidate = await this.readJson(indexPath);
     const index = isSessionHistoryIndex(candidate, itemID)
@@ -473,7 +473,7 @@ export class SessionHistoryRepository {
           sessions: this.mergeRecoveredSessions([], recoveredSessions),
         });
     this.indexCache.set(itemID, normalized);
-    return structuredClone(normalized);
+    return this.normalizeIndex(normalized);
   }
 
   async writePaperIndex(index: SessionHistoryIndex) {

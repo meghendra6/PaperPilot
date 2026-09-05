@@ -81,6 +81,42 @@ class MemoryFileOps implements SessionHistoryFileOps {
   }
 }
 
+test("session index reads and writes work without structuredClone and isolate cached entries", async () => {
+  const originalClone = globalThis.structuredClone;
+  Object.defineProperty(globalThis, "structuredClone", {
+    configurable: true,
+    writable: true,
+    value: undefined,
+  });
+  try {
+    const fileOps = new MemoryFileOps();
+    const repo = new SessionHistoryRepository({
+      rootDir: "/session-history",
+      fileOps,
+    });
+    // Exercise both a cold read and the cache hit used before starting chat.
+    assert.deepEqual((await repo.readPaperIndex(42)).sessions, []);
+    await repo.saveSessionSnapshot({
+      paperItemID: 42,
+      paperTitle: "Paper",
+      snapshot: buildSnapshot(),
+    });
+    const first = await repo.readPaperIndex(42);
+    first.sessions[0].title = "Caller mutation";
+    first.sessions.length = 0;
+    const cached = await repo.readPaperIndex(42);
+    assert.equal(cached.sessions.length, 1);
+    assert.equal(cached.sessions[0].title, buildSnapshot().title);
+    const reopened = new SessionHistoryRepository({
+      rootDir: "/session-history",
+      fileOps,
+    });
+    assert.equal((await reopened.readPaperIndex(42)).sessions.length, 1);
+  } finally {
+    globalThis.structuredClone = originalClone;
+  }
+});
+
 test("default session history root fails closed without a Zotero profile", () => {
   const previousZotero = (globalThis as { Zotero?: unknown }).Zotero;
   (globalThis as { Zotero?: unknown }).Zotero = undefined;

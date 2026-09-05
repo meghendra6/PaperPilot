@@ -112,7 +112,13 @@ Use this checklist inside real Zotero 7, 8, 9, and 10 runtimes before claiming r
 ## 3. Reader actions
 
 - [ ] Select text in the PDF
-- [ ] Confirm selection popup shows AI actions
+- [ ] Confirm selection popup shows five distinct bordered AI buttons with visible spacing, hover, and keyboard focus in light and dark reader themes
+- [ ] Click Explain once; confirm it auto-submits, clears the selection draft card, and shows preparation / waiting / finishing status with elapsed time
+- [ ] Confirm Send becomes Stop and the input stays disabled during preparation and model execution; Stop shows Stopping until cancellation/cleanup settles, then Send and the input return
+- [ ] Attempt Enter, repeated popup clicks, and a pane refresh during a run; confirm no duplicate request and no unlocked input while the original run is active
+- [ ] Cancel during request preparation and again during model execution; confirm a late preparation result cannot start a replacement process or unlock another paper's input
+- [ ] Force session persistence to reject before model launch; confirm a visible error, stopped animation, and usable input instead of indefinite Thinking
+- [ ] In the installed add-on sandbox without `structuredClone`, confirm Explain persists its user turn, starts the CLI, displays an answer, and reopens the saved session
 - [ ] Trigger `Ask AI`
 - [ ] Confirm draft/prompt state appears in pane
 - [ ] Trigger annotation context menu action
@@ -200,6 +206,25 @@ Use this checklist inside real Zotero 7, 8, 9, and 10 runtimes before claiming r
 
 - [ ] Ask auto-highlight to process a short residue such as `Δ = 0.5` and a quote repeated twice; confirm neither produces an annotation
 - [ ] Auto-highlight one sufficiently long Greek quote and one sufficiently long CJK quote; confirm each lands on the unique exact passage
+
+### Selection chat startup and Stop runtime record — 2026-09-05
+
+In the installed Zotero add-on, the error console reproduced
+`ReferenceError: structuredClone is not defined` in both the cold and cached
+session-index reads before any model process started. A regression test without
+that API fails on the previous implementation and passes with the index-copy fix.
+
+With the candidate XPI installed, native accessibility inspection confirmed a
+real selection Explain using the configured Codex CLI produced a Korean answer
+and reached Completed at 0:36. A follow-up switched Send to Stop, disabled the
+input, and displayed Waiting for answer. Clicking Stop reached Cancelled at
+0:10 and restored the input and Send. This is one local runtime observation,
+not a latency benchmark or proof across all engines. Automated checks cover
+pre-controller cancellation ownership and terminal elapsed-time stability.
+
+The user confirmed that the installed popup buttons are visually distinct.
+Screenshot capture returned a blank image in this environment; dark-theme
+contrast and keyboard focus still require visual QA.
 
 ### Selection Explain transcript-rerender runtime record — 2026-08-23
 

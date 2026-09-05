@@ -16,6 +16,7 @@ export interface RunFailure {
 }
 
 export type RunFailureSource =
+  | "request"
   | "workspace"
   | "spawn"
   | "process_exit"
@@ -67,6 +68,16 @@ export function classifyRunFailure(params: {
 }): RunFailure {
   const rawError = String(params.rawError || "").trim();
   const label = getEngineLabel(params.engine);
+
+  if (params.source === "request") {
+    return {
+      kind: "unknown",
+      engine: params.engine,
+      userMessage:
+        "Paper Pilot could not start this request. Try sending it again. See the run status for details.",
+      rawError,
+    };
+  }
 
   if (params.source === "workspace") {
     return {

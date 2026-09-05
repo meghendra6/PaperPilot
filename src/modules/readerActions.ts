@@ -7,6 +7,20 @@ import {
 import { getModeForItem } from "./ai/modeStore";
 import { clearReaderActionDraft, setReaderActionDraft } from "./readerPane";
 import { sessionStore } from "./session/sessionStore";
+import { ensureSelectionPopupStyles } from "./ui/selectionPopup";
+import { getActiveReaderRunMode } from "./ai/runPresentation";
+import {
+  getPendingEngineCompletion,
+  isReaderLifecycleClaimActive,
+} from "./ai/runLifecycle";
+
+function isReaderActionBusy(itemID: number): boolean {
+  return Boolean(
+    getActiveReaderRunMode(itemID) ||
+      getPendingEngineCompletion(itemID) ||
+      isReaderLifecycleClaimActive(itemID),
+  );
+}
 
 export {
   activateReaderCapability,
@@ -88,6 +102,8 @@ function triggerAction(params: {
     return;
   }
 
+  if (isReaderActionBusy(params.itemID)) return;
+
   if (params.action === "find-prior-work" && params.text) {
     addon.data.pendingDiscoveryConcerns?.set(params.itemID, {
       sessionId: ensureReaderActionSession(params.itemID),
@@ -112,8 +128,12 @@ function buildSelectionActionButton(params: {
   itemID?: number;
 }) {
   const button = params.doc.createElement("button");
+  button.type = "button";
   button.textContent = params.label;
   button.className = "pp-btn pp-btn--secondary pp-selection-action";
+  button.disabled = Boolean(params.itemID && isReaderActionBusy(params.itemID));
+  if (button.disabled)
+    button.title = "Stop the current response in Paper Pilot first.";
   button.addEventListener("click", () => {
     triggerAction({
       source: "selection-popup",
@@ -152,9 +172,11 @@ const ANNOTATION_ACTIONS = [
 ] as const;
 
 const renderTextSelectionPopup = (event: TextSelectionPopupEvent) => {
+  ensureSelectionPopupStyles(event.doc);
   const wrapper = event.doc.createElement("div");
-  wrapper.style.cssText =
-    "display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; align-items:center;";
+  wrapper.className = "pp-selection-actions";
+  wrapper.setAttribute("role", "group");
+  wrapper.setAttribute("aria-label", "Paper Pilot");
   for (const item of SELECTION_ACTIONS) {
     wrapper.append(
       buildSelectionActionButton({

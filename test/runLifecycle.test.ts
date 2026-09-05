@@ -12,6 +12,9 @@ import {
   hasLastEngineRequest,
   isReaderSessionTransitionActive,
   isRetryEngineRequestPending,
+  isChatEngineRequestPending,
+  isChatPreparationCancelled,
+  requestChatPreparationCancellation,
   registerPendingEngineCompletion,
   rememberLastEngineRequest,
   recoverLatePreparedRunStopFailure,
@@ -26,6 +29,32 @@ import {
   markReaderRunFinished,
   markReaderRunStarted,
 } from "../src/modules/ai/runPresentation";
+
+test("cancelling request preparation retains admission until it settles and stays paper-scoped", () => {
+  const previousAddon = (globalThis as { addon?: unknown }).addon;
+  (globalThis as { addon?: unknown }).addon = { data: {} };
+  try {
+    const token = claimChatEngineRequest(61);
+    assert.ok(token);
+    assert.equal(requestChatPreparationCancellation(62), false);
+    assert.equal(requestChatPreparationCancellation(61), true);
+    assert.equal(isChatPreparationCancelled(61), true);
+    assert.equal(isChatPreparationCancelled(62), false);
+    assert.equal(isChatEngineRequestPending(61), true);
+    assert.equal(claimChatEngineRequest(61), undefined);
+    releaseChatEngineRequest(61, Symbol("stale"));
+    assert.equal(isChatPreparationCancelled(61), true);
+    releaseChatEngineRequest(61, token);
+    assert.equal(isChatEngineRequestPending(61), false);
+    assert.equal(isChatPreparationCancelled(61), false);
+    const next = claimChatEngineRequest(61);
+    assert.ok(next);
+    assert.equal(isChatPreparationCancelled(61), false);
+    releaseChatEngineRequest(61, next);
+  } finally {
+    (globalThis as { addon?: unknown }).addon = previousAddon;
+  }
+});
 
 test("pending engine completion is item-scoped and token-aware", () => {
   const previousAddon = (globalThis as { addon?: unknown }).addon;
