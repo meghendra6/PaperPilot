@@ -10,6 +10,21 @@ This note documents the purpose, target answer shape, and guardrails for the mai
 - reduce made-up details by preferring omission over guessing
 - apply the same full-paper grounding rules across Codex CLI, Claude Code, and Gemini CLI modes
 
+## Response language
+
+The saved response-language preference applies to reader-facing prose in chat and
+structured workflows, including both Critical Read surfaces. JSON summaries,
+findings, implications, limitations, questions, and feedback use the selected
+language even when the paper, prompt examples, or earlier responses are English.
+JSON keys, enum values, required schema literals, identifiers, code, URLs, citation
+locators, verbatim evidence quotes, original paper titles, and author names stay
+unchanged. Technical terms can retain English spelling where precision requires it;
+the surrounding explanation uses the selected language.
+
+Changing the preference affects new requests. Previously saved outputs retain their
+original text; rerun the analysis to generate them in the newly selected language.
+An analysis already running retains its admitted language setting.
+
 ## Prompt surfaces
 
 ### Research brief

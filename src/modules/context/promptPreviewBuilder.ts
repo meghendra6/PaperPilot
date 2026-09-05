@@ -8,7 +8,7 @@ export function buildPromptPreview(params: {
   const sections = [
     `Question: ${params.question}`,
     params.responseLanguage
-      ? `Preferred response language: ${buildResponseLanguageInstruction(params.responseLanguage)}`
+      ? `Response language (required): ${buildResponseLanguageInstruction(params.responseLanguage)}`
       : undefined,
   ].filter(Boolean);
 
