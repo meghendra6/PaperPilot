@@ -46,11 +46,10 @@ const translations: Record<string, readonly [string, string]> = {
   accepted: ["게재 승인", "已接收"],
   main_track: ["주요 트랙", "主会专题"],
   reviews_available: ["심사 의견 공개", "评审意见可获取"],
-  "Critical Read": ["비판적 읽기", "批判性阅读"],
-  "Critical Read · 7 steps": ["비판적 읽기 · 7단계", "批判性阅读 · 7 个步骤"],
-  Complete: ["완료", "已完成"],
-  "Start Critical Read": ["비판적 읽기 시작", "开始批判性阅读"],
-  "Cancel Critical Read step": ["현재 단계 취소", "取消当前步骤"],
+  "Critical Read · 7 steps": [
+    "Critical Read · 7단계",
+    "Critical Read · 7 个步骤",
+  ],
   "Your assessment": ["내 평가", "你的评估"],
   "Abstract signal": ["초록에서 파악한 내용", "摘要线索"],
   "Figure/table signal": ["그림·표에서 파악한 내용", "图表线索"],
@@ -99,15 +98,11 @@ const translations: Record<string, readonly [string, string]> = {
   "could explain": ["설명 가능한 결과:", "可解释的结果："],
   test: ["검증 실험", "验证实验"],
   addressed: ["논문에서 다룬 정도", "论文涉及程度"],
-  "Revise from here": ["이 단계부터 수정", "从此步骤修改"],
-  "Critical Read report": ["비판적 읽기 보고서", "批判性阅读报告"],
+  "Critical Read report": ["Critical Read 보고서", "Critical Read 报告"],
   "Report is ready to save.": [
     "보고서를 저장할 수 있습니다.",
     "报告已可保存。",
   ],
-  "Saved to Zotero note": ["Zotero 노트에 저장됨", "已保存到 Zotero 笔记"],
-  "Save report to note": ["보고서를 노트로 저장", "将报告保存为笔记"],
-  "Start Paper Mastery": ["논문 이해도 점검 시작", "开始论文掌握度检查"],
   "Your assessment should cover": [
     "다음 내용을 포함해 평가하세요",
     "你的评估应涵盖",
@@ -118,11 +113,6 @@ const translations: Record<string, readonly [string, string]> = {
   "Write your independent assessment first…": [
     "먼저 자신의 독립적인 평가를 작성하세요…",
     "请先写下你的独立评估…",
-  ],
-  "Working…": ["진행 중…", "处理中…"],
-  "Find and verify prior work": [
-    "선행 연구 검색 및 검증",
-    "查找并验证先前研究",
   ],
   "Apparent problem": ["파악한 문제", "初步识别的问题"],
   "Evidence shape": ["근거의 형태", "证据形式"],
@@ -417,7 +407,6 @@ const translations: Record<string, readonly [string, string]> = {
       "이 선택적 관점은 독자의 독립적인 평가를 먼저 완료한 뒤에만 추가됩니다. 독자의 판단, 논문의 주장, Paper Pilot의 추론과 구분됩니다.",
       "此可选视角仅在完成读者独立评估要求后添加，与读者判断、论文主张及 Paper Pilot 推断分开呈现。",
     ],
-  "Run step {step}": ["{step}단계 실행", "运行第 {step} 步"],
   "Running step {step}: {title}…": [
     "{step}단계 실행 중: {title}…",
     "正在运行第 {step} 步：{title}…",

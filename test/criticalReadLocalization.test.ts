@@ -38,10 +38,13 @@ test("known discovery and restored-session statuses localize; unknown diagnostic
     "Critical Read",
   );
   assert.equal(
-    createCriticalReadLocalizer("Korean")("Run step {step}", {
-      step: "{step}",
-    }),
-    "{step}단계 실행",
+    createCriticalReadLocalizer("Korean")(
+      "Step {step} reopened. Only dependent outputs were invalidated.",
+      {
+        step: "{step}",
+      },
+    ),
+    "{step}단계를 다시 열었습니다. 이 단계에 의존하는 결과만 초기화했습니다.",
     "template values must not be interpolated recursively",
   );
 });
@@ -63,8 +66,8 @@ test("saved note labels follow the selected language without translating or unes
   };
   const before = JSON.stringify(state);
   for (const [responseLanguage, heading, empty] of [
-    ["Korean", "비판적 읽기", "기록 없음"],
-    ["Chinese", "批判性阅读", "未记录"],
+    ["Korean", "Critical Read", "기록 없음"],
+    ["Chinese", "Critical Read", "未记录"],
     ["English", "Critical Read", "Not recorded"],
   ]) {
     const html = buildCriticalReadNoteHtml({

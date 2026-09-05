@@ -88,7 +88,7 @@ export function renderCriticalReadSection(params: {
     );
     const start = doc.createElement("button");
     start.className = "pp-btn pp-btn--secondary";
-    start.textContent = t("Start Critical Read");
+    start.textContent = "Start Critical Read";
     start.addEventListener("click", () => void params.actions.onStart());
     root.append(intro, start);
     return;
@@ -105,7 +105,7 @@ export function renderCriticalReadSection(params: {
   if (state.running) {
     const cancel = doc.createElement("button");
     cancel.className = "pp-btn pp-btn--secondary";
-    cancel.textContent = t("Cancel Critical Read step");
+    cancel.textContent = "Cancel Critical Read step";
     cancel.addEventListener("click", () => void params.actions.onCancel());
     root.appendChild(cancel);
   }
@@ -242,7 +242,7 @@ export function renderCriticalReadSection(params: {
     }
     const revise = doc.createElement("button");
     revise.className = "pp-btn pp-btn--ghost";
-    revise.textContent = t("Revise from here");
+    revise.textContent = "Revise from here";
     revise.disabled = state.running;
     revise.addEventListener(
       "click",
@@ -268,13 +268,13 @@ export function renderCriticalReadSection(params: {
     const save = doc.createElement("button");
     save.className = "pp-btn pp-btn--secondary";
     save.textContent = state.reportNoteItemID
-      ? t("Saved to Zotero note")
-      : t("Save report to note");
+      ? "Saved to Zotero note"
+      : "Save report to note";
     save.disabled = Boolean(state.reportNoteItemID);
     save.addEventListener("click", () => void params.actions.onSave());
     const mastery = doc.createElement("button");
     mastery.className = "pp-btn pp-btn--ghost";
-    mastery.textContent = t("Start Paper Mastery");
+    mastery.textContent = "Start Paper Mastery";
     mastery.addEventListener(
       "click",
       () => void params.actions.onStartMastery(),
@@ -347,10 +347,10 @@ export function renderCriticalReadSection(params: {
   const run = doc.createElement("button");
   run.className = "pp-btn pp-btn--primary";
   run.textContent = state.running
-    ? t("Working…")
+    ? "Working…"
     : step.id === 3
-      ? t("Find and verify prior work")
-      : t("Run step {step}", { step: step.id });
+      ? "Find and verify prior work"
+      : `Run step ${step.id}`;
   const updateRunAvailability = () => {
     run.disabled =
       state.running || (step.requiresReaderInput && !answer?.value.trim());
