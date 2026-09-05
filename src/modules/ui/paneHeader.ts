@@ -3,6 +3,7 @@ import { getStatusLabel } from "../ai/statusLabels";
 import type { EngineMode } from "../ai/types";
 import { getRecentCodexModels } from "../codex/modelHistory";
 import {
+  CODEX_DEFAULT_MODEL,
   getClaudeBuiltInModels,
   getCodexBuiltInModelCatalog,
   getCodexBuiltInModels,
@@ -331,7 +332,7 @@ function getAllowedModelsPrefForMode(mode: EngineMode) {
 function getFallbackModelForMode(mode: EngineMode) {
   if (mode === "gemini_cli") return "gemini-3.1-pro-preview";
   if (mode === "claude_code") return "sonnet";
-  return "gpt-5.6-sol";
+  return CODEX_DEFAULT_MODEL;
 }
 
 function getBuiltInModelsForMode(mode: EngineMode) {

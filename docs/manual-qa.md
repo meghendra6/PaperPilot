@@ -104,7 +104,9 @@ Use this checklist inside real Zotero 7, 8, 9, and 10 runtimes before claiming r
 - [ ] Switch to `Claude Code`
 - [ ] Confirm Claude Code model controls and mode messaging update correctly
 - [ ] Switch to `Codex CLI`
-- [ ] Confirm the unified run-progress card and Codex model controls render only GPT-5.6 Sol, Terra, and Luna; a saved older model falls back to Sol
+- [ ] Confirm the unified run-progress card and Codex model controls offer GPT-6 Astra plus GPT-5.6 Sol, Terra, and Luna; a fresh install, empty preference, or unknown/retired saved model defaults to Astra; with no saved reasoning effort, it uses `medium`
+- [ ] Confirm an explicitly saved GPT-5.6 model/effort remains selected after upgrading; selecting Astra persists across a pane refresh and starts/resumes a run with `gpt-6-astra`
+- [ ] Confirm Astra offers `low`, `medium`, `high`, `xhigh`, `max`, and `ultra` as supported by the installed Codex CLI, with invalid effort values falling back to `medium`
 - [ ] Confirm per-paper mode override does not affect another document unexpectedly
 
 ## 3. Reader actions

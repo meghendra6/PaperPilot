@@ -169,7 +169,7 @@ Codex 모드는 더 워크스페이스 지향적인 경로입니다. 현재 코�
 - 실행 파일 탐색 및 검증
 - 로그인/상태 확인
 - 워크스페이스 쓰기 가능 여부 확인
-- 현재 권장 Codex 모델 선택(`gpt-5.6-sol` 기본, `gpt-5.6-terra`, `gpt-5.6-luna`) 및 모델별 reasoning effort 옵션(지원 시 `max`/`ultra`까지)
+- 현재 권장 Codex 모델 선택(`gpt-6-astra` 기본, `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`) 및 모델별 reasoning effort 옵션(지원 시 `max`/`ultra`까지)
 - sandbox 및 approval 설정
 - 선택적 웹 검색 토글
 - 현재 논문에 연결된 후속 실행 재개

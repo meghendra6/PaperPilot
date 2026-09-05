@@ -5,6 +5,7 @@ import {
 } from "../workspace/pathBuilder";
 import type { CodexLoginState } from "./status";
 import {
+  CODEX_DEFAULT_MODEL,
   normalizeCodexModel,
   normalizeCodexReasoningEffort,
 } from "./modelOptions";
@@ -76,7 +77,7 @@ export function buildCodexRunState(params: {
     getPref("codexWorkspaceRoot"),
   );
   const model = normalizeCodexModel(
-    String(getPref("codexDefaultModel") || "gpt-5.6-sol"),
+    String(getPref("codexDefaultModel") || CODEX_DEFAULT_MODEL),
   );
   const reasoningEffort = normalizeCodexReasoningEffort(
     String(getPref("codexReasoningEffort") || "medium"),

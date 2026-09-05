@@ -43,6 +43,7 @@ import {
 import { buildCodexCommandEnvironment } from "./environment";
 import { resolveCodexExecutablePath } from "./executable";
 import {
+  CODEX_DEFAULT_MODEL,
   normalizeCodexModel,
   normalizeCodexReasoningEffort,
 } from "./modelOptions";
@@ -112,7 +113,7 @@ export async function startCodexRunForQuestion(params: {
     String(getPref("codexExecutablePath") || ""),
   );
   const model = normalizeCodexModel(
-    String(getPref("codexDefaultModel") || "gpt-5.6-sol"),
+    String(getPref("codexDefaultModel") || CODEX_DEFAULT_MODEL),
   );
   const reasoningEffort = normalizeCodexReasoningEffort(
     String(getPref("codexReasoningEffort") || "medium"),

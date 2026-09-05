@@ -22,7 +22,10 @@ import {
   buildContextPayload,
   buildGeminiWorkspacePrompt,
 } from "../src/modules/context/promptPreviewBuilder";
-import { deriveCodexRunState } from "../src/modules/codex/runState";
+import {
+  buildCodexRunState,
+  deriveCodexRunState,
+} from "../src/modules/codex/runState";
 import {
   parseCodexOutput,
   parseCodexOutputText,
@@ -448,8 +451,57 @@ test("mergeModelOptions keeps recent-first unique order", () => {
   );
 });
 
+test("Codex run settings default to Astra and preserve saved supported models in exec/resume commands", () => {
+  const previousZotero = (globalThis as { Zotero?: unknown }).Zotero;
+  let savedModel: string | undefined;
+  (globalThis as { Zotero?: unknown }).Zotero = {
+    Prefs: {
+      get: (key: string) => {
+        if (key.endsWith(".codexDefaultModel")) return savedModel;
+        if (key.endsWith(".codexWorkspaceRoot")) return "/tmp/paperpilot";
+        return undefined;
+      },
+    },
+  };
+  try {
+    for (const [saved, expected] of [
+      [undefined, "gpt-6-astra"],
+      ["", "gpt-6-astra"],
+      ["retired-model", "gpt-6-astra"],
+      ["gpt-6-astra", "gpt-6-astra"],
+      ["gpt-5.6-sol", "gpt-5.6-sol"],
+      ["gpt-5.6-terra", "gpt-5.6-terra"],
+      ["gpt-5.6-luna", "gpt-5.6-luna"],
+    ]) {
+      savedModel = saved;
+      const state = buildCodexRunState({
+        itemID: 77,
+        title: "Paper",
+        loginState: "ready",
+      });
+      assert.equal(state.model, expected);
+      assert.equal(state.reasoningEffort, "medium");
+      const options = {
+        cd: state.workspacePath,
+        model: state.model,
+        reasoningEffort: state.reasoningEffort,
+      };
+      for (const command of [
+        buildCodexExecCommand(options),
+        buildCodexResumeCommand({ ...options, sessionId: "saved-session" }),
+      ]) {
+        assert.equal(command[command.indexOf("--model") + 1], expected);
+        assert.ok(command.includes('model_reasoning_effort="medium"'));
+      }
+    }
+  } finally {
+    (globalThis as { Zotero?: unknown }).Zotero = previousZotero;
+  }
+});
+
 test("getCodexBuiltInModelCatalog exposes only current recommended models", () => {
   assert.deepEqual(getCodexBuiltInModels(), [
+    "gpt-6-astra",
     "gpt-5.6-sol",
     "gpt-5.6-terra",
     "gpt-5.6-luna",
@@ -458,6 +510,12 @@ test("getCodexBuiltInModelCatalog exposes only current recommended models", () =
   const catalog = getCodexBuiltInModelCatalog();
   const bySlug = new Map(catalog.map((model) => [model.slug, model]));
 
+  assert.deepEqual(bySlug.get("gpt-6-astra"), {
+    slug: "gpt-6-astra",
+    displayName: "GPT-6-Astra",
+    reasoningEfforts: ["low", "medium", "high", "xhigh", "max", "ultra"],
+    defaultReasoningEffort: "medium",
+  });
   assert.deepEqual(bySlug.get("gpt-5.6-sol"), {
     slug: "gpt-5.6-sol",
     displayName: "GPT-5.6-Sol",
@@ -473,20 +531,32 @@ test("getCodexBuiltInModelCatalog exposes only current recommended models", () =
 });
 
 test("normalizeCodexModel keeps known catalog slugs and coerces unknown models to the default", () => {
+  assert.equal(normalizeCodexModel(" gpt-6-astra "), "gpt-6-astra");
   assert.equal(normalizeCodexModel("gpt-5.6-sol"), "gpt-5.6-sol");
   assert.equal(normalizeCodexModel("gpt-5.6-terra"), "gpt-5.6-terra");
-  assert.equal(normalizeCodexModel("retired-model"), "gpt-5.6-sol");
-  assert.equal(normalizeCodexModel(""), "gpt-5.6-sol");
+  assert.equal(normalizeCodexModel("gpt-5.6-luna"), "gpt-5.6-luna");
+  assert.equal(normalizeCodexModel("retired-model"), "gpt-6-astra");
+  assert.equal(normalizeCodexModel(""), "gpt-6-astra");
 });
 
 test("normalizeCodexModelList removes retired saved options from the picker", () => {
   assert.deepEqual(
-    normalizeCodexModelList(["retired-model", "gpt-5.6-terra"]),
-    ["gpt-5.6-sol", "gpt-5.6-terra"],
+    normalizeCodexModelList([
+      "retired-model",
+      "gpt-6-astra",
+      "gpt-5.6-sol",
+      "gpt-5.6-terra",
+    ]),
+    ["gpt-6-astra", "gpt-5.6-sol", "gpt-5.6-terra"],
   );
 });
 
 test("normalizeCodexReasoningEffort validates efforts against the selected model", () => {
+  for (const effort of ["low", "medium", "high", "xhigh", "max", "ultra"]) {
+    assert.equal(normalizeCodexReasoningEffort(effort, "gpt-6-astra"), effort);
+  }
+  assert.equal(normalizeCodexReasoningEffort("none", "gpt-6-astra"), "medium");
+  assert.equal(normalizeCodexReasoningEffort("", "gpt-6-astra"), "medium");
   // Model-aware: gpt-5.6-sol supports ultra; gpt-5.6-luna does not.
   assert.equal(normalizeCodexReasoningEffort("ultra", "gpt-5.6-sol"), "ultra");
   assert.equal(normalizeCodexReasoningEffort("max", "gpt-5.6-luna"), "max");
