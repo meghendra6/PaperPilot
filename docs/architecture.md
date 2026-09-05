@@ -645,7 +645,9 @@ the same idempotent stop hook; disabling the add-on then performs UI cleanup.
 
 `criticalRead/localization.ts` supplies presentation copy for the canonical
 seven-step reader workflow. Step IDs and persisted workflow/output values remain
-stable. `ui/criticalReadSection.ts` resolves labels at render time; report previews
+stable. Feature names and action buttons retain their English labels; guidance
+and report labels follow the response language.
+`ui/criticalReadSection.ts` resolves labels at render time; report previews
 and new notes rebuild headings from structured state in the selected response
 language. Preference changes notify open reader panes through
 `translation/responseLanguage.ts`, with subscriptions disposed with the pane and

@@ -743,9 +743,10 @@ After running mastery and one or more workbench tools (research brief, contribut
   automatically. Restore the original preference after the checks.
 
 - With Critical Read open on Step 1, switch between Korean, Chinese, and English.
-  Check the Workbench button, seven-step heading, ready status, step title,
-  instruction, assessment checklist, extraction notice, input placeholder, and
-  run button immediately use the selected language without starting an AI run.
+  Check the seven-step heading, ready status, step title, instruction, assessment
+  checklist, extraction notice, and input placeholder immediately use the selected
+  language without starting an AI run. Feature names and action buttons such as
+  `Critical Read`, `Run step 1`, and `Save report to note` must stay in English.
   Type an unsent assessment before switching; the text and run-button availability
   must survive the switch. Original abstract, captions, and locators stay verbatim.
 - Repeat with restored sessions, all seven steps, a running step, a revised step,

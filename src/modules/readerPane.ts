@@ -996,10 +996,10 @@ export function registerPaperPilotPaneSection() {
           const t = createCriticalReadLocalizer(responseLanguage);
           criticalReadButton.textContent =
             state.phase === "idle"
-              ? t("Critical Read")
+              ? "Critical Read"
               : state.phase === "complete"
-                ? `${t("Critical Read")} · ${t("Complete")}`
-                : `${t("Critical Read")} · ${state.steps.filter((step) => step.status === "complete").length}/7`;
+                ? "Critical Read · Complete"
+                : `Critical Read · ${state.steps.filter((step) => step.status === "complete").length}/7`;
           renderCriticalReadSection({
             root: criticalReadRoot,
             state,

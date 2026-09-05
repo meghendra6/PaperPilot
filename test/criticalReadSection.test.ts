@@ -207,8 +207,8 @@ test("completed Critical Read cards render every typed output surface", () => {
         "AI가 평가한 확신 수준: 보통",
         "저자 결론: 확인 가능",
         "논문에서 다룬 정도: 일부",
-        "보고서를 노트로 저장",
-        "이 단계부터 수정",
+        "Save report to note",
+        "Revise from here",
       ],
     ],
     [
@@ -218,8 +218,8 @@ test("completed Critical Read cards render every typed output surface", () => {
         "AI 评估的置信程度: 中",
         "作者结论: 可获取",
         "论文涉及程度: 部分",
-        "将报告保存为笔记",
-        "从此步骤修改",
+        "Save report to note",
+        "Revise from here",
       ],
     ],
   ] as const) {
@@ -266,17 +266,17 @@ function descendants(element: FakeElement): FakeElement[] {
 for (const [language, header, instruction, checklist, run] of [
   [
     "Korean",
-    "비판적 읽기 · 7단계",
+    "Critical Read · 7단계",
     "먼저 훑어보세요.",
     "다음 내용을 포함해 평가하세요",
-    "1단계 실행",
+    "Run step 1",
   ],
   [
     "Chinese",
-    "批判性阅读 · 7 个步骤",
+    "Critical Read · 7 个步骤",
     "先浏览一遍。",
     "你的评估应涵盖",
-    "运行第 1 步",
+    "Run step 1",
   ],
   [
     "English",
@@ -424,8 +424,8 @@ test("changing display language preserves an unsent assessment and regenerates r
     paperTitle: "Original English Title",
   });
   const text = collectText(root);
-  assert.match(text, /비판적 읽기 보고서/);
-  assert.match(text, /# 비판적 읽기: Original English Title/);
+  assert.match(text, /Critical Read 보고서/);
+  assert.match(text, /# Critical Read: Original English Title/);
   assert.match(text, /독자의 평가/);
   assert.match(text, /Step summary\./);
   assert.ok(text.includes(draft));
@@ -444,7 +444,7 @@ test("Korean status follows running, completion, and revision without changing p
     responseLanguage: "Korean",
   });
   assert.match(collectText(root), /1단계 실행 중: 초록·그림·표 훑어보기/);
-  assert.match(collectText(root), /현재 단계 취소/);
+  assert.match(collectText(root), /Cancel Critical Read step/);
   assert.equal(
     descendants(root).find((element) => element.tagName === "TEXTAREA")
       ?.disabled,
