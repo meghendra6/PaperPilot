@@ -12,6 +12,7 @@ import { buildCriticalReadStepPrompt } from "../src/modules/criticalRead/prompt"
 import { buildInitialCriticalReadState } from "../src/modules/criticalRead/workflow";
 import { buildProfiledCriticalReadPrompt } from "../src/modules/researchWorkspace/core/criticalRead/profiled/prompt";
 import { getCriticalReadProfile } from "../src/modules/researchWorkspace/core/criticalRead/profiled/profiles";
+import { buildMasteryBlueprintPrompt } from "../src/modules/researchWorkspace/core/comprehensionCheck/v2/prompt";
 import {
   buildContextPayload,
   buildCodexWorkspacePrompt,
@@ -101,10 +102,7 @@ test("the packaged language selector persists changes used by all CLI providers"
 for (const language of ["Korean", "Chinese", "English"] as const) {
   test(`${language} applies to Critical Read prose without translating schema or source evidence`, () => {
     const instruction = buildResponseLanguageInstruction(language);
-    assert.match(
-      instruction,
-      new RegExp(`all reader-facing prose in ${language}`),
-    );
+    assert.match(instruction, new RegExp(`reader-facing prose in ${language}`));
     assert.match(instruction, /string values inside JSON/);
     assert.match(instruction, /Keep JSON keys, enum values/);
     assert.match(instruction, /verbatim source quotes/);
@@ -122,6 +120,11 @@ for (const language of ["Korean", "Chinese", "English"] as const) {
         paperContext: "An English paper.",
         attachmentKey: "ATTACH",
         profile: getCriticalReadProfile("general"),
+        responseLanguage: language,
+      }),
+      buildMasteryBlueprintPrompt({
+        paperContext: "An English paper about probability distribution.",
+        attachmentKey: "ATTACH",
         responseLanguage: language,
       }),
     );
@@ -142,3 +145,26 @@ for (const language of ["Korean", "Chinese", "English"] as const) {
     }
   });
 }
+
+test("Korean explanations preserve paper and reader terminology by default", () => {
+  const instruction = buildResponseLanguageInstruction("Korean");
+  assert.match(instruction, /Use English technical terms by default/);
+  assert.match(instruction, /from the paper and the reader's question/);
+  assert.match(instruction, /conventional English names/);
+  assert.match(instruction, /probability distribution/);
+  assert.match(instruction, /Do not replace them with Korean translations/);
+  assert.match(instruction, /phonetic transliterations/);
+  assert.match(instruction, /bilingual parenthetical glosses/);
+  assert.match(instruction, /natural Korean sentences/);
+  assert.match(instruction, /avoid forced word-for-word translation/);
+  assert.match(instruction, /only when the reader explicitly requests/);
+  assert.doesNotMatch(instruction, /only when needed for precision/);
+});
+
+test("other response languages retain their existing terminology policy", () => {
+  for (const language of ["English", "Chinese"]) {
+    const instruction = buildResponseLanguageInstruction(language);
+    assert.match(instruction, /only when needed for precision/);
+    assert.doesNotMatch(instruction, /by default in Korean responses/);
+  }
+});

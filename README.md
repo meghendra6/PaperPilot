@@ -323,6 +323,7 @@ Important current details:
 
 - the plugin interface is currently English only; translated README files document the same English UI
 - response language is normalized to **English**, **Korean**, or **Chinese**
+- Korean answers use natural Korean sentences while retaining English technical terms from the paper or question by default; request a Korean term explicitly when needed
 - response language changes model-generated answers and artifacts, not interface labels
 - runtime code already reads many engine, retrieval, workspace, and privacy preferences
 - structured PDF extraction uses a bundled OpenDataLoader JAR and falls back to Zotero `attachmentText` if Java/runtime extraction is unavailable
