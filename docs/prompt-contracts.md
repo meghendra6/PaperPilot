@@ -25,6 +25,13 @@ Changing the preference affects new requests. Previously saved outputs retain th
 original text; rerun the analysis to generate them in the newly selected language.
 An analysis already running retains its admitted language setting.
 
+Critical Read's fixed interface copy (all seven step titles, guidance, checklists,
+known statuses, controls, and report labels) also follows this preference. Open
+panes refresh immediately and preserve unsent reader input. Restored sessions use
+current display copy without rewriting workflow state or previously generated
+prose. Report previews and newly saved notes rebuild labels in the selected
+language; existing Zotero notes and verbatim source material remain unchanged.
+
 ## Prompt surfaces
 
 ### Research brief

@@ -640,3 +640,14 @@ native Windows execution is not supported, and Linux needs those tools installed
 Zotero shutdown listeners await best-effort termination of registered CLI process
 trees before the runtime closes. The bootstrap application-shutdown path invokes
 the same idempotent stop hook; disabling the add-on then performs UI cleanup.
+
+### Critical Read display language
+
+`criticalRead/localization.ts` supplies presentation copy for the canonical
+seven-step reader workflow. Step IDs and persisted workflow/output values remain
+stable. `ui/criticalReadSection.ts` resolves labels at render time; report previews
+and new notes rebuild headings from structured state in the selected response
+language. Preference changes notify open reader panes through
+`translation/responseLanguage.ts`, with subscriptions disposed with the pane and
+unsent Critical Read input preserved during the language refresh. This does not
+regenerate saved AI prose or translate verbatim paper evidence.

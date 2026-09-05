@@ -34,3 +34,20 @@ export function buildResponseLanguageInstruction(value: unknown) {
     `Use English technical terms only when needed for precision; keep the surrounding sentences and explanations in ${language}.`,
   ].join(" ");
 }
+
+// Open reader panes refresh presentation copy when settings change. The active
+// CLI run keeps its captured execution settings and generated text unchanged.
+const languageChangeListeners = new Set<() => void>();
+
+export function notifyResponseLanguageChanged(): void {
+  for (const listener of languageChangeListeners) listener();
+}
+
+export function subscribeToResponseLanguageChanges(
+  listener: () => void,
+): () => void {
+  languageChangeListeners.add(listener);
+  return () => {
+    languageChangeListeners.delete(listener);
+  };
+}
