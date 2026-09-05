@@ -1,17 +1,18 @@
+import { stableHash } from "../identity";
 import {
+  assertResearchWorkspaceID,
+  assertResearchWorkspaceMember,
   RESEARCH_WORKSPACE_ARTIFACT_SCHEMA_VERSION,
   RESEARCH_WORKSPACE_CATALOG_SCHEMA_VERSION,
   RESEARCH_WORKSPACE_CHANGE_INBOX_SCHEMA_VERSION,
   RESEARCH_WORKSPACE_MEMBERS_SCHEMA_VERSION,
-  RESEARCH_WORKSPACE_PROJECT_SCHEMA_VERSION,
   RESEARCH_WORKSPACE_PREFERENCES_SCHEMA_VERSION,
+  RESEARCH_WORKSPACE_PROJECT_SCHEMA_VERSION,
   RESEARCH_WORKSPACE_RUN_SCHEMA_VERSION,
   RESEARCH_WORKSPACE_SOURCE_SCHEMA_VERSION,
   ResearchWorkspaceFileMissingError,
   ResearchWorkspaceNotFoundError,
   ResearchWorkspaceRevisionConflictError,
-  assertResearchWorkspaceID,
-  assertResearchWorkspaceMember,
   type ResearchProject,
   type ResearchWorkspaceArtifact,
   type ResearchWorkspaceArtifactFile,
@@ -21,9 +22,9 @@ import {
   type ResearchWorkspaceChangeInboxFile,
   type ResearchWorkspaceMembersFile,
   type ResearchWorkspacePortableExport,
+  type ResearchWorkspacePreferences,
   type ResearchWorkspaceProjectBundle,
   type ResearchWorkspaceProjectMember,
-  type ResearchWorkspacePreferences,
   type ResearchWorkspaceRepositoryOptions,
   type ResearchWorkspaceRun,
   type ResearchWorkspaceRunList,
@@ -33,13 +34,14 @@ import {
   cloneResearchWorkspaceValue,
   SerializedResearchWorkspaceFiles,
 } from "./fileStore";
+import { getResearchWorkspaceReceiptContract } from "./receiptContract";
 import {
   parseResearchWorkspaceArtifactFile,
   parseResearchWorkspaceCatalog,
   parseResearchWorkspaceChangeInboxFile,
   parseResearchWorkspaceMembersFile,
-  parseResearchWorkspaceProjectFile,
   parseResearchWorkspacePreferencesFile,
+  parseResearchWorkspaceProjectFile,
   parseResearchWorkspaceRunFile,
   parseResearchWorkspaceSourceFile,
 } from "./validation";
@@ -47,8 +49,6 @@ import type {
   ResearchWorkspaceZoteroSyncReceipt,
   ResearchWorkspaceZoteroSyncReceiptFile,
 } from "./zoteroSyncContracts";
-import { stableHash } from "../identity";
-import { getResearchWorkspaceReceiptContract } from "./receiptContract";
 
 function zoteroSyncReceiptContract() {
   return getResearchWorkspaceReceiptContract<ResearchWorkspaceZoteroSyncReceiptFile>();
@@ -108,7 +108,6 @@ function defaultPreferences(now: string) {
       responseLanguage: "English",
       maxPaperCharacters: 1_500_000,
       artifactHistoryLimit: 20,
-      retainRawRunLogs: false,
     },
     createdAt: now,
     updatedAt: now,

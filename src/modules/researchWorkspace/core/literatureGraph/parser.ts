@@ -1,8 +1,8 @@
-// @ts-nocheck -- Ported feature core is guarded by strict runtime parsers.
 import * as json_1 from "../comprehensionCheck/v2/json";
+import type { NamedArtifactInput } from "../contracts";
 import * as types_1 from "../evidence/types";
-import * as graph_1 from "./graph";
 import { enumValue, optionalUnitInterval } from "../parserValidation";
+import * as graph_1 from "./graph";
 const NODE_KINDS = new Set(["paper", "concept", "claim", "method", "dataset"]);
 const EDGE_KINDS = new Set([
   "introduces",
@@ -16,7 +16,13 @@ const EDGE_KINDS = new Set([
   "evaluates_on",
   "related",
 ]);
-function parseLiteratureGraphResponse(params) {
+function parseLiteratureGraphResponse(
+  params: NamedArtifactInput & {
+    response: string;
+    allowedPaperKeys: Set<string>;
+    allowedAttachmentKeys: Set<string>;
+  },
+) {
   const root = (0, json_1.extractLastJsonObject)(params.response);
   const nodeIds = new Set();
   const nodes = (0, json_1.readArray)(root.nodes, "nodes").map(

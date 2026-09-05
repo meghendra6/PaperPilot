@@ -1,4 +1,5 @@
-// @ts-nocheck -- Ported feature core is guarded by strict runtime parsers.
+import type { ClaimInput, ClaimLedger, PaperClaim } from "../contracts";
+import type { EvidenceReference } from "./types";
 import * as types_1 from "./types";
 const CLAIM_KINDS = new Set([
   "author_claim",
@@ -7,18 +8,21 @@ const CLAIM_KINDS = new Set([
   "reader_inference",
   "external_evidence",
 ]);
-function requiredText(value, fieldName, maxLength) {
+function requiredText(value: string, fieldName: string, maxLength: number) {
   const normalized = value.trim();
   if (!normalized) throw new Error(`${fieldName} cannot be empty.`);
   return normalized.slice(0, maxLength);
 }
-function normalizedConfidence(value) {
+function normalizedConfidence(value: number | undefined) {
   if (value === undefined) return undefined;
   if (!Number.isFinite(value))
     throw new Error("Claim confidence must be finite.");
   return Math.min(1, Math.max(0, value));
 }
-function inferClaimVerificationStatus(support, contradictions) {
+function inferClaimVerificationStatus(
+  support: EvidenceReference[],
+  contradictions: EvidenceReference[],
+) {
   if (contradictions.length > 0) return "conflicting";
   if (support.length === 0) return "unverified";
   const strongSupport = support.some(
@@ -26,8 +30,11 @@ function inferClaimVerificationStatus(support, contradictions) {
   );
   return strongSupport ? "verified" : "partially_verified";
 }
-function inferLocalEvidenceVerificationStatus(support, contradictions) {
-  const locallyVerified = (reference) =>
+function inferLocalEvidenceVerificationStatus(
+  support: EvidenceReference[],
+  contradictions: EvidenceReference[],
+) {
+  const locallyVerified = (reference: EvidenceReference) =>
     reference?.verification?.status === "verified";
   if (contradictions.some(locallyVerified)) return "conflicting";
   const verifiedSupport = support.filter(locallyVerified).length;
@@ -37,10 +44,14 @@ function inferLocalEvidenceVerificationStatus(support, contradictions) {
   }
   return "partially_verified";
 }
-function reconcileClaimLedgerEvidenceStatus(
-  ledger,
-  now = new Date().toISOString(),
-) {
+function reconcileClaimLedgerEvidenceStatus<
+  T extends {
+    claims: {
+      support: EvidenceReference[];
+      contradictions: EvidenceReference[];
+    }[];
+  },
+>(ledger: T, now = new Date().toISOString()) {
   return {
     ...ledger,
     claims: ledger.claims.map((claim) => ({
@@ -54,7 +65,7 @@ function reconcileClaimLedgerEvidenceStatus(
     updatedAt: now,
   };
 }
-function createPaperClaim(input) {
+function createPaperClaim(input: ClaimInput & { now: string }): PaperClaim {
   if (!CLAIM_KINDS.has(input.kind))
     throw new Error(`Unsupported claim kind: ${input.kind}`);
   const id = requiredText(input.id, "Claim ID", 256);
@@ -81,14 +92,18 @@ function createPaperClaim(input) {
     updatedAt: input.now,
   };
 }
-function mergePaperClaims(base, incoming, now) {
+function mergePaperClaims(
+  base: PaperClaim,
+  incoming: PaperClaim,
+  now: string,
+): PaperClaim {
   if (base.id !== incoming.id) {
     throw new Error(
       `Cannot merge claims with different IDs: ${base.id} and ${incoming.id}`,
     );
   }
-  const supportByKey = new Map();
-  const contradictionsByKey = new Map();
+  const supportByKey = new Map<string, EvidenceReference>();
+  const contradictionsByKey = new Map<string, EvidenceReference>();
   for (const reference of [...base.support, ...incoming.support]) {
     supportByKey.set((0, types_1.evidenceReferenceKey)(reference), reference);
   }
@@ -112,7 +127,10 @@ function mergePaperClaims(base, incoming, now) {
     ...([base.confidence, incoming.confidence].some(Number.isFinite)
       ? {
           confidence: Math.max(
-            ...[base.confidence, incoming.confidence].filter(Number.isFinite),
+            ...[base.confidence, incoming.confidence].filter(
+              (value): value is number =>
+                typeof value === "number" && Number.isFinite(value),
+            ),
           ),
         }
       : {}),
@@ -120,14 +138,14 @@ function mergePaperClaims(base, incoming, now) {
     updatedAt: now,
   };
 }
-function summarizeClaimLedger(claims) {
+function summarizeClaimLedger(claims: PaperClaim[]) {
   const summary = {
     total: claims.length,
     verified: 0,
     partiallyVerified: 0,
     unverified: 0,
     conflicting: 0,
-    unsupportedClaimIds: [],
+    unsupportedClaimIds: [] as string[],
   };
   for (const claim of claims) {
     switch (claim.verificationStatus) {
@@ -148,7 +166,10 @@ function summarizeClaimLedger(claims) {
   }
   return summary;
 }
-function createClaimLedger(paperKey, now = new Date().toISOString()) {
+function createClaimLedger(
+  paperKey: string,
+  now = new Date().toISOString(),
+): ClaimLedger {
   return {
     schemaVersion: 1,
     paperKey: requiredText(paperKey, "Paper key", 512),
@@ -158,7 +179,11 @@ function createClaimLedger(paperKey, now = new Date().toISOString()) {
     updatedAt: now,
   };
 }
-function addClaim(ledger, input, now = new Date().toISOString()) {
+function addClaim(
+  ledger: ClaimLedger,
+  input: ClaimInput,
+  now = new Date().toISOString(),
+): ClaimLedger {
   const normalized = createPaperClaim({
     id: input.id,
     text: input.text,
@@ -195,7 +220,11 @@ function addClaim(ledger, input, now = new Date().toISOString()) {
     updatedAt: now,
   };
 }
-function removeClaim(ledger, claimId, now = new Date().toISOString()) {
+function removeClaim(
+  ledger: ClaimLedger,
+  claimId: string,
+  now = new Date().toISOString(),
+) {
   const claims = ledger.claims.filter((claim) => claim.id !== claimId);
   if (claims.length === ledger.claims.length) return ledger;
   return {
@@ -205,19 +234,19 @@ function removeClaim(ledger, claimId, now = new Date().toISOString()) {
     updatedAt: now,
   };
 }
-function summarizeVersionedClaimLedger(ledger) {
+function summarizeVersionedClaimLedger(ledger: ClaimLedger) {
   return summarizeClaimLedger(ledger.claims);
 }
 
 export {
+  addClaim,
+  createClaimLedger,
+  createPaperClaim,
   inferClaimVerificationStatus,
   inferLocalEvidenceVerificationStatus,
-  reconcileClaimLedgerEvidenceStatus,
-  createPaperClaim,
   mergePaperClaims,
-  summarizeClaimLedger,
-  createClaimLedger,
-  addClaim,
+  reconcileClaimLedgerEvidenceStatus,
   removeClaim,
+  summarizeClaimLedger,
   summarizeVersionedClaimLedger,
 };

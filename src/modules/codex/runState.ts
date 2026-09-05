@@ -3,12 +3,12 @@ import {
   buildPaperWorkspacePath,
   resolvePaperWorkspaceRoot,
 } from "../workspace/pathBuilder";
-import type { CodexLoginState } from "./status";
 import {
   CODEX_DEFAULT_MODEL,
-  normalizeCodexModel,
   normalizeCodexReasoningEffort,
+  resolveCodexModel,
 } from "./modelOptions";
+import type { CodexLoginState } from "./status";
 
 declare const addon: any;
 
@@ -76,8 +76,9 @@ export function buildCodexRunState(params: {
   const workspaceRoot = resolvePaperWorkspaceRoot(
     getPref("codexWorkspaceRoot"),
   );
-  const model = normalizeCodexModel(
+  const model = resolveCodexModel(
     String(getPref("codexDefaultModel") || CODEX_DEFAULT_MODEL),
+    String(getPref("codexAllowedModels") || ""),
   );
   const reasoningEffort = normalizeCodexReasoningEffort(
     String(getPref("codexReasoningEffort") || "medium"),

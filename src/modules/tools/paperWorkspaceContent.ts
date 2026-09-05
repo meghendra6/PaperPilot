@@ -1,9 +1,9 @@
-import { buildCodexCommandEnvironment } from "../codex/environment";
-import { shellEscape } from "../codex/shell";
+import { version as openDataLoaderVersion } from "../../../node_modules/@opendataloader/pdf/package.json";
 import { getZoteroProfilePath } from "../../utils/zoteroProfile";
 import { launchDetachedShellScript } from "../ai/launchScript";
 import { stopDetachedRunProcess } from "../ai/runCompletion";
-import { version as openDataLoaderVersion } from "../../../node_modules/@opendataloader/pdf/package.json";
+import { buildCodexCommandEnvironment } from "../codex/environment";
+import { shellEscape } from "../codex/shell";
 
 declare const Zotero: any;
 declare const IOUtils: any;
@@ -293,34 +293,58 @@ async function pathExists(path: string) {
   }
 }
 
-async function fetchBundledJarToProfile(rootUri: string) {
+const jarCopies = new Map<string, Promise<string>>();
+
+async function fetchBundledJarToProfile(rootUri: string): Promise<string> {
   const profilePath = getZoteroProfilePath();
-  if (!profilePath) {
+  if (!profilePath)
     throw new Error("Could not resolve the Zotero profile directory.");
-  }
-
   const cacheDir = PathUtils.join(profilePath, "paperpilot-tools");
-  const cachePath = PathUtils.join(cacheDir, "opendataloader-pdf-cli.jar");
-
-  if (await pathExists(cachePath)) {
+  const cachePath = PathUtils.join(
+    cacheDir,
+    `opendataloader-pdf-cli-${openDataLoaderVersion}.jar`,
+  );
+  const key = `${rootUri}:${cachePath}`;
+  const pending = jarCopies.get(key);
+  if (pending) return pending;
+  const copy = (async () => {
+    const bundledJarUrl = new URL(
+      "chrome/content/vendor/opendataloader/opendataloader-pdf-cli.jar",
+      rootUri.endsWith("/") ? rootUri : `${rootUri}/`,
+    ).href;
+    const response = await fetch(bundledJarUrl);
+    if (!response.ok)
+      throw new Error(
+        `Could not read the bundled OpenDataLoader asset (${response.status}).`,
+      );
+    const bundled = new Uint8Array(await response.arrayBuffer());
+    if (!bundled.length)
+      throw new Error("The bundled OpenDataLoader asset is empty.");
+    // Compare against the installed bundle, including same-version replacements.
+    // A partial or old profile copy must never masquerade as the current extractor.
+    if (await pathExists(cachePath)) {
+      const cached = new Uint8Array(await IOUtils.read(cachePath));
+      if (
+        cached.length === bundled.length &&
+        cached.every((byte: number, index: number) => byte === bundled[index])
+      )
+        return cachePath;
+    }
+    await IOUtils.makeDirectory(cacheDir, { ignoreExisting: true });
+    const tmpPath = `${cachePath}.tmp-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    try {
+      await IOUtils.write(cachePath, bundled, { tmpPath, flush: true });
+    } finally {
+      await IOUtils.remove?.(tmpPath, { ignoreAbsent: true });
+    }
     return cachePath;
+  })();
+  jarCopies.set(key, copy);
+  try {
+    return await copy;
+  } finally {
+    jarCopies.delete(key);
   }
-
-  const normalizedRootUri = rootUri.endsWith("/") ? rootUri : `${rootUri}/`;
-  const bundledJarUrl = new URL(
-    "chrome/content/vendor/opendataloader/opendataloader-pdf-cli.jar",
-    normalizedRootUri,
-  ).href;
-  const response = await fetch(bundledJarUrl);
-  if (!response.ok) {
-    throw new Error(
-      `Could not read the bundled OpenDataLoader asset (${response.status}).`,
-    );
-  }
-
-  await IOUtils.makeDirectory(cacheDir, { ignoreExisting: true });
-  await IOUtils.write(cachePath, new Uint8Array(await response.arrayBuffer()));
-  return cachePath;
 }
 
 export async function resolveOpenDataLoaderJarPath(options?: {

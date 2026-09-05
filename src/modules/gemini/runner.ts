@@ -1,11 +1,14 @@
 import { getPref } from "../../utils/prefs";
 import { buildCliCommandEnvironment } from "../ai/cliEnvironment";
 import {
+  executionSettingsForMode,
+  type ExecutionSettings,
+} from "../ai/executionSettings";
+import {
   launchDetachedShellScript,
   type ShellExecutor,
 } from "../ai/launchScript";
-import { normalizeGeminiModel } from "../codex/modelOptions";
-import { normalizeResponseLanguage } from "../translation/responseLanguage";
+import { readOptionalRunTextFile } from "../ai/runFileReader";
 import {
   canResumeProviderSession,
   getRunWorkspaceTitle,
@@ -15,13 +18,14 @@ import {
   cliSupportsFlag,
   type StructuredOutputSchema,
 } from "../ai/structuredOutput";
-import { getCurrentReaderContext } from "../context/readerContext";
+import { shellEscape } from "../codex/shell";
 import { getIndexedChunks } from "../context/indexStore";
 import { findNearbyContext } from "../context/nearbyContext";
 import {
   buildContextPayload,
   buildGeminiWorkspacePrompt,
 } from "../context/promptPreviewBuilder";
+import { getCurrentReaderContext } from "../context/readerContext";
 import { selectRelevantChunksFromChunks } from "../context/retriever";
 import { buildWorkspaceArtifacts } from "../context/workspaceArtifacts";
 import { messageStore } from "../message/messageStore";
@@ -37,8 +41,6 @@ import {
   writeWorkspaceSupplementalFiles,
   type WorkspaceSupplementalFiles,
 } from "../workspace/supplementalFiles";
-import { shellEscape } from "../codex/shell";
-import { readOptionalRunTextFile } from "../ai/runFileReader";
 
 declare const Zotero: any;
 
@@ -137,14 +139,16 @@ export async function startGeminiRunForQuestion(params: {
   profile?: RunProfile;
   outputSchema?: StructuredOutputSchema;
   workspaceFiles?: WorkspaceSupplementalFiles;
+  executionSettings?: ExecutionSettings;
 }): Promise<StartedGeminiRun | FailedGeminiRun> {
+  const settings = executionSettingsForMode(
+    "gemini_cli",
+    params.executionSettings,
+  );
   const profile = params.profile || "chat";
   const executablePath =
     String(getPref("geminiExecutablePath") || "gemini").trim() || "gemini";
-  const preferredModel = String(
-    getPref("geminiDefaultModel") || "gemini-3.1-pro-preview",
-  ).trim();
-  const model = normalizeGeminiModel(preferredModel);
+  const { model } = settings;
   const approvalMode = normalizeGeminiApprovalMode(
     String(getPref("geminiApprovalMode") || "default"),
   );
@@ -162,7 +166,7 @@ export async function startGeminiRunForQuestion(params: {
 
   const payload = buildContextPayload({
     question: params.question,
-    responseLanguage: normalizeResponseLanguage(getPref("responseLanguage")),
+    responseLanguage: settings.responseLanguage,
     selectedText: params.selectedText,
     annotationIDs: params.annotationIDs,
   });

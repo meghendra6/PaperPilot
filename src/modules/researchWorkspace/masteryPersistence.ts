@@ -12,9 +12,16 @@ export interface PersistentCrossPaperMasterySession {
   projectID?: string;
   sourceSnapshot: CrossPaperMasterySourceSnapshotEntry[];
   state: string;
-  questions: Array<{ id: string; [key: string]: unknown }>;
-  attempts: Array<{ id: string; questionId: string; [key: string]: unknown }>;
-  [key: string]: unknown;
+  questions: Array<{ id: string }>;
+  attempts: Array<{
+    id: string;
+    questionId: string;
+    answer?: unknown;
+    learnerConfidence?: unknown;
+  }>;
+  concepts?: unknown;
+  createdAt?: unknown;
+  updatedAt?: unknown;
 }
 
 const PERSISTENT_MASTERY_STATES = new Set([
@@ -149,7 +156,11 @@ export function getCrossPaperMasteryCurrentQuestion(
 }
 
 export function isCrossPaperMasterySubmissionReplay(params: {
-  attempt: Record<string, unknown>;
+  attempt: {
+    questionId?: unknown;
+    answer?: unknown;
+    learnerConfidence?: unknown;
+  };
   questionID: string;
   answer: string;
   learnerConfidence?: number;
@@ -160,4 +171,83 @@ export function isCrossPaperMasterySubmissionReplay(params: {
     confidence(params.attempt.learnerConfidence) ===
       confidence(params.learnerConfidence)
   );
+}
+
+/** Validate the nested payload before admitting a persisted session to analysis. */
+export function isAnalyzableCrossPaperSession(
+  value: unknown,
+): value is import("./core/crossPaperMastery/types").CrossPaperSession {
+  if (!isPersistentCrossPaperMasterySession(value)) return false;
+  const text = (entry: unknown): entry is string => typeof entry === "string";
+  const texts = (entry: unknown): entry is string[] =>
+    Array.isArray(entry) && entry.every(text);
+  const objects = (entry: unknown): entry is Record<string, unknown>[] =>
+    Array.isArray(entry) && entry.every((item) => Boolean(record(item)));
+  if (
+    !text(value.createdAt) ||
+    !text(value.updatedAt) ||
+    !objects(value.concepts)
+  )
+    return false;
+  if (
+    !value.concepts.every(
+      (concept) => text(concept.id) && texts(concept.paperKeys),
+    )
+  )
+    return false;
+  for (const raw of value.questions) {
+    const question = record(raw)!;
+    if (
+      !text(question.conceptId) ||
+      !text(question.mode) ||
+      !text(question.prompt) ||
+      !text(question.difficulty) ||
+      !text(question.createdAt) ||
+      !texts(question.paperKeys) ||
+      !objects(question.rubric) ||
+      !objects(question.criteria) ||
+      !record(question.evidence)
+    )
+      return false;
+    if (
+      !question.rubric.every(
+        (criterion) =>
+          text(criterion.id) &&
+          text(criterion.description) &&
+          typeof criterion.maxScore === "number" &&
+          Number.isFinite(criterion.maxScore) &&
+          texts(criterion.requiredPaperKeys) &&
+          texts(criterion.expectedClaims) &&
+          texts(criterion.paperKeys) &&
+          texts(criterion.requiredClaims) &&
+          objects(criterion.evidence),
+      )
+    )
+      return false;
+  }
+  for (const raw of value.attempts) {
+    const attempt = record(raw)!;
+    if (
+      !text(attempt.answer) ||
+      !text(attempt.feedback) ||
+      !text(attempt.createdAt) ||
+      !texts(attempt.misconceptions) ||
+      !objects(attempt.grades)
+    )
+      return false;
+    if (
+      !attempt.grades.every(
+        (grade) =>
+          text(grade.criterionId) &&
+          text(grade.feedback) &&
+          typeof grade.score === "number" &&
+          Number.isFinite(grade.score) &&
+          typeof grade.maxScore === "number" &&
+          Number.isFinite(grade.maxScore) &&
+          objects(grade.evidence),
+      )
+    )
+      return false;
+  }
+  return true;
 }

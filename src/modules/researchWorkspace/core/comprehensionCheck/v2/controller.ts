@@ -1,8 +1,13 @@
-// @ts-nocheck -- Ported feature core is guarded by strict runtime parsers.
 import * as engine_1 from "./engine";
 import * as prompt_1 from "./prompt";
+import type {
+  MasteryAnswerInput,
+  MasteryControllerDependencies,
+  MasterySession,
+  MasteryStartInput,
+} from "./types";
 import * as validation_1 from "./validation";
-function errorMessage(error) {
+function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
 /**
@@ -11,10 +16,12 @@ function errorMessage(error) {
  * restart cannot silently discard a generated question or completed attempt.
  */
 class MasteryV2Controller {
-  constructor(dependencies) {
-    this.dependencies = dependencies;
-  }
-  async runValidated(prompt, purpose, parse) {
+  constructor(readonly dependencies: MasteryControllerDependencies) {}
+  async runValidated<T>(
+    prompt: string,
+    purpose: string,
+    parse: (response: string) => T,
+  ): Promise<T> {
     const attempts = Math.max(
       1,
       Math.min(
@@ -42,10 +49,10 @@ class MasteryV2Controller {
       `${purpose} failed structured-output validation: ${lastError}`,
     );
   }
-  async load(paperKey) {
+  async load(paperKey: string) {
     return this.dependencies.persistence.load(paperKey);
   }
-  async start(input) {
+  async start(input: MasteryStartInput) {
     const maxConcepts = Math.max(6, Math.min(18, input.maxConcepts ?? 12));
     const prompt = (0, prompt_1.buildMasteryBlueprintPrompt)({
       paperContext: input.paperContext,
@@ -75,7 +82,7 @@ class MasteryV2Controller {
     await this.dependencies.persistence.save(session);
     return session;
   }
-  async ensureQuestion(session, paperContext) {
+  async ensureQuestion(session: MasterySession, paperContext: string) {
     if (session.pendingQuestion) return session;
     const concept = (0, engine_1.selectNextConcept)(
       session,
@@ -107,7 +114,10 @@ class MasteryV2Controller {
     await this.dependencies.persistence.save(next);
     return next;
   }
-  async submit(session, input) {
+  async submit(
+    session: MasterySession,
+    input: MasteryAnswerInput & { paperContext: string },
+  ) {
     const question = session.pendingQuestion;
     if (!question)
       throw new Error("Cannot submit an answer without a pending question.");

@@ -1,6 +1,14 @@
-// @ts-nocheck -- Ported feature core is guarded by strict runtime parsers.
 import * as readiness_1 from "./readiness";
-function exportReproducibilityMarkdown(report) {
+function exportReproducibilityMarkdown(
+  report: Pick<
+    ReturnType<typeof import("./parser").parseReproducibilityResponse>,
+    | "summary"
+    | "artifacts"
+    | "blockers"
+    | "minimalReproductionSteps"
+    | "verificationCommands"
+  >,
+) {
   const readiness = (0, readiness_1.calculateReproducibilityReadiness)(report);
   const lines = [
     "# Reproducibility Audit",

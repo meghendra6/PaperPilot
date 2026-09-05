@@ -41,6 +41,11 @@ async function startup({ id, version, resourceURI, rootURI }, reason) {
     `${rootURI}/chrome/content/scripts/__addonRef__.js`,
     ctx,
   );
+  // Zotero awaits these listeners before closing its database and runtime.
+  // Resolve the current instance so disabled/replaced add-ons are not retained.
+  Zotero.addShutdownListener(() =>
+    Zotero.__addonInstance__?.hooks.onApplicationShutdown(),
+  );
   await Zotero.__addonInstance__.hooks.onStartup();
 }
 
@@ -54,6 +59,7 @@ async function onMainWindowUnload({ window }, reason) {
 
 async function shutdown({ id, version, resourceURI, rootURI }, reason) {
   if (reason === APP_SHUTDOWN) {
+    await Zotero.__addonInstance__?.hooks.onApplicationShutdown();
     return;
   }
 

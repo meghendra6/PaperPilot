@@ -21,7 +21,7 @@ already installed and authenticated on the user's machine.
 Zotero item panes
   ├── src/modules/readerPane.ts              reader chat and workbench
   └── modules/researchWorkspace/view.ts      single- and multi-paper tools
-        └── modules/researchWorkspace/       feature service and partially typed ported core
+        └── modules/researchWorkspace/       feature service and typed analysis core
               └── modules/ai/workspaceRun.ts
                     └── <engine>/runner.ts   workspace build + process launch
                           └── codex | claude | gemini CLI
@@ -290,8 +290,8 @@ polled**:
    claimed; the UI reports the stop failure instead of unlocking unsafely. A
    failed manual stop leaves its exit-file poller and absolute watchdog armed,
    so a later natural exit is still reconciled. Add-on shutdown snapshots all
-   run-state, poller, pending-completion, and presentation owners, starts
-   best-effort non-blocking termination for every recorded pid, and only then
+   run-state, poller, pending-completion, direct-workspace, and presentation owners,
+   awaits best-effort termination for every recorded pid, and only then
    clears local observers and state. A started result or run state must provide
    a numeric pid—missing pid data is a
    stop failure, not a successful no-op. The no-pid no-op is reserved for a
@@ -581,3 +581,62 @@ covered by [`manual-qa.md`](./manual-qa.md) instead.
 - `addon/` is excluded from `tsconfig.json`, so `bootstrap.js`,
   `preferences.xhtml`, and `prefs.js` get no typecheck. Validate them in Zotero.
 - `scripts/*.mjs` is outside the ESLint config. Use `node --check <file>`.
+
+## Analysis consistency and maintenance boundaries
+
+`ai/executionSettings.ts` captures the provider, CLI model argument, Codex reasoning
+level, and response language before analysis preparation. The facade shares that
+immutable snapshot with prompt construction, every incremental unit, run history, and artifact
+lineage. Provider aliases such as `sonnet` record the CLI argument, not a resolved
+server-side model revision. Local extraction and corrections use `local` lineage.
+Older artifacts may omit these optional fields.
+
+Before execution and around result persistence, the operation coordinator checks
+that each admitted source still belongs to the project, is ready, and retains its
+identity and content fingerprint. A change prevents successful completion and makes
+any newly saved result stale. Incremental reuse additionally requires matching
+context projection fingerprints and execution settings; old rows cannot inherit a
+new projection or model label. Completed rows remain available after cancellation.
+
+Direct workspace reservations retain their provider and process ID until confirmed
+completion or cleanup. Shutdown blocks new admissions and collects those IDs in
+addition to controller-managed runs. Preparation that finishes after shutdown stops
+its newly returned process before workspace cleanup. Termination remains best effort
+when Zotero itself is exiting.
+
+The profile OpenDataLoader cache is named
+`paperpilot-tools/opendataloader-pdf-cli-<version>.jar`. Each resolution compares it
+with the installed bundle and atomically replaces missing or different bytes;
+concurrent requests share the copy. Older unversioned copies are ignored and
+preserved. Java/extraction failure still falls back to Zotero attachment text.
+
+`artifactView.ts` owns payload normalization and evidence view models;
+`artifactRenderer.ts` owns DOM rendering. `projectWindowView.ts` composes the project
+shell, with template, sync, and review panels in separate modules. Navigation is
+passed to panels explicitly, while `projectSurfaceShared.ts` owns surface lifecycle
+and controls. `ui/readerWorkbench.ts` owns reader workbench card state and rendering.
+The three CLI engine modules remain separate for provider isolation.
+
+All previously unchecked ported core modules and `service.ts` participate in strict
+TypeScript checks. `serviceState.ts` describes admitted analysis state; legacy
+migration still treats stored payloads as unknown. Persisted cross-paper sessions
+must pass nested shape checks before entering the analysis engine. The unused
+`retainRawRunLogs` preference is ignored on read and omitted on serialization.
+
+`test/fixtures/hybrid-retrieval.json` is a hand-labelled, deterministic multilingual
+regression corpus, checked by `npm test` (and therefore CI). Its quality floors are
+Recall@3 ≥ 0.95, MRR ≥ 0.90, and nDCG@3 ≥ 0.90. This small local gate catches ranking
+regressions; it is not evidence of general semantic or cross-language retrieval
+quality.
+
+For setup diagnosis, run `bash scripts/doctor.sh . [Zotero-profile-directory]`.
+The bounded runtime probes check the actual `/bin/zsh` login-shell CLI paths,
+versions, Codex/Claude authentication status, and optionally the profile JAR.
+Authentication details are not printed. Gemini has no read-only auth-status command
+in the supported CLI surface, so the doctor reports it as unverified; a user-triggered
+analysis is the runtime check. The detached runner needs Unix tools and `/bin/zsh`;
+native Windows execution is not supported, and Linux needs those tools installed.
+
+Zotero shutdown listeners await best-effort termination of registered CLI process
+trees before the runtime closes. The bootstrap application-shutdown path invokes
+the same idempotent stop hook; disabling the add-on then performs UI cleanup.

@@ -1,7 +1,10 @@
+import type { ExecutionSettings } from "../ai/executionSettings";
+import { researchWorkspaceArtifactPayloadFingerprint } from "./artifactFingerprint";
+import { stableHash } from "./identity";
 import type { ResearchWorkspacePaper } from "./paperSource";
 import type {
-  ResearchWorkspaceArtifactLineage,
   ResearchWorkspaceArtifactFile,
+  ResearchWorkspaceArtifactLineage,
   ResearchWorkspaceArtifactStatus,
   ResearchWorkspaceArtifactType,
   ResearchWorkspaceEngineMode,
@@ -9,8 +12,6 @@ import type {
   ResearchWorkspaceSourceRecord,
 } from "./persistence/contracts";
 import type { ResearchWorkspaceProjectRepository } from "./persistence/projectRepository";
-import { researchWorkspaceArtifactPayloadFingerprint } from "./artifactFingerprint";
-import { stableHash } from "./identity";
 import { ResearchWorkspaceProjectController } from "./projectController";
 import {
   claimResearchWorkspaceOwner,
@@ -35,7 +36,8 @@ export interface RunResearchWorkspaceProjectOperation<T> {
   schemaVersion?: string;
   artifactType: ResearchWorkspaceArtifactType;
   artifactTitle: string;
-  providerMode: ResearchWorkspaceEngineMode;
+  providerMode: ResearchWorkspaceEngineMode | "local";
+  executionSettings?: ExecutionSettings;
   signal?: AbortSignal;
   onStatus?: (status: string) => void;
   execute: () => Promise<T>;
@@ -83,7 +85,8 @@ export interface RunResearchWorkspaceIncrementalOperation<
   schemaVersion?: string;
   artifactType: ResearchWorkspaceArtifactType;
   artifactTitle: string;
-  providerMode: ResearchWorkspaceEngineMode;
+  providerMode: ResearchWorkspaceEngineMode | "local";
+  executionSettings?: ExecutionSettings;
   initialPayload: TPayload;
   units: readonly TUnit[];
   executeUnit: (unit: TUnit) => Promise<TUnitResult>;
@@ -95,6 +98,8 @@ export interface RunResearchWorkspaceIncrementalOperation<
   onStatus?: (status: string) => void;
   sourcesPrepared?: boolean;
 }
+
+class ResearchWorkspaceInputChangedError extends Error {}
 
 function fingerprint(value: string) {
   return `fnv1a32:${value.length}:${stableHash(value)}`;
@@ -121,6 +126,30 @@ export class ResearchWorkspaceOperationCoordinator {
     options: { now?: () => Date } = {},
   ) {
     this.projects = new ResearchWorkspaceProjectController(repository, options);
+  }
+
+  private async assertPaperInputsCurrent(
+    projectID: string,
+    papers: readonly ResearchWorkspacePaper[],
+  ) {
+    const bundle = await this.repository.getProject(projectID);
+    for (const paper of papers) {
+      const current = await this.repository.getSource(paper.sourceID);
+      if (
+        !bundle.members.some((member) => member.sourceID === paper.sourceID) ||
+        !current ||
+        current.source.availability !== "ready" ||
+        current.source.contentFingerprint?.value !==
+          paper.contentFingerprint.value ||
+        current.source.identity.libraryID !== paper.libraryID ||
+        current.source.identity.itemKey !== paper.itemKey ||
+        current.source.identity.attachmentKey !== paper.attachmentKey
+      ) {
+        throw new ResearchWorkspaceInputChangedError(
+          "A project source changed during analysis. Refresh the sources and run again.",
+        );
+      }
+    }
   }
 
   private async assertDerivedInputsCurrent(
@@ -253,6 +282,7 @@ export class ResearchWorkspaceOperationCoordinator {
         operation: params.operation,
         operationVersion: params.operationVersion,
         sourceSnapshot,
+        executionSettings: params.executionSettings,
         status: "queued",
         progress: { phase: "queued", completed: 0, total: 1 },
       });
@@ -274,6 +304,7 @@ export class ResearchWorkspaceOperationCoordinator {
         throw new DOMException("Cancelled", "AbortError");
       params.onStatus?.(`Running ${params.artifactTitle}…`);
       try {
+        await this.assertPaperInputsCurrent(projectID, params.papers);
         const result = await params.execute();
         if (
           params.signal?.aborted ||
@@ -281,6 +312,7 @@ export class ResearchWorkspaceOperationCoordinator {
         ) {
           throw new DOMException("Cancelled", "AbortError");
         }
+        await this.assertPaperInputsCurrent(projectID, params.papers);
         const completedAt = new Date().toISOString();
         const artifact = await this.repository.createArtifact(projectID, {
           type: params.artifactType,
@@ -306,11 +338,26 @@ export class ResearchWorkspaceOperationCoordinator {
               : {}),
             evidenceVerifierVersion: "paperpilot-evidence-v2",
             providerMode: params.providerMode,
+            model: params.executionSettings?.model,
+            reasoningEffort: params.executionSettings?.reasoningEffort,
+            responseLanguage: params.executionSettings?.responseLanguage,
             runID: run.run.runID,
           },
           payload: result,
           completedAt,
         });
+        try {
+          await this.assertPaperInputsCurrent(projectID, params.papers);
+          if (params.signal?.aborted)
+            throw new DOMException("Cancelled", "AbortError");
+        } catch (error) {
+          await this.repository.markArtifactStaleAtomically({
+            projectID,
+            artifactID: artifact.artifact.artifactID,
+            reason: "inputs-changed-during-save",
+          });
+          throw error;
+        }
         run = await this.repository.updateRun(
           projectID,
           run.run.runID,
@@ -562,6 +609,7 @@ export class ResearchWorkspaceOperationCoordinator {
     let run: ResearchWorkspaceRunFile | undefined;
     let artifact: ResearchWorkspaceArtifactFile<TPayload> | undefined;
     try {
+      await this.assertPaperInputsCurrent(params.projectID, params.papers);
       const sourceSnapshot = params.papers.map((paper) => ({
         sourceID: paper.sourceID,
         contentFingerprint: paper.contentFingerprint.value,
@@ -599,7 +647,18 @@ export class ResearchWorkspaceOperationCoordinator {
           if (
             !currentPaper ||
             previousInput?.contentFingerprint !==
-              currentPaper.contentFingerprint.value
+              currentPaper.contentFingerprint.value ||
+            (params.executionSettings &&
+              (previous.lineage.providerMode !==
+                params.executionSettings.mode ||
+                previous.lineage.model !== params.executionSettings.model ||
+                previous.lineage.reasoningEffort !==
+                  params.executionSettings.reasoningEffort ||
+                previous.lineage.responseLanguage !==
+                  params.executionSettings.responseLanguage)) ||
+            previousInput.contextProjectionFingerprint !==
+              (params.contextProjectionFingerprints?.get(unit.sourceID) ??
+                fingerprint(currentPaper.context))
           ) {
             continue;
           }
@@ -628,6 +687,7 @@ export class ResearchWorkspaceOperationCoordinator {
         operation: params.operation,
         operationVersion: params.operationVersion,
         sourceSnapshot,
+        executionSettings: params.executionSettings,
         status: "queued",
         progress: {
           phase: "queued",
@@ -674,6 +734,9 @@ export class ResearchWorkspaceOperationCoordinator {
             : {}),
           evidenceVerifierVersion: "paperpilot-evidence-v2",
           providerMode: params.providerMode,
+          model: params.executionSettings?.model,
+          reasoningEffort: params.executionSettings?.reasoningEffort,
+          responseLanguage: params.executionSettings?.responseLanguage,
           runID: run.run.runID,
         },
         payload,
@@ -719,7 +782,9 @@ export class ResearchWorkspaceOperationCoordinator {
           }),
         );
         try {
+          await this.assertPaperInputsCurrent(params.projectID, params.papers);
           const result = await params.executeUnit(unit);
+          await this.assertPaperInputsCurrent(params.projectID, params.papers);
           if (
             params.signal?.aborted ||
             !isResearchWorkspaceOwnerClaimCurrent(owner, claim)
@@ -769,6 +834,7 @@ export class ResearchWorkspaceOperationCoordinator {
             }),
           );
         } catch (error) {
+          if (error instanceof ResearchWorkspaceInputChangedError) throw error;
           if (params.signal?.aborted) break;
           failedUnits.push({ unitID: unit.unitID, message: safeError(error) });
           pendingUnits = pendingUnits.filter(
@@ -835,6 +901,7 @@ export class ResearchWorkspaceOperationCoordinator {
         throw new DOMException("Cancelled", "AbortError");
       }
 
+      await this.assertPaperInputsCurrent(params.projectID, params.papers);
       const completedAt = new Date().toISOString();
       const status =
         failedUnits.length || pendingUnits.length ? "partial" : "complete";
@@ -861,6 +928,7 @@ export class ResearchWorkspaceOperationCoordinator {
           },
         }),
       );
+      await this.assertPaperInputsCurrent(params.projectID, params.papers);
       const latestRun = await this.repository.getRun(
         params.projectID,
         run.run.runID,
@@ -893,6 +961,13 @@ export class ResearchWorkspaceOperationCoordinator {
       );
       return { projectID: params.projectID, result: payload, artifact, run };
     } catch (error) {
+      if (artifact && error instanceof ResearchWorkspaceInputChangedError) {
+        await this.repository.markArtifactStaleAtomically({
+          projectID: params.projectID,
+          artifactID: artifact.artifact.artifactID,
+          reason: "inputs-changed-during-analysis",
+        });
+      }
       if (run && !params.signal?.aborted) {
         try {
           const latest = await this.repository.getRun(

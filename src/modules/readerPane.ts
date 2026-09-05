@@ -1,19 +1,23 @@
 import { config } from "../../package.json";
 import { getLocaleID } from "../utils/locale";
 import { getPref, setPref } from "../utils/prefs";
-import { addMessage } from "./components/ChatMessage";
-import { renderMarkdownFragment } from "./components/markdownRenderer";
 import {
   clearModeOverrideForItem,
   getDefaultMode,
   getModeForItem,
   setModeOverrideForItem,
 } from "./ai/modeStore";
-import { getStatusLabel } from "./ai/statusLabels";
 import { getProviderDescriptorForItem } from "./ai/providerRegistry";
-import type { EngineMode } from "./ai/types";
-import type { RunProfile } from "./ai/runProfile";
-import type { StructuredOutputSchema } from "./ai/structuredOutput";
+import { retryLastEngineQuestion } from "./ai/retryEngineRequest";
+import { cancelActiveEngineRun } from "./ai/runControl";
+import {
+  claimChatEngineRequest,
+  claimReaderSessionTransition,
+  getPendingEngineCompletion,
+  isReaderLifecycleClaimActive,
+  releaseChatEngineRequest,
+  releaseReaderSessionTransition,
+} from "./ai/runLifecycle";
 import {
   getActiveReaderRunMode,
   isReaderRunTokenActive,
@@ -22,78 +26,148 @@ import {
   type ReaderRunCompletionResult,
   type ReaderRunToken,
 } from "./ai/runPresentation";
-import { isCodexRunActiveForItem } from "./codex/runState";
-import { probeWorkspaceWritable } from "./workspace/status";
-import { resolvePaperWorkspaceRoot } from "./workspace/pathBuilder";
-import { rememberRecentCodexModel } from "./codex/modelHistory";
-import {
-  normalizeClaudeModel,
-  normalizeCodexModel,
-  normalizeCodexReasoningEffort,
-} from "./codex/modelOptions";
-import { getCurrentReaderContext } from "./context/readerContext";
-import { clearIndexedChunks } from "./context/indexStore";
-import { messageStore } from "./message/messageStore";
-import { sessionStore } from "./session/sessionStore";
-import { sessionHistoryService } from "./session/sessionHistoryService";
-import { isLikelySilentToolMessage } from "./session/silentTurnFilter";
-import { probeCodexLoginState } from "./codex/status";
-import { buildCodexAuthenticateMessage } from "./codex/authAction";
-import { handleCodexQuestion, stopCodexRunSilently } from "./codex/controller";
+import type { RunProfile } from "./ai/runProfile";
+import { getRunProgressState } from "./ai/runProgress";
+import { getStatusLabel } from "./ai/statusLabels";
+import type { StructuredOutputSchema } from "./ai/structuredOutput";
+import type { EngineMode } from "./ai/types";
+import { shouldEnableAutoHighlight } from "./autoHighlight/status";
+import { runAutoHighlightWorkflow } from "./autoHighlight/workflow";
 import {
   handleClaudeQuestion,
   stopClaudeRunSilently,
 } from "./claude/controller";
 import { isClaudeRunActiveForItem } from "./claude/runState";
+import { buildCodexAuthenticateMessage } from "./codex/authAction";
+import { handleCodexQuestion, stopCodexRunSilently } from "./codex/controller";
+import { rememberRecentModel } from "./codex/modelHistory";
 import {
-  handleGeminiQuestion,
-  stopGeminiRunSilently,
-} from "./gemini/controller";
-import { isGeminiRunActiveForItem } from "./gemini/runState";
-import { shouldEnableAutoHighlight } from "./autoHighlight/status";
-import { runAutoHighlightWorkflow } from "./autoHighlight/workflow";
+  normalizeClaudeModel,
+  normalizeCodexModel,
+  normalizeCodexReasoningEffort,
+} from "./codex/modelOptions";
+import { isCodexRunActiveForItem } from "./codex/runState";
+import { probeCodexLoginState } from "./codex/status";
+import { addMessage } from "./components/ChatMessage";
+import { renderMarkdownFragment } from "./components/markdownRenderer";
 import {
-  addRecommendationToCollection,
-  buildRelatedRunFailureState,
-  buildRelatedRunProgressState,
-  buildRelatedRunSuccessState,
-  generateRelatedPaperGroups,
-  generatePublicReviewInsight,
-  openRecommendedPaper,
-  type RecommendationGroup,
-  type RecommendedPaper,
-} from "./relatedRecommendations";
+  createCanonicalMasteryRound,
+  updateCanonicalMasteryAnalytics,
+} from "./comprehensionCheck/analytics";
+import {
+  buildEvaluateAnswerPrompt,
+  buildFinalReportPrompt,
+  buildFollowUpQuestionPrompt,
+  buildInitialMasteryPrompt,
+  MASTERY_EVALUATION_OUTPUT_SCHEMA,
+  MASTERY_QUESTION_OUTPUT_SCHEMA,
+  parseMasteryEvaluationResponse,
+  parseMasteryQuestionResponse,
+} from "./comprehensionCheck/prompt";
+import {
+  buildInitialMasteryState,
+  clearMasteryState,
+  getMasteryState,
+  getMasteryStateForSession,
+  setMasteryState,
+} from "./comprehensionCheck/status";
+import { clearIndexedChunks } from "./context/indexStore";
+import { getCurrentReaderContext } from "./context/readerContext";
+import { parseCriticalReadOutput } from "./criticalRead/parser";
 import {
   buildCriticalReadStepPrompt,
   getCriticalReadOutputSchema,
 } from "./criticalRead/prompt";
-import { parseCriticalReadOutput } from "./criticalRead/parser";
 import { buildCriticalReadReportMarkdown } from "./criticalRead/report";
+import type { CriticalReadState } from "./criticalRead/types";
 import {
+  attachPublicReviewInsightToCriticalRead,
   buildInitialCriticalReadState,
   canViewPublicReviewInsights,
   completeCriticalReadStep,
-  attachPublicReviewInsightToCriticalRead,
   failCriticalReadStep,
   getCriticalReadStep,
   markCriticalReadStepRunning,
   reviseCriticalReadStep,
   startCriticalRead,
 } from "./criticalRead/workflow";
-import type { CriticalReadState } from "./criticalRead/types";
-import { saveCriticalReadToNote } from "./note/criticalReadNote";
-import { saveDiscoveryToNote } from "./note/discoveryNote";
-import { renderCriticalReadSection } from "./ui/criticalReadSection";
-import { buildDiscoveryRow } from "./ui/discoveryRow";
-import { renderDiscoverySection } from "./ui/discoverySection";
 import { areLikelySamePaper } from "./discovery/normalize";
 import {
+  handleGeminiQuestion,
+  stopGeminiRunSilently,
+} from "./gemini/controller";
+import { isGeminiRunActiveForItem } from "./gemini/runState";
+import { messageStore } from "./message/messageStore";
+import { saveCriticalReadToNote } from "./note/criticalReadNote";
+import { saveDiscoveryToNote } from "./note/discoveryNote";
+import {
+  savePaperArtifactSetToCollection,
+  savePaperArtifactToNote,
+} from "./note/paperArtifactNote";
+import {
+  buildPaperArtifactRequest,
+  parsePaperArtifactCard,
+  type PaperArtifactKind,
+} from "./paperArtifacts";
+import {
   buildPaperCompareCard,
-  getPaperCompareButtonState,
   buildPaperCompareRequestFromRecommendations,
+  getPaperCompareButtonState,
   getPaperCompareWorkflowState,
   parsePaperCompareResponse,
 } from "./paperCompare";
+import {
+  addRecommendationToCollection,
+  buildRelatedRunFailureState,
+  buildRelatedRunProgressState,
+  buildRelatedRunSuccessState,
+  generatePublicReviewInsight,
+  generateRelatedPaperGroups,
+  openRecommendedPaper,
+  type RecommendationGroup,
+  type RecommendedPaper,
+} from "./relatedRecommendations";
+import { sessionHistoryService } from "./session/sessionHistoryService";
+import { sessionStore } from "./session/sessionStore";
+import { isLikelySilentToolMessage } from "./session/silentTurnFilter";
+import { normalizeResponseLanguage } from "./translation/responseLanguage";
+import {
+  CHAT_INPUT_MIN_HEIGHT,
+  installChatComposerAutosize,
+} from "./ui/chatComposerSizing";
+import {
+  disposeChatTranscriptWindow,
+  renderChatTranscriptWindow,
+} from "./ui/chatTranscriptWindow";
+import { createCollapsibleSection } from "./ui/collapsibleSection";
+import { renderCriticalReadSection } from "./ui/criticalReadSection";
+import { buildDiscoveryRow } from "./ui/discoveryRow";
+import { renderDiscoverySection } from "./ui/discoverySection";
+import {
+  createPaneHeader,
+  normalizeModelForMode,
+  renderCodexOptionsRow,
+  renderModeHeader,
+  renderModelHistory,
+  renderModelRow,
+} from "./ui/paneHeader";
+import { createVerticalResizeHandle } from "./ui/paneResize";
+import type { PaneSectionID } from "./ui/paneSectionState";
+import { installPopoverDismissal } from "./ui/popoverDismissal";
+import {
+  getPaperArtifactState,
+  renderPaperArtifactState,
+  renderWorkbenchArtifactState,
+  setPaperArtifactState,
+  WorkbenchElements,
+} from "./ui/readerWorkbench";
+import {
+  createRunProgressCard,
+  PAPER_PILOT_PREF_PANE_ID,
+  type RunProgressCardHandle,
+} from "./ui/runProgressCard";
+import { resolvePaperWorkspaceRoot } from "./workspace/pathBuilder";
+import { probeWorkspaceWritable } from "./workspace/status";
 
 const publicReviewAbortControllers = new Map<number, AbortController>();
 const relatedDiscoveryAbortControllers = new Map<number, AbortController>();
@@ -114,74 +188,6 @@ function createPaneAbortController(doc: Document) {
   }
   return new AbortControllerConstructor();
 }
-import {
-  buildPaperArtifactRequest,
-  parsePaperArtifactCard,
-  type PaperArtifactCard,
-  type PaperArtifactKind,
-} from "./paperArtifacts";
-import {
-  savePaperArtifactSetToCollection,
-  savePaperArtifactToNote,
-} from "./note/paperArtifactNote";
-import { normalizeResponseLanguage } from "./translation/responseLanguage";
-import {
-  buildInitialMasteryPrompt,
-  buildEvaluateAnswerPrompt,
-  buildFollowUpQuestionPrompt,
-  buildFinalReportPrompt,
-  parseMasteryQuestionResponse,
-  parseMasteryEvaluationResponse,
-  MASTERY_EVALUATION_OUTPUT_SCHEMA,
-  MASTERY_QUESTION_OUTPUT_SCHEMA,
-} from "./comprehensionCheck/prompt";
-import {
-  getMasteryState,
-  getMasteryStateForSession,
-  setMasteryState,
-  clearMasteryState,
-  buildInitialMasteryState,
-} from "./comprehensionCheck/status";
-import {
-  createCanonicalMasteryRound,
-  updateCanonicalMasteryAnalytics,
-} from "./comprehensionCheck/analytics";
-import { createCollapsibleSection } from "./ui/collapsibleSection";
-import type { PaneSectionID } from "./ui/paneSectionState";
-import { createVerticalResizeHandle } from "./ui/paneResize";
-import {
-  CHAT_INPUT_MIN_HEIGHT,
-  installChatComposerAutosize,
-} from "./ui/chatComposerSizing";
-import {
-  disposeChatTranscriptWindow,
-  renderChatTranscriptWindow,
-} from "./ui/chatTranscriptWindow";
-import {
-  createPaneHeader,
-  renderCodexOptionsRow,
-  renderModeHeader,
-  renderModelHistory,
-  renderModelRow,
-  normalizeModelForMode,
-} from "./ui/paneHeader";
-import {
-  createRunProgressCard,
-  PAPER_PILOT_PREF_PANE_ID,
-  type RunProgressCardHandle,
-} from "./ui/runProgressCard";
-import { installPopoverDismissal } from "./ui/popoverDismissal";
-import { getRunProgressState } from "./ai/runProgress";
-import { cancelActiveEngineRun } from "./ai/runControl";
-import { retryLastEngineQuestion } from "./ai/retryEngineRequest";
-import {
-  claimChatEngineRequest,
-  claimReaderSessionTransition,
-  getPendingEngineCompletion,
-  isReaderLifecycleClaimActive,
-  releaseChatEngineRequest,
-  releaseReaderSessionTransition,
-} from "./ai/runLifecycle";
 
 const paneCleanupByBody = new WeakMap<HTMLElement, () => void>();
 const activePaneBodies = new Set<HTMLElement>();
@@ -3095,7 +3101,8 @@ export function registerPaperPilotPaneSection() {
               ),
             );
           }
-          rememberRecentCodexModel(
+          rememberRecentModel(
+            activeMode,
             normalizeModelForMode(activeMode, savedModel),
           );
           await refreshPaneState({ renderTranscript: false });
@@ -3419,95 +3426,6 @@ function renderAutoHighlightState(
   status.textContent = state.status;
 }
 
-function getPaperArtifactState(itemID: number) {
-  return (
-    addon.data.paperArtifactStates?.get(itemID) || {
-      running: false,
-      status: "",
-      cards: [] as PaperArtifactCard[],
-    }
-  );
-}
-
-interface WorkbenchElements {
-  researchBriefButton: HTMLButtonElement;
-  contributionsButton: HTMLButtonElement;
-  limitationsButton: HTMLButtonElement;
-  followUpsButton: HTMLButtonElement;
-  saveWorkbenchNoteButton: HTMLButtonElement;
-  saveWorkbenchCollectionButton: HTMLButtonElement;
-  clearWorkbenchButton: HTMLButtonElement;
-  statusElement: HTMLElement;
-  cardsElement: HTMLElement;
-}
-
-function renderWorkbenchArtifactState(
-  elements: WorkbenchElements,
-  itemID: number,
-) {
-  renderPaperArtifactState(
-    elements.researchBriefButton,
-    elements.contributionsButton,
-    elements.limitationsButton,
-    elements.followUpsButton,
-    elements.saveWorkbenchNoteButton,
-    elements.saveWorkbenchCollectionButton,
-    elements.clearWorkbenchButton,
-    elements.statusElement,
-    elements.cardsElement,
-    itemID,
-  );
-}
-
-function setPaperArtifactState(
-  itemID: number,
-  state: {
-    running: boolean;
-    status: string;
-    activeKind?: PaperArtifactKind;
-    cards: PaperArtifactCard[];
-  },
-) {
-  addon.data.paperArtifactStates?.set(itemID, state);
-}
-
-function renderPaperArtifactState(
-  researchBriefButton: HTMLButtonElement,
-  contributionsButton: HTMLButtonElement,
-  limitationsButton: HTMLButtonElement,
-  followUpsButton: HTMLButtonElement,
-  saveWorkbenchNoteButton: HTMLButtonElement,
-  saveWorkbenchCollectionButton: HTMLButtonElement,
-  clearWorkbenchButton: HTMLButtonElement,
-  statusElement: HTMLElement,
-  cardsElement: HTMLElement,
-  itemID: number,
-) {
-  const state = getPaperArtifactState(itemID);
-  researchBriefButton.disabled = state.running;
-  contributionsButton.disabled = state.running;
-  limitationsButton.disabled = state.running;
-  followUpsButton.disabled = state.running;
-  saveWorkbenchNoteButton.disabled = state.running || !state.cards.length;
-  saveWorkbenchCollectionButton.disabled = state.running || !state.cards.length;
-  clearWorkbenchButton.disabled = state.running || !state.cards.length;
-
-  statusElement.style.display = state.status ? "block" : "none";
-  statusElement.textContent = state.status;
-
-  cardsElement.replaceChildren();
-  if (!state.cards.length) {
-    cardsElement.style.display = "none";
-    return;
-  }
-
-  cardsElement.style.display = "flex";
-  const doc = cardsElement.ownerDocument;
-  for (const card of state.cards) {
-    cardsElement.appendChild(buildPaperArtifactCardElement(doc, card, itemID));
-  }
-}
-
 function getCurrentPaperTitle(itemID: number) {
   const item = Zotero.Items.get(itemID);
   return typeof item?.getField === "function"
@@ -3565,109 +3483,6 @@ function renderCompareHelperState(
     workflowState.tone === "ready"
       ? "pp-compare-helper pp-compare-helper--ready"
       : "pp-compare-helper pp-compare-helper--default";
-}
-
-function buildPaperArtifactCardElement(
-  doc: Document,
-  card: PaperArtifactCard,
-  itemID: number,
-) {
-  const root = doc.createElement("section");
-  root.className = "pp-artifact-card";
-
-  const titleRow = doc.createElement("div");
-  titleRow.className = "pp-artifact-card__header";
-  const title = doc.createElement("div");
-  title.textContent = card.title;
-  title.className = "pp-artifact-card__title";
-  const updated = doc.createElement("div");
-  updated.textContent = new Date(card.updatedAt).toLocaleTimeString();
-  updated.className = "pp-artifact-card__time";
-  titleRow.append(title, updated);
-  root.appendChild(titleRow);
-
-  const summary = doc.createElement("div");
-  summary.textContent = card.summary;
-  summary.className = "pp-artifact-card__summary";
-  root.appendChild(summary);
-
-  const sourceLabel = doc.createElement("div");
-  sourceLabel.textContent = card.sourceLabel;
-  sourceLabel.className = "pp-artifact-card__source";
-  root.appendChild(sourceLabel);
-
-  for (const section of card.sections) {
-    const sectionRoot = doc.createElement("div");
-    sectionRoot.className = "pp-artifact-card__section";
-
-    const headingRow = doc.createElement("div");
-    headingRow.className = "pp-artifact-card__section-header";
-
-    const heading = doc.createElement("div");
-    heading.textContent = section.heading;
-    heading.className = "pp-artifact-card__section-heading";
-    headingRow.appendChild(heading);
-
-    if (section.evidence) {
-      const evidence = doc.createElement("span");
-      evidence.textContent = section.evidence;
-      evidence.className = "pp-artifact-card__evidence";
-      headingRow.appendChild(evidence);
-    }
-
-    const list = doc.createElement("ul");
-    list.className = "pp-artifact-card__list";
-    for (const item of section.items) {
-      const bullet = doc.createElement("li");
-      const itemText = doc.createElement("span");
-      itemText.textContent = item;
-      bullet.appendChild(itemText);
-      if (
-        card.kind === "extract-limitations" ||
-        card.kind === "suggest-follow-ups"
-      ) {
-        const findPriorWork = doc.createElement("button");
-        findPriorWork.className = "pp-btn pp-btn--ghost";
-        findPriorWork.textContent = "Find prior work";
-        findPriorWork.addEventListener("click", () => {
-          addon.data.pendingDiscoveryConcerns?.set(itemID, {
-            sessionId: sessionStore.getOrCreate(itemID, getModeForItem(itemID))
-              .sessionId,
-            text: item,
-            origin:
-              card.kind === "extract-limitations" ? "limitation" : "follow_up",
-            updatedAt: new Date().toISOString(),
-          });
-          void addon.data.applyReaderActionToPane?.get(itemID)?.();
-        });
-        bullet.appendChild(findPriorWork);
-      }
-      list.appendChild(bullet);
-    }
-
-    sectionRoot.append(headingRow, list);
-    root.appendChild(sectionRoot);
-  }
-
-  if (card.searchQueries?.length) {
-    const queriesHeading = doc.createElement("div");
-    queriesHeading.textContent = "Search queries";
-    queriesHeading.className = "pp-artifact-card__section-heading";
-    root.appendChild(queriesHeading);
-
-    const list = doc.createElement("ul");
-    list.className = "pp-artifact-card__list";
-    for (const query of card.searchQueries) {
-      const bullet = doc.createElement("li");
-      bullet.textContent = query.rationale
-        ? `${query.query} — ${query.rationale}`
-        : query.query;
-      list.appendChild(bullet);
-    }
-    root.appendChild(list);
-  }
-
-  return root;
 }
 
 function getRelatedRecommendationState(itemID: number) {

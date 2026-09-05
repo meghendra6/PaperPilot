@@ -1,11 +1,12 @@
 import { ColumnOptions, DialogHelper } from "zotero-plugin-toolkit";
 import { config } from "../package.json";
 import hooks from "./hooks";
-import { createZToolkit } from "./utils/ztoolkit";
 import type { EngineMode } from "./modules/ai/types";
+import { createZToolkit } from "./utils/ztoolkit";
 
 class Addon {
   public data: {
+    shuttingDown?: boolean;
     alive: boolean;
     config: typeof config;
     // Env type, see build.js
@@ -47,7 +48,7 @@ class Addon {
     >;
     paperIndexStore?: Map<string, { hash: string; chunks: string[] }>;
     modeOverrides?: Map<number, EngineMode>;
-    recentCodexModels?: string[];
+    recentModelsByEngine?: Partial<Record<EngineMode, string[]>>;
     prefs?: {
       window: Window;
       columns: Array<ColumnOptions>;
@@ -158,7 +159,7 @@ class Addon {
       lastEngineRequests: new Map(),
       paperIndexStore: new Map(),
       modeOverrides: new Map(),
-      recentCodexModels: [],
+      recentModelsByEngine: {},
       relatedRecommendationStates: new Map(),
       autoHighlightStates: new Map(),
       paperArtifactStates: new Map(),

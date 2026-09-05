@@ -1,70 +1,99 @@
-// @ts-nocheck -- Ported feature core is guarded by strict runtime parsers.
-import { researchWorkspaceOutputSchemaForPurpose } from "./outputSchemas";
-import { stableHash } from "./identity";
-import * as indexExports_1 from "./core/context/hybrid/indexExports";
-import * as claimExtraction_1 from "./core/evidence/claimExtraction";
-import * as claimLedger_1 from "./core/evidence/claimLedger";
-import * as detector_1 from "./core/criticalRead/profiled/detector";
-import * as profiles_1 from "./core/criticalRead/profiled/profiles";
-import * as prompt_1 from "./core/criticalRead/profiled/prompt";
-import * as parser_1 from "./core/criticalRead/profiled/parser";
-import * as prompt_2 from "./core/reproducibility/prompt";
-import * as parser_2 from "./core/reproducibility/parser";
-import * as prompt_3 from "./core/paperToCode/prompt";
-import * as parser_3 from "./core/paperToCode/parser";
-import * as engine_1 from "./core/evidenceMatrix/engine";
-import * as prompt_4 from "./core/evidenceMatrix/prompt";
-import * as parser_4 from "./core/evidenceMatrix/parser";
-import * as prompt_5 from "./core/literatureGraph/prompt";
-import * as parser_5 from "./core/literatureGraph/parser";
-import { validateAndAnnotateRelationshipGraph } from "./core/literatureGraph/provenance";
-import * as engine_2 from "./core/crossPaperMastery/engine";
-import * as prompt_6 from "./core/crossPaperMastery/prompt";
-import * as parser_6 from "./core/crossPaperMastery/parser";
-import * as prompt_7 from "./core/citationStance/prompt";
-import * as parser_7 from "./core/citationStance/parser";
+import type { StructuredOutputSchema } from "../ai/structuredOutput";
+import type { CitationContextExtractionResult } from "./citationContextExtraction";
 import * as engine_3 from "./core/citationStance/engine";
+import * as parser_7 from "./core/citationStance/parser";
+import * as prompt_7 from "./core/citationStance/prompt";
 import * as controller_1 from "./core/comprehensionCheck/v2/controller";
 import * as viewModel_1 from "./core/comprehensionCheck/v2/viewModel";
+import * as indexExports_1 from "./core/context/hybrid/indexExports";
+import type { EvidenceMatrix, MatrixRow } from "./core/contracts";
+import * as detector_1 from "./core/criticalRead/profiled/detector";
+import * as parser_1 from "./core/criticalRead/profiled/parser";
+import * as profiles_1 from "./core/criticalRead/profiled/profiles";
+import * as prompt_1 from "./core/criticalRead/profiled/prompt";
+import * as engine_2 from "./core/crossPaperMastery/engine";
+import * as parser_6 from "./core/crossPaperMastery/parser";
+import * as prompt_6 from "./core/crossPaperMastery/prompt";
+import type { CrossPaperSession } from "./core/crossPaperMastery/types";
+import * as claimExtraction_1 from "./core/evidence/claimExtraction";
+import * as claimLedger_1 from "./core/evidence/claimLedger";
 import * as evidenceTypes_1 from "./core/evidence/types";
-import { buildProjectSynthesisPrompt } from "./core/synthesis/prompt";
+import * as engine_1 from "./core/evidenceMatrix/engine";
+import * as parser_4 from "./core/evidenceMatrix/parser";
+import * as prompt_4 from "./core/evidenceMatrix/prompt";
+import * as parser_5 from "./core/literatureGraph/parser";
+import * as prompt_5 from "./core/literatureGraph/prompt";
+import { validateAndAnnotateRelationshipGraph } from "./core/literatureGraph/provenance";
+import * as parser_3 from "./core/paperToCode/parser";
+import * as prompt_3 from "./core/paperToCode/prompt";
+import * as parser_2 from "./core/reproducibility/parser";
+import * as prompt_2 from "./core/reproducibility/prompt";
 import {
   finalizeProjectSynthesisEvidence,
   parseProjectSynthesisResponse,
 } from "./core/synthesis/parser";
+import { buildProjectSynthesisPrompt } from "./core/synthesis/prompt";
 import {
   getEvidenceMatrixPreset,
   type EvidenceMatrixPresetID,
 } from "./evidenceMatrixPresets";
-import { verifyResearchWorkspaceEvidence } from "./evidenceVerification";
 import type { EvidenceVerificationDependencies } from "./evidenceVerification";
-import type { StructuredOutputSchema } from "../ai/structuredOutput";
+import { verifyResearchWorkspaceEvidence } from "./evidenceVerification";
+import { stableHash } from "./identity";
 import {
   buildCrossPaperMasterySourceSnapshot,
   isCrossPaperMasterySubmissionReplay,
 } from "./masteryPersistence";
-function id(prefix) {
+import { researchWorkspaceOutputSchemaForPurpose } from "./outputSchemas";
+import type { ResearchWorkspacePaper } from "./paperSource";
+import type {
+  CachedHybridIndex,
+  ResearchWorkspaceAnalysisState,
+} from "./serviceState";
+function citationReference(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    return undefined;
+  const reference = value as Record<string, unknown>;
+  return {
+    ...reference,
+    title: typeof reference.title === "string" ? reference.title : undefined,
+    firstAuthor:
+      typeof reference.firstAuthor === "string"
+        ? reference.firstAuthor
+        : undefined,
+    year: typeof reference.year === "number" ? reference.year : undefined,
+    doi: typeof reference.doi === "string" ? reference.doi : undefined,
+  };
+}
+function id(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 function now() {
   return new Date().toISOString();
 }
-function sourceFingerprint(value) {
+function sourceFingerprint(value: string) {
   return `${value.length}:${stableHash(value)}`;
 }
-function contentFingerprintValue(fingerprint) {
+function contentFingerprintValue(fingerprint: unknown) {
   if (typeof fingerprint === "string") return fingerprint;
-  return typeof fingerprint?.value === "string" ? fingerprint.value : "";
+  return fingerprint &&
+    typeof fingerprint === "object" &&
+    "value" in fingerprint &&
+    typeof fingerprint.value === "string"
+    ? fingerprint.value
+    : "";
 }
 
 const MAX_HYBRID_INDEXES = 12;
 
 export interface ResearchWorkspaceServiceEnvironment {
   repository: {
-    load(): Promise<any>;
-    update(mutator: (draft: any) => unknown | Promise<unknown>): Promise<any>;
+    load(): Promise<ResearchWorkspaceAnalysisState>;
+    update(
+      mutator: (draft: ResearchWorkspaceAnalysisState) => void | Promise<void>,
+    ): Promise<ResearchWorkspaceAnalysisState>;
   };
-  indexes?: Map<string, unknown>;
+  indexes?: Map<string, CachedHybridIndex>;
   agent: {
     run(
       prompt: string,
@@ -77,23 +106,27 @@ export interface ResearchWorkspaceServiceEnvironment {
 
 class ResearchWorkspaceService {
   readonly env: ResearchWorkspaceServiceEnvironment;
-  readonly indexes: Map<string, any>;
+  readonly indexes: Map<string, CachedHybridIndex>;
 
   constructor(env: ResearchWorkspaceServiceEnvironment) {
     this.env = env;
-    this.indexes = env.indexes ?? new Map<string, any>();
+    this.indexes = env.indexes ?? new Map<string, CachedHybridIndex>();
   }
   async state() {
     return this.env.repository.load();
   }
-  async run(prompt, purpose) {
+  async run(prompt: string, purpose: string) {
     return this.env.agent.run(
       prompt,
       purpose,
       researchWorkspaceOutputSchemaForPurpose(purpose),
     );
   }
-  async runParsed(prompt, purpose, parse) {
+  async runParsed<T>(
+    prompt: string,
+    purpose: string,
+    parse: (response: string) => T,
+  ): Promise<T> {
     let currentPrompt = prompt;
     let lastError = "Unknown structured-output validation failure";
     for (let attempt = 1; attempt <= 2; attempt += 1) {
@@ -111,8 +144,13 @@ class ResearchWorkspaceService {
       `${purpose} failed structured-output validation: ${lastError}`,
     );
   }
-  async verifyEvidence(value, papers) {
-    return verifyResearchWorkspaceEvidence(
+  async verifyEvidence<T extends object>(
+    value: T,
+    papers: readonly ResearchWorkspacePaper[],
+  ): Promise<T> {
+    // Only parser-validated report trees enter here. Verification decorates or
+    // removes evidence entries; it preserves the enclosing report contract.
+    return (await verifyResearchWorkspaceEvidence(
       value,
       papers.map((paper) => ({
         sourceID: paper.sourceID,
@@ -123,9 +161,9 @@ class ResearchWorkspaceService {
         structuredChunks: paper.structuredChunks,
       })),
       this.env.evidenceVerification,
-    );
+    )) as T;
   }
-  async registerPaper(paper) {
+  async registerPaper(paper: ResearchWorkspacePaper) {
     this.indexPaper(paper);
     return this.env.repository.update((state) => {
       const previous = state.papers[paper.paperKey];
@@ -165,7 +203,12 @@ class ResearchWorkspaceService {
       };
     });
   }
-  indexPaper(paper) {
+  indexPaper(
+    paper: Pick<
+      ResearchWorkspacePaper,
+      "paperKey" | "attachmentKey" | "context" | "structuredChunks"
+    >,
+  ) {
     const key = `${paper.paperKey}:${paper.attachmentKey}`;
     const existing = this.indexes.get(key);
     if (existing?.source === paper.context) {
@@ -194,14 +237,14 @@ class ResearchWorkspaceService {
     }
     return index;
   }
-  searchPaper(paper, query) {
+  searchPaper(paper: ResearchWorkspacePaper, query: string) {
     return (0, indexExports_1.searchHybridIndex)(
       this.indexPaper(paper),
       query,
       { topK: 6 },
     );
   }
-  async extractClaims(paper) {
+  async extractClaims(paper: ResearchWorkspacePaper) {
     const state = await this.state();
     const prompt = (0, claimExtraction_1.buildClaimExtractionPrompt)({
       paperContext: paper.context,
@@ -232,7 +275,7 @@ class ResearchWorkspaceService {
     });
     return ledger;
   }
-  async runMethodologyAudit(paper) {
+  async runMethodologyAudit(paper: ResearchWorkspacePaper) {
     const state = await this.state();
     const detection = (0, detector_1.detectCriticalReadProfile)(paper.context);
     const profile = (0, profiles_1.getCriticalReadProfile)(detection.primary);
@@ -266,7 +309,7 @@ class ResearchWorkspaceService {
       report,
     };
   }
-  async runReproducibility(paper) {
+  async runReproducibility(paper: ResearchWorkspacePaper) {
     const state = await this.state();
     const prompt = (0, prompt_2.buildReproducibilityPrompt)({
       paperContext: paper.context,
@@ -292,7 +335,7 @@ class ResearchWorkspaceService {
     });
     return report;
   }
-  async runPaperToCode(paper) {
+  async runPaperToCode(paper: ResearchWorkspacePaper) {
     const state = await this.state();
     const prompt = (0, prompt_3.buildPaperToCodePrompt)({
       paperContext: paper.context,
@@ -318,7 +361,7 @@ class ResearchWorkspaceService {
     });
     return report;
   }
-  masteryController(paper) {
+  masteryController(paper: ResearchWorkspacePaper) {
     return new controller_1.MasteryV2Controller({
       agent: { run: (prompt, purpose) => this.run(prompt, purpose) },
       persistence: {
@@ -327,7 +370,8 @@ class ResearchWorkspaceService {
         save: async (session) => {
           const verified = await this.verifyEvidence(session, [paper]);
           if (verified && typeof verified === "object") {
-            for (const key of Object.keys(session)) delete session[key];
+            for (const key of Object.keys(session))
+              Reflect.deleteProperty(session, key);
             Object.assign(session, verified);
           }
           await this.env.repository.update((state) => {
@@ -342,7 +386,7 @@ class ResearchWorkspaceService {
       maxStructuredOutputAttempts: 2,
     });
   }
-  async startOrResumeMastery(paper) {
+  async startOrResumeMastery(paper: ResearchWorkspacePaper) {
     const state = await this.state();
     const controller = this.masteryController(paper);
     let session = await controller.load(paper.paperKey);
@@ -363,7 +407,11 @@ class ResearchWorkspaceService {
       dashboard: (0, viewModel_1.toMasteryDashboardView)(session),
     };
   }
-  async submitMastery(paper, answer, confidence) {
+  async submitMastery(
+    paper: ResearchWorkspacePaper,
+    answer: string,
+    confidence?: number,
+  ) {
     const controller = this.masteryController(paper);
     const session = await controller.load(paper.paperKey);
     if (!session) throw new Error("Start Paper Mastery first.");
@@ -388,7 +436,10 @@ class ResearchWorkspaceService {
       dashboard: (0, viewModel_1.toMasteryDashboardView)(withQuestion),
     };
   }
-  createEvidenceMatrixShell(papers, presetID: EvidenceMatrixPresetID = "full") {
+  createEvidenceMatrixShell(
+    papers: readonly ResearchWorkspacePaper[],
+    presetID: EvidenceMatrixPresetID = "full",
+  ) {
     const preset = getEvidenceMatrixPreset(presetID);
     return (0, engine_1.createEvidenceMatrix)({
       id: id("matrix"),
@@ -401,7 +452,10 @@ class ResearchWorkspaceService {
       })),
     });
   }
-  async extractEvidenceMatrixRow(matrix, paper) {
+  async extractEvidenceMatrixRow(
+    matrix: EvidenceMatrix,
+    paper: ResearchWorkspacePaper,
+  ) {
     const state = await this.state();
     const prompt = (0, prompt_4.buildEvidenceMatrixExtractionPrompt)({
       paperContext: paper.context,
@@ -425,13 +479,13 @@ class ResearchWorkspaceService {
     );
     return this.verifyEvidence(parsedRow, [paper]);
   }
-  mergeEvidenceMatrixRow(matrix, row) {
+  mergeEvidenceMatrixRow(matrix: EvidenceMatrix, row: MatrixRow) {
     return (0, engine_1.upsertEvidenceMatrixRow)(matrix, row);
   }
-  evidenceMatrixCoverage(matrix) {
+  evidenceMatrixCoverage(matrix: EvidenceMatrix) {
     return (0, engine_1.calculateEvidenceMatrixCoverage)(matrix);
   }
-  async createLiteratureGraph(papers) {
+  async createLiteratureGraph(papers: readonly ResearchWorkspacePaper[]) {
     if (papers.length < 2)
       throw new Error("Select at least two papers in the Zotero item list.");
     const state = await this.state();
@@ -475,7 +529,11 @@ class ResearchWorkspaceService {
     });
     return graph;
   }
-  async createProjectSynthesis(papers, question, coverage) {
+  async createProjectSynthesis(
+    papers: readonly ResearchWorkspacePaper[],
+    question: string,
+    coverage: unknown,
+  ) {
     if (papers.length < 2)
       throw new Error("Project synthesis requires at least two papers.");
     if (!String(question || "").trim())
@@ -512,7 +570,11 @@ class ResearchWorkspaceService {
       coverage,
     };
   }
-  async startCrossPaperMastery(papers, priorSession, projectID) {
+  async startCrossPaperMastery(
+    papers: readonly ResearchWorkspacePaper[],
+    priorSession?: CrossPaperSession,
+    projectID?: string,
+  ) {
     if (papers.length < 2)
       throw new Error("Select at least two papers in the Zotero item list.");
     const state = await this.state();
@@ -605,12 +667,12 @@ class ResearchWorkspaceService {
     };
   }
   async submitCrossPaperMastery(
-    sessionId,
-    papers,
-    answer,
-    learnerConfidence,
-    expectedRevision,
-    submissionID,
+    sessionId: string,
+    papers: readonly ResearchWorkspacePaper[],
+    answer: string,
+    learnerConfidence: number | undefined,
+    expectedRevision: number,
+    submissionID: string,
   ) {
     const state = await this.state();
     let session = state.crossPaperMastery.find(
@@ -725,9 +787,12 @@ class ResearchWorkspaceService {
     };
   }
   async classifyCitationContexts(
-    contexts: any[],
-    papers: any[] = [],
-    extraction?: any,
+    contexts: unknown[],
+    papers: readonly ResearchWorkspacePaper[] = [],
+    extraction?: Pick<
+      CitationContextExtractionResult,
+      "coverage" | "sourceSnapshot" | "extractorVersion"
+    >,
     approvedForModel = false,
   ) {
     if (approvedForModel !== true) {
@@ -738,7 +803,8 @@ class ResearchWorkspaceService {
     if (!Array.isArray(contexts) || contexts.length === 0)
       throw new Error("Citation input must contain at least one context.");
     const seen = new Set();
-    const normalizedContexts = contexts.map((context, index) => {
+    const normalizedContexts = contexts.map((rawContext, index) => {
+      const context = rawContext as Record<string, unknown>;
       if (!context || typeof context !== "object" || Array.isArray(context))
         throw new Error(`Citation context ${index + 1} must be an object.`);
       const id = String(context.id ?? "").trim();
@@ -754,6 +820,12 @@ class ResearchWorkspaceService {
       seen.add(id);
       return {
         ...context,
+        exactSentence:
+          typeof context.exactSentence === "string"
+            ? context.exactSentence
+            : undefined,
+        marker: typeof context.marker === "string" ? context.marker : undefined,
+        reference: citationReference(context.reference),
         id,
         citingPaperKey,
         citedPaperKey,
@@ -769,7 +841,7 @@ class ResearchWorkspaceService {
     );
     // The primary UI supplies these only after its explicit snippet-review
     // consent gate. Bound the admitted payload independently as defense in depth.
-    const submittedContexts = [];
+    const submittedContexts: typeof admittedContexts = [];
     let submittedCharacters = 0;
     for (const context of admittedContexts) {
       const characters = String(context.context || "").length;
@@ -813,7 +885,9 @@ class ResearchWorkspaceService {
           allowedAttachments: [
             ...new Set(
               submittedContexts.flatMap((context) =>
-                context.evidence.map((entry) => entry.attachmentKey),
+                context.evidence.flatMap((entry) =>
+                  entry.attachmentKey ? [entry.attachmentKey] : [],
+                ),
               ),
             ),
           ],

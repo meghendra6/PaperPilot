@@ -161,3 +161,18 @@ export function normalizeCodexReasoningEffort(
   }
   return catalogModel?.defaultReasoningEffort ?? CODEX_DEFAULT_REASONING_EFFORT;
 }
+
+// An empty/obsolete configured list uses the built-in catalog. This is a picker
+// preference, not a security boundary; unknown model IDs are never admitted.
+export function getAllowedCodexModels(value: string) {
+  const allowed = [...new Set(parseAllowedModels(value))].filter((slug) =>
+    Boolean(findCodexBuiltInModel(slug)),
+  );
+  return allowed.length ? allowed : getCodexBuiltInModels();
+}
+
+export function resolveCodexModel(model: string, allowedValue: string) {
+  const allowed = getAllowedCodexModels(allowedValue);
+  const normalized = normalizeCodexModel(model);
+  return allowed.includes(normalized) ? normalized : allowed[0];
+}

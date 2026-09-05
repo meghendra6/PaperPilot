@@ -65,16 +65,20 @@ else
     error "Vendored OpenDataLoader runtime is missing; run npm install then node scripts/prepare-opendataloader.mjs"
 fi
 
-available_engines=""
-for engine in codex claude gemini; do
-    if command -v "${engine}" >/dev/null 2>&1; then
-        available_engines="${available_engines}${available_engines:+, }${engine}"
+if command -v node >/dev/null 2>&1; then
+    runtime_status=0
+    runtime_output="$(node "${TARGET_DIR}/scripts/doctor-runtime.mjs" "${TARGET_DIR}" "${2:-}")" || runtime_status=$?
+    runtime_errors=0
+    while IFS= read -r line; do
+        printf '%s\n' "${line}"
+        case "${line}" in
+            ERROR:*) errors=$((errors + 1)); runtime_errors=$((runtime_errors + 1)) ;;
+            WARN:*) warnings=$((warnings + 1)) ;;
+        esac
+    done <<< "${runtime_output}"
+    if [ "${runtime_status}" -ne 0 ] && [ "${runtime_errors}" -eq 0 ]; then
+        error "Runtime diagnostics could not complete"
     fi
-done
-if [ -n "${available_engines}" ]; then
-    ok "Local engine CLI available: ${available_engines}"
-else
-    warn "No Codex, Claude, or Gemini CLI was found on PATH"
 fi
 
 if command -v git >/dev/null 2>&1 && git -C "${TARGET_DIR}" rev-parse --is-inside-work-tree >/dev/null 2>&1; then

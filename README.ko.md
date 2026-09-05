@@ -256,6 +256,16 @@ OpenDataLoader 패키징 메모:
 
 `npm start`, `npm run build`, `npm run release`는 [`scripts/prepare-opendataloader.mjs`](./scripts/prepare-opendataloader.mjs)를 통해 OpenDataLoader 런타임 JAR를 애드온에 자동 포함합니다.
 
+로컬 CLI 실행에는 `/bin/zsh`와 표준 프로세스 도구가 있는 Unix 환경이 필요하며,
+네이티브 Windows 실행은 지원하지 않습니다. `bash scripts/doctor.sh .`로 로그인 셸의
+CLI 경로·버전과 확인 가능한 인증 상태를 점검할 수 있습니다. 두 번째 인자로 Zotero
+프로필 경로를 넘기면 추출 런타임 캐시를 번들과 비교합니다. Gemini 인증은 직접
+실행하기 전까지 미확인으로 표시합니다. Research Workspace 결과에는 실행 시 고정한
+CLI 모델·추론 강도·응답 언어가 기록됩니다. 소스가 바뀌면 결과를 무효화하며,
+재개 시에는 소스·문맥 지문·실행 설정이 모두 일치하는 단위만 재사용합니다.
+Codex 허용 모델 설정은 선택 목록과 실제 사용 모델에 적용됩니다. 지원이 끝난
+모델만 저장되어 있다면 현재 지원 목록으로 복구합니다.
+
 ## GitHub 릴리즈 만들기
 
 릴리즈 배포는 태그 기준으로 동작합니다. 패키지 버전과 태그를 항상 일치시켜야 합니다.

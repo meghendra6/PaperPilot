@@ -1,23 +1,23 @@
-// @ts-nocheck -- Ported feature core is guarded by strict runtime parsers.
-import * as types_1 from "../../evidence/types";
-import * as profiles_1 from "./profiles";
 import * as json_1 from "../../comprehensionCheck/v2/json";
+import type { PaperResponseInput } from "../../contracts";
+import * as types_1 from "../../evidence/types";
 import { enumValue, optionalUnitInterval } from "../../parserValidation";
-function object(value, name) {
+import * as profiles_1 from "./profiles";
+function object(value: unknown, name: string): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value))
     throw new Error(`${name} must be an object`);
-  return value;
+  return value as Record<string, unknown>;
 }
-function array(value, name) {
+function array(value: unknown, name: string): unknown[] {
   if (!Array.isArray(value)) throw new Error(`${name} must be an array`);
   return value;
 }
-function string(value, name) {
+function string(value: unknown, name: string) {
   if (typeof value !== "string" || !value.trim())
     throw new Error(`${name} must be a non-empty string`);
   return value.trim();
 }
-function strings(value) {
+function strings(value: unknown) {
   return Array.isArray(value)
     ? value
         .filter((entry) => typeof entry === "string" && Boolean(entry.trim()))
@@ -32,7 +32,9 @@ const STATUSES = new Set([
   "unclear",
 ]);
 const SEVERITIES = new Set(["none", "minor", "major", "critical"]);
-function parseProfiledCriticalReadResponse(params) {
+function parseProfiledCriticalReadResponse(
+  params: PaperResponseInput & { profile: string },
+) {
   const root = object(
     (0, json_1.extractLastJsonObject)(params.response),
     "response",

@@ -1,8 +1,15 @@
-// @ts-nocheck -- Ported feature core is guarded by strict runtime parsers.
-function quoteCsv(value) {
+import type { EvidenceMatrix, MatrixCell } from "../contracts";
+function quoteCsv(value: string) {
   return /[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
 }
-function cellFor(matrix, paperKey, columnId) {
+function cellFor(
+  matrix: Pick<
+    EvidenceMatrix,
+    "title" | "columns" | "papers" | "cells" | "rows"
+  >,
+  paperKey: string,
+  columnId: string,
+) {
   return (
     matrix.cells.find(
       (cell) => cell.paperKey === paperKey && cell.columnId === columnId,
@@ -12,7 +19,12 @@ function cellFor(matrix, paperKey, columnId) {
       ?.cells.find((cell) => cell.columnId === columnId)
   );
 }
-function exportEvidenceMatrixCsv(matrix) {
+function exportEvidenceMatrixCsv(
+  matrix: Pick<
+    EvidenceMatrix,
+    "title" | "columns" | "papers" | "cells" | "rows"
+  >,
+) {
   const lines = [
     ["Paper", ...matrix.columns.map((column) => column.label)]
       .map(quoteCsv)
@@ -39,7 +51,12 @@ function exportEvidenceMatrixCsv(matrix) {
   }
   return lines.join("\n");
 }
-function exportEvidenceMatrixMarkdown(matrix) {
+function exportEvidenceMatrixMarkdown(
+  matrix: Pick<
+    EvidenceMatrix,
+    "title" | "columns" | "papers" | "cells" | "rows"
+  >,
+) {
   const papers = matrix.papers.length
     ? matrix.papers
     : matrix.rows.map((row) => ({
@@ -47,14 +64,15 @@ function exportEvidenceMatrixMarkdown(matrix) {
         title: row.title,
         attachmentKeys: [row.attachmentKey],
       }));
-  const escape = (value) => value.replace(/\|/g, "\\|").replace(/\n/g, " ");
+  const escape = (value: string) =>
+    value.replace(/\|/g, "\\|").replace(/\n/g, " ");
   const lines = [
     `# ${matrix.title}`,
     "",
     `| Paper | ${matrix.columns.map((column) => escape(column.label)).join(" | ")} |`,
     `|---|${matrix.columns.map(() => "---").join("|")}|`,
   ];
-  const sourceLabel = (cell) => {
+  const sourceLabel = (cell: MatrixCell | undefined) => {
     if (!cell?.evidence.length) return "";
     const references = cell.evidence.slice(0, 3).map((reference) => {
       const page =
@@ -79,8 +97,8 @@ function exportEvidenceMatrixMarkdown(matrix) {
 }
 
 export {
-  exportEvidenceMatrixCsv,
-  exportEvidenceMatrixMarkdown,
   exportEvidenceMatrixCsv as evidenceMatrixToCsv,
   exportEvidenceMatrixMarkdown as evidenceMatrixToMarkdown,
+  exportEvidenceMatrixCsv,
+  exportEvidenceMatrixMarkdown,
 };

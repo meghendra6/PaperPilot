@@ -20,6 +20,7 @@ import {
   getCrossPaperMasteryCurrentQuestion,
   isCrossPaperMasterySubmissionReplay,
   isPersistentCrossPaperMasterySession,
+  isAnalyzableCrossPaperSession,
 } from "../src/modules/researchWorkspace/masteryPersistence";
 import type { ResearchWorkspacePaper } from "../src/modules/researchWorkspace/paperSource";
 
@@ -105,7 +106,24 @@ test("cross-paper sessions bind exact source fingerprints and advance revisions"
       id: "question-1",
       conceptId: "concept-1",
       paperKeys: papers.map((entry) => entry.paperKey),
-      rubric: [{ id: "criterion-1", maxScore: 2 }],
+      mode: "compare",
+      prompt: "Compare the mechanisms",
+      difficulty: "advanced",
+      createdAt: "2026-08-30T00:01:00.000Z",
+      evidence: {},
+      criteria: [],
+      rubric: [
+        {
+          id: "criterion-1",
+          maxScore: 2,
+          description: "Compare",
+          requiredPaperKeys: [],
+          expectedClaims: [],
+          evidence: [],
+          paperKeys: [],
+          requiredClaims: [],
+        },
+      ],
     },
     "2026-08-30T00:01:00.000Z",
   );
@@ -117,10 +135,21 @@ test("cross-paper sessions bind exact source fingerprints and advance revisions"
     {
       id: "submission-1",
       questionId: "question-1",
+      answer: "Compared",
+      feedback: "Good",
+      createdAt: "2026-08-30T00:02:00.000Z",
       learnerConfidence: 0.8,
       graderConfidence: 0.9,
       misconceptions: [],
-      grades: [{ criterionId: "criterion-1", score: 2, feedback: "Good" }],
+      grades: [
+        {
+          criterionId: "criterion-1",
+          score: 2,
+          maxScore: 2,
+          evidence: [],
+          feedback: "Good",
+        },
+      ],
     },
     "2026-08-30T00:02:00.000Z",
   );
@@ -129,6 +158,18 @@ test("cross-paper sessions bind exact source fingerprints and advance revisions"
   assert.equal(getCrossPaperMasteryCurrentQuestion(session), undefined);
   assert.equal(summarizeCrossPaperMastery(session).calibration, 0.8);
   assert.equal(isPersistentCrossPaperMasterySession(session), true);
+  assert.equal(isAnalyzableCrossPaperSession(session), true);
+  assert.equal(
+    isAnalyzableCrossPaperSession({ ...session, concepts: null }),
+    false,
+  );
+  assert.equal(
+    isAnalyzableCrossPaperSession({
+      ...session,
+      questions: [{ ...session.questions[0], rubric: [null] }],
+    }),
+    false,
+  );
   assert.equal(
     crossPaperMasterySnapshotMatches(session, "project-1", papers),
     true,
@@ -149,10 +190,21 @@ test("cross-paper sessions bind exact source fingerprints and advance revisions"
       addCrossPaperAttempt(session, {
         id: "submission-1",
         questionId: "question-1",
+        answer: "Compared",
+        feedback: "Good",
+        createdAt: "2026-08-30T00:02:00.000Z",
         learnerConfidence: 0.8,
         graderConfidence: 0.9,
         misconceptions: [],
-        grades: [{ criterionId: "criterion-1", score: 2, feedback: "Good" }],
+        grades: [
+          {
+            criterionId: "criterion-1",
+            score: 2,
+            maxScore: 2,
+            evidence: [],
+            feedback: "Good",
+          },
+        ],
       }),
     /Duplicate attempt/,
   );

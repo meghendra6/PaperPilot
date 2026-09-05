@@ -1,5 +1,4 @@
-// @ts-nocheck -- Ported feature core is guarded by strict runtime parsers.
-const WEIGHTS = {
+const WEIGHTS: Record<string, number> = {
   code: 3,
   commit: 2,
   dataset: 3,
@@ -18,7 +17,7 @@ const WEIGHTS = {
   results: 1.5,
   other: 0.5,
 };
-const VALUE = {
+const VALUE: Record<string, number> = {
   available: 1,
   partial: 0.5,
   missing: 0,
@@ -31,10 +30,13 @@ const REQUIRED_GROUPS = [
   ["environment"],
   ["evaluation_command", "evaluation"],
 ];
-function calculateReproducibilityReadiness(report) {
+function calculateReproducibilityReadiness(report: {
+  artifacts: { kind: string; availability: string }[];
+  blockers: { severity: string }[];
+}) {
   let totalWeight = 0;
   let availableWeight = 0;
-  const availability = new Map();
+  const availability = new Map<string, number>();
   const declaredKinds = new Set();
   for (const artifact of report.artifacts) {
     declaredKinds.add(artifact.kind);

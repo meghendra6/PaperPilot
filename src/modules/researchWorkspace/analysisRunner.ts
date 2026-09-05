@@ -1,3 +1,7 @@
+import {
+  captureExecutionSettings,
+  type ExecutionSettings,
+} from "../ai/executionSettings";
 import { getModeForItem } from "../ai/modeStore";
 import { stopDetachedRunProcess } from "../ai/runCompletion";
 import type { StructuredOutputSchema } from "../ai/structuredOutput";
@@ -22,10 +26,14 @@ export async function runResearchWorkspaceAnalysis(params: {
   prompt: string;
   outputSchema?: StructuredOutputSchema;
   workspaceFiles?: WorkspaceSupplementalFiles;
+  executionSettings?: ExecutionSettings;
   signal?: AbortSignal;
   onStatus?: (status: string) => void;
 }) {
-  const mode = getModeForItem(params.itemID);
+  const settings =
+    params.executionSettings ??
+    captureExecutionSettings(getModeForItem(params.itemID));
+  const mode = settings.mode;
   const engineLabel = getWorkspaceEngineLabel(mode);
   const reservationToken = claimWorkspaceRunReservation(mode, params.itemID);
   if (!reservationToken) {
@@ -43,6 +51,7 @@ export async function runResearchWorkspaceAnalysis(params: {
     params.onStatus?.(`Starting ${engineLabel}…`);
     started = await startWorkspaceTextRun({
       mode,
+      executionSettings: settings,
       itemID: params.itemID,
       reservationItemID: params.itemID,
       reservationToken,

@@ -1,0 +1,112 @@
+{
+  "description": "Hand-labelled local retrieval regression corpus. English mechanisms, multilingual exact terminology, locator sections, and plausible distractors; no network or model-generated relevance labels.",
+  "chunks": [
+    {
+      "id": "draft-verification",
+      "title": "Speculative decoding mechanism",
+      "text": "The target model verifies draft tokens in parallel. An acceptance test commits the accepted prefix and discards the rejected suffix."
+    },
+    {
+      "id": "draft-cost",
+      "title": "Speculative decoding overhead",
+      "text": "Draft construction and target verification both consume compute. A large draft model can erase end-to-end throughput gains."
+    },
+    {
+      "id": "latency-definition",
+      "title": "Latency metrics",
+      "text": "Time to first token (TTFT) measures request arrival to the first output token. Time per output token (TPOT) measures the interval during subsequent decoding."
+    },
+    {
+      "id": "throughput",
+      "title": "Serving results",
+      "text": "Aggregate throughput counts completed output tokens per second across concurrent requests. It is distinct from per-request latency."
+    },
+    {
+      "id": "split-leakage",
+      "title": "Dataset split integrity",
+      "text": "Near-duplicate examples crossing train and test splits cause data leakage. Deduplication must precede splitting, and temporal leakage requires chronological evaluation."
+    },
+    {
+      "id": "ablation",
+      "title": "Ablation experiments",
+      "text": "Removing each component measures its contribution under the same compute budget and random seeds. Ablations do not establish train-test independence."
+    },
+    {
+      "id": "korean-cache",
+      "title": "메모리 분석",
+      "text": "키 값 캐시는 이전 토큰의 어텐션 키와 값을 저장한다. 긴 문맥과 큰 배치에서는 캐시 메모리 사용량이 증가한다."
+    },
+    {
+      "id": "chinese-attention",
+      "title": "注意力机制",
+      "text": "注意力机制使用查询向量与键向量的相似度计算权重，再对值向量加权求和。"
+    },
+    {
+      "id": "japanese-evaluation",
+      "title": "評価指標",
+      "text": "再現率は正解文書のうち検索結果に含まれる割合を示す。適合率は検索結果のうち正解である割合を示す。"
+    },
+    {
+      "id": "qk-scale",
+      "title": "Implementation details",
+      "text": "The qk_scale parameter rescales query-key dot products before softmax. Its default is the inverse square root of the attention head dimension."
+    },
+    {
+      "id": "convergence",
+      "title": "Proof assumptions",
+      "text": "The convergence theorem assumes a smooth convex objective with bounded gradient variance. The proof does not apply to an arbitrary nonconvex loss."
+    },
+    {
+      "id": "hardware",
+      "title": "Hardware configuration",
+      "text": "All measurements use the same GPU, driver, framework, and precision. Warm-up runs are excluded from the reported measurements."
+    }
+  ],
+  "cases": [
+    {
+      "id": "mechanism",
+      "query": "How does target verification accept draft tokens?",
+      "relevantChunkIds": ["draft-verification"]
+    },
+    {
+      "id": "latency",
+      "query": "Define TTFT and TPOT latency metrics",
+      "relevantChunkIds": ["latency-definition"]
+    },
+    {
+      "id": "leakage",
+      "query": "Near-duplicate train test split data leakage",
+      "relevantChunkIds": ["split-leakage"]
+    },
+    {
+      "id": "ko",
+      "query": "키 값 캐시 메모리 사용량",
+      "relevantChunkIds": ["korean-cache"]
+    },
+    {
+      "id": "zh",
+      "query": "注意力机制 查询向量 键向量",
+      "relevantChunkIds": ["chinese-attention"]
+    },
+    {
+      "id": "ja",
+      "query": "再現率と適合率の評価指標",
+      "relevantChunkIds": ["japanese-evaluation"]
+    },
+    {
+      "id": "identifier",
+      "query": "qk_scale before softmax",
+      "relevantChunkIds": ["qk-scale"]
+    },
+    {
+      "id": "assumptions",
+      "query": "convex convergence theorem assumptions",
+      "relevantChunkIds": ["convergence"]
+    },
+    {
+      "id": "accounting",
+      "query": "draft model target verification compute overhead",
+      "relevantChunkIds": ["draft-cost", "draft-verification"]
+    }
+  ]
+}

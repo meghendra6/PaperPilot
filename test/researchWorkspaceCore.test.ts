@@ -1,3 +1,4 @@
+import type { CachedHybridIndex } from "../src/modules/researchWorkspace/serviceState";
 import { test } from "node:test";
 import * as assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
@@ -47,6 +48,7 @@ import { parseCitationStanceResponse } from "../src/modules/researchWorkspace/co
 import {
   RESEARCH_WORKSPACE_SCHEMA_VERSION,
   migrateResearchWorkspaceState,
+  createResearchWorkspaceState,
   summarizeResearchWorkspace,
 } from "../src/modules/researchWorkspace/core/researchWorkspace/state";
 import { extractLastJsonObject } from "../src/modules/researchWorkspace/core/comprehensionCheck/v2/json";
@@ -169,11 +171,11 @@ test("hybrid tokenization covers CJK, Korean, and folded Latin scripts", () => {
 });
 
 test("Research Workspace hybrid indexes are bounded and omit build-only tokens", () => {
-  const indexes = new Map<string, unknown>();
+  const indexes = new Map<string, CachedHybridIndex>();
   const service = new ResearchWorkspaceService({
     repository: {
-      load: async () => ({}),
-      update: async () => ({}),
+      load: async () => createResearchWorkspaceState(),
+      update: async () => createResearchWorkspaceState(),
     },
     indexes,
     agent: { run: async () => "{}" },
@@ -244,6 +246,7 @@ test("Mastery v2 records criterion scores, calibration, and misconceptions", () 
         {
           id: "mechanism",
           name: "Verification mechanism",
+          learningObjective: "Explain verification",
           dimension: "mechanism",
           importance: "core",
           prerequisites: [],
@@ -276,13 +279,26 @@ test("Mastery v2 records criterion scores, calibration, and misconceptions", () 
     learnerConfidence: 0.9,
     grade: {
       criterionGrades: [
-        { criterionId: "r1", score: 2, feedback: "correct", evidence: [] },
-        { criterionId: "r2", score: 1, feedback: "partial", evidence: [] },
+        {
+          criterionId: "r1",
+          score: 2,
+          maxScore: 2,
+          feedback: "correct",
+          evidence: [],
+        },
+        {
+          criterionId: "r2",
+          score: 1,
+          maxScore: 2,
+          feedback: "partial",
+          evidence: [],
+        },
       ],
       misconceptions: [
         { statement: "Always available", severity: "minor", evidence: [] },
       ],
-      feedback: "partial",
+      overallFeedback: "partial",
+      explanation: "Explain the accepted prefix",
       graderConfidence: 0.95,
     },
     clock,

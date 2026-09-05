@@ -255,6 +255,17 @@ OpenDataLoader packaging note:
 
 `npm start`, `npm run build`, and `npm run release` vendor the OpenDataLoader runtime JAR into the add-on automatically via [`scripts/prepare-opendataloader.mjs`](./scripts/prepare-opendataloader.mjs).
 
+Local CLI runs require a Unix environment with `/bin/zsh` and standard process tools.
+Native Windows runs are not supported. Use `bash scripts/doctor.sh .` to check the
+login-shell CLI paths, versions, and available authentication status; pass your
+Zotero profile directory as a second argument to compare its extraction runtime
+with the bundle. Gemini authentication remains unverified until an explicit run.
+Research Workspace artifacts record the admitted CLI model, reasoning level, and
+response language. Source changes invalidate results, and resumed units require
+matching source, context projection, and execution settings. Codex's allowed-model
+preference restricts both the picker and the effective model; an obsolete-only list
+falls back to the current catalog.
+
 ## Creating a GitHub release
 
 Release publishing is tag-driven. Keep the package version and the tag aligned:

@@ -8,7 +8,9 @@ function source(path: string) {
 }
 
 test("safe Zotero sync UI exposes full preview, exact approval, receipts, and owned undo", () => {
-  const view = source("src/modules/researchWorkspace/projectWindowView.ts");
+  const view =
+    source("src/modules/researchWorkspace/projectWindowView.ts") +
+    source("src/modules/researchWorkspace/projectSyncPanel.ts");
   for (const expected of [
     "Safe Zotero collection and tag sync",
     "One-way additive sync only",

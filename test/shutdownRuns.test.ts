@@ -37,7 +37,7 @@ test("shutdown collects states, pollers, pending completions, and presentations"
 test("shutdown starts best-effort process termination without blocking", async () => {
   const stopped: string[] = [];
   const logged: string[] = [];
-  stopShutdownRunsBestEffort({
+  const completion = stopShutdownRunsBestEffort({
     runs: [
       { itemID: 1, mode: "codex_cli", processId: "101" },
       { itemID: 2, mode: "claude_code", processId: "202" },
@@ -50,7 +50,7 @@ test("shutdown starts best-effort process termination without blocking", async (
     log: (...values) => logged.push(values.map(String).join(" ")),
   });
 
-  await new Promise((resolve) => setImmediate(resolve));
+  await completion;
   assert.deepEqual(stopped, ["101", "202"]);
   assert.equal(
     logged.some((line) => /could not resolve a pid/.test(line)),

@@ -399,6 +399,7 @@ test("incremental runs preserve rows and reuse only matching fingerprints", asyn
   assert.equal(first.result.rows.length, 2);
 
   const changedPapers = [papers[0], papers[1], paper("C", "fingerprint-C-2")];
+  await projects.addPapers(details.project.projectID, changedPapers);
   const executed: string[] = [];
   const resumed = await coordinator.runIncremental({
     ...shared,
@@ -779,3 +780,155 @@ test("local derived operations stale a result when an input changes during artif
   const runs = await repository.listRuns(created.project.projectID);
   assert.equal(runs.runs.at(-1)?.status, "failed");
 });
+
+for (const changeAt of ["execution", "artifact-save"] as const) {
+  test(`single analysis rejects source changes during ${changeAt}`, async () => {
+    const { repository } = createRepository();
+    const projects = new ResearchWorkspaceProjectController(repository);
+    const papers = [paper("A")];
+    const details = await projects.createProject(
+      { name: "Source race" },
+      papers,
+    );
+    const projectID = details.project.projectID;
+    const refresh = () =>
+      projects.addPapers(projectID, [paper("A", "changed")]);
+    const createArtifact = repository.createArtifact.bind(repository);
+    if (changeAt === "artifact-save") {
+      repository.createArtifact = async (...args) => {
+        const result = await createArtifact(...args);
+        await refresh();
+        return result;
+      };
+    }
+    const coordinator = new ResearchWorkspaceOperationCoordinator(repository);
+    await assert.rejects(
+      coordinator.run({
+        projectID,
+        papers,
+        sourcesPrepared: true,
+        operation: "claims",
+        operationVersion: "v1",
+        artifactType: "claim-ledger",
+        artifactTitle: "Claims",
+        providerMode: "codex_cli",
+        execute: async () => {
+          if (changeAt === "execution") await refresh();
+          return { claims: [] };
+        },
+      }),
+      /source changed during analysis/,
+    );
+    const current = await projects.details(projectID);
+    assert(
+      current.artifacts.every(
+        (artifact) =>
+          artifact.status === "stale" || artifact.status === "superseded",
+      ),
+    );
+    assert.equal(
+      (await repository.listRuns(projectID)).runs[0].status,
+      "failed",
+    );
+  });
+}
+
+for (const changed of ["projection", "model", "source-during-unit"] as const) {
+  test(`incremental analysis handles changed ${changed} without restamping old rows`, async () => {
+    const { repository } = createRepository();
+    const projects = new ResearchWorkspaceProjectController(repository);
+    const papers = [paper("A"), paper("B")];
+    const details = await projects.createProject(
+      { name: "Resume provenance" },
+      papers,
+    );
+    const projectID = details.project.projectID;
+    const coordinator = new ResearchWorkspaceOperationCoordinator(repository);
+    const units = papers.map((entry) => ({
+      sourceID: entry.sourceID,
+      unitID: entry.sourceID,
+    }));
+    const initialPayload = {
+      rows: [] as Array<{ sourceID: string; generation: number }>,
+    };
+    const settings = {
+      mode: "codex_cli" as const,
+      model: "gpt-6-astra",
+      reasoningEffort: "medium",
+      responseLanguage: "Korean" as const,
+    };
+    const shared = {
+      projectID,
+      papers,
+      sourcesPrepared: true,
+      operation: "matrix",
+      operationVersion: "v1",
+      artifactType: "evidence-matrix" as const,
+      artifactTitle: "Matrix",
+      providerMode: "codex_cli" as const,
+      initialPayload,
+      units,
+      executionSettings: settings,
+      contextProjectionFingerprints: new Map(
+        papers.map((entry) => [entry.sourceID, "old-projection"]),
+      ),
+      mergeUnit: (
+        payload: typeof initialPayload,
+        _unit: (typeof units)[number],
+        row: (typeof initialPayload.rows)[number],
+      ) => ({ rows: [...payload.rows, row] }),
+      reusableUnit: (
+        payload: typeof initialPayload,
+        unit: (typeof units)[number],
+      ) => payload.rows.find((row) => row.sourceID === unit.sourceID),
+    };
+    await coordinator.runIncremental({
+      ...shared,
+      executeUnit: async (unit) => {
+        if (unit === units[1]) throw new Error("Interrupted after first row");
+        return { sourceID: unit.sourceID, generation: 1 };
+      },
+    });
+    const executed: string[] = [];
+    const resumed = coordinator.runIncremental({
+      ...shared,
+      executionSettings:
+        changed === "model" ? { ...settings, model: "gpt-5.6-luna" } : settings,
+      contextProjectionFingerprints:
+        changed === "projection"
+          ? new Map(papers.map((entry) => [entry.sourceID, "new-projection"]))
+          : shared.contextProjectionFingerprints,
+      executeUnit: async (unit) => {
+        executed.push(unit.sourceID);
+        if (changed === "source-during-unit")
+          await projects.addPapers(projectID, [paper("A", "changed")]);
+        return { sourceID: unit.sourceID, generation: 2 };
+      },
+    });
+    if (changed === "source-during-unit") {
+      await assert.rejects(resumed, /source changed during analysis/);
+      assert(
+        (await projects.details(projectID)).artifacts.every(
+          (artifact) =>
+            artifact.status === "stale" || artifact.status === "superseded",
+        ),
+      );
+    } else {
+      const result = await resumed;
+      assert.deepEqual(
+        executed,
+        papers.map((entry) => entry.sourceID),
+      );
+      assert(result.result.rows.every((row) => row.generation === 2));
+      assert.equal(
+        result.artifact.artifact.lineage.model,
+        changed === "model" ? "gpt-5.6-luna" : "gpt-6-astra",
+      );
+      assert.equal(result.artifact.artifact.lineage.responseLanguage, "Korean");
+      assert.deepEqual(
+        result.run.run.executionSettings,
+        changed === "model" ? { ...settings, model: "gpt-5.6-luna" } : settings,
+      );
+    }
+  });
+}

@@ -1,5 +1,13 @@
 import { getPref } from "../../utils/prefs";
-import { normalizeResponseLanguage } from "../translation/responseLanguage";
+import {
+  executionSettingsForMode,
+  type ExecutionSettings,
+} from "../ai/executionSettings";
+import {
+  launchDetachedShellScript,
+  type ShellExecutor,
+} from "../ai/launchScript";
+import { readOptionalRunTextFile } from "../ai/runFileReader";
 import {
   canResumeProviderSession,
   getRunWorkspaceTitle,
@@ -10,17 +18,13 @@ import {
   compatibleNativeOutputSchema,
   type StructuredOutputSchema,
 } from "../ai/structuredOutput";
-import {
-  launchDetachedShellScript,
-  type ShellExecutor,
-} from "../ai/launchScript";
-import { getCurrentReaderContext } from "../context/readerContext";
 import { getIndexedChunks } from "../context/indexStore";
 import { findNearbyContext } from "../context/nearbyContext";
 import {
   buildCodexWorkspacePrompt,
   buildContextPayload,
 } from "../context/promptPreviewBuilder";
+import { getCurrentReaderContext } from "../context/readerContext";
 import { selectRelevantChunksFromChunks } from "../context/retriever";
 import { buildWorkspaceArtifacts } from "../context/workspaceArtifacts";
 import { messageStore } from "../message/messageStore";
@@ -42,14 +46,8 @@ import {
 } from "./commandBuilder";
 import { buildCodexCommandEnvironment } from "./environment";
 import { resolveCodexExecutablePath } from "./executable";
-import {
-  CODEX_DEFAULT_MODEL,
-  normalizeCodexModel,
-  normalizeCodexReasoningEffort,
-} from "./modelOptions";
 import { parseCodexOutput } from "./outputParser";
 import { buildBackgroundCodexShellScript } from "./shell";
-import { readOptionalRunTextFile } from "../ai/runFileReader";
 
 declare const Zotero: any;
 
@@ -107,18 +105,17 @@ export async function startCodexRunForQuestion(params: {
   profile?: RunProfile;
   outputSchema?: StructuredOutputSchema;
   workspaceFiles?: WorkspaceSupplementalFiles;
+  executionSettings?: ExecutionSettings;
 }): Promise<StartedCodexRun | FailedCodexRun> {
+  const settings = executionSettingsForMode(
+    "codex_cli",
+    params.executionSettings,
+  );
   const profile = params.profile || "chat";
   const executablePath = await resolveCodexExecutablePath(
     String(getPref("codexExecutablePath") || ""),
   );
-  const model = normalizeCodexModel(
-    String(getPref("codexDefaultModel") || CODEX_DEFAULT_MODEL),
-  );
-  const reasoningEffort = normalizeCodexReasoningEffort(
-    String(getPref("codexReasoningEffort") || "medium"),
-    model,
-  );
+  const { model, reasoningEffort } = settings;
   const workspaceRoot = resolvePaperWorkspaceRoot(
     getPref("codexWorkspaceRoot"),
   );
@@ -145,7 +142,7 @@ export async function startCodexRunForQuestion(params: {
 
   const payload = buildContextPayload({
     question: params.question,
-    responseLanguage: normalizeResponseLanguage(getPref("responseLanguage")),
+    responseLanguage: settings.responseLanguage,
     selectedText: params.selectedText,
     annotationIDs: params.annotationIDs,
   });
