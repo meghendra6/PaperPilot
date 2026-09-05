@@ -73,6 +73,7 @@ import {
 } from "./comprehensionCheck/status";
 import { clearIndexedChunks } from "./context/indexStore";
 import { getCurrentReaderContext } from "./context/readerContext";
+import { createCriticalReadLocalizer } from "./criticalRead/localization";
 import { parseCriticalReadOutput } from "./criticalRead/parser";
 import {
   buildCriticalReadStepPrompt,
@@ -130,7 +131,10 @@ import {
 import { sessionHistoryService } from "./session/sessionHistoryService";
 import { sessionStore } from "./session/sessionStore";
 import { isLikelySilentToolMessage } from "./session/silentTurnFilter";
-import { normalizeResponseLanguage } from "./translation/responseLanguage";
+import {
+  normalizeResponseLanguage,
+  subscribeToResponseLanguageChanges,
+} from "./translation/responseLanguage";
 import {
   CHAT_INPUT_MIN_HEIGHT,
   installChatComposerAutosize,
@@ -984,17 +988,24 @@ export function registerPaperPilotPaneSection() {
         };
 
         let startPaperMastery: () => Promise<void> = async () => undefined;
-        const renderCriticalRead = () => {
+        const renderCriticalRead = (readerInput?: string) => {
           const state = getCriticalReadStateForItem();
+          const responseLanguage = normalizeResponseLanguage(
+            getPref("responseLanguage"),
+          );
+          const t = createCriticalReadLocalizer(responseLanguage);
           criticalReadButton.textContent =
             state.phase === "idle"
-              ? "Critical Read"
+              ? t("Critical Read")
               : state.phase === "complete"
-                ? "Critical Read · Complete"
-                : `Critical Read · ${state.steps.filter((step) => step.status === "complete").length}/7`;
+                ? `${t("Critical Read")} · ${t("Complete")}`
+                : `${t("Critical Read")} · ${state.steps.filter((step) => step.status === "complete").length}/7`;
           renderCriticalReadSection({
             root: criticalReadRoot,
             state,
+            responseLanguage,
+            paperTitle: String(item.getField("title") || t("Current paper")),
+            readerInput,
             actions: {
               onCancel: async () => {
                 const discoveryController =
@@ -1074,12 +1085,19 @@ export function registerPaperPilotPaneSection() {
                 const confirmed =
                   promptService?.confirm?.(
                     null,
-                    "Revise Critical Read step",
+                    t("Revise Critical Read step"),
                     stepID === 2
-                      ? "Replace Step 2 and invalidate its prior-work map? Your unrelated methodology and conclusion work will be preserved."
+                      ? t(
+                          "Replace Step 2 and invalidate its prior-work map? Your unrelated methodology and conclusion work will be preserved.",
+                        )
                       : stepID === 5
-                        ? "Replace Step 5 and invalidate the author comparison? Your other completed work will be preserved."
-                        : `Replace Step ${stepID}? Unrelated completed steps will be preserved.`,
+                        ? t(
+                            "Replace Step 5 and invalidate the author comparison? Your other completed work will be preserved.",
+                          )
+                        : t(
+                            "Replace Step {step}? Unrelated completed steps will be preserved.",
+                            { step: stepID },
+                          ),
                   ) ?? false;
                 if (!confirmed) return;
                 setCriticalReadStateForItem(
@@ -1097,6 +1115,9 @@ export function registerPaperPilotPaneSection() {
                       item.getField("title") || "Current paper",
                     ),
                     state: current,
+                    responseLanguage: normalizeResponseLanguage(
+                      getPref("responseLanguage"),
+                    ),
                   });
                   setCriticalReadStateForItem({
                     ...current,
@@ -1296,6 +1317,18 @@ export function registerPaperPilotPaneSection() {
             },
           });
         };
+
+        cleanupTasks.push(
+          subscribeToResponseLanguageChanges(() => {
+            if (!isCurrentRender()) return;
+            const draft = criticalReadRoot.querySelector<HTMLTextAreaElement>(
+              ".pp-critical-read__input",
+            )?.value;
+            const scrollTop = criticalReadRoot.scrollTop;
+            renderCriticalRead(draft);
+            criticalReadRoot.scrollTop = scrollTop;
+          }),
+        );
 
         const openCriticalRead = () => {
           const visible = criticalReadRoot.style.display !== "none";

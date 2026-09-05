@@ -1,7 +1,10 @@
 import { config } from "../../package.json";
 import { getString } from "../utils/locale";
 import { getPref, setPref } from "../utils/prefs";
-import { normalizeResponseLanguage } from "./translation/responseLanguage";
+import {
+  normalizeResponseLanguage,
+  notifyResponseLanguageChanged,
+} from "./translation/responseLanguage";
 
 export async function registerPrefsScripts(_window: Window) {
   // This function is called when the prefs window is opened
@@ -45,6 +48,7 @@ function syncResponseLanguagePreference(doc: Document) {
     select.dataset.prefBound = "true";
     select.addEventListener("change", () => {
       setPref("responseLanguage", normalizeResponseLanguage(select.value));
+      notifyResponseLanguageChanged();
     });
   }
 }

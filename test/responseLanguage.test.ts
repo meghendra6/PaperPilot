@@ -4,7 +4,10 @@ import { test } from "node:test";
 import { config } from "../package.json";
 import { registerPrefsScripts } from "../src/modules/preferenceScript";
 import { captureExecutionSettings } from "../src/modules/ai/executionSettings";
-import { buildResponseLanguageInstruction } from "../src/modules/translation/responseLanguage";
+import {
+  buildResponseLanguageInstruction,
+  subscribeToResponseLanguageChanges,
+} from "../src/modules/translation/responseLanguage";
 import { buildCriticalReadStepPrompt } from "../src/modules/criticalRead/prompt";
 import { buildInitialCriticalReadState } from "../src/modules/criticalRead/workflow";
 import { buildProfiledCriticalReadPrompt } from "../src/modules/researchWorkspace/core/criticalRead/profiled/prompt";
@@ -48,6 +51,10 @@ test("the packaged language selector persists changes used by all CLI providers"
       set: (key: string, value: unknown) => prefs.set(key, value),
     },
   };
+  const observedLanguages: unknown[] = [];
+  const unsubscribe = subscribeToResponseLanguageChanges(() => {
+    observedLanguages.push(prefs.get(`${config.prefsPrefix}.responseLanguage`));
+  });
   try {
     await registerPrefsScripts({ document: doc } as any);
     assert.equal(
@@ -72,7 +79,21 @@ test("the packaged language selector persists changes used by all CLI providers"
         assert.equal(captureExecutionSettings(mode).responseLanguage, language);
       }
     }
+    assert.deepEqual(
+      observedLanguages,
+      ["Chinese", "English", "Korean"],
+      "open panes must be notified after the preference is persisted",
+    );
+    unsubscribe();
+    select.value = "English";
+    listeners[0]();
+    assert.equal(
+      observedLanguages.length,
+      3,
+      "disposed panes must no longer receive notifications",
+    );
   } finally {
+    unsubscribe();
     Object.assign(globals, previous);
   }
 });

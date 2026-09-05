@@ -2,7 +2,13 @@ import { test } from "node:test";
 import * as assert from "node:assert/strict";
 
 import { renderCriticalReadSection } from "../src/modules/ui/criticalReadSection";
-import { buildInitialCriticalReadState } from "../src/modules/criticalRead/workflow";
+import {
+  buildInitialCriticalReadState,
+  startCriticalRead,
+  markCriticalReadStepRunning,
+  completeCriticalReadStep,
+  reviseCriticalReadStep,
+} from "../src/modules/criticalRead/workflow";
 import type {
   CriticalReadAgentOutput,
   CriticalReadStepID,
@@ -193,4 +199,276 @@ test("completed Critical Read cards render every typed output surface", () => {
   ]) {
     assert.ok(text.includes(expected), `missing rendered output: ${expected}`);
   }
+  for (const [responseLanguage, expected] of [
+    [
+      "Korean",
+      [
+        "초록에서 파악한 내용: Strong abstract claim",
+        "AI가 평가한 확신 수준: 보통",
+        "저자 결론: 확인 가능",
+        "논문에서 다룬 정도: 일부",
+        "보고서를 노트로 저장",
+        "이 단계부터 수정",
+      ],
+    ],
+    [
+      "Chinese",
+      [
+        "摘要线索: Strong abstract claim",
+        "AI 评估的置信程度: 中",
+        "作者结论: 可获取",
+        "论文涉及程度: 部分",
+        "将报告保存为笔记",
+        "从此步骤修改",
+      ],
+    ],
+  ] as const) {
+    renderCriticalReadSection({
+      root: root as unknown as HTMLElement,
+      state,
+      actions,
+      responseLanguage,
+    });
+    const translated = collectText(root);
+    for (const label of expected)
+      assert.ok(
+        translated.includes(label),
+        `missing localized label: ${label}`,
+      );
+    for (const original of [
+      "Data leakage",
+      "Dedup test",
+      "X improves Y on Z",
+      "Fair baseline set",
+      "Reader assessment",
+      "Sec 4",
+    ])
+      assert.ok(
+        translated.includes(original),
+        `lost original content: ${original}`,
+      );
+  }
+});
+
+const actions = {
+  onStart() {},
+  onRun(_input: string) {},
+  onCancel() {},
+  onRevise() {},
+  onSave() {},
+  onStartMastery() {},
+};
+
+function descendants(element: FakeElement): FakeElement[] {
+  return [element, ...element.children.flatMap(descendants)];
+}
+
+for (const [language, header, instruction, checklist, run] of [
+  [
+    "Korean",
+    "비판적 읽기 · 7단계",
+    "먼저 훑어보세요.",
+    "다음 내용을 포함해 평가하세요",
+    "1단계 실행",
+  ],
+  [
+    "Chinese",
+    "批判性阅读 · 7 个步骤",
+    "先浏览一遍。",
+    "你的评估应涵盖",
+    "运行第 1 步",
+  ],
+  [
+    "English",
+    "Critical Read · 7 steps",
+    "Skim first.",
+    "Your assessment should cover",
+    "Run step 1",
+  ],
+]) {
+  test(`${language} renders the actual Step 1 guidance and preserves original paper text`, () => {
+    const state = startCriticalRead(buildInitialCriticalReadState());
+    state.steps[0].orientation = {
+      extractionMode: "caption-text",
+      notice:
+        "Caption index extracted from paper text. Paper Pilot has not visually inspected the figure pixels in this step.",
+      abstract: "Abstract: An English paper about decoding.",
+      sourceLocations: ["Fig. 1, p. 3"],
+      captions: ["Figure 1. An original English caption."],
+    };
+    const before = JSON.stringify(state);
+    const root = createFakeDocument().createElement("div");
+    renderCriticalReadSection({
+      root: root as unknown as HTMLElement,
+      state,
+      actions,
+      responseLanguage: language,
+    });
+    const text = collectText(root);
+    for (const expected of [
+      header,
+      instruction,
+      checklist,
+      run,
+      "0/7",
+      state.steps[0].orientation.abstract!,
+      ...state.steps[0].orientation.captions,
+    ]) {
+      assert.ok(text.includes(expected), `missing ${expected}`);
+    }
+    const input = descendants(root).find(
+      (element) => element.tagName === "TEXTAREA",
+    )!;
+    const button = descendants(root).find(
+      (element) => element.textContent === run,
+    )!;
+    assert.equal(input.value, "");
+    assert.equal(
+      button.disabled,
+      true,
+      "localization must preserve the reader-first input gate",
+    );
+    if (language !== "English") {
+      assert.doesNotMatch(
+        text,
+        /Step 1 is ready|Survey abstract|Skim first|Your assessment should cover|Caption index extracted/,
+      );
+      assert.notEqual(
+        input.placeholder,
+        "Write your independent assessment first…",
+      );
+    }
+    assert.equal(
+      JSON.stringify(state),
+      before,
+      "rendering must not rewrite saved workflow or source data",
+    );
+  });
+}
+
+for (const language of ["Korean", "Chinese"]) {
+  test(`${language} localizes all seven current and completed step titles`, () => {
+    const initial = startCriticalRead(buildInitialCriticalReadState());
+    const root = createFakeDocument().createElement("div");
+    for (const step of initial.steps) {
+      const state = {
+        ...initial,
+        currentStep: step.id,
+        steps: initial.steps.map((entry) => ({
+          ...entry,
+          status:
+            entry.id < step.id ? ("complete" as const) : ("ready" as const),
+        })),
+      };
+      renderCriticalReadSection({
+        root: root as unknown as HTMLElement,
+        state,
+        actions,
+        responseLanguage: language,
+      });
+      const text = collectText(root);
+      assert.ok(text.includes(`${step.id - 1}/7`));
+      for (const previous of state.steps.filter((entry) => entry.id <= step.id))
+        assert.ok(!text.includes(previous.title));
+      assert.ok(!text.includes(step.instruction));
+      const input = descendants(root).find(
+        (element) => element.tagName === "TEXTAREA",
+      );
+      assert.equal(Boolean(input), step.requiresReaderInput);
+    }
+  });
+}
+
+test("changing display language preserves an unsent assessment and regenerates report labels from restored data", () => {
+  const state = startCriticalRead(buildInitialCriticalReadState());
+  const root = createFakeDocument().createElement("div");
+  const draft =
+    "My independent assessment with {step} and English technical terms.";
+  for (const responseLanguage of ["Korean", "Chinese", "English"]) {
+    renderCriticalReadSection({
+      root: root as unknown as HTMLElement,
+      state,
+      actions,
+      responseLanguage,
+      readerInput: draft,
+    });
+    assert.equal(
+      descendants(root).find((element) => element.tagName === "TEXTAREA")
+        ?.value,
+      draft,
+    );
+    assert.equal(
+      descendants(root).find(
+        (element) => element.className === "pp-btn pp-btn--primary",
+      )?.disabled,
+      false,
+    );
+    assert.equal(state.steps[0].readerInput, undefined);
+  }
+  const complete = {
+    ...state,
+    phase: "complete" as const,
+    reportMarkdown: "# Stale English report",
+    steps: state.steps.map((step) => ({
+      ...step,
+      status: "complete" as const,
+      readerInput: draft,
+      output: output({}),
+    })),
+  };
+  renderCriticalReadSection({
+    root: root as unknown as HTMLElement,
+    state: complete,
+    actions,
+    responseLanguage: "Korean",
+    paperTitle: "Original English Title",
+  });
+  const text = collectText(root);
+  assert.match(text, /비판적 읽기 보고서/);
+  assert.match(text, /# 비판적 읽기: Original English Title/);
+  assert.match(text, /독자의 평가/);
+  assert.match(text, /Step summary\./);
+  assert.ok(text.includes(draft));
+  assert.doesNotMatch(text, /Stale English report/);
+  assert.equal(complete.reportMarkdown, "# Stale English report");
+});
+
+test("Korean status follows running, completion, and revision without changing progress", () => {
+  let state = startCriticalRead(buildInitialCriticalReadState());
+  const root = createFakeDocument().createElement("div");
+  state = markCriticalReadStepRunning(state, "My assessment");
+  renderCriticalReadSection({
+    root: root as unknown as HTMLElement,
+    state,
+    actions,
+    responseLanguage: "Korean",
+  });
+  assert.match(collectText(root), /1단계 실행 중: 초록·그림·표 훑어보기/);
+  assert.match(collectText(root), /현재 단계 취소/);
+  assert.equal(
+    descendants(root).find((element) => element.tagName === "TEXTAREA")
+      ?.disabled,
+    true,
+  );
+  state = completeCriticalReadStep({ state, output: output({}) });
+  renderCriticalReadSection({
+    root: root as unknown as HTMLElement,
+    state,
+    actions,
+    responseLanguage: "Korean",
+  });
+  assert.match(
+    collectText(root),
+    /1단계를 완료했습니다. 2단계가 준비되었습니다./,
+  );
+  assert.match(collectText(root), /1\/7/);
+  state = reviseCriticalReadStep(state, 1);
+  renderCriticalReadSection({
+    root: root as unknown as HTMLElement,
+    state,
+    actions,
+    responseLanguage: "Korean",
+  });
+  assert.match(collectText(root), /1단계를 다시 열었습니다/);
+  assert.match(collectText(root), /0\/7/);
 });

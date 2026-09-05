@@ -11,6 +11,7 @@ function escapeHtml(value: string) {
 export function buildCriticalReadNoteHtml(params: {
   paperTitle: string;
   state: CriticalReadState;
+  responseLanguage?: unknown;
 }) {
   return `<pre>${escapeHtml(buildCriticalReadReportMarkdown(params))}</pre>`;
 }
@@ -24,6 +25,7 @@ export async function saveCriticalReadToNote(params: {
   };
   paperTitle: string;
   state: CriticalReadState;
+  responseLanguage?: unknown;
 }) {
   const zotero = (globalThis as { Zotero?: any }).Zotero;
   if (!zotero?.Item) throw new Error("Zotero note APIs are unavailable.");
