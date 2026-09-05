@@ -23,11 +23,11 @@ pref("__prefsPrefix__.geminiApprovalMode", "default");
 
 // Codex CLI
 pref("__prefsPrefix__.codexExecutablePath", "");
-pref("__prefsPrefix__.codexDefaultModel", "gpt-5.6-sol");
+pref("__prefsPrefix__.codexDefaultModel", "gpt-6-astra");
 pref("__prefsPrefix__.codexReasoningEffort", "medium");
 pref(
   "__prefsPrefix__.codexAllowedModels",
-  "gpt-5.6-sol, gpt-5.6-terra, gpt-5.6-luna",
+  "gpt-6-astra, gpt-5.6-sol, gpt-5.6-terra, gpt-5.6-luna",
 );
 pref("__prefsPrefix__.codexEnableWebSearch", true);
 pref("__prefsPrefix__.codexSandboxMode", "workspace-write");

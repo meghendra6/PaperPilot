@@ -16,9 +16,15 @@ interface CodexBuiltInModel {
   defaultReasoningEffort: string;
 }
 
-// Keeps PaperPilot's picker on the current recommended GPT-5.6 models.
+// Keeps PaperPilot's picker on the current recommended Codex models.
 // Unknown or retired saved values normalize to the default model below.
 const CODEX_BUILT_IN_MODEL_CATALOG: CodexBuiltInModel[] = [
+  {
+    slug: "gpt-6-astra",
+    displayName: "GPT-6-Astra",
+    reasoningEfforts: ["low", "medium", "high", "xhigh", "max", "ultra"],
+    defaultReasoningEffort: "medium",
+  },
   {
     slug: "gpt-5.6-sol",
     displayName: "GPT-5.6-Sol",
@@ -39,7 +45,7 @@ const CODEX_BUILT_IN_MODEL_CATALOG: CodexBuiltInModel[] = [
   },
 ];
 
-const CODEX_DEFAULT_MODEL = CODEX_BUILT_IN_MODEL_CATALOG[0].slug;
+export const CODEX_DEFAULT_MODEL = CODEX_BUILT_IN_MODEL_CATALOG[0].slug;
 const CODEX_DEFAULT_REASONING_EFFORT = "medium";
 
 function findCodexBuiltInModel(slug: string) {
