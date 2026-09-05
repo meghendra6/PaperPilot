@@ -1,3 +1,4 @@
+import { config } from "../../package.json";
 import { getString } from "../utils/locale";
 import { getPref, setPref } from "../utils/prefs";
 import { normalizeResponseLanguage } from "./translation/responseLanguage";
@@ -30,7 +31,7 @@ export async function registerPrefsScripts(_window: Window) {
 
 function syncResponseLanguagePreference(doc: Document) {
   const select = doc.querySelector<HTMLSelectElement>(
-    "#zotero-prefpane-__addonRef__-input-response-language",
+    `#zotero-prefpane-${config.addonRef}-input-response-language`,
   );
   const normalized = normalizeResponseLanguage(getPref("responseLanguage"));
   if (getPref("responseLanguage") !== normalized) {

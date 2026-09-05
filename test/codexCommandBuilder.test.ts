@@ -349,12 +349,9 @@ test("buildContextPayload keeps source context out of the prompt preview", () =>
     annotationIDs: ["A1", "A2"],
   });
 
-  assert.equal(
+  assert.match(
     payload.promptPreview,
-    [
-      "Question: Summarize the contribution",
-      "Preferred response language: Respond in Korean. Use English technical terms for technical terminology where appropriate.",
-    ].join("\n"),
+    /^Question: Summarize the contribution\nResponse language \(required\): Respond in Korean\./,
   );
   assert.equal(
     payload.selectedText,

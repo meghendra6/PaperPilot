@@ -728,3 +728,16 @@ After running mastery and one or more workbench tools (research brief, contribut
   applying them, navigate review panels, open existing artifacts, and close/reopen
   the window. Confirm that split modules preserve controls, cancellation, evidence
   navigation, compact layout, and stale-view protection.
+
+## Response language in analysis
+
+- Open settings and choose Korean. Close and reopen settings; Korean must remain
+  selected. Start a new Critical Read step with an English paper and English reader
+  input. Verify summaries, findings, questions, and limitations are Korean prose.
+- Repeat the Methodology Audit in Research Workspace and another structured action
+  such as Research Brief. Check generated prose, including expanded details, uses
+  Korean while exact evidence quotes, original titles, and machine identifiers stay
+  unchanged.
+- Repeat with Chinese and English, including a provider switch. The newly selected
+  language must apply to the next request; existing saved results are not translated
+  automatically. Restore the original preference after the checks.
