@@ -891,6 +891,9 @@ release 자체가 만들어졌다는 사실만으로 이 gate를 통과시키지
 구현 교차 리뷰에서 추가 발견한 저장 실패 중복 turn, 오래된 source 쓰기,
 protocol 변경 후 stale 미전파, 준비 중 취소 후 spawn, legacy 폴더 정리,
 source fingerprint 없는 native resume도 회귀 검사와 함께 수정했다.
+최종 merge 전 독립 리뷰에서 발견한 provider 내부 실패의 잘못된 성공 처리,
+중단 복원 후 native resume, source 갱신 중 CAS 재시도, 여러 PDF에서 discovery
+입력 누락도 각각 재현·회귀 검사·교차 리뷰를 거쳐 수정했다.
 
 | 요구 | 구현 경로                                                                                                | 주요 검증 / 남은 실환경 범위                                                                                            |
 | ---- | -------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
@@ -910,7 +913,7 @@ source fingerprint 없는 native resume도 회귀 검사와 함께 수정했다.
 
 ### 자동 검사와 실제 실행의 구분
 
-- 구현 후보 전체 Node suite: **925 pass, 0 fail, 0 skip**. 최종 전달 시 추가
+- 구현 후보 전체 Node suite: **935 pass, 0 fail, 0 skip**. 최종 전달 시 추가
   회귀와 required CI 결과를 함께 확인한다.
 - TypeScript source/test 검사 통과. Read-only lint gate는 오류 0이며 기존 및
   새 코드의 non-null assertion 경고를 성공과 구분해 기록한다.

@@ -276,12 +276,18 @@ export class ResearchWorkspaceProjectController {
       let contentChanged = false;
       for (let attempt = 0; attempt < 3; attempt += 1) {
         const current = await this.repository.getSource(paper.sourceID);
+        // A notifier may have refreshed this source during an earlier CAS attempt.
+        // Revalidate the captured PDF against the current file before every retry.
+        await this.validateSource?.(paper);
         contentChanged = Boolean(
           current?.source.contentFingerprint?.value &&
             current.source.contentFingerprint.value !==
               paper.contentFingerprint.value,
         );
-        if (contentChanged) await invalidateAffectedProjects();
+        if (contentChanged) {
+          await invalidateAffectedProjects();
+          await this.validateSource?.(paper);
+        }
         try {
           await this.repository.putSource(
             researchWorkspaceSourceRecordFromPaper(paper, this.now()),
@@ -614,6 +620,7 @@ export class ResearchWorkspaceProjectController {
     // Source first, durable binding second, member last. Recovery replays the last
     // step from the binding without re-extracting or making library writes.
     const current = await this.repository.getSource(params.paper.sourceID);
+    await this.validateSource?.(params.paper);
     const changedSource =
       current?.source.contentFingerprint?.value !==
       params.paper.contentFingerprint.value;
@@ -630,6 +637,7 @@ export class ResearchWorkspaceProjectController {
         });
     };
     await invalidate();
+    await this.validateSource?.(params.paper);
     await this.repository.putSource(
       researchWorkspaceSourceRecordFromPaper(params.paper, this.now()),
       current?.revision,

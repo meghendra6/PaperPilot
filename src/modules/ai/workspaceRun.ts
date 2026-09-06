@@ -48,7 +48,11 @@ export interface WorkspaceRunProgress {
   diagnosticOutput: string;
   parsedOutput: string;
   completed: boolean;
+  /** Effective outcome; provider failure cannot be successful OS exit 0. */
   exitCode: string;
+  /** Original exit-code file value, retained for diagnostics. */
+  processExitCode?: string;
+  providerFailed?: boolean;
 }
 
 export function getWorkspaceEngineLabel(mode: EngineMode) {
@@ -316,18 +320,41 @@ export async function readWorkspaceRunProgress(
     exitCodePath: string;
   },
 ): Promise<WorkspaceRunProgress> {
+  let progress: WorkspaceRunProgress;
   if (mode === "claude_code") {
     const { readClaudeRunProgress } = await import("../claude/runner");
-    return readClaudeRunProgress(paths);
-  }
-
-  if (mode === "gemini_cli") {
+    progress = await readClaudeRunProgress(paths);
+  } else if (mode === "gemini_cli") {
     const { readGeminiRunProgress } = await import("../gemini/runner");
-    return readGeminiRunProgress(paths);
+    progress = await readGeminiRunProgress(paths);
+  } else {
+    const { readCodexRunProgress } = await import("../codex/runner");
+    progress = await readCodexRunProgress(paths);
   }
-
-  const { readCodexRunProgress } = await import("../codex/runner");
-  return readCodexRunProgress(paths);
+  // Every non-chat consumer checks this shared outcome before writing artifacts.
+  // Keep partial output in raw diagnostics; never expose it as a valid result
+  // after the provider rejects the turn or finishes without an assistant answer.
+  const invalidSuccess =
+    progress.completed &&
+    progress.exitCode === "0" &&
+    (progress.providerFailed || !progress.parsedOutput.trim());
+  return {
+    ...progress,
+    processExitCode: progress.exitCode,
+    ...(invalidSuccess
+      ? {
+          exitCode: progress.providerFailed
+            ? "provider-failed"
+            : "empty-output",
+          parsedOutput: "",
+          diagnosticOutput:
+            progress.diagnosticOutput ||
+            (progress.providerFailed
+              ? "The provider reported a failed turn."
+              : "The provider returned no assistant answer."),
+        }
+      : {}),
+  };
 }
 
 export function extractWorkspaceRunText(

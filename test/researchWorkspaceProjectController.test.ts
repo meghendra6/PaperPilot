@@ -9,7 +9,10 @@ import {
 } from "../src/modules/researchWorkspace/memberState";
 import { createProjectOperationAdmission } from "../src/modules/researchWorkspace/operationInputs";
 import type { ResearchWorkspacePaper } from "../src/modules/researchWorkspace/paperSource";
-import type { ResearchWorkspaceFileOps } from "../src/modules/researchWorkspace/persistence/contracts";
+import {
+  ResearchWorkspaceRevisionConflictError,
+  type ResearchWorkspaceFileOps,
+} from "../src/modules/researchWorkspace/persistence/contracts";
 import { ResearchWorkspaceProjectRepository } from "../src/modules/researchWorkspace/persistence/projectRepository";
 import {
   ResearchWorkspaceProjectController,
@@ -948,3 +951,79 @@ test("rejecting a stale captured batch cannot roll back durable source fingerpri
     "complete",
   );
 });
+
+for (const operation of ["add-papers", "bind-candidate"] as const)
+  test(`source refresh during ${operation} CAS cannot be overwritten by stale captured content`, async () => {
+    const { projects, repository } = setup();
+    const captured = paper("A", "old");
+    await projects.createProject(
+      { projectID: "source-cas", name: "CAS race" },
+      [captured],
+    );
+    if (operation === "bind-candidate")
+      await projects.saveCandidate({
+        projectID: "source-cas",
+        candidateID: "candidate-cas",
+        metadata: { title: "Paper" },
+        provenance: { kind: "manual" },
+      });
+    let actual = "old";
+    let validations = 0;
+    let interleave = true;
+    const guarded = new ResearchWorkspaceProjectController(repository, {
+      validateSource: async (source) => {
+        validations++;
+        if (source.contentFingerprint.value !== actual)
+          throw new Error("The captured PDF changed");
+      },
+    });
+    const putSource = repository.putSource.bind(repository);
+    repository.putSource = async (record, revision) => {
+      if (interleave) {
+        interleave = false;
+        actual = "new";
+        const current = await repository.getSource(captured.sourceID);
+        assert(current);
+        await putSource(
+          researchWorkspaceSourceRecordFromPaper(paper("A", "new"), new Date()),
+          current.revision,
+        );
+      }
+      return putSource(record, revision);
+    };
+    const execute = async () => {
+      if (operation === "add-papers")
+        return guarded.addPapers("source-cas", [captured]);
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          return await guarded.bindCandidate({
+            projectID: "source-cas",
+            candidateID: "candidate-cas",
+            paper: captured,
+          });
+        } catch (error) {
+          if (
+            !(error instanceof ResearchWorkspaceRevisionConflictError) ||
+            attempt === 2
+          )
+            throw error;
+        }
+      }
+      throw new Error("Candidate CAS retry limit exceeded");
+    };
+    await assert.rejects(execute, /captured PDF changed/);
+    assert.equal(
+      (await repository.getSource(captured.sourceID))?.source.contentFingerprint
+        ?.value,
+      "new",
+    );
+    assert(
+      validations >= 2,
+      "every CAS retry must validate its captured source again",
+    );
+    if (operation === "bind-candidate")
+      assert.equal(
+        (await repository.getCandidates("source-cas")).candidates[0].binding,
+        undefined,
+      );
+  });

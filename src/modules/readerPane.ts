@@ -1287,9 +1287,17 @@ export function registerPaperPilotPaneSection() {
                     abortController,
                   );
                   try {
+                    const requestContext = await captureRequestContext({
+                      itemID: item.id,
+                      reader: await ztoolkit.Reader.getReader().catch(
+                        () => undefined,
+                      ),
+                      selectedText: "",
+                    });
                     await generateRelatedPaperGroups({
                       itemID: item.id,
                       itemTitle: String(item.getField("title") || ""),
+                      requestContext,
                       concern: {
                         origin: "user_text",
                         text:
@@ -2446,9 +2454,15 @@ export function registerPaperPilotPaneSection() {
           };
           let reservationOwned = false;
           try {
+            const requestContext = await captureRequestContext({
+              itemID: item.id,
+              reader: await ztoolkit.Reader.getReader().catch(() => undefined),
+              selectedText: "",
+            });
             await generateRelatedPaperGroups({
               itemID: item.id,
               itemTitle: item.getField("title"),
+              requestContext,
               concern: submission.concern
                 ? {
                     text: submission.concern,
@@ -4275,9 +4289,17 @@ function renderRelatedRecommendationState(
             });
             rerender();
             try {
+              const requestContext = await captureRequestContext({
+                itemID,
+                reader: await ztoolkit.Reader.getReader().catch(
+                  () => undefined,
+                ),
+                selectedText: "",
+              });
               const insight = await generatePublicReviewInsight({
                 itemID,
                 itemTitle: currentPaperTitle,
+                requestContext,
                 paper: target,
                 signal: abortController.signal,
                 onStatus: (message) => {

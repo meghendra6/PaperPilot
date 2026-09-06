@@ -352,8 +352,9 @@ that document boundary.
    invokes its state/persistence callback before releasing the direct
    reservation, and a rejected reservation invokes no workflow persistence
    callback.
-   If preparation throws after creating a stable workspace, the controller or
-   direct-run dispatcher computes that same path and applies configured cleanup.
+   If preparation throws after workspace allocation, the controller or direct-run
+   dispatcher cleans the recorded allocated path using its owned-file manifest.
+   It does not reconstruct legacy directories from mutable paper titles.
 
 Failures are classified in `ai/runFailure.ts`. Workspace and timeout sources
 take precedence over string matching; executable and login patterns cover all
@@ -362,7 +363,11 @@ events, never the full stdout/tool-event stream. Session history stores the safe
 keeps raw stderr only in `rawEvent`, which the run card exposes under a collapsed
 Raw logs disclosure. Direct workspace workflows likewise derive visible text
 only from parsed stdout; a non-zero exit without parsed stdout becomes a generic
-workflow error instead of exposing stderr. `ui/runProgressCard.ts` renders the
+workflow error instead of exposing stderr. The shared dispatcher also rejects a
+provider-declared failed turn or empty assistant output even when the process
+exit code is zero; `processExitCode` retains the physical exit value while the
+effective `exitCode` prevents every artifact consumer from accepting a partial
+result. `ui/runProgressCard.ts` renders the
 same progress, cancel, retry, settings, and login-help surface for every engine.
 Only normal chat turns enter `addon.data.lastEngineRequests`; silent Workbench
 Paper Mastery, and Critical Read runs continue to use their own workflow buttons.
@@ -674,7 +679,7 @@ A chat workspace is keyed by item and PaperPilot session identity, independently
 
 Chat answers use an explicitly discriminated envelope described in [prompt-contracts.md](./prompt-contracts.md). Citation candidates are locally matched against the exact PDF and rechecked on navigation. A match establishes a location, not a truth judgment. Public links activate only after an explicit click; local and privileged schemes are not enabled. Notes and project comparison questions have destination/content previews and explicit write actions. Chat notes include the original question, answer, source, citation statuses, and conversation/message provenance.
 
-The existing history preference controls the expanded records. Full history can persist assistant text, citations, pins and summaries. Prompts-only excludes assistant-derived records; off writes no automatic history. Drafts are memory-only in every mode. This does not delete external CLI history. Legacy records migrate additively; pending attempts become interrupted after restart. Unknown future or malformed snapshots are not silently rewritten.
+The existing history preference controls the expanded records. Full history can persist assistant text, citations, pins and summaries. Prompts-only excludes assistant-derived records; off writes no automatic history. Drafts are memory-only in every mode. This does not delete external CLI history. Legacy records migrate additively; pending attempts become interrupted after restart and invalidate the affected native provider binding. Unknown future or malformed snapshots are not silently rewritten.
 
 ## Durable project intake and run validity
 

@@ -6,6 +6,8 @@ import {
   restoreMessageRecords,
 } from "../src/modules/message/messageStore";
 import { sessionStore } from "../src/modules/session/sessionStore";
+import { applySessionSnapshot } from "../src/modules/session/sessionSnapshot";
+import { getVerifiedProviderResume } from "../src/modules/session/providerBinding";
 import {
   SESSION_HISTORY_STORAGE_VERSION,
   type SessionHistoryFileOps,
@@ -1911,3 +1913,107 @@ test("SessionHistoryService.persistAssistantTurn with suppressMessage skips mess
     globals.restore();
   }
 });
+
+for (const mode of ["codex_cli", "claude_code", "gemini_cli"] as const)
+  test(`restoring interrupted ${mode} context invalidates only its native binding`, () => {
+    const globals = installGlobals({ privacySavePromptsOnly: false });
+    const modes = ["codex_cli", "claude_code", "gemini_cli"] as const;
+    try {
+      for (const state of ["pending", "running", "finishing"] as const) {
+        const snapshot: SessionHistorySnapshot = {
+          storageVersion: SESSION_HISTORY_STORAGE_VERSION,
+          sessionId: `restore-${mode}-${state}`,
+          paperItemID: 8801,
+          title: "Chat",
+          createdAt: "2026-09-07T00:00:00.000Z",
+          updatedAt: "2026-09-07T00:00:00.000Z",
+          lastMode: mode,
+          lastCodexSessionID: "codex-session-123",
+          lastClaudeSessionID: "claude-session-123",
+          lastGeminiSessionID: "gemini-session-123",
+          providerBindings: {},
+          messages: [
+            {
+              id: "next-user",
+              role: "user",
+              text: "Pending question",
+              sourceMode: mode,
+              status: "done",
+              createdAt: "2026-09-07T00:00:00.000Z",
+              turnId: "next-turn",
+              attempts: [
+                {
+                  id: "next-attempt",
+                  turnId: "next-turn",
+                  ordinal: 1,
+                  state,
+                  startedAt: "2026-09-07T00:00:00.000Z",
+                },
+              ],
+            },
+          ],
+        };
+        assert(snapshot.providerBindings);
+        for (const engine of modes)
+          snapshot.providerBindings[engine] = {
+            engine,
+            sessionId:
+              engine === "codex_cli"
+                ? snapshot.lastCodexSessionID
+                : engine === "claude_code"
+                  ? snapshot.lastClaudeSessionID
+                  : snapshot.lastGeminiSessionID,
+            status: "verified",
+            sourceID: "zotero:1:PAPER:PDF",
+            sourceFingerprint: "fingerprint",
+            paperpilotSessionId: snapshot.sessionId,
+          };
+        const restored = applySessionSnapshot(snapshot);
+        assert.equal(
+          messageStore.listRaw(snapshot.sessionId)[0].attempts?.[0].state,
+          "interrupted",
+        );
+        assert.equal(
+          getVerifiedProviderResume(
+            restored,
+            mode,
+            "zotero:1:PAPER:PDF",
+            "fingerprint",
+          ),
+          undefined,
+        );
+        assert.equal(restored.providerBindings?.[mode]?.status, "unavailable");
+        assert.equal(restored.providerBindings?.[mode]?.sessionId, undefined);
+        for (const engine of modes.filter((engine) => engine !== mode))
+          assert(
+            getVerifiedProviderResume(
+              restored,
+              engine,
+              "zotero:1:PAPER:PDF",
+              "fingerprint",
+            ),
+          );
+        assert.equal(
+          snapshot.providerBindings?.[mode]?.status,
+          "verified",
+          "restore must not mutate the saved snapshot object",
+        );
+        const pendingMessage = snapshot.messages?.[0];
+        assert(pendingMessage?.attempts);
+        pendingMessage.attempts[0].state = "completed";
+        const completed = applySessionSnapshot(snapshot);
+        assert(
+          getVerifiedProviderResume(
+            completed,
+            mode,
+            "zotero:1:PAPER:PDF",
+            "fingerprint",
+          ),
+          "a fully completed conversation retains its verified native binding",
+        );
+        messageStore.clear(snapshot.sessionId);
+      }
+    } finally {
+      globals.restore();
+    }
+  });

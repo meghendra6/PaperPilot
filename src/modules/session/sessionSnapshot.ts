@@ -608,6 +608,20 @@ export function applySessionSnapshot(
   snapshot: SessionHistorySnapshot,
 ): PaperSession {
   const data = getAddonData();
+  const interruptedEngines = new Set<EngineMode>();
+  for (const message of snapshot.messages ?? []) {
+    if (
+      !message.attempts?.some((attempt) =>
+        ["pending", "running", "finishing"].includes(attempt.state),
+      )
+    )
+      continue;
+    const mode = message.request?.executionSettings?.mode ?? message.sourceMode;
+    if (mode) interruptedEngines.add(mode);
+    else
+      for (const engine of ["codex_cli", "claude_code", "gemini_cli"] as const)
+        interruptedEngines.add(engine);
+  }
 
   messageStore.replace(
     snapshot.sessionId,
@@ -670,7 +684,7 @@ export function applySessionSnapshot(
     data.modeOverrides?.set(snapshot.paperItemID, snapshot.lastMode);
   }
 
-  return {
+  const session: PaperSession = {
     sessionId: snapshot.sessionId,
     itemID: snapshot.paperItemID,
     mode: snapshot.lastMode || "codex_cli",
@@ -710,4 +724,20 @@ export function applySessionSnapshot(
       ? { providerBindings: cloneValue(snapshot.providerBindings) }
       : {}),
   };
+  // The CLI may have consumed an interrupted turn that never reached our saved
+  // transcript. Its previous binding is no longer verified for native resume.
+  const sessionIDKey = {
+    codex_cli: "lastCodexSessionID",
+    claude_code: "lastClaudeSessionID",
+    gemini_cli: "lastGeminiSessionID",
+  } as const;
+  for (const engine of interruptedEngines) {
+    delete session[sessionIDKey[engine]];
+    const binding = session.providerBindings?.[engine];
+    if (binding) {
+      binding.status = "unavailable";
+      delete binding.sessionId;
+    }
+  }
+  return session;
 }
