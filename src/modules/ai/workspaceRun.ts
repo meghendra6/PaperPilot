@@ -1,7 +1,12 @@
 import { isClaudeRunActiveForItem } from "../claude/runState";
 import { isCodexRunActiveForItem } from "../codex/runState";
 import { isGeminiRunActiveForItem } from "../gemini/runState";
-import { cleanupPaperWorkspaceForItemIfEnabled } from "../workspace/cleanup";
+import { cleanupWorkspaceIfEnabled } from "../workspace/cleanup";
+import type {
+  PrebuiltWorkspaceInput,
+  RequestContextSnapshot,
+  RunTimings,
+} from "../context/requestContext";
 import type { WorkspaceSupplementalFiles } from "../workspace/supplementalFiles";
 import type { ExecutionSettings } from "./executionSettings";
 import { stopDetachedRunProcess } from "./runCompletion";
@@ -27,6 +32,8 @@ export interface WorkspaceRunResult {
   exitCodePath: string;
   pidPath: string;
   processId?: string;
+  requestContext?: RequestContextSnapshot;
+  timings?: RunTimings;
 }
 
 export interface FailedWorkspaceRun {
@@ -41,7 +48,11 @@ export interface WorkspaceRunProgress {
   diagnosticOutput: string;
   parsedOutput: string;
   completed: boolean;
+  /** Effective outcome; provider failure cannot be successful OS exit 0. */
   exitCode: string;
+  /** Original exit-code file value, retained for diagnostics. */
+  processExitCode?: string;
+  providerFailed?: boolean;
 }
 
 export function getWorkspaceEngineLabel(mode: EngineMode) {
@@ -117,6 +128,8 @@ export async function startWorkspaceTextRun(params: {
   profile: Exclude<RunProfile, "chat">;
   outputSchema?: StructuredOutputSchema;
   workspaceFiles?: WorkspaceSupplementalFiles;
+  prebuiltInput?: PrebuiltWorkspaceInput;
+  requestContext?: RequestContextSnapshot;
   executionSettings?: ExecutionSettings;
   requiredDiscoveryCapabilities?: import("../discovery/types").DiscoveryCapabilities;
   signal?: AbortSignal;
@@ -153,6 +166,22 @@ export async function startWorkspaceTextRun(params: {
     throw new Error(interruptionMessage());
   }
 
+  const shouldContinue = () =>
+    !owner.isShuttingDown() &&
+    isDirectWorkspaceRunClaimCurrent(
+      params.reservationItemID,
+      params.reservationToken,
+    ) &&
+    !params.signal?.aborted &&
+    (params.deadline === undefined || Date.now() < params.deadline);
+  let allocatedPath: string | undefined;
+  const onWorkspaceAllocated = (path: string) => {
+    allocatedPath = path;
+  };
+  const cleanupAllocated = () =>
+    allocatedPath
+      ? cleanupWorkspaceIfEnabled(allocatedPath)
+      : Promise.resolve(false);
   const prepare = async () => {
     let result: WorkspaceRunResult | FailedWorkspaceRun;
     if (params.mode === "claude_code") {
@@ -165,6 +194,10 @@ export async function startWorkspaceTextRun(params: {
         profile: params.profile,
         outputSchema: params.outputSchema,
         workspaceFiles: params.workspaceFiles,
+        prebuiltInput: params.prebuiltInput,
+        requestContext: params.requestContext,
+        onWorkspaceAllocated,
+        shouldContinue,
         executionSettings: params.executionSettings,
       });
     } else if (params.mode === "gemini_cli") {
@@ -177,6 +210,10 @@ export async function startWorkspaceTextRun(params: {
         profile: params.profile,
         outputSchema: params.outputSchema,
         workspaceFiles: params.workspaceFiles,
+        prebuiltInput: params.prebuiltInput,
+        requestContext: params.requestContext,
+        onWorkspaceAllocated,
+        shouldContinue,
         executionSettings: params.executionSettings,
       });
     } else {
@@ -201,6 +238,10 @@ export async function startWorkspaceTextRun(params: {
         profile: params.profile,
         outputSchema: params.outputSchema,
         workspaceFiles: params.workspaceFiles,
+        prebuiltInput: params.prebuiltInput,
+        requestContext: params.requestContext,
+        onWorkspaceAllocated,
+        shouldContinue,
         executionSettings: params.executionSettings,
       });
     }
@@ -208,6 +249,7 @@ export async function startWorkspaceTextRun(params: {
     return result;
   };
   const preparation = (params.prepareRun || prepare)().then((result) => {
+    allocatedPath = result.workspacePath;
     if (result.ok) owner.registerProcess(params.mode, result.processId);
     return result;
   });
@@ -247,18 +289,10 @@ export async function startWorkspaceTextRun(params: {
               requireProcessId: true,
             });
           }
-          await cleanupPaperWorkspaceForItemIfEnabled({
-            itemID: params.itemID,
-            title: params.title,
-            profile: params.profile,
-          });
+          await cleanupAllocated();
         },
         async () => {
-          await cleanupPaperWorkspaceForItemIfEnabled({
-            itemID: params.itemID,
-            title: params.title,
-            profile: params.profile,
-          });
+          await cleanupAllocated();
         },
       );
       if (params.onDeferredCleanup) {
@@ -267,11 +301,7 @@ export async function startWorkspaceTextRun(params: {
         await deferredCleanup;
       }
     } else {
-      await cleanupPaperWorkspaceForItemIfEnabled({
-        itemID: params.itemID,
-        title: params.title,
-        profile: params.profile,
-      });
+      await cleanupAllocated();
     }
     throw error;
   } finally {
@@ -290,18 +320,41 @@ export async function readWorkspaceRunProgress(
     exitCodePath: string;
   },
 ): Promise<WorkspaceRunProgress> {
+  let progress: WorkspaceRunProgress;
   if (mode === "claude_code") {
     const { readClaudeRunProgress } = await import("../claude/runner");
-    return readClaudeRunProgress(paths);
-  }
-
-  if (mode === "gemini_cli") {
+    progress = await readClaudeRunProgress(paths);
+  } else if (mode === "gemini_cli") {
     const { readGeminiRunProgress } = await import("../gemini/runner");
-    return readGeminiRunProgress(paths);
+    progress = await readGeminiRunProgress(paths);
+  } else {
+    const { readCodexRunProgress } = await import("../codex/runner");
+    progress = await readCodexRunProgress(paths);
   }
-
-  const { readCodexRunProgress } = await import("../codex/runner");
-  return readCodexRunProgress(paths);
+  // Every non-chat consumer checks this shared outcome before writing artifacts.
+  // Keep partial output in raw diagnostics; never expose it as a valid result
+  // after the provider rejects the turn or finishes without an assistant answer.
+  const invalidSuccess =
+    progress.completed &&
+    progress.exitCode === "0" &&
+    (progress.providerFailed || !progress.parsedOutput.trim());
+  return {
+    ...progress,
+    processExitCode: progress.exitCode,
+    ...(invalidSuccess
+      ? {
+          exitCode: progress.providerFailed
+            ? "provider-failed"
+            : "empty-output",
+          parsedOutput: "",
+          diagnosticOutput:
+            progress.diagnosticOutput ||
+            (progress.providerFailed
+              ? "The provider reported a failed turn."
+              : "The provider returned no assistant answer."),
+        }
+      : {}),
+  };
 }
 
 export function extractWorkspaceRunText(

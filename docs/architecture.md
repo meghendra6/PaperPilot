@@ -352,8 +352,9 @@ that document boundary.
    invokes its state/persistence callback before releasing the direct
    reservation, and a rejected reservation invokes no workflow persistence
    callback.
-   If preparation throws after creating a stable workspace, the controller or
-   direct-run dispatcher computes that same path and applies configured cleanup.
+   If preparation throws after workspace allocation, the controller or direct-run
+   dispatcher cleans the recorded allocated path using its owned-file manifest.
+   It does not reconstruct legacy directories from mutable paper titles.
 
 Failures are classified in `ai/runFailure.ts`. Workspace and timeout sources
 take precedence over string matching; executable and login patterns cover all
@@ -362,7 +363,11 @@ events, never the full stdout/tool-event stream. Session history stores the safe
 keeps raw stderr only in `rawEvent`, which the run card exposes under a collapsed
 Raw logs disclosure. Direct workspace workflows likewise derive visible text
 only from parsed stdout; a non-zero exit without parsed stdout becomes a generic
-workflow error instead of exposing stderr. `ui/runProgressCard.ts` renders the
+workflow error instead of exposing stderr. The shared dispatcher also rejects a
+provider-declared failed turn or empty assistant output even when the process
+exit code is zero; `processExitCode` retains the physical exit value while the
+effective `exitCode` prevents every artifact consumer from accepting a partial
+result. `ui/runProgressCard.ts` renders the
 same progress, cancel, retry, settings, and login-help surface for every engine.
 Only normal chat turns enter `addon.data.lastEngineRequests`; silent Workbench
 Paper Mastery, and Critical Read runs continue to use their own workflow buttons.
@@ -661,3 +666,25 @@ language. Preference changes notify open reader panes through
 `translation/responseLanguage.ts`, with subscriptions disposed with the pane and
 unsent Critical Read input preserved during the language refresh. This does not
 regenerate saved AI prose or translate verbatim paper evidence.
+
+## Chat request identity and continuity
+
+Ordinary chat captures one `RequestContextSnapshot` before persistence. It records the exact library, parent item, PDF attachment, fingerprint, selection, page and resolved annotation quote/comment. All three engines read that snapshot through `context/requestContext.ts`; a removed/replaced source fails closed. Project operations use an admitted `PrebuiltWorkspaceInput` with explicit source IDs and never recover a parent paper as hidden fallback input.
+
+A chat workspace is keyed by item and PaperPilot session identity, independently of the editable thread title. Non-chat runs have unique directories. `workspace/supplementalFiles.ts` records and replaces owned inputs with a manifest. Only previously owned input files are removed; unknown legacy/user files are not broadly deleted. Full paper files remain available; the [retrieval evaluation](./chat-context-evaluation.md) did not justify narrowing the default context.
+
+`ui/chatAdmission.ts` retains a stable submitted identity across rejected session/index writes; changing the recovered draft discards that association. `session/providerBinding.ts` requires the observed provider ID, PaperPilot session, exact source and fingerprint to match before native resume. User messages own immutable request snapshots and numbered execution attempts. Retry creates another attempt on the original question. Edit creates a separate conversation before the edited question; branching includes history through the selected completed answer. Provider session IDs are not copied to branches, and only an actual emitted provider ID can be resumed. A provider without a confirmed binding starts fresh with privacy-eligible PaperPilot continuity: user pins, a valid source-bound summary, and recent completed turns within 24,000 characters.
+
+`ui/chatDraft.ts` keeps revisioned drafts in memory per item/session. Admission consumes only its captured revision; a preparation failure restores it only if the user has not begun another draft. Silent workbench actions pass an independent question rather than replacing the textarea. Busy state allows typing while continuing to block a second run. Transcript windowing supports message-ID navigation and preserves the reader's anchor when not following the latest output.
+
+Chat answers use an explicitly discriminated envelope described in [prompt-contracts.md](./prompt-contracts.md). Citation candidates are locally matched against the exact PDF and rechecked on navigation. A match establishes a location, not a truth judgment. Public links activate only after an explicit click; local and privileged schemes are not enabled. Notes and project comparison questions have destination/content previews and explicit write actions. Chat notes include the original question, answer, source, citation statuses, and conversation/message provenance.
+
+The existing history preference controls the expanded records. Full history can persist assistant text, citations, pins and summaries. Prompts-only excludes assistant-derived records; off writes no automatic history. Drafts are memory-only in every mode. This does not delete external CLI history. Legacy records migrate additively; pending attempts become interrupted after restart and invalidate the affected native provider binding. Unknown future or malformed snapshots are not silently rewritten.
+
+## Durable project intake and run validity
+
+Projects can reopen and choose a batch from their saved members without a current library selection. Home/catalog rendering precedes optional extraction. Candidate metadata is stored separately from included paper sources in `candidates-v1.json`: discovery/manual intake does not invent a PDF identity. Linking an existing bibliographic item and binding a specific PDF are separate explicit steps. The candidate lifecycle includes recoverable writes, export and project deletion.
+
+Screening decisions, reading progress and understanding are independent. Screening events remain immutable; legacy states are preserved without inventing reading progress. Shared admission helpers exclude screened-out members across model and derived operations.
+
+Run reuse includes an operation-input fingerprint over the question, columns, screening protocol, scope, schema/parser version and supplied upstream artifacts. Every supplied artifact participates in lineage. A semantic change invalidates reuse; reading progress alone does not. Membership and source fingerprints are checked at admission and before saving current results. Context coverage reports source characters separately from serialization overhead and redistributes spare quota from short papers.

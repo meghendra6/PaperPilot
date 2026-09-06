@@ -52,6 +52,11 @@ import {
 import { RUN_TIMEOUT_MS } from "./ai/runProgress";
 import { parseFirstJsonObject } from "./ai/jsonCandidates";
 import { normalizeIdentityTitle } from "./researchWorkspace/identity";
+import {
+  assertRequestContextCurrent,
+  captureRequestContext,
+  type RequestContextSnapshot,
+} from "./context/requestContext";
 
 declare const Zotero: any;
 
@@ -652,6 +657,7 @@ export async function getLibraryItemCandidates(libraryID: number) {
 export async function generateRelatedPaperGroups(params: {
   itemID: number;
   itemTitle: string;
+  requestContext?: RequestContextSnapshot;
   concern?: ResearchConcern;
   signal?: AbortSignal;
   onReserved?: () => void;
@@ -696,6 +702,9 @@ export async function generateRelatedPaperGroups(params: {
       }
       return current;
     };
+    const requestContext =
+      params.requestContext ??
+      (await captureRequestContext({ itemID: params.itemID }));
     params.onStatus?.("Understanding the research question");
     const seedQueries = buildStructuredSeedQueries({
       title: params.itemTitle,
@@ -760,10 +769,12 @@ export async function generateRelatedPaperGroups(params: {
       .filter(Boolean)
       .join("\n");
     params.onStatus?.("Searching scholarly sources");
+    await assertRequestContextCurrent(requestContext);
 
     const result = await startWorkspaceTextRun({
       mode,
       itemID: params.itemID,
+      requestContext,
       reservationItemID: params.itemID,
       reservationToken,
       title: params.itemTitle,
@@ -906,6 +917,7 @@ export async function generateRelatedPaperGroups(params: {
 export async function generatePublicReviewInsight(params: {
   itemID: number;
   itemTitle: string;
+  requestContext?: RequestContextSnapshot;
   paper: RecommendedPaper;
   onStatus?: (status: string) => void;
   signal?: AbortSignal;
@@ -933,10 +945,15 @@ export async function generatePublicReviewInsight(params: {
     const { sessionStore } = await import("./session/sessionStore");
     const { cleanupWorkspaceIfEnabled } = await import("./workspace/cleanup");
     const session = sessionStore.touch(params.itemID, mode, params.itemTitle);
+    const requestContext =
+      params.requestContext ??
+      (await captureRequestContext({ itemID: params.itemID }));
     params.onStatus?.("Reading public reviews…");
+    await assertRequestContextCurrent(requestContext);
     const result = await startWorkspaceTextRun({
       mode,
       itemID: params.itemID,
+      requestContext,
       reservationItemID: params.itemID,
       reservationToken,
       title: params.itemTitle,
@@ -968,6 +985,8 @@ export async function generatePublicReviewInsight(params: {
           getPref("responseLanguage"),
         ),
       }),
+    }).catch(() => {
+      throw new Error("Public-review analysis could not start.");
     });
     if (!result.ok) {
       await cleanupWorkspaceIfEnabled(result.workspacePath);

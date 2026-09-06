@@ -42,6 +42,7 @@ export function textInput(doc: Document, placeholder: string, value = "") {
   const node = element(doc, "input", "pprw-input");
   node.type = "text";
   node.placeholder = placeholder;
+  node.setAttribute("aria-label", placeholder);
   node.value = value;
   return node;
 }
@@ -49,6 +50,7 @@ export function textInput(doc: Document, placeholder: string, value = "") {
 export function textArea(doc: Document, placeholder: string, value = "") {
   const node = element(doc, "textarea", "pprw-input pprw-textarea");
   node.placeholder = placeholder;
+  node.setAttribute("aria-label", placeholder);
   node.value = value;
   node.rows = 7;
   return node;

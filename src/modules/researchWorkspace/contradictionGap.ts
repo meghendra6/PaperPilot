@@ -1,3 +1,4 @@
+import { isResearchWorkspaceMemberExcluded } from "./memberState";
 import {
   EVIDENCE_VERIFIER_VERSION,
   type EvidenceReferenceV2,
@@ -886,7 +887,7 @@ export function buildContradictionGapDashboard(params: {
   generatedAt: string;
 }): ContradictionGapDashboard {
   const includedSourceIDs = params.details.members
-    .filter((member) => member.reviewStatus !== "excluded")
+    .filter((member) => !isResearchWorkspaceMemberExcluded(member))
     .map((member) => member.sourceID)
     .sort();
   const includedSet = new Set(includedSourceIDs);
@@ -1045,7 +1046,7 @@ export function buildContradictionGapDashboard(params: {
     sourceIDs: [...artifact.sourceIDs].sort(),
   }));
   const excludedSources = params.details.members
-    .filter((member) => member.reviewStatus === "excluded")
+    .filter((member) => isResearchWorkspaceMemberExcluded(member))
     .map((member) => ({
       sourceID: member.sourceID,
       reason: `review-status-${member.reviewStatus}`,

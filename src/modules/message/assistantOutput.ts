@@ -11,11 +11,14 @@ const WORKSPACE_FILE_LABELS: Array<[RegExp, string]> = [
   [/\bgemini-prompt\.txt\b/gi, "the prompt"],
 ];
 
-function stripSourceLinks(text: string) {
+function stripPrivateLinks(text: string) {
   return text
-    .replace(/\[([^\]]+)\]\(((?:https?|file):\/\/[^\s)]+)\)/gi, "$1")
-    .replace(/<(?:https?|file):\/\/[^>]+>/gi, "")
-    .replace(/(?:https?|file):\/\/\S+/gi, "");
+    .replace(
+      /\[([^\]]+)\]\((?:file|javascript|zotero|chrome|resource|data):[^)]*\)/gi,
+      "$1",
+    )
+    .replace(/<(?:file|javascript|zotero|chrome|resource|data):[^>]+>/gi, "")
+    .replace(/(?:file|zotero|chrome|resource):\/\/\S+/gi, "");
 }
 
 function sanitizeProseLine(line: string) {
@@ -25,14 +28,27 @@ function sanitizeProseLine(line: string) {
     inlineCode.push(code);
     return token;
   });
-  let sanitized = stripSourceLinks(protectedLine);
+  const links: string[] = [];
+  let sanitized = stripPrivateLinks(protectedLine).replace(
+    /https?:\/\/[^\s<>\])]+/gi,
+    (url) => {
+      const token = `@@PAPERPILOT_PUBLIC_LINK_${links.length}@@`;
+      links.push(url);
+      return token;
+    },
+  );
   for (const [pattern, replacement] of WORKSPACE_FILE_LABELS) {
     sanitized = sanitized.replace(pattern, replacement);
   }
-  return sanitized.replace(
-    /@@PAPERPILOT_INLINE_CODE_(\d+)@@/g,
-    (_match, index: string) => inlineCode[Number(index)] ?? "",
-  );
+  return sanitized
+    .replace(
+      /@@PAPERPILOT_PUBLIC_LINK_(\d+)@@/g,
+      (_match, index: string) => links[Number(index)] ?? "",
+    )
+    .replace(
+      /@@PAPERPILOT_INLINE_CODE_(\d+)@@/g,
+      (_match, index: string) => inlineCode[Number(index)] ?? "",
+    );
 }
 
 export function sanitizeAssistantText(text: string) {
@@ -54,11 +70,6 @@ export function sanitizeAssistantText(text: string) {
       if (fenceMatch) {
         fence = { marker: fenceMatch[1][0], length: fenceMatch[1].length };
         return line;
-      }
-      if (
-        /^(?:sources?|source links?|references?)\s*:\s*$/i.test(line.trim())
-      ) {
-        return undefined;
       }
       return sanitizeProseLine(line);
     })

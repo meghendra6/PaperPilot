@@ -5,6 +5,7 @@ export type ReaderActionName =
   | "explain"
   | "summarize"
   | "translate"
+  | "critique"
   | "ask-ai"
   | "find-prior-work"
   | "annotation-ask"
@@ -32,6 +33,12 @@ export function buildReaderActionQuestion(
       return {
         question:
           "Summarize the selected passage in the context of this paper.",
+        autoSubmit: true,
+      };
+    case "critique":
+      return {
+        question:
+          "Critique the selected passage or this paper: distinguish supported claims, assumptions, limitations, and questions to investigate.",
         autoSubmit: true,
       };
     case "translate": {

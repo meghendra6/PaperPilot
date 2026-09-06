@@ -50,11 +50,16 @@ export function shiftChatTranscriptWindow(params: {
 }
 
 export interface ChatTranscriptWindowHandle {
+  showMessage(key: string, offset?: number): boolean;
   showLatest(): void;
   dispose(): void;
 }
 
 interface RegisteredChatTranscriptWindow {
+  isLatest(): boolean;
+  showMessage(key: string, offset?: number): boolean;
+  showLatest(): void;
+  notifyUpdate(follow: boolean): void;
   prepareAppend(): void;
   notifyAppend(wrapper: HTMLElement): void;
   dispose(): void;
@@ -69,6 +74,64 @@ function getMessageWrappers(container: Element): HTMLElement[] {
   return Array.from(
     container.querySelectorAll(".pp-message-wrapper"),
   ) as unknown as HTMLElement[];
+}
+
+export function jumpToChatMessage(
+  container: Element,
+  key: string,
+  offset = 0,
+): boolean {
+  return transcriptWindows.get(container)?.showMessage(key, offset) ?? false;
+}
+export function captureChatPosition(
+  container: HTMLElement,
+): { key: string; offset: number } | undefined {
+  const top = container.getBoundingClientRect().top;
+  const wrapper = getMessageWrappers(container).find(
+    (item) => item.getBoundingClientRect().bottom >= top,
+  );
+  return wrapper?.dataset.ppTranscriptKey
+    ? {
+        key: wrapper.dataset.ppTranscriptKey,
+        offset: wrapper.getBoundingClientRect().top - top,
+      }
+    : undefined;
+}
+export function isChatFollowingLatest(container: HTMLElement): boolean {
+  return (
+    (transcriptWindows.get(container)?.isLatest() ?? true) &&
+    container.scrollHeight - container.clientHeight - container.scrollTop <= 32
+  );
+}
+
+export function showChatLatest(container: HTMLElement): void {
+  const registered = transcriptWindows.get(container);
+  if (registered) registered.showLatest();
+  else container.scrollTop = container.scrollHeight;
+  container.parentElement?.querySelector("[data-pp-new-response]")?.remove();
+}
+function showNewResponseButton(container: HTMLElement): void {
+  const host = container.parentElement ?? container;
+  if (host.querySelector("[data-pp-new-response]")) return;
+  const button = container.ownerDocument.createElement("button");
+  button.type = "button";
+  button.className = "pp-btn pp-chat-new-response";
+  button.dataset.ppNewResponse = "true";
+  button.textContent = "New response · Jump to latest";
+  button.addEventListener("click", () => {
+    showChatLatest(container);
+    button.remove();
+  });
+  host.append(button);
+}
+export function notifyChatTranscriptUpdate(
+  container: HTMLElement,
+  wasFollowing: boolean,
+): void {
+  const registered = transcriptWindows.get(container);
+  if (registered) registered.notifyUpdate(wasFollowing);
+  else if (wasFollowing) container.scrollTop = container.scrollHeight;
+  else showNewResponseButton(container);
 }
 
 export function prepareChatTranscriptAppend(container: Element): void {
@@ -94,6 +157,12 @@ export function renderChatTranscriptWindow<T>(params: {
   windowSize?: number;
   step?: number;
 }): ChatTranscriptWindowHandle {
+  let rebuildingSelection = captureChatTextSelection(params.container);
+  // A caller may restore its scroll anchor immediately after this constructor.
+  // Keep the selection for that synchronous rebuild only, never a later user jump.
+  void Promise.resolve().then(() => {
+    rebuildingSelection = undefined;
+  });
   disposeChatTranscriptWindow(params.container);
 
   const windowSize = Math.max(
@@ -117,6 +186,7 @@ export function renderChatTranscriptWindow<T>(params: {
   let liveKey = 0;
   let suspendedBefore = range.start;
   let atLatest = true;
+  let followingOnAppend = true;
 
   const doc = params.container.ownerDocument;
   const view = doc.defaultView;
@@ -238,8 +308,21 @@ export function renderChatTranscriptWindow<T>(params: {
     if (disposed) return;
     cancelLatestScroll();
     const items = params.getItems();
-    const normalized = normalizeRange(nextRange, items.length);
-    const anchor = behavior === "preserve" ? captureAnchor() : undefined;
+    const selectedText =
+      captureChatTextSelection(params.container) ?? rebuildingSelection;
+    const normalized = normalizeRange(
+      rebuildingSelection
+        ? includeChatSelectionRange(
+            nextRange,
+            items.map(params.getKey),
+            selectedText,
+          )
+        : nextRange,
+      items.length,
+    );
+    const effectiveBehavior = rebuildingSelection ? "preserve" : behavior;
+    const anchor =
+      effectiveBehavior === "preserve" ? captureAnchor() : undefined;
     rendering = true;
     suppressScroll = true;
     params.container.replaceChildren();
@@ -274,7 +357,12 @@ export function renderChatTranscriptWindow<T>(params: {
     suspendedBefore = normalized.start;
     atLatest = normalized.end >= items.length;
     rendering = false;
-    if (behavior === "latest") {
+    restoreChatTextSelection(
+      params.container,
+      selectedText,
+      getNativeSelectionPosition(doc),
+    );
+    if (effectiveBehavior === "latest") {
       settleLatestScroll();
     } else if (!restoreAnchor(anchor)) {
       params.container.scrollTop =
@@ -287,7 +375,7 @@ export function renderChatTranscriptWindow<T>(params: {
         )
         ?.focus({ preventScroll: true });
     }
-    if (behavior === "preserve") releaseScrollSuppression();
+    if (effectiveBehavior === "preserve") releaseScrollSuppression();
   }
 
   const shift = (direction: "earlier" | "newer", fromButton = false) => {
@@ -335,10 +423,39 @@ export function renderChatTranscriptWindow<T>(params: {
   };
 
   const showLatest = () => {
+    (params.container.parentElement ?? params.container)
+      .querySelector("[data-pp-new-response]")
+      ?.remove();
     renderRange(
       getLatestChatTranscriptWindow(params.getItems().length, windowSize),
       "latest",
     );
+  };
+
+  const showMessage = (key: string, offset = 0): boolean => {
+    const items = params.getItems();
+    const index = items.findIndex((item, i) => params.getKey(item, i) === key);
+    if (index < 0) return false;
+    const start = Math.max(
+      0,
+      Math.min(index - Math.floor(windowSize / 2), items.length - windowSize),
+    );
+    renderRange(
+      { start, end: Math.min(items.length, start + windowSize) },
+      "preserve",
+    );
+    const wrapper = getMessageWrappers(params.container).find(
+      (item) => item.dataset.ppTranscriptKey === key,
+    );
+    if (!wrapper) return false;
+    params.container.scrollTop +=
+      wrapper.getBoundingClientRect().top -
+      params.container.getBoundingClientRect().top -
+      offset;
+    wrapper.setAttribute("tabindex", "-1");
+    wrapper.focus({ preventScroll: true });
+    releaseScrollSuppression();
+    return true;
   };
 
   const onScroll = () => {
@@ -369,16 +486,41 @@ export function renderChatTranscriptWindow<T>(params: {
     });
   };
 
+  const interruptFollowing = () => {
+    cancelLatestScroll();
+    suppressScroll = false;
+    lastScrollTop = params.container.scrollTop;
+  };
+  params.container.addEventListener("wheel", interruptFollowing, {
+    passive: true,
+  });
+  params.container.addEventListener("pointerdown", interruptFollowing, {
+    passive: true,
+  });
   params.container.addEventListener("scroll", onScroll, { passive: true });
 
   const registered: RegisteredChatTranscriptWindow = {
+    isLatest: () => atLatest,
+    showMessage,
+    showLatest,
+    notifyUpdate(follow) {
+      if (disposed || rendering) return;
+      if (follow && atLatest)
+        params.container.scrollTop = params.container.scrollHeight;
+      else showNewResponseButton(params.container);
+    },
     prepareAppend() {
       if (disposed || rendering) return;
-      if (!atLatest) showLatest();
+      followingOnAppend = atLatest && isChatFollowingLatest(params.container);
     },
     notifyAppend(wrapper) {
       if (disposed || rendering) return;
       wrapper.dataset.ppTranscriptKey ||= `live-${liveKey++}`;
+      if (!followingOnAppend) {
+        if (!atLatest) wrapper.remove();
+        showNewResponseButton(params.container);
+        return;
+      }
       const wrappers = getMessageWrappers(params.container);
       const overflow = Math.max(0, wrappers.length - windowSize);
       for (const oldWrapper of wrappers.slice(0, overflow)) {
@@ -401,6 +543,8 @@ export function renderChatTranscriptWindow<T>(params: {
       if (disposed) return;
       disposed = true;
       params.container.removeEventListener("scroll", onScroll);
+      params.container.removeEventListener("wheel", interruptFollowing);
+      params.container.removeEventListener("pointerdown", interruptFollowing);
       if (scrollFrame !== undefined) view?.cancelAnimationFrame(scrollFrame);
       cancelLatestScroll();
       scrollFrame = undefined;
@@ -414,7 +558,14 @@ export function renderChatTranscriptWindow<T>(params: {
   showLatest();
 
   return {
+    showMessage,
     showLatest,
     dispose: () => registered.dispose(),
   };
 }
+import {
+  captureChatTextSelection,
+  getNativeSelectionPosition,
+  includeChatSelectionRange,
+  restoreChatTextSelection,
+} from "./chatTextSelection";

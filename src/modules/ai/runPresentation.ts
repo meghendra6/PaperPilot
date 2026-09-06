@@ -8,6 +8,8 @@ export type ReaderRunEvent =
 export type ReaderRunToken = symbol;
 
 export type ReaderRunCompletionResult = {
+  timings?: import("../context/requestContext").RunTimings;
+  requestContext?: import("../context/requestContext").RequestContextSnapshot;
   success: boolean;
   assistantText: string;
   continuationToken?: ReaderRunToken;

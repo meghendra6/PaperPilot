@@ -31,9 +31,18 @@ export interface LastEngineRequest {
   annotationIDs?: string[];
   useResume?: boolean;
   resumeSessionId?: string;
+  requestContext?: import("../context/requestContext").RequestContextSnapshot;
+  executionSettings?: import("./executionSettings").ExecutionSettings;
+  turnId?: string;
+  attemptId?: string;
+  responseLength?: "short" | "default" | "detailed";
 }
 
 export interface PendingEngineCompletion {
+  sessionId?: string;
+  paperTitle?: string;
+  turnId?: string;
+  attemptId?: string;
   mode: EngineMode;
   token: ReaderRunToken;
   workspacePath?: string;
@@ -455,6 +464,9 @@ export async function persistRunFailure(params: {
     success: false,
     rawEvent: failure.rawError,
     suppressMessage: params.suppressMessage,
+    updateResumeMetadata: !params.suppressMessage,
+    turnId: getPendingEngineCompletion(params.itemID)?.turnId,
+    attemptId: getPendingEngineCompletion(params.itemID)?.attemptId,
   });
   return failure;
 }

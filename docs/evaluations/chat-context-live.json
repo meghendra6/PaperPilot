@@ -1,0 +1,149 @@
+{
+  "kind": "live synthetic sample; no automatic correctness scoring",
+  "records": [
+    {
+      "fixtureID": "chat-eval-01",
+      "variant": "current-keyword",
+      "model": "gpt-6-astra",
+      "cliVersion": "codex-cli 0.153.4",
+      "exitCode": 0,
+      "elapsedMs": 9020.524000000001,
+      "answer": "The draft model proposes four tokens per round.\n\nExact support: “The Kite method uses a small draft model to propose four tokens per round.”\nSource ID: zotero:1:METHOD01:PDF00001",
+      "usage": {
+        "input_tokens": 16574,
+        "cached_input_tokens": 11520,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 46,
+        "reasoning_output_tokens": 0
+      }
+    },
+    {
+      "fixtureID": "chat-eval-01",
+      "variant": "evidence-packet",
+      "model": "gpt-6-astra",
+      "cliVersion": "codex-cli 0.153.4",
+      "exitCode": 0,
+      "elapsedMs": 5804.142583000001,
+      "answer": "The draft model proposes four tokens per round.\n\nExact support: “The Kite method uses a small draft model to propose four tokens per round.”\nSource ID: zotero:1:METHOD01:PDF00001",
+      "usage": {
+        "input_tokens": 16574,
+        "cached_input_tokens": 11520,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 46,
+        "reasoning_output_tokens": 0
+      }
+    },
+    {
+      "fixtureID": "chat-eval-01",
+      "variant": "whole-paper",
+      "model": "gpt-6-astra",
+      "cliVersion": "codex-cli 0.153.4",
+      "exitCode": 0,
+      "elapsedMs": 6707.143124999999,
+      "answer": "The draft model proposes four tokens per round.\n\nExact support: “The Kite method uses a small draft model to propose four tokens per round.”\nSource ID: zotero:1:METHOD01:PDF00001",
+      "usage": {
+        "input_tokens": 16641,
+        "cached_input_tokens": 11520,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 46,
+        "reasoning_output_tokens": 0
+      }
+    },
+    {
+      "fixtureID": "chat-eval-22",
+      "variant": "current-keyword",
+      "model": "gpt-6-astra",
+      "cliVersion": "codex-cli 0.153.4",
+      "exitCode": 0,
+      "elapsedMs": 7207.479582999997,
+      "answer": "The exact error bars from Figure 2 are unavailable in the supplied text.\n\nSource zotero:1:VISUAL01:PDF00003 states: “The plotted point coordinates and error bars are unavailable in this text export.” It also states: “The full figure image was not supplied.”",
+      "usage": {
+        "input_tokens": 16573,
+        "cached_input_tokens": 11520,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 62,
+        "reasoning_output_tokens": 0
+      }
+    },
+    {
+      "fixtureID": "chat-eval-22",
+      "variant": "evidence-packet",
+      "model": "gpt-6-astra",
+      "cliVersion": "codex-cli 0.153.4",
+      "exitCode": 0,
+      "elapsedMs": 6458.866332999998,
+      "answer": "The exact error bars from Figure 2 are unavailable in the supplied text.\n\nSource zotero:1:VISUAL01:PDF00003 states: “The plotted point coordinates and error bars are unavailable in this text export.” It also states: “The full figure image was not supplied.”",
+      "usage": {
+        "input_tokens": 16573,
+        "cached_input_tokens": 11520,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 62,
+        "reasoning_output_tokens": 0
+      }
+    },
+    {
+      "fixtureID": "chat-eval-22",
+      "variant": "whole-paper",
+      "model": "gpt-6-astra",
+      "cliVersion": "codex-cli 0.153.4",
+      "exitCode": 0,
+      "elapsedMs": 8092.858957999997,
+      "answer": "The exact error bars from Figure 2 are unavailable in the supplied text.\n\nSource zotero:1:VISUAL01:PDF00003 states: “The plotted point coordinates and error bars are unavailable in this text export.” It also states: “The full figure image was not supplied.”",
+      "usage": {
+        "input_tokens": 16636,
+        "cached_input_tokens": 11520,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 62,
+        "reasoning_output_tokens": 0
+      }
+    },
+    {
+      "fixtureID": "chat-eval-24",
+      "variant": "current-keyword",
+      "model": "gpt-6-astra",
+      "cliVersion": "codex-cli 0.153.4",
+      "exitCode": 0,
+      "elapsedMs": 8400.269,
+      "answer": "No. The supplied text does not support ranking Kite and Relay by timing.\n\nSource zotero:1:METHOD03:PDF00004 states: “Relay was evaluated at batch size eight.” and “Median latency is 80 ms in the separate experiment.”\n\nSource zotero:1:METHOD01:PDF00001 states only: “The Kite method uses a small draft model to propose four tokens per round.”\n\nKite’s timing is unavailable, and evidence of comparable experimental conditions is unavailable. Four tokens per round is not a latency measurement.",
+      "usage": {
+        "input_tokens": 16610,
+        "cached_input_tokens": 11520,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 112,
+        "reasoning_output_tokens": 0
+      }
+    },
+    {
+      "fixtureID": "chat-eval-24",
+      "variant": "evidence-packet",
+      "model": "gpt-6-astra",
+      "cliVersion": "codex-cli 0.153.4",
+      "exitCode": 0,
+      "elapsedMs": 9306.462208000004,
+      "answer": "No. The supplied text lacks Kite’s timing and evidence of comparable experimental conditions, so it cannot support a timing-based ranking.\n\nRelay reports: “Median latency is 80 ms in the separate experiment.” (source ID: zotero:1:METHOD03:PDF00004)\n\nKite’s only supplied description is: “The Kite method uses a small draft model to propose four tokens per round.” (source ID: zotero:1:METHOD01:PDF00001) This gives no latency measurement.\n\nAn accuracy-based comparison is also unsupported: “Relay does not provide an accuracy evaluation.” (source ID: zotero:1:METHOD03:PDF00004)",
+      "usage": {
+        "input_tokens": 16610,
+        "cached_input_tokens": 11520,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 139,
+        "reasoning_output_tokens": 0
+      }
+    },
+    {
+      "fixtureID": "chat-eval-24",
+      "variant": "whole-paper",
+      "model": "gpt-6-astra",
+      "cliVersion": "codex-cli 0.153.4",
+      "exitCode": 0,
+      "elapsedMs": 11245.141459000006,
+      "answer": "No. The separate timings do not establish a controlled ranking.\n\nSource zotero:1:METHOD03:PDF00004 explicitly states: “The experiments used a different machine from Kite, so the latency numbers cannot establish a controlled ranking.”\n\nBatch sizes also differ: “Throughput was measured with batch size one.” (zotero:1:METHOD01:PDF00001), while “Relay was evaluated at batch size eight.” (zotero:1:METHOD03:PDF00004).\n\nThe reported metrics differ too: Kite reports “A reported speedup is 1.8 times on a single test machine; it is not a universal guarantee.” (zotero:1:METHOD01:PDF00001). Relay reports “Median latency is 80 ms in the separate experiment.” (zotero:1:METHOD03:PDF00004).\n\nEvidence from a controlled, comparable evaluation is unavailable in the supplied text.",
+      "usage": {
+        "input_tokens": 16742,
+        "cached_input_tokens": 11520,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 192,
+        "reasoning_output_tokens": 0
+      }
+    }
+  ]
+}

@@ -56,6 +56,7 @@ function textLooksLikeSilentToolJson(text: string) {
  * code is always treated as visible user-facing content.
  */
 export function isLikelySilentToolMessage(record: MessageRecord): boolean {
+  if (record.attemptId || record.requestContext) return false;
   if (record.role !== "assistant") {
     return false;
   }

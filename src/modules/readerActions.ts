@@ -35,7 +35,13 @@ type DraftSource = "selection-popup" | "annotation-menu";
 type TextSelectionPopupEvent = {
   doc: Document;
   reader?: { itemID?: number; _item?: { id?: number; parentItemID?: number } };
-  params: { annotation?: { text?: string } };
+  params: {
+    annotation?: {
+      text?: string;
+      pageLabel?: string;
+      position?: { pageIndex?: number };
+    };
+  };
   append: (...nodes: Array<Node | string>) => void;
 };
 
@@ -52,18 +58,27 @@ function ensureReaderActionSession(itemID: number) {
     .sessionId;
 }
 
-function saveDraft(params: {
-  itemID: number;
-  source: DraftSource;
-  action: string;
-  text?: string;
-  annotationIDs?: string[];
-}) {
-  setReaderActionDraft({
-    ...params,
-    sessionId: ensureReaderActionSession(params.itemID),
-    updatedAt: new Date().toISOString(),
-  });
+function saveDraft(
+  params: {
+    itemID: number;
+    source: DraftSource;
+    action: string;
+    text?: string;
+    annotationIDs?: string[];
+    attachmentID?: number;
+    pageIndex?: number;
+    pageLabel?: string;
+  },
+  attachToComposer = true,
+) {
+  setReaderActionDraft(
+    {
+      ...params,
+      sessionId: ensureReaderActionSession(params.itemID),
+      updatedAt: new Date().toISOString(),
+    },
+    { attachToComposer },
+  );
 }
 
 function eventItemID(event: {
@@ -95,6 +110,9 @@ function triggerAction(params: {
   action: ReaderActionName;
   text?: string;
   annotationIDs?: string[];
+  attachmentID?: number;
+  pageIndex?: number;
+  pageLabel?: string;
   itemID?: number;
 }) {
   if (!params.itemID || (!params.text && !params.annotationIDs?.length)) {
@@ -115,8 +133,8 @@ function triggerAction(params: {
     return;
   }
 
-  saveDraft({ ...params, itemID: params.itemID });
   const prepared = buildReaderActionQuestion(params.action, params.text);
+  saveDraft({ ...params, itemID: params.itemID }, !prepared.autoSubmit);
   queueReaderAction(params.itemID, prepared.question, prepared.autoSubmit);
 }
 
@@ -125,6 +143,9 @@ function buildSelectionActionButton(params: {
   label: string;
   action: ReaderActionName;
   text?: string;
+  attachmentID?: number;
+  pageIndex?: number;
+  pageLabel?: string;
   itemID?: number;
 }) {
   const button = params.doc.createElement("button");
@@ -140,6 +161,9 @@ function buildSelectionActionButton(params: {
       action: params.action,
       text: params.text,
       itemID: params.itemID,
+      attachmentID: params.attachmentID,
+      pageIndex: params.pageIndex,
+      pageLabel: params.pageLabel,
     });
   });
   return button;
@@ -185,6 +209,9 @@ const renderTextSelectionPopup = (event: TextSelectionPopupEvent) => {
         action: item.action,
         text: event.params.annotation?.text,
         itemID: eventItemID(event),
+        attachmentID: event.reader?._item?.id ?? event.reader?.itemID,
+        pageIndex: event.params.annotation?.position?.pageIndex,
+        pageLabel: event.params.annotation?.pageLabel,
       }),
     );
   }
@@ -201,6 +228,7 @@ const createAnnotationContextMenu = (event: AnnotationContextMenuEvent) => {
           action: item.action,
           annotationIDs: event.params.ids,
           itemID: eventItemID(event),
+          attachmentID: event.reader?._item?.id ?? event.reader?.itemID,
         });
       },
     });

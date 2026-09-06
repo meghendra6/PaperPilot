@@ -9,26 +9,26 @@ test("Send becomes Stop throughout preparation and response generation", () => {
     canStop: true,
   });
   assert.equal(running.label, "Stop");
-  assert.equal(running.inputDisabled, true);
+  assert.equal(running.inputDisabled, false);
   assert.equal(running.buttonDisabled, false);
-  assert.match(running.placeholder, /press Stop/);
+  assert.match(running.placeholder, /Press Stop/);
 });
 
-test("cancellation and terminal cleanup keep the composer locked until settled", () => {
+test("cancellation and cleanup allow drafting but prevent a second send", () => {
   const stopping = getChatComposerPresentation({
     busy: true,
     stopping: true,
     canStop: false,
   });
   assert.equal(stopping.label, "Stopping…");
-  assert.equal(stopping.inputDisabled, true);
+  assert.equal(stopping.inputDisabled, false);
   assert.equal(stopping.buttonDisabled, true);
   const cleanup = getChatComposerPresentation({
     busy: true,
     stopping: false,
     canStop: false,
   });
-  assert.equal(cleanup.inputDisabled, true);
+  assert.equal(cleanup.inputDisabled, false);
   assert.equal(cleanup.buttonDisabled, true);
   const settled = getChatComposerPresentation({
     busy: false,

@@ -1,5 +1,6 @@
 import {
   paperWorkspaceContentCache,
+  buildPaperContentFingerprint,
   type PaperContentFingerprint,
 } from "../tools/paperWorkspaceContent";
 import {
@@ -10,6 +11,30 @@ import {
 } from "./sourceIdentity";
 
 declare const Zotero: any;
+
+export async function assertResearchWorkspacePaperCurrent(
+  paper: ResearchWorkspacePaper,
+) {
+  const attachment = await getResearchWorkspaceItem(paper.attachmentID);
+  if (
+    !attachment ||
+    Number(attachment.libraryID) !== paper.libraryID ||
+    String(attachment.key) !== paper.attachmentKey
+  )
+    throw new Error("The admitted PDF identity is no longer available.");
+  const resolved = await resolveResearchWorkspaceSource(attachment);
+  if (resolved.sourceID !== paper.sourceID)
+    throw new Error("The admitted PDF source changed.");
+  const path = await attachment.getFilePathAsync?.();
+  if (typeof path !== "string" || !path)
+    throw new Error("The admitted PDF file is missing.");
+  const io = (globalThis as any).IOUtils;
+  if (path && io?.exists && !(await io.exists(path)))
+    throw new Error("The admitted PDF file is missing.");
+  const fingerprint = await buildPaperContentFingerprint(attachment, path);
+  if (fingerprint.value !== paper.contentFingerprint.value)
+    throw new Error("The admitted PDF content changed.");
+}
 
 export interface ResearchWorkspacePaper {
   sourceID: string;

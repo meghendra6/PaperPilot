@@ -1,3 +1,10 @@
+import { isResearchWorkspaceMemberExcluded } from "./memberState";
+import {
+  createProjectOperationAdmission,
+  projectArtifactMatchesInput,
+  projectScopeFingerprint,
+  type ProjectOperationAdmission,
+} from "./operationInputs";
 import type { ExecutionSettings } from "../ai/executionSettings";
 import { researchWorkspaceArtifactPayloadFingerprint } from "./artifactFingerprint";
 import { stableHash } from "./identity";
@@ -27,6 +34,7 @@ export interface ResearchWorkspaceOperationResult<T> {
 }
 
 export interface RunResearchWorkspaceProjectOperation<T> {
+  admission?: ProjectOperationAdmission;
   projectID?: string;
   papers: readonly ResearchWorkspacePaper[];
   operation: string;
@@ -76,6 +84,7 @@ export interface RunResearchWorkspaceIncrementalOperation<
   TUnit extends ResearchWorkspaceIncrementalUnit,
   TUnitResult,
 > {
+  admission?: ProjectOperationAdmission;
   projectID: string;
   papers: readonly ResearchWorkspacePaper[];
   operation: string;
@@ -120,23 +129,66 @@ function safeError(error: unknown) {
 
 export class ResearchWorkspaceOperationCoordinator {
   private readonly projects: ResearchWorkspaceProjectController;
+  private readonly validateSource?: (
+    paper: ResearchWorkspacePaper,
+  ) => Promise<void>;
 
   constructor(
     private readonly repository: ResearchWorkspaceProjectRepository,
-    options: { now?: () => Date } = {},
+    options: {
+      now?: () => Date;
+      validateSource?: (paper: ResearchWorkspacePaper) => Promise<void>;
+    } = {},
   ) {
     this.projects = new ResearchWorkspaceProjectController(repository, options);
+    this.validateSource = options.validateSource;
   }
 
   private async assertPaperInputsCurrent(
     projectID: string,
     papers: readonly ResearchWorkspacePaper[],
+    admission?: ProjectOperationAdmission,
   ) {
     const bundle = await this.repository.getProject(projectID);
+    if (
+      admission &&
+      projectScopeFingerprint(
+        bundle,
+        papers.map((paper) => paper.sourceID),
+      ) !== admission.scopeFingerprint
+    )
+      throw new ResearchWorkspaceInputChangedError(
+        "The project question, criteria, or analysis scope changed during analysis.",
+      );
+    for (const input of admission?.artifactInputs ?? []) {
+      const current = await this.repository.getArtifact(
+        projectID,
+        input.artifactID,
+      );
+      if (
+        !bundle.project.artifactIDs.includes(input.artifactID) ||
+        !current ||
+        !projectArtifactMatchesInput(current.artifact, input)
+      )
+        throw new ResearchWorkspaceInputChangedError(
+          "An upstream artifact changed during analysis.",
+        );
+    }
     for (const paper of papers) {
+      try {
+        await this.validateSource?.(paper);
+      } catch {
+        throw new ResearchWorkspaceInputChangedError(
+          "A project source changed during analysis. Refresh the sources and run again.",
+        );
+      }
       const current = await this.repository.getSource(paper.sourceID);
       if (
-        !bundle.members.some((member) => member.sourceID === paper.sourceID) ||
+        !bundle.members.some(
+          (member) =>
+            member.sourceID === paper.sourceID &&
+            !isResearchWorkspaceMemberExcluded(member),
+        ) ||
         !current ||
         current.source.availability !== "ready" ||
         current.source.contentFingerprint?.value !==
@@ -158,15 +210,21 @@ export class ResearchWorkspaceOperationCoordinator {
     artifactInputs: NonNullable<
       ResearchWorkspaceArtifactLineage["artifactInputs"]
     >,
+    scopeFingerprint: string,
   ) {
     const bundle = await this.repository.getProject(params.projectID);
-    if (bundle.membersRevision !== params.membersRevision) {
+    if (
+      projectScopeFingerprint(
+        bundle,
+        sources.map((source) => source.sourceID),
+      ) !== scopeFingerprint
+    ) {
       throw new Error(
         "The project source scope changed while the derived artifact was being built. Refresh and try again.",
       );
     }
     const activeMemberSourceIDs = bundle.members
-      .filter((member) => member.reviewStatus !== "excluded")
+      .filter((member) => !isResearchWorkspaceMemberExcluded(member))
       .map((member) => member.sourceID)
       .sort();
     const sourceIDs = sources.map((source) => source.sourceID).sort();
@@ -180,7 +238,7 @@ export class ResearchWorkspaceOperationCoordinator {
     );
     for (const source of sources) {
       const member = memberBySourceID.get(source.sourceID);
-      if (!member || member.reviewStatus === "excluded") {
+      if (!member || isResearchWorkspaceMemberExcluded(member)) {
         throw new Error(
           `Source ${source.sourceID} is no longer included in this project.`,
         );
@@ -273,6 +331,20 @@ export class ResearchWorkspaceOperationCoordinator {
       );
     }
     try {
+      const admission =
+        params.admission ??
+        createProjectOperationAdmission(
+          await this.projects.details(projectID),
+          params.papers,
+          {
+            operation: params.operation,
+            operationVersion: params.operationVersion,
+            promptVersion: params.promptVersion,
+            parserVersion: params.parserVersion,
+            schemaVersion: params.schemaVersion,
+          },
+          [],
+        );
       const sourceSnapshot = params.papers.map((paper) => ({
         sourceID: paper.sourceID,
         contentFingerprint: paper.contentFingerprint.value,
@@ -283,6 +355,8 @@ export class ResearchWorkspaceOperationCoordinator {
         operationVersion: params.operationVersion,
         sourceSnapshot,
         executionSettings: params.executionSettings,
+        operationInputFingerprint: admission.operationInputFingerprint,
+        scopeFingerprint: admission.scopeFingerprint,
         status: "queued",
         progress: { phase: "queued", completed: 0, total: 1 },
       });
@@ -304,7 +378,11 @@ export class ResearchWorkspaceOperationCoordinator {
         throw new DOMException("Cancelled", "AbortError");
       params.onStatus?.(`Running ${params.artifactTitle}…`);
       try {
-        await this.assertPaperInputsCurrent(projectID, params.papers);
+        await this.assertPaperInputsCurrent(
+          projectID,
+          params.papers,
+          admission,
+        );
         const result = await params.execute();
         if (
           params.signal?.aborted ||
@@ -312,14 +390,22 @@ export class ResearchWorkspaceOperationCoordinator {
         ) {
           throw new DOMException("Cancelled", "AbortError");
         }
-        await this.assertPaperInputsCurrent(projectID, params.papers);
+        await this.assertPaperInputsCurrent(
+          projectID,
+          params.papers,
+          admission,
+        );
         const completedAt = new Date().toISOString();
         const artifact = await this.repository.createArtifact(projectID, {
+          supersedeLatest: !admission.artifactInputs.some(
+            (input) => input.artifactType === params.artifactType,
+          ),
           type: params.artifactType,
           title: params.artifactTitle,
           status: params.status ?? "complete",
           sourceIDs: params.papers.map((paper) => paper.sourceID),
           lineage: {
+            ...admission,
             inputs: params.papers.map((paper) => ({
               sourceID: paper.sourceID,
               contentFingerprint: paper.contentFingerprint.value,
@@ -347,7 +433,11 @@ export class ResearchWorkspaceOperationCoordinator {
           completedAt,
         });
         try {
-          await this.assertPaperInputsCurrent(projectID, params.papers);
+          await this.assertPaperInputsCurrent(
+            projectID,
+            params.papers,
+            admission,
+          );
           if (params.signal?.aborted)
             throw new DOMException("Cancelled", "AbortError");
         } catch (error) {
@@ -424,7 +514,21 @@ export class ResearchWorkspaceOperationCoordinator {
     if (!artifactInputs.length) {
       throw new Error("At least one current upstream artifact is required.");
     }
-    await this.repository.getProject(params.projectID);
+    const bundle = await this.repository.getProject(params.projectID);
+    const scopeFingerprint = projectScopeFingerprint(
+      bundle,
+      sources.map((source) => source.sourceID),
+    );
+    const operationInputFingerprint =
+      researchWorkspaceArtifactPayloadFingerprint({
+        operation: params.operation,
+        operationVersion: params.operationVersion,
+        promptVersion: params.promptVersion,
+        parserVersion: params.parserVersion,
+        schemaVersion: params.schemaVersion,
+        scopeFingerprint,
+        artifactInputs,
+      });
     const owner = {
       kind: "project" as const,
       projectID: params.projectID,
@@ -436,7 +540,12 @@ export class ResearchWorkspaceOperationCoordinator {
       );
     }
     try {
-      await this.assertDerivedInputsCurrent(params, sources, artifactInputs);
+      await this.assertDerivedInputsCurrent(
+        params,
+        sources,
+        artifactInputs,
+        scopeFingerprint,
+      );
       const sourceSnapshot = sources.map((source) => ({
         sourceID: source.sourceID,
         contentFingerprint:
@@ -447,6 +556,8 @@ export class ResearchWorkspaceOperationCoordinator {
         operation: params.operation,
         operationVersion: params.operationVersion,
         sourceSnapshot,
+        scopeFingerprint,
+        operationInputFingerprint,
         status: "queued",
         progress: { phase: "queued", completed: 0, total: 1 },
       });
@@ -476,11 +587,19 @@ export class ResearchWorkspaceOperationCoordinator {
         ) {
           throw new DOMException("Cancelled", "AbortError");
         }
-        await this.assertDerivedInputsCurrent(params, sources, artifactInputs);
+        await this.assertDerivedInputsCurrent(
+          params,
+          sources,
+          artifactInputs,
+          scopeFingerprint,
+        );
         const completedAt = new Date().toISOString();
         const artifact = await this.repository.createArtifact(
           params.projectID,
           {
+            supersedeLatest: !artifactInputs.some(
+              (input) => input.artifactType === params.artifactType,
+            ),
             type: params.artifactType,
             title: params.artifactTitle,
             status: "complete",
@@ -497,6 +616,8 @@ export class ResearchWorkspaceOperationCoordinator {
                 ...input,
               })),
               membersRevision: params.membersRevision,
+              scopeFingerprint,
+              operationInputFingerprint,
               operation: params.operation,
               operationVersion: params.operationVersion,
               promptVersion: params.promptVersion,
@@ -521,6 +642,7 @@ export class ResearchWorkspaceOperationCoordinator {
             params,
             sources,
             artifactInputs,
+            scopeFingerprint,
           );
         } catch (error) {
           await this.repository.markArtifactStaleAtomically({
@@ -609,7 +731,25 @@ export class ResearchWorkspaceOperationCoordinator {
     let run: ResearchWorkspaceRunFile | undefined;
     let artifact: ResearchWorkspaceArtifactFile<TPayload> | undefined;
     try {
-      await this.assertPaperInputsCurrent(params.projectID, params.papers);
+      const admission =
+        params.admission ??
+        createProjectOperationAdmission(
+          await this.projects.details(params.projectID),
+          params.papers,
+          {
+            operation: params.operation,
+            operationVersion: params.operationVersion,
+            promptVersion: params.promptVersion,
+            parserVersion: params.parserVersion,
+            schemaVersion: params.schemaVersion,
+          },
+          [],
+        );
+      await this.assertPaperInputsCurrent(
+        params.projectID,
+        params.papers,
+        admission,
+      );
       const sourceSnapshot = params.papers.map((paper) => ({
         sourceID: paper.sourceID,
         contentFingerprint: paper.contentFingerprint.value,
@@ -624,6 +764,8 @@ export class ResearchWorkspaceOperationCoordinator {
           (candidate.status === "partial" || candidate.status === "stale") &&
           candidate.lineage.operation === params.operation &&
           candidate.lineage.operationVersion === params.operationVersion &&
+          candidate.lineage.operationInputFingerprint ===
+            admission.operationInputFingerprint &&
           candidate.lineage.promptVersion ===
             (params.promptVersion ?? `${params.operation}-prompt-v1`) &&
           candidate.lineage.parserVersion ===
@@ -688,6 +830,8 @@ export class ResearchWorkspaceOperationCoordinator {
         operationVersion: params.operationVersion,
         sourceSnapshot,
         executionSettings: params.executionSettings,
+        operationInputFingerprint: admission.operationInputFingerprint,
+        scopeFingerprint: admission.scopeFingerprint,
         status: "queued",
         progress: {
           phase: "queued",
@@ -716,6 +860,7 @@ export class ResearchWorkspaceOperationCoordinator {
         status: "partial",
         sourceIDs: params.papers.map((paper) => paper.sourceID),
         lineage: {
+          ...admission,
           inputs: params.papers.map((paper) => ({
             sourceID: paper.sourceID,
             contentFingerprint: paper.contentFingerprint.value,
@@ -782,9 +927,17 @@ export class ResearchWorkspaceOperationCoordinator {
           }),
         );
         try {
-          await this.assertPaperInputsCurrent(params.projectID, params.papers);
+          await this.assertPaperInputsCurrent(
+            params.projectID,
+            params.papers,
+            admission,
+          );
           const result = await params.executeUnit(unit);
-          await this.assertPaperInputsCurrent(params.projectID, params.papers);
+          await this.assertPaperInputsCurrent(
+            params.projectID,
+            params.papers,
+            admission,
+          );
           if (
             params.signal?.aborted ||
             !isResearchWorkspaceOwnerClaimCurrent(owner, claim)
@@ -901,7 +1054,11 @@ export class ResearchWorkspaceOperationCoordinator {
         throw new DOMException("Cancelled", "AbortError");
       }
 
-      await this.assertPaperInputsCurrent(params.projectID, params.papers);
+      await this.assertPaperInputsCurrent(
+        params.projectID,
+        params.papers,
+        admission,
+      );
       const completedAt = new Date().toISOString();
       const status =
         failedUnits.length || pendingUnits.length ? "partial" : "complete";
@@ -928,7 +1085,11 @@ export class ResearchWorkspaceOperationCoordinator {
           },
         }),
       );
-      await this.assertPaperInputsCurrent(params.projectID, params.papers);
+      await this.assertPaperInputsCurrent(
+        params.projectID,
+        params.papers,
+        admission,
+      );
       const latestRun = await this.repository.getRun(
         params.projectID,
         run.run.runID,

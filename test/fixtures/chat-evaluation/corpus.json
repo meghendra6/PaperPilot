@@ -1,0 +1,642 @@
+{
+  "version": 1,
+  "license": "CC0-1.0",
+  "source": "PaperPilot authored synthetic evaluation corpus; not real research results",
+  "oracle": "Fixture-authored expected quotes and limits; no independent human quality adjudication claimed",
+  "sources": [
+    {
+      "sourceID": "zotero:1:METHOD01:PDF00001",
+      "title": "Synthetic drafting method",
+      "text": "The Kite method uses a small draft model to propose four tokens per round. The verifier accepts a token only when its acceptance test passes. The output distribution remains the verifier distribution under exact rejection sampling. A reported speedup is 1.8 times on a single test machine; it is not a universal guarantee. The draft model consumes extra memory. Throughput was measured with batch size one. No clinical study was conducted. The study compares a verifier-only baseline with the same verifier plus a draft model.",
+      "pages": [0]
+    },
+    {
+      "sourceID": "zotero:1:METHOD02:PDF00002",
+      "title": "Synthetic Korean evaluation",
+      "text": "이 실험은 한국어와 영어 질문 각각 20개를 사용했다. 한국어 질문의 정확도는 80%, 영어 질문의 정확도는 90%였다. 평가자는 답변이 아니라 원문 근거와 일치하는지를 판정했다. 작은 표본이므로 언어 전체로 일반화할 수 없다. 메모리 사용량은 측정하지 않았다. 토큰 수는 문자의 수와 같지 않다.",
+      "pages": [0]
+    },
+    {
+      "sourceID": "zotero:1:VISUAL01:PDF00003",
+      "title": "Synthetic tables and captions",
+      "text": "Table 1: baseline latency = 100 ms; Kite latency = 60 ms; Relay latency = 80 ms. The speedup is baseline latency divided by method latency. Equation 1: speedup = T_baseline / T_method. Figure 2 caption: acceptance decreases as temperature increases. The plotted point coordinates and error bars are unavailable in this text export. Each latency is the median of five trials. The full figure image was not supplied.",
+      "pages": [0]
+    },
+    {
+      "sourceID": "zotero:1:METHOD03:PDF00004",
+      "title": "Synthetic relay method",
+      "text": "Relay reuses cached prefixes instead of using a draft model. Relay was evaluated at batch size eight. Median latency is 80 ms in the separate experiment. The experiments used a different machine from Kite, so the latency numbers cannot establish a controlled ranking. Relay does not provide an accuracy evaluation. Cached prefixes require invalidation when a prompt changes.",
+      "pages": [0]
+    }
+  ],
+  "fixtures": [
+    {
+      "id": "chat-eval-01",
+      "scenario": "selection",
+      "sourceIDs": ["zotero:1:METHOD01:PDF00001"],
+      "question": "What does the draft model propose?",
+      "selectedText": "four tokens per round",
+      "annotations": [],
+      "priorTurns": [],
+      "expectedQuotes": [
+        {
+          "sourceID": "zotero:1:METHOD01:PDF00001",
+          "quote": "The Kite method uses a small draft model to propose four tokens per round.",
+          "pageIndex": 0
+        }
+      ],
+      "expectedLimit": "Use only supplied source text. Do not infer unsupported numerical values, missing images, absent studies or a controlled cross-study ranking.",
+      "expectAbstention": false,
+      "imageSupplied": false
+    },
+    {
+      "id": "chat-eval-02",
+      "scenario": "selection",
+      "sourceIDs": ["zotero:1:METHOD01:PDF00001"],
+      "question": "When is a proposed token accepted?",
+      "selectedText": "acceptance test passes",
+      "annotations": [],
+      "priorTurns": [],
+      "expectedQuotes": [
+        {
+          "sourceID": "zotero:1:METHOD01:PDF00001",
+          "quote": "The verifier accepts a token only when its acceptance test passes.",
+          "pageIndex": 0
+        }
+      ],
+      "expectedLimit": "Use only supplied source text. Do not infer unsupported numerical values, missing images, absent studies or a controlled cross-study ranking.",
+      "expectAbstention": false,
+      "imageSupplied": false
+    },
+    {
+      "id": "chat-eval-03",
+      "scenario": "selection",
+      "sourceIDs": ["zotero:1:METHOD01:PDF00001"],
+      "question": "Is the speedup a universal guarantee?",
+      "selectedText": "not a universal guarantee",
+      "annotations": [],
+      "priorTurns": [],
+      "expectedQuotes": [
+        {
+          "sourceID": "zotero:1:METHOD01:PDF00001",
+          "quote": "A reported speedup is 1.8 times on a single test machine; it is not a universal guarantee.",
+          "pageIndex": 0
+        }
+      ],
+      "expectedLimit": "Use only supplied source text. Do not infer unsupported numerical values, missing images, absent studies or a controlled cross-study ranking.",
+      "expectAbstention": false,
+      "imageSupplied": false
+    },
+    {
+      "id": "chat-eval-04",
+      "scenario": "selection",
+      "sourceIDs": ["zotero:1:METHOD01:PDF00001"],
+      "question": "Explain the output distribution guarantee.",
+      "selectedText": "exact rejection sampling",
+      "annotations": [],
+      "priorTurns": [],
+      "expectedQuotes": [
+        {
+          "sourceID": "zotero:1:METHOD01:PDF00001",
+          "quote": "The output distribution remains the verifier distribution under exact rejection sampling.",
+          "pageIndex": 0
+        }
+      ],
+      "expectedLimit": "Use only supplied source text. Do not infer unsupported numerical values, missing images, absent studies or a controlled cross-study ranking.",
+      "expectAbstention": false,
+      "imageSupplied": false
+    },
+    {
+      "id": "chat-eval-05",
+      "scenario": "selection",
+      "sourceIDs": ["zotero:1:METHOD02:PDF00002"],
+      "question": "한국어 질문은 몇 개였나요?",
+      "selectedText": "각각 20개",
+      "annotations": [],
+      "priorTurns": [],
+      "expectedQuotes": [
+        {
+          "sourceID": "zotero:1:METHOD02:PDF00002",
+          "quote": "이 실험은 한국어와 영어 질문 각각 20개를 사용했다.",
+          "pageIndex": 0
+        }
+      ],
+      "expectedLimit": "Use only supplied source text. Do not infer unsupported numerical values, missing images, absent studies or a controlled cross-study ranking.",
+      "expectAbstention": false,
+      "imageSupplied": false
+    },
+    {
+      "id": "chat-eval-06",
+      "scenario": "selection",
+      "sourceIDs": ["zotero:1:METHOD02:PDF00002"],
+      "question": "토큰과 문자는 같은가요?",
+      "selectedText": "같지 않다",
+      "annotations": [],
+      "priorTurns": [],
+      "expectedQuotes": [
+        {
+          "sourceID": "zotero:1:METHOD02:PDF00002",
+          "quote": "토큰 수는 문자의 수와 같지 않다.",
+          "pageIndex": 0
+        }
+      ],
+      "expectedLimit": "Use only supplied source text. Do not infer unsupported numerical values, missing images, absent studies or a controlled cross-study ranking.",
+      "expectAbstention": false,
+      "imageSupplied": false
+    },
+    {
+      "id": "chat-eval-07",
+      "scenario": "selection",
+      "sourceIDs": ["zotero:1:METHOD03:PDF00004"],
+      "question": "What does Relay reuse?",
+      "selectedText": "cached prefixes",
+      "annotations": [],
+      "priorTurns": [],
+      "expectedQuotes": [
+        {
+          "sourceID": "zotero:1:METHOD03:PDF00004",
+          "quote": "Relay reuses cached prefixes instead of using a draft model.",
+          "pageIndex": 0
+        }
+      ],
+      "expectedLimit": "Use only supplied source text. Do not infer unsupported numerical values, missing images, absent studies or a controlled cross-study ranking.",
+      "expectAbstention": false,
+      "imageSupplied": false
+    },
+    {
+      "id": "chat-eval-08",
+      "scenario": "selection",
+      "sourceIDs": ["zotero:1:METHOD03:PDF00004"],
+      "question": "When must the cached prefix be invalidated?",
+      "selectedText": "prompt changes",
+      "annotations": [],
+      "priorTurns": [],
+      "expectedQuotes": [
+        {
+          "sourceID": "zotero:1:METHOD03:PDF00004",
+          "quote": "Cached prefixes require invalidation when a prompt changes.",
+          "pageIndex": 0
+        }
+      ],
+      "expectedLimit": "Use only supplied source text. Do not infer unsupported numerical values, missing images, absent studies or a controlled cross-study ranking.",
+      "expectAbstention": false,
+      "imageSupplied": false
+    },
+    {
+      "id": "chat-eval-09",
+      "scenario": "followup",
+      "sourceIDs": ["zotero:1:METHOD01:PDF00001"],
+      "question": "What was the batch size in the earlier Kite result?",
+      "selectedText": null,
+      "annotations": [],
+      "priorTurns": [
+        {
+          "role": "user",
+          "text": "We are discussing Synthetic drafting method."
+        }
+      ],
+      "expectedQuotes": [
+        {
+          "sourceID": "zotero:1:METHOD01:PDF00001",
+          "quote": "Throughput was measured with batch size one.",
+          "pageIndex": 0
+        }
+      ],
+      "expectedLimit": "Use only supplied source text. Do not infer unsupported numerical values, missing images, absent studies or a controlled cross-study ranking.",
+      "expectAbstention": false,
+      "imageSupplied": false
+    },
+    {
+      "id": "chat-eval-10",
+      "scenario": "followup",
+      "sourceIDs": ["zotero:1:METHOD01:PDF00001"],
+      "question": "What resource overhead did that method add?",
+      "selectedText": null,
+      "annotations": [],
+      "priorTurns": [
+        {
+          "role": "user",
+          "text": "We are discussing Synthetic drafting method."
+        }
+      ],
+      "expectedQuotes": [
+        {
+          "sourceID": "zotero:1:METHOD01:PDF00001",
+          "quote": "The draft model consumes extra memory.",
+          "pageIndex": 0
+        }
+      ],
+      "expectedLimit": "Use only supplied source text. Do not infer unsupported numerical values, missing images, absent studies or a controlled cross-study ranking.",
+      "expectAbstention": false,
+      "imageSupplied": false
+    },
+    {
+      "id": "chat-eval-11",
+      "scenario": "followup",
+      "sourceIDs": ["zotero:1:METHOD01:PDF00001"],
+      "question": "Which baseline did the previous comparison use?",
+      "selectedText": null,
+      "annotations": [],
+      "priorTurns": [
+        {
+          "role": "user",
+          "text": "We are discussing Synthetic drafting method."
+        }
+      ],
+      "expectedQuotes": [
+        {
+          "sourceID": "zotero:1:METHOD01:PDF00001",
+          "quote": "The study compares a verifier-only baseline with the same verifier plus a draft model.",
+          "pageIndex": 0
+        }
+      ],
+      "expectedLimit": "Use only supplied source text. Do not infer unsupported numerical values, missing images, absent studies or a controlled cross-study ranking.",
+      "expectAbstention": false,
+      "imageSupplied": false
+    },
+    {
+      "id": "chat-eval-12",
+      "scenario": "followup",
+      "sourceIDs": ["zotero:1:METHOD02:PDF00002"],
+      "question": "앞에서 말한 두 언어의 정확도를 다시 알려주세요.",
+      "selectedText": null,
+      "annotations": [],
+      "priorTurns": [
+        {
+          "role": "user",
+          "text": "We are discussing Synthetic Korean evaluation."
+        }
+      ],
+      "expectedQuotes": [
+        {
+          "sourceID": "zotero:1:METHOD02:PDF00002",
+          "quote": "한국어 질문의 정확도는 80%, 영어 질문의 정확도는 90%였다.",
+          "pageIndex": 0
+        }
+      ],
+      "expectedLimit": "Use only supplied source text. Do not infer unsupported numerical values, missing images, absent studies or a controlled cross-study ranking.",
+      "expectAbstention": false,
+      "imageSupplied": false
+    },
+    {
+      "id": "chat-eval-13",
+      "scenario": "followup",
+      "sourceIDs": ["zotero:1:METHOD03:PDF00004"],
+      "question": "Could that cache survive a modified prompt?",
+      "selectedText": null,
+      "annotations": [],
+      "priorTurns": [
+        {
+          "role": "user",
+          "text": "We are discussing Synthetic relay method."
+        }
+      ],
+      "expectedQuotes": [
+        {
+          "sourceID": "zotero:1:METHOD03:PDF00004",
+          "quote": "Cached prefixes require invalidation when a prompt changes.",
+          "pageIndex": 0
+        }
+      ],
+      "expectedLimit": "Use only supplied source text. Do not infer unsupported numerical values, missing images, absent studies or a controlled cross-study ranking.",
+      "expectAbstention": false,
+      "imageSupplied": false
+    },
+    {
+      "id": "chat-eval-14",
+      "scenario": "followup",
+      "sourceIDs": ["zotero:1:VISUAL01:PDF00003"],
+      "question": "Were those table latencies averages?",
+      "selectedText": null,
+      "annotations": [],
+      "priorTurns": [
+        {
+          "role": "user",
+          "text": "We are discussing Synthetic tables and captions."
+        }
+      ],
+      "expectedQuotes": [
+        {
+          "sourceID": "zotero:1:VISUAL01:PDF00003",
+          "quote": "Each latency is the median of five trials.",
+          "pageIndex": 0
+        }
+      ],
+      "expectedLimit": "Use only supplied source text. Do not infer unsupported numerical values, missing images, absent studies or a controlled cross-study ranking.",
+      "expectAbstention": false,
+      "imageSupplied": false
+    },
+    {
+      "id": "chat-eval-15",
+      "scenario": "annotation",
+      "sourceIDs": ["zotero:1:METHOD01:PDF00001"],
+      "question": "Explain my highlighted distribution guarantee.",
+      "selectedText": "exact rejection sampling",
+      "annotations": [
+        {
+          "quote": "exact rejection sampling",
+          "comment": "Explain the evidence and its limits."
+        }
+      ],
+      "priorTurns": [],
+      "expectedQuotes": [
+        {
+          "sourceID": "zotero:1:METHOD01:PDF00001",
+          "quote": "The output distribution remains the verifier distribution under exact rejection sampling.",
+          "pageIndex": 0
+        }
+      ],
+      "expectedLimit": "Use only supplied source text. Do not infer unsupported numerical values, missing images, absent studies or a controlled cross-study ranking.",
+      "expectAbstention": false,
+      "imageSupplied": false
+    },
+    {
+      "id": "chat-eval-16",
+      "scenario": "annotation",
+      "sourceIDs": ["zotero:1:METHOD02:PDF00002"],
+      "question": "이 주석의 평가 기준을 설명하세요.",
+      "selectedText": "원문 근거",
+      "annotations": [
+        {
+          "quote": "원문 근거",
+          "comment": "Explain the evidence and its limits."
+        }
+      ],
+      "priorTurns": [],
+      "expectedQuotes": [
+        {
+          "sourceID": "zotero:1:METHOD02:PDF00002",
+          "quote": "평가자는 답변이 아니라 원문 근거와 일치하는지를 판정했다.",
+          "pageIndex": 0
+        }
+      ],
+      "expectedLimit": "Use only supplied source text. Do not infer unsupported numerical values, missing images, absent studies or a controlled cross-study ranking.",
+      "expectAbstention": false,
+      "imageSupplied": false
+    },
+    {
+      "id": "chat-eval-17",
+      "scenario": "annotation",
+      "sourceIDs": ["zotero:1:METHOD03:PDF00004"],
+      "question": "My comment says fair comparison? Is the ranking controlled?",
+      "selectedText": "different machine",
+      "annotations": [
+        {
+          "quote": "different machine",
+          "comment": "Explain the evidence and its limits."
+        }
+      ],
+      "priorTurns": [],
+      "expectedQuotes": [
+        {
+          "sourceID": "zotero:1:METHOD03:PDF00004",
+          "quote": "The experiments used a different machine from Kite, so the latency numbers cannot establish a controlled ranking.",
+          "pageIndex": 0
+        }
+      ],
+      "expectedLimit": "Use only supplied source text. Do not infer unsupported numerical values, missing images, absent studies or a controlled cross-study ranking.",
+      "expectAbstention": false,
+      "imageSupplied": false
+    },
+    {
+      "id": "chat-eval-18",
+      "scenario": "annotation",
+      "sourceIDs": ["zotero:1:VISUAL01:PDF00003"],
+      "question": "Explain the caveat in this image annotation.",
+      "selectedText": "error bars",
+      "annotations": [
+        {
+          "quote": "error bars",
+          "comment": "Explain the evidence and its limits."
+        }
+      ],
+      "priorTurns": [],
+      "expectedQuotes": [
+        {
+          "sourceID": "zotero:1:VISUAL01:PDF00003",
+          "quote": "The plotted point coordinates and error bars are unavailable in this text export.",
+          "pageIndex": 0
+        }
+      ],
+      "expectedLimit": "Use only supplied source text. Do not infer unsupported numerical values, missing images, absent studies or a controlled cross-study ranking.",
+      "expectAbstention": false,
+      "imageSupplied": false
+    },
+    {
+      "id": "chat-eval-19",
+      "scenario": "visual",
+      "sourceIDs": ["zotero:1:VISUAL01:PDF00003"],
+      "question": "Compute the Kite table speedup.",
+      "selectedText": null,
+      "annotations": [],
+      "priorTurns": [],
+      "expectedQuotes": [
+        {
+          "sourceID": "zotero:1:VISUAL01:PDF00003",
+          "quote": "Table 1: baseline latency = 100 ms; Kite latency = 60 ms; Relay latency = 80 ms.",
+          "pageIndex": 0
+        }
+      ],
+      "expectedLimit": "Use only supplied source text. Do not infer unsupported numerical values, missing images, absent studies or a controlled cross-study ranking.",
+      "expectAbstention": false,
+      "imageSupplied": false
+    },
+    {
+      "id": "chat-eval-20",
+      "scenario": "visual",
+      "sourceIDs": ["zotero:1:VISUAL01:PDF00003"],
+      "question": "Explain Equation 1.",
+      "selectedText": null,
+      "annotations": [],
+      "priorTurns": [],
+      "expectedQuotes": [
+        {
+          "sourceID": "zotero:1:VISUAL01:PDF00003",
+          "quote": "Equation 1: speedup = T_baseline / T_method.",
+          "pageIndex": 0
+        }
+      ],
+      "expectedLimit": "Use only supplied source text. Do not infer unsupported numerical values, missing images, absent studies or a controlled cross-study ranking.",
+      "expectAbstention": false,
+      "imageSupplied": false
+    },
+    {
+      "id": "chat-eval-21",
+      "scenario": "visual",
+      "sourceIDs": ["zotero:1:VISUAL01:PDF00003"],
+      "question": "What qualitative trend does Figure 2 describe?",
+      "selectedText": null,
+      "annotations": [],
+      "priorTurns": [],
+      "expectedQuotes": [
+        {
+          "sourceID": "zotero:1:VISUAL01:PDF00003",
+          "quote": "Figure 2 caption: acceptance decreases as temperature increases.",
+          "pageIndex": 0
+        }
+      ],
+      "expectedLimit": "Use only supplied source text. Do not infer unsupported numerical values, missing images, absent studies or a controlled cross-study ranking.",
+      "expectAbstention": false,
+      "imageSupplied": false
+    },
+    {
+      "id": "chat-eval-22",
+      "scenario": "visual",
+      "sourceIDs": ["zotero:1:VISUAL01:PDF00003"],
+      "question": "Read the exact error bars from Figure 2.",
+      "selectedText": null,
+      "annotations": [],
+      "priorTurns": [],
+      "expectedQuotes": [
+        {
+          "sourceID": "zotero:1:VISUAL01:PDF00003",
+          "quote": "The plotted point coordinates and error bars are unavailable in this text export.",
+          "pageIndex": 0
+        }
+      ],
+      "expectedLimit": "Use only supplied source text. Do not infer unsupported numerical values, missing images, absent studies or a controlled cross-study ranking.",
+      "expectAbstention": true,
+      "imageSupplied": false
+    },
+    {
+      "id": "chat-eval-23",
+      "scenario": "comparison",
+      "sourceIDs": ["zotero:1:METHOD01:PDF00001", "zotero:1:METHOD03:PDF00004"],
+      "question": "Compare the core mechanisms of Kite and Relay.",
+      "selectedText": null,
+      "annotations": [],
+      "priorTurns": [],
+      "expectedQuotes": [
+        {
+          "sourceID": "zotero:1:METHOD01:PDF00001",
+          "quote": "The Kite method uses a small draft model to propose four tokens per round.",
+          "pageIndex": 0
+        }
+      ],
+      "expectedLimit": "Use only supplied source text. Do not infer unsupported numerical values, missing images, absent studies or a controlled cross-study ranking.",
+      "expectAbstention": false,
+      "imageSupplied": false
+    },
+    {
+      "id": "chat-eval-24",
+      "scenario": "comparison",
+      "sourceIDs": ["zotero:1:METHOD01:PDF00001", "zotero:1:METHOD03:PDF00004"],
+      "question": "Can we rank Kite and Relay using their separate timings?",
+      "selectedText": null,
+      "annotations": [],
+      "priorTurns": [],
+      "expectedQuotes": [
+        {
+          "sourceID": "zotero:1:METHOD03:PDF00004",
+          "quote": "The experiments used a different machine from Kite, so the latency numbers cannot establish a controlled ranking.",
+          "pageIndex": 0
+        }
+      ],
+      "expectedLimit": "Use only supplied source text. Do not infer unsupported numerical values, missing images, absent studies or a controlled cross-study ranking.",
+      "expectAbstention": true,
+      "imageSupplied": false
+    },
+    {
+      "id": "chat-eval-25",
+      "scenario": "comparison",
+      "sourceIDs": ["zotero:1:METHOD01:PDF00001", "zotero:1:METHOD03:PDF00004"],
+      "question": "Compare their batch sizes.",
+      "selectedText": null,
+      "annotations": [],
+      "priorTurns": [],
+      "expectedQuotes": [
+        {
+          "sourceID": "zotero:1:METHOD03:PDF00004",
+          "quote": "Relay was evaluated at batch size eight.",
+          "pageIndex": 0
+        }
+      ],
+      "expectedLimit": "Use only supplied source text. Do not infer unsupported numerical values, missing images, absent studies or a controlled cross-study ranking.",
+      "expectAbstention": false,
+      "imageSupplied": false
+    },
+    {
+      "id": "chat-eval-26",
+      "scenario": "comparison",
+      "sourceIDs": ["zotero:1:METHOD02:PDF00002", "zotero:1:METHOD03:PDF00004"],
+      "question": "Compare accuracy evidence for the language study and Relay.",
+      "selectedText": null,
+      "annotations": [],
+      "priorTurns": [],
+      "expectedQuotes": [
+        {
+          "sourceID": "zotero:1:METHOD03:PDF00004",
+          "quote": "Relay does not provide an accuracy evaluation.",
+          "pageIndex": 0
+        }
+      ],
+      "expectedLimit": "Use only supplied source text. Do not infer unsupported numerical values, missing images, absent studies or a controlled cross-study ranking.",
+      "expectAbstention": true,
+      "imageSupplied": false
+    },
+    {
+      "id": "chat-eval-27",
+      "scenario": "insufficient",
+      "sourceIDs": ["zotero:1:METHOD01:PDF00001"],
+      "question": "Give the clinical trial outcome for Kite.",
+      "selectedText": null,
+      "annotations": [],
+      "priorTurns": [],
+      "expectedQuotes": [
+        {
+          "sourceID": "zotero:1:METHOD01:PDF00001",
+          "quote": "No clinical study was conducted.",
+          "pageIndex": 0
+        }
+      ],
+      "expectedLimit": "Use only supplied source text. Do not infer unsupported numerical values, missing images, absent studies or a controlled cross-study ranking.",
+      "expectAbstention": true,
+      "imageSupplied": false
+    },
+    {
+      "id": "chat-eval-28",
+      "scenario": "insufficient",
+      "sourceIDs": ["zotero:1:METHOD02:PDF00002"],
+      "question": "보고된 메모리 사용량을 알려주세요.",
+      "selectedText": null,
+      "annotations": [],
+      "priorTurns": [],
+      "expectedQuotes": [
+        {
+          "sourceID": "zotero:1:METHOD02:PDF00002",
+          "quote": "메모리 사용량은 측정하지 않았다.",
+          "pageIndex": 0
+        }
+      ],
+      "expectedLimit": "Use only supplied source text. Do not infer unsupported numerical values, missing images, absent studies or a controlled cross-study ranking.",
+      "expectAbstention": true,
+      "imageSupplied": false
+    },
+    {
+      "id": "chat-eval-29",
+      "scenario": "insufficient",
+      "sourceIDs": ["zotero:1:VISUAL01:PDF00003"],
+      "question": "Verify a citation claiming a 99% confidence interval.",
+      "selectedText": null,
+      "annotations": [],
+      "priorTurns": [],
+      "expectedQuotes": [],
+      "expectedLimit": "Use only supplied source text. Do not infer unsupported numerical values, missing images, absent studies or a controlled cross-study ranking.",
+      "expectAbstention": true,
+      "imageSupplied": false
+    },
+    {
+      "id": "chat-eval-30",
+      "scenario": "insufficient",
+      "sourceIDs": ["zotero:1:METHOD03:PDF00004"],
+      "question": "Use the excluded Kite PDF to give its latency.",
+      "selectedText": null,
+      "annotations": [],
+      "priorTurns": [],
+      "expectedQuotes": [],
+      "expectedLimit": "Use only supplied source text. Do not infer unsupported numerical values, missing images, absent studies or a controlled cross-study ranking.",
+      "expectAbstention": true,
+      "imageSupplied": false
+    }
+  ]
+}

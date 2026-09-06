@@ -63,6 +63,9 @@ class Addon {
         action: string;
         text?: string;
         annotationIDs?: string[];
+        attachmentID?: number;
+        pageIndex?: number;
+        pageLabel?: string;
         updatedAt: string;
       }
     >;

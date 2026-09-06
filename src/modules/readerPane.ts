@@ -78,7 +78,35 @@ import {
   setMasteryState,
 } from "./comprehensionCheck/status";
 import { clearIndexedChunks } from "./context/indexStore";
-import { getCurrentReaderContext } from "./context/readerContext";
+import {
+  assertRequestContextCurrent,
+  captureRequestContext,
+} from "./context/requestContext";
+import { getVerifiedProviderResume } from "./session/providerBinding";
+import { captureExecutionSettings } from "./ai/executionSettings";
+import {
+  getChatDraft,
+  updateChatDraft,
+  consumeChatDraft,
+  restoreChatDraft,
+  createChatDraftSubmission,
+  type ChatDraftSubmission,
+} from "./ui/chatDraft";
+import { persistChatDraftSubmission } from "./ui/chatAdmission";
+import { buildReaderActionQuestion } from "./readerActionPrompt";
+import { createChatTools, showChatReviewPanel } from "./ui/chatTools";
+import type { MessageRecord } from "./message/types";
+import { openChatCitation } from "./message/chatCitations";
+import {
+  buildChatNotePreview,
+  resolveChatNoteTarget,
+  saveChatMessageToNote,
+} from "./note/chatNote";
+import {
+  loadResearchWorkspaceHome,
+  addResearchWorkspaceComparisonQuestion,
+  addResearchWorkspaceCandidate,
+} from "./researchWorkspace/facade";
 import { createCriticalReadLocalizer } from "./criticalRead/localization";
 import { parseCriticalReadOutput } from "./criticalRead/parser";
 import {
@@ -134,6 +162,7 @@ import {
   type RecommendationGroup,
   type RecommendedPaper,
 } from "./relatedRecommendations";
+import { resolveSessionHistoryPrefs } from "./session/historyPrefs";
 import { sessionHistoryService } from "./session/sessionHistoryService";
 import { sessionStore } from "./session/sessionStore";
 import { isLikelySilentToolMessage } from "./session/silentTurnFilter";
@@ -146,6 +175,9 @@ import {
   installChatComposerAutosize,
 } from "./ui/chatComposerSizing";
 import {
+  captureChatPosition,
+  jumpToChatMessage,
+  isChatFollowingLatest,
   disposeChatTranscriptWindow,
   renderChatTranscriptWindow,
 } from "./ui/chatTranscriptWindow";
@@ -269,6 +301,11 @@ export function unregisterPaperPilotPaneSection(): void {
   addon.data.aiReaderPaneRegistered = false;
 }
 
+const chatMessageOptions = new WeakMap<
+  HTMLElement,
+  (message: MessageRecord) => NonNullable<Parameters<typeof addMessage>[3]>
+>();
+
 export function setReaderActionDraft(
   draft: NonNullable<typeof addon.data.readerActionDrafts> extends Map<
     number,
@@ -276,8 +313,19 @@ export function setReaderActionDraft(
   >
     ? Draft
     : never,
+  options: { attachToComposer?: boolean } = {},
 ) {
   addon.data.readerActionDrafts?.set(draft.itemID, draft);
+  if (options.attachToComposer === false) return;
+  updateChatDraft(draft.itemID, draft.sessionId, {
+    context: {
+      text: draft.text,
+      annotationIDs: draft.annotationIDs,
+      attachmentID: draft.attachmentID,
+      pageIndex: draft.pageIndex,
+      pageLabel: draft.pageLabel,
+    },
+  });
 }
 
 export function clearReaderActionDraft(itemID?: number) {
@@ -500,6 +548,19 @@ export function registerPaperPilotPaneSection() {
       sectionStack.after(workspaceResize.root);
 
       paneContainer.append(paneResize.root);
+      const focusButton = body.ownerDocument.createElement("button");
+      focusButton.type = "button";
+      focusButton.className = "pp-btn pp-btn--ghost pp-chat-focus";
+      focusButton.textContent = "Focus chat";
+      focusButton.setAttribute("aria-pressed", "false");
+      paneHeader.root.append(focusButton);
+      focusButton.addEventListener("click", () => {
+        const focused = focusButton.getAttribute("aria-pressed") !== "true";
+        focusButton.setAttribute("aria-pressed", String(focused));
+        focusButton.textContent = focused ? "Show workbench" : "Focus chat";
+        sectionStack.hidden = focused;
+        workspaceResize.root.hidden = focused;
+      });
 
       const cleanupTasks: Array<() => void> = [
         () => paneHeader.dispose(),
@@ -534,11 +595,62 @@ export function registerPaperPilotPaneSection() {
       body.style.overflow = "hidden";
       const input = body.querySelector("#chat-input") as HTMLTextAreaElement;
       const sendButton = body.querySelector("#chat-send") as HTMLButtonElement;
+      let draftSessionID = sessionStore.getOrCreate(
+        item.id,
+        getModeForItem(item.id),
+        String(item.getField("title") || ""),
+      ).sessionId;
+      input.value = getChatDraft(item.id, draftSessionID).text;
+      const saveInputDraft = () =>
+        updateChatDraft(item.id, draftSessionID, { text: input.value });
+      input.addEventListener("input", saveInputDraft);
+      cleanupTasks.push(() =>
+        input.removeEventListener("input", saveInputDraft),
+      );
+      const restoreInputDraft = () => {
+        const next = sessionStore.get(item.id)?.sessionId;
+        if (next && next !== draftSessionID) {
+          draftSessionID = next;
+          input.value = getChatDraft(item.id, next).text;
+          input.style.height = `${CHAT_INPUT_MIN_HEIGHT}px`;
+        }
+      };
+
       const chatMessages = body.querySelector("#chat-messages") as HTMLElement;
       if (chatMessages) {
         cleanupTasks.push(() => disposeChatTranscriptWindow(chatMessages));
       }
       const draftCard = body.querySelector("#paper-pilot-draft") as HTMLElement;
+      void ztoolkit.Reader.getReader()
+        .then((reader) => {
+          if (
+            !reader ||
+            !isCurrentRender() ||
+            getChatDraft(item.id, draftSessionID).context
+          )
+            return;
+          const attachmentID = Number(reader._item?.id ?? reader.itemID);
+          const attachment = Zotero.Items.get(attachmentID);
+          if (
+            !attachment ||
+            ((Number(attachment.parentItemID) || attachmentID) !== item.id &&
+              attachmentID !== item.id)
+          )
+            return;
+          updateChatDraft(item.id, draftSessionID, {
+            context: {
+              attachmentID,
+              text: ztoolkit.Reader.getSelectedText?.(reader) || "",
+              pageIndex: reader._state?.primaryViewStats?.pageIndex,
+              pageLabel: reader._state?.primaryViewStats?.pageLabel,
+            },
+          });
+          renderDraftCard(draftCard, item.id);
+        })
+        .catch((error) =>
+          logReaderPaneError("Reader context preview unavailable", error),
+        );
+
       const streamingIndicator = body.querySelector(
         "#chat-streaming-indicator",
       ) as HTMLElement;
@@ -770,13 +882,16 @@ export function registerPaperPilotPaneSection() {
             isCurrent?: () => boolean;
             renderTranscript?: boolean;
           } = {},
-        ) =>
-          renderPaneState({
+        ) => {
+          restoreInputDraft();
+          chatTools.refresh();
+          return renderPaneState({
             itemID: item.id,
             itemTitle: String(item.getField("title") || ""),
             elements: paneElements,
             ...options,
           });
+        };
         const cancelCurrentRun = async () => {
           const state = getRunProgressState(item.id);
           const cancelled = await cancelActiveEngineRun(item.id);
@@ -1172,9 +1287,17 @@ export function registerPaperPilotPaneSection() {
                     abortController,
                   );
                   try {
+                    const requestContext = await captureRequestContext({
+                      itemID: item.id,
+                      reader: await ztoolkit.Reader.getReader().catch(
+                        () => undefined,
+                      ),
+                      selectedText: "",
+                    });
                     await generateRelatedPaperGroups({
                       itemID: item.id,
                       itemTitle: String(item.getField("title") || ""),
+                      requestContext,
                       concern: {
                         origin: "user_text",
                         text:
@@ -1646,6 +1769,338 @@ export function registerPaperPilotPaneSection() {
           }
         };
 
+        let searchOrigin:
+          | {
+              sessionId: string;
+              position: ReturnType<typeof captureChatPosition>;
+            }
+          | undefined;
+        const showActionError = (error: unknown) =>
+          chatTools.setStatus(
+            error instanceof Error ? error.message : String(error),
+          );
+        const chatTools = createChatTools({
+          doc: body.ownerDocument,
+          input,
+          getLength: () => getChatDraft(item.id, draftSessionID).responseLength,
+          onLength: (responseLength) => {
+            updateChatDraft(item.id, draftSessionID, { responseLength });
+          },
+          onAction: (action) => {
+            const command = buildReaderActionQuestion(action);
+            const existing = /^\/[a-z]*$/i.test(input.value)
+              ? ""
+              : input.value.trim();
+            input.value = existing
+              ? `${existing}\n\n${command.question}`
+              : command.question;
+            saveInputDraft();
+            input.style.height = `${CHAT_INPUT_MIN_HEIGHT}px`;
+            input.focus();
+            chatTools.setStatus(
+              "Edit the question, then Send. Your existing draft and selected context are preserved.",
+            );
+          },
+          onSearch: async (query, scope) => {
+            searchOrigin ??= {
+              sessionId: sessionStore.get(item.id)!.sessionId,
+              position: captureChatPosition(chatMessages),
+            };
+            return sessionHistoryService.searchMessages({
+              itemID: item.id,
+              query,
+              scope,
+            });
+          },
+          onResult: async (result) => {
+            if (isReaderChatBusy(item.id))
+              throw new Error(
+                "Wait for the current response before opening a search result.",
+              );
+            if (result.sessionId !== sessionStore.get(item.id)?.sessionId) {
+              await runSessionRuntimeTransition(async () => {
+                await sessionHistoryService.persistActiveSession({
+                  itemID: item.id,
+                  paperTitle: String(item.getField("title") || ""),
+                });
+                const opened = await sessionHistoryService.openSavedSession({
+                  itemID: item.id,
+                  sessionId: result.sessionId,
+                });
+                if (!opened)
+                  throw new Error("This conversation is no longer saved.");
+              });
+              await rerenderPane();
+            }
+            jumpToChatMessage(chatMessages, result.messageId);
+          },
+          onSearchClose: () => {
+            const origin = searchOrigin;
+            if (!origin) return true;
+            if (
+              origin.sessionId !== sessionStore.get(item.id)?.sessionId &&
+              isReaderChatBusy(item.id)
+            ) {
+              chatTools.setStatus(
+                "Wait for the current response before returning to the original conversation. Your reading position is retained.",
+              );
+              return false;
+            }
+            searchOrigin = undefined;
+            void (async () => {
+              if (origin.sessionId !== sessionStore.get(item.id)?.sessionId) {
+                if (isReaderChatBusy(item.id)) return;
+                await runSessionRuntimeTransition(async () => {
+                  await sessionHistoryService.persistActiveSession({
+                    itemID: item.id,
+                    paperTitle: String(item.getField("title") || ""),
+                  });
+                  await sessionHistoryService.openSavedSession({
+                    itemID: item.id,
+                    sessionId: origin.sessionId,
+                  });
+                });
+                await rerenderPane();
+              }
+              if (origin.position)
+                jumpToChatMessage(
+                  chatMessages,
+                  origin.position.key,
+                  origin.position.offset,
+                );
+            })().catch(showActionError);
+            return true;
+          },
+          onSummary: async () => {
+            if (resolveSessionHistoryPrefs().mode === "prompts-only")
+              throw new Error(
+                "Conversation summaries are unavailable in prompts-only history mode.",
+              );
+            if (isReaderChatBusy(item.id))
+              throw new Error(
+                "Wait for the current response before summarizing.",
+              );
+            const session = sessionStore.get(item.id)!;
+            const last = messageStore
+              .list(session.sessionId)
+              .filter(
+                (message) =>
+                  message.role === "assistant" &&
+                  message.status === "done" &&
+                  message.requestContext,
+              )
+              .at(-1);
+            if (!last?.requestContext)
+              throw new Error(
+                "Complete a source-grounded chat answer before summarizing.",
+              );
+            const continuity = sessionHistoryService.getContinuityContext({
+              itemID: item.id,
+              sourceFingerprint: last.requestContext.contentFingerprint,
+            });
+            const descriptor = getCurrentProviderDescriptor(item.id);
+            const question = `Summarize the conversation below for future continuity. Preserve user goals, definitions, unresolved questions and source limitations. Mark assistant interpretations; do not turn them into paper facts. Return compact Markdown only.\n\n${continuity.text}`;
+            await handleUserInput(
+              input,
+              chatMessages,
+              descriptor.mode,
+              item.id,
+              String(item.getField("title") || ""),
+              descriptor.placeholderResponse,
+              streamingIndicator,
+              {
+                question,
+                requestContext: last.requestContext,
+                preserveComposer: true,
+                silentUserMessage: true,
+                suppressChatMessages: true,
+                profile: "analysis",
+                onComplete: async (result) => {
+                  if (!result.success)
+                    throw new Error(result.assistantText || "Summary failed.");
+                  if (
+                    sessionStore.get(item.id)?.sessionId !== session.sessionId
+                  )
+                    throw new Error("The conversation changed.");
+                  await sessionHistoryService.setSummary({
+                    itemID: item.id,
+                    paperTitle: String(item.getField("title") || ""),
+                    text: result.assistantText,
+                    basedOnMessageId: last.id,
+                    sourceFingerprint: last.requestContext!.contentFingerprint,
+                  });
+                  chatTools.setStatus(
+                    `${resolveSessionHistoryPrefs().persistHistory ? "Conversation summary saved." : "Conversation summary kept in memory for this Zotero session."} It is model-generated context, not paper evidence.`,
+                  );
+                },
+              },
+            );
+          },
+        });
+        draftCard.before(chatTools.root);
+        cleanupTasks.push(
+          () => chatTools.dispose(),
+          () => chatMessageOptions.delete(chatMessages),
+        );
+        chatMessageOptions.set(chatMessages, (message) => ({
+          message,
+          actions: {
+            onEdit: async () => {
+              if (isReaderChatBusy(item.id))
+                throw new Error(
+                  "Wait for the current response before editing.",
+                );
+              const originalSession = sessionStore.get(item.id)!;
+              const user =
+                message.role === "user"
+                  ? message
+                  : messageStore.getTurn(
+                      originalSession.sessionId,
+                      message.turnId,
+                    );
+              if (!user)
+                throw new Error("The original question is unavailable.");
+              await runSessionRuntimeTransition(async () => {
+                const branch = await sessionHistoryService.forkSession({
+                  itemID: item.id,
+                  sessionId: originalSession.sessionId,
+                  messageId: user.id,
+                  kind: "edit",
+                  paperTitle: String(item.getField("title") || ""),
+                });
+                const context = user.request?.requestContext;
+                updateChatDraft(item.id, branch.sessionId, {
+                  text: user.text,
+                  responseLength: user.request?.responseLength ?? "default",
+                  context: context
+                    ? {
+                        attachmentID: context.attachmentID,
+                        text: context.selectedText,
+                        annotationIDs: context.annotations.map(
+                          (annotation) => annotation.key,
+                        ),
+                        pageIndex: context.pageIndex,
+                        pageLabel: context.pageLabel,
+                      }
+                    : undefined,
+                });
+              });
+              await rerenderPane();
+              input.focus();
+            },
+            onFork: async () => {
+              if (isReaderChatBusy(item.id))
+                throw new Error(
+                  "Wait for the current response before branching.",
+                );
+              await runSessionRuntimeTransition(async () => {
+                await sessionHistoryService.forkSession({
+                  itemID: item.id,
+                  sessionId: sessionStore.get(item.id)!.sessionId,
+                  messageId: message.id,
+                  kind: "answer",
+                  paperTitle: String(item.getField("title") || ""),
+                });
+              });
+              await rerenderPane();
+              input.focus();
+            },
+            onPin: async () => {
+              if (
+                message.role === "assistant" &&
+                !resolveSessionHistoryPrefs().persistAssistantMessages
+              )
+                throw new Error(
+                  "Assistant pins are unavailable in this history mode because assistant text is excluded from future request context. You can pin the user question instead.",
+                );
+              const pinned = await sessionHistoryService.togglePin({
+                itemID: item.id,
+                messageId: message.id,
+                paperTitle: String(item.getField("title") || ""),
+              });
+              chatTools.setStatus(
+                pinned
+                  ? `${resolveSessionHistoryPrefs().persistHistory ? "Pinned for future questions." : "Pinned in memory for this Zotero session."}${message.role === "assistant" ? " Assistant text remains interpretation." : ""}`
+                  : "Removed from pinned context.",
+              );
+              await refreshPaneState();
+            },
+            onSaveNote: async () => {
+              const target = await resolveChatNoteTarget(message);
+              const sessionID = sessionStore.get(item.id)!.sessionId;
+              const question =
+                message.role === "user"
+                  ? message.text
+                  : messageStore.getTurn(sessionID, message.turnId)?.text;
+              const noteContext = { sessionID, question };
+              showChatReviewPanel({
+                mount: chatTools.root,
+                title: "Save answer to Zotero note",
+                body: buildChatNotePreview(message, target, noteContext),
+                confirmLabel: "Save note",
+                onConfirm: async () => {
+                  await saveChatMessageToNote(message, target, noteContext);
+                  return `Saved under ${target.title}.`;
+                },
+              });
+            },
+            onSendToProject: async () => {
+              const home = await loadResearchWorkspaceHome();
+              if (!home.projects.length)
+                throw new Error(
+                  "Create a Research Workspace project first, then send this question.",
+                );
+              const doc = body.ownerDocument;
+              const select = doc.createElement("select");
+              select.setAttribute("aria-label", "Destination project");
+              for (const project of home.projects) {
+                const option = doc.createElement("option");
+                option.value = project.projectID;
+                option.textContent = project.name;
+                select.append(option);
+              }
+              const question = doc.createElement("textarea");
+              question.setAttribute("aria-label", "Comparison question");
+              question.value =
+                (message.role === "user"
+                  ? message.text
+                  : messageStore.getTurn(
+                      sessionStore.get(item.id)!.sessionId,
+                      message.turnId,
+                    )?.text) ??
+                "How does this paper compare with the project papers?";
+              const sessionID = sessionStore.get(item.id)!.sessionId;
+              showChatReviewPanel({
+                mount: chatTools.root,
+                title: "Send comparison question to project",
+                body: "Review the question and destination. It will be added to the project without starting an analysis.",
+                fields: [select, question],
+                confirmLabel: "Add question",
+                onConfirm: async () => {
+                  await addResearchWorkspaceComparisonQuestion({
+                    projectID: select.value,
+                    question: question.value,
+                    provenance: {
+                      sessionID,
+                      messageID: message.id,
+                      sourceID:
+                        message.requestContext?.sourceID ??
+                        message.request?.requestContext?.sourceID,
+                    },
+                  });
+                  return "Question added to the project.";
+                },
+              });
+            },
+          },
+          onCitation: async (citation) => {
+            const context =
+              message.requestContext ?? message.request?.requestContext;
+            if (!context) throw new Error("The original PDF is unavailable.");
+            await openChatCitation(citation, context);
+          },
+        }));
+
         renderChatComposerForItem(input, item.id);
         const cleanupComposerSizing = installChatComposerAutosize(input);
         const unsubscribeFromRunEvents = subscribeToReaderRunEvents(
@@ -1999,9 +2454,15 @@ export function registerPaperPilotPaneSection() {
           };
           let reservationOwned = false;
           try {
+            const requestContext = await captureRequestContext({
+              itemID: item.id,
+              reader: await ztoolkit.Reader.getReader().catch(() => undefined),
+              selectedText: "",
+            });
             await generateRelatedPaperGroups({
               itemID: item.id,
               itemTitle: item.getField("title"),
+              requestContext,
               concern: submission.concern
                 ? {
                     text: submission.concern,
@@ -2680,9 +3141,7 @@ export function registerPaperPilotPaneSection() {
           const itemID = item.id;
           const { mode, placeholderResponse } =
             getProviderDescriptorForItem(itemID);
-          const savedInput = input.value;
           try {
-            input.value = prompt;
             await handleUserInput(
               input,
               chatMessages,
@@ -2692,6 +3151,8 @@ export function registerPaperPilotPaneSection() {
               placeholderResponse,
               streamingIndicator,
               {
+                question: prompt,
+                preserveComposer: true,
                 silentUserMessage: true,
                 suppressChatMessages: true,
                 profile: "analysis",
@@ -2723,9 +3184,6 @@ export function registerPaperPilotPaneSection() {
               paperTitle: String(item.getField("title") || ""),
             });
             workbenchSection.markUpdated();
-          } finally {
-            input.value = savedInput;
-            input.disabled = false;
           }
         }
 
@@ -3160,6 +3618,7 @@ export function registerPaperPilotPaneSection() {
 
         const submitCurrentInput = async () => {
           if (isReaderChatBusy(item.id)) return;
+          saveInputDraft();
           const descriptor = getCurrentProviderDescriptor(item.id);
           await handleUserInput(
             input,
@@ -3224,15 +3683,28 @@ export function registerPaperPilotPaneSection() {
             renderDraftCard(draftCard, item.id);
             return;
           }
-          input.value = pending.question;
-          input.dispatchEvent(
-            new input.ownerDocument.defaultView!.Event("input"),
-          );
           renderDraftCard(draftCard, item.id);
           input.focus();
-
           if (pending.autoSubmit) {
-            await submitCurrentInput();
+            const requestDraftContext = addon.data.readerActionDrafts?.get(
+              item.id,
+            );
+            clearReaderActionDraft(item.id);
+            const descriptor = getCurrentProviderDescriptor(item.id);
+            await handleUserInput(
+              input,
+              chatMessages,
+              descriptor.mode,
+              item.id,
+              String(item.getField("title") || ""),
+              descriptor.placeholderResponse,
+              streamingIndicator,
+              {
+                question: pending.question,
+                requestDraftContext,
+                preserveComposer: true,
+              },
+            );
           }
         };
         addon.data.applyReaderActionToPane?.set(
@@ -3268,21 +3740,49 @@ export function registerPaperPilotPaneSection() {
 }
 
 function renderDraftCard(draftCard: HTMLElement, itemID: number) {
-  const draft = addon.data.readerActionDrafts?.get(itemID);
-  if (!draft) {
-    draftCard.style.display = "none";
-    draftCard.textContent = "";
-    return;
-  }
-
-  const detail = draft.text
-    ? `“${draft.text.slice(0, 180)}”`
-    : draft.annotationIDs?.length
-      ? `Annotations: ${draft.annotationIDs.join(", ")}`
-      : "No text attached";
-
-  draftCard.style.display = "block";
-  draftCard.textContent = `Selected passage: ${detail}`;
+  const sessionID = sessionStore.get(itemID)?.sessionId;
+  const context = sessionID
+    ? getChatDraft(itemID, sessionID).context
+    : undefined;
+  const doc = draftCard.ownerDocument;
+  draftCard.replaceChildren();
+  draftCard.style.display = "flex";
+  const paper = doc.createElement("span");
+  paper.className = "pp-chat-source";
+  const item = Zotero.Items.get(itemID);
+  paper.textContent = `Paper: ${String(item?.getField("title") || "Current paper")} ${context?.attachmentID ? `· PDF ${context.attachmentID}` : ""}`;
+  paper.title = paper.textContent;
+  draftCard.append(paper);
+  if (!context || (!context.text && !context.annotationIDs?.length)) return;
+  const details = doc.createElement("details");
+  const summary = doc.createElement("summary");
+  summary.textContent = context.annotationIDs?.length
+    ? `${context.annotationIDs.length} selected annotations`
+    : "Selected passage";
+  const content = doc.createElement("div");
+  content.textContent =
+    context.text ||
+    `Annotation text, comments and location will be read from PDF ${context.attachmentID ?? "source"} at send time. Missing annotations are excluded with an explanation.`;
+  if (context.pageLabel || context.pageIndex !== undefined)
+    content.append(
+      doc.createTextNode(
+        ` · Page ${context.pageLabel || Number(context.pageIndex) + 1}`,
+      ),
+    );
+  const remove = doc.createElement("button");
+  remove.type = "button";
+  remove.className = "pp-btn pp-btn--ghost";
+  remove.textContent = "Remove context";
+  remove.addEventListener("click", () => {
+    if (sessionID)
+      updateChatDraft(itemID, sessionID, {
+        context: { attachmentID: context.attachmentID, text: "" },
+      });
+    clearReaderActionDraft(itemID);
+    renderDraftCard(draftCard, itemID);
+  });
+  details.append(summary, content, remove);
+  draftCard.append(details);
 }
 
 function getCurrentProviderDescriptor(itemID?: number) {
@@ -3403,7 +3903,6 @@ async function renderPaneState(options: {
     descriptor.status,
   );
   if (params.renderTranscript !== false) {
-    params.chatMessages.replaceChildren();
     renderMessageHistory(
       params.chatMessages,
       session.sessionId,
@@ -3678,6 +4177,48 @@ function renderRelatedRecommendationState(
         reviewInsightRunning:
           state.reviewInsightRunningCandidateID === paper.candidateID,
         actions: {
+          onSaveCandidate: async (target) => {
+            const home = await loadResearchWorkspaceHome();
+            if (!home.projects.length)
+              throw new Error(
+                "Create a Research Workspace project before saving a candidate.",
+              );
+            const select = doc.createElement("select");
+            select.setAttribute("aria-label", "Candidate destination project");
+            for (const project of home.projects) {
+              const option = doc.createElement("option");
+              option.value = project.projectID;
+              option.textContent = project.name;
+              select.append(option);
+            }
+            showChatReviewPanel({
+              mount: groupsContainer,
+              title: "Save candidate to project inbox",
+              body: `${target.title}\n${target.reason || ""}\nPDF linking and screening remain separate steps.`,
+              fields: [select],
+              confirmLabel: "Save candidate",
+              onConfirm: async () => {
+                await addResearchWorkspaceCandidate({
+                  projectID: select.value,
+                  metadata: {
+                    title: target.title,
+                    doi: target.doi,
+                    year: target.year,
+                    url: target.url,
+                    authors: target.authors,
+                  },
+                  provenance: {
+                    kind: "discovery",
+                    url: target.url,
+                    sessionID: sessionStore.get(itemID)?.sessionId,
+                    note: target.searchConcern || target.reason,
+                  },
+                  userNote: target.reason,
+                });
+                return "Candidate saved. Open the project inbox to link an exact PDF.";
+              },
+            });
+          },
           onOpen: (target) =>
             openRecommendedPaper(target, {
               includeReviewURL: canViewPublicReviewInsights(
@@ -3748,9 +4289,17 @@ function renderRelatedRecommendationState(
             });
             rerender();
             try {
+              const requestContext = await captureRequestContext({
+                itemID,
+                reader: await ztoolkit.Reader.getReader().catch(
+                  () => undefined,
+                ),
+                selectedText: "",
+              });
               const insight = await generatePublicReviewInsight({
                 itemID,
                 itemTitle: currentPaperTitle,
+                requestContext,
                 paper: target,
                 signal: abortController.signal,
                 onStatus: (message) => {
@@ -3950,6 +4499,7 @@ function renderMessageHistory(
   sessionId: string,
   placeholderResponse: string,
 ) {
+  const sourceChecks = new Map<string, Promise<void>>();
   const getMessages = () =>
     messageStore
       .list(sessionId)
@@ -3958,23 +4508,43 @@ function renderMessageHistory(
 
   if (!messages.length) {
     disposeChatTranscriptWindow(chatMessages);
+    chatMessages.replaceChildren();
     renderHelpState(chatMessages, placeholderResponse);
     return;
   }
 
-  renderChatTranscriptWindow({
+  const position = isChatFollowingLatest(chatMessages)
+    ? undefined
+    : captureChatPosition(chatMessages);
+  const window = renderChatTranscriptWindow({
     container: chatMessages,
     getItems: getMessages,
     getKey: (message) => message.id,
     renderItem: (message) => {
+      const snapshot =
+        message.requestContext ?? message.request?.requestContext;
+      let sourceCheck: Promise<void> | undefined;
+      if (
+        snapshot &&
+        message.citations?.some((citation) => citation.status === "verified")
+      ) {
+        const key = `${snapshot.sourceID}:${snapshot.contentFingerprint}`;
+        sourceCheck = sourceChecks.get(key);
+        if (!sourceCheck) {
+          sourceCheck = assertRequestContextCurrent(snapshot);
+          sourceChecks.set(key, sourceCheck);
+        }
+      }
       const messageElement = addMessage(
         chatMessages,
         message.status === "error" ? `Error: ${message.text}` : message.text,
         message.role === "assistant" ? "ai" : "user",
+        { ...chatMessageOptions.get(chatMessages)?.(message), sourceCheck },
       );
       return messageElement?.parentElement || null;
     },
   });
+  if (position) window.showMessage(position.key, position.offset);
 }
 
 function renderStreamingIndicator(
@@ -4034,7 +4604,6 @@ async function runCriticalReadAgentRequest(params: {
     readerInput: params.readerInput || undefined,
     responseLanguage: normalizeResponseLanguage(getPref("responseLanguage")),
   });
-  params.input.value = prompt;
   await handleUserInput(
     params.input,
     params.chatMessages,
@@ -4044,6 +4613,8 @@ async function runCriticalReadAgentRequest(params: {
     getCurrentProviderDescriptor(params.item.id).placeholderResponse,
     params.streamingIndicator,
     {
+      question: prompt,
+      preserveComposer: true,
       displayQuestion: `Critical Read · Step ${step.id}`,
       silentUserMessage: true,
       suppressChatMessages: true,
@@ -4079,7 +4650,6 @@ async function runPaperArtifactRequest(params: {
     renderWorkbenchArtifactState(params.elements, params.item.id);
   };
 
-  params.input.value = request.prompt;
   await handleUserInput(
     params.input,
     params.chatMessages,
@@ -4089,6 +4659,8 @@ async function runPaperArtifactRequest(params: {
     getCurrentProviderDescriptor(params.item.id).placeholderResponse,
     params.streamingIndicator,
     {
+      question: request.prompt,
+      preserveComposer: true,
       displayQuestion: request.label,
       silentUserMessage: true,
       suppressChatMessages: true,
@@ -4218,7 +4790,6 @@ async function runPaperCompareRequest(params: {
     renderWorkbenchArtifactState(params.elements, params.item.id);
   };
 
-  params.input.value = request.prompt;
   await handleUserInput(
     params.input,
     params.chatMessages,
@@ -4228,6 +4799,8 @@ async function runPaperCompareRequest(params: {
     getCurrentProviderDescriptor(params.item.id).placeholderResponse,
     params.streamingIndicator,
     {
+      question: request.prompt,
+      preserveComposer: true,
       displayQuestion: request.label,
       silentUserMessage: true,
       suppressChatMessages: true,
@@ -4300,6 +4873,10 @@ async function handleUserInput(
   placeholderResponse: string,
   streamingIndicator: HTMLElement,
   options?: {
+    question?: string;
+    requestDraftContext?: import("./ui/chatDraft").ChatDraftContext;
+    requestContext?: import("./context/requestContext").RequestContextSnapshot;
+    preserveComposer?: boolean;
     displayQuestion?: string;
     silentUserMessage?: boolean;
     profile?: RunProfile;
@@ -4310,165 +4887,195 @@ async function handleUserInput(
     onComplete?: (result: ReaderRunCompletionResult) => void | Promise<void>;
   },
 ) {
-  const question = input.value.trim();
-  if (!question) {
-    return;
-  }
-
+  const question = (options?.question ?? input.value).trim();
+  if (!question) return;
   const activeRunMessage = getActiveRunMessage(mode, itemID);
   const continuingParent = Boolean(
     options?.continuationToken &&
       isReaderRunTokenActive(itemID, options.continuationToken),
   );
   if (activeRunMessage && !continuingParent) {
-    if (options?.silentUserMessage) {
-      input.value = "";
-      input.style.height = `${CHAT_INPUT_MIN_HEIGHT}px`;
-    }
-    if (!options?.suppressChatMessages) {
+    if (!options?.suppressChatMessages)
       addMessage(chatMessages, activeRunMessage, "ai");
-    }
     return;
   }
-
+  const admittedAt = Date.now();
   const admissionToken = claimChatEngineRequest(itemID);
-  if (!admissionToken) {
-    const assistantText =
-      "A run is already starting, running, or finishing for this paper. Wait for it to settle before starting another request.";
-    if (!options?.suppressChatMessages) {
-      addMessage(chatMessages, assistantText, "ai");
-    }
-    return;
-  }
-
-  const activeSessionID = sessionStore.get(itemID)?.sessionId;
-  const candidateDraft = addon.data.readerActionDrafts?.get(itemID);
-  const draft =
-    candidateDraft &&
-    (!candidateDraft.sessionId || candidateDraft.sessionId === activeSessionID)
-      ? candidateDraft
+  if (!admissionToken) return;
+  let sourceCapturedAt: number | undefined;
+  let userTurnPersistedAt: number | undefined;
+  const current = sessionStore.getOrCreate(itemID, mode, itemTitle);
+  const activeSessionID = current.sessionId;
+  const admittedDraft = getChatDraft(itemID, activeSessionID);
+  const actionDraft = addon.data.readerActionDrafts?.get(itemID);
+  const context =
+    options?.requestDraftContext ??
+    admittedDraft.context ??
+    (actionDraft?.sessionId === activeSessionID ? actionDraft : undefined);
+  const preserveComposer =
+    options?.preserveComposer || options?.silentUserMessage;
+  let submission: ChatDraftSubmission | undefined =
+    !preserveComposer && admittedDraft.submission?.request.question === question
+      ? admittedDraft.submission
       : undefined;
-  if (candidateDraft) clearReaderActionDraft(itemID);
+  mode = submission?.request.executionSettings?.mode ?? mode;
+  let consumed = false;
+  let submitted = false;
+  let turnId: string | undefined;
+  let attemptId: string | undefined;
+  let requestContextStatus = "";
+  const complete = async (result: ReaderRunCompletionResult) => {
+    result.timings ??= { preparingAt: admittedAt };
+    if (result.timings) {
+      const t = result.timings;
+      t.admittedAt = admittedAt;
+      t.sourceCapturedAt = sourceCapturedAt;
+      t.userTurnPersistedAt = userTurnPersistedAt;
+      const seconds = (end?: number, start?: number) =>
+        end && start ? `${((end - start) / 1000).toFixed(1)}s` : "unavailable";
+      const status = input
+        .closest("#paper-pilot-container")
+        ?.querySelector(".pp-chat-context-status");
+      if (status) {
+        t.displayedAt = Date.now();
+        status.textContent = `${requestContextStatus}\nPreparation ${seconds(t.contextReadyAt, t.admittedAt)} · First answer ${seconds(t.firstAssistantAt, t.spawnedAt)} · Final display ${seconds(t.displayedAt, t.spawnedAt)} · Total ${seconds(t.displayedAt, t.admittedAt)}`;
+      }
+    }
+    await options?.onComplete?.(result);
+  };
   try {
     const profile = options?.profile || "chat";
     if (!continuingParent) startRunProgress(itemID, mode, admissionToken);
     renderChatComposerForItem(input, itemID);
     options?.onAdmitted?.();
-    ztoolkit.log("Placeholder question:", question);
-    if (!options?.silentUserMessage) {
-      chatMessages.querySelector('[data-pp-chat-help="true"]')?.remove();
-      addMessage(chatMessages, options?.displayQuestion || question, "user");
+    if (!preserveComposer) {
+      consumed = consumeChatDraft(
+        itemID,
+        activeSessionID,
+        admittedDraft.revision,
+      );
+      if (consumed) {
+        input.value = "";
+        input.style.height = `${CHAT_INPUT_MIN_HEIGHT}px`;
+        input.scrollTop = 0;
+        clearReaderActionDraft(itemID);
+      }
     }
-    input.value = "";
-    input.style.height = `${CHAT_INPUT_MIN_HEIGHT}px`;
-    input.scrollTop = 0;
-    input.disabled = true;
     renderStreamingIndicator(streamingIndicator, true);
-
-    const readerContext: { selectedText?: string } | undefined = draft
+    // Capture one reader before any preparation; the capture validates its parent.
+    const reader = context?.attachmentID
       ? undefined
-      : await getCurrentReaderContext().catch(() => ({
-          selectedText: undefined,
-        }));
-    const selectedText =
-      draft?.text ||
-      (readerContext?.selectedText
-        ? String(readerContext.selectedText)
-        : undefined);
+      : await ztoolkit.Reader.getReader().catch(() => undefined);
+    const executionSettings =
+      submission?.request.executionSettings ?? captureExecutionSettings(mode);
+    const requestContext =
+      submission?.request.requestContext ??
+      options?.requestContext ??
+      (await captureRequestContext({
+        itemID,
+        reader,
+        attachmentID: context?.attachmentID,
+        selectedText: context?.text ?? "",
+        annotationIDs: context?.annotationIDs,
+        pageIndex: context?.pageIndex,
+        pageLabel: context?.pageLabel,
+      }));
+    sourceCapturedAt = Date.now();
     if (isChatPreparationCancelled(itemID)) return;
+    if (!options?.silentUserMessage)
+      submission ??= createChatDraftSubmission({
+        question,
+        requestContext,
+        executionSettings,
+        responseLength: admittedDraft.responseLength,
+      });
     const session = options?.silentUserMessage
       ? sessionStore.touch(itemID, mode, itemTitle)
-      : await sessionHistoryService.persistUserMessage({
+      : await persistChatDraftSubmission({
           itemID,
           mode,
           paperTitle: itemTitle,
-          text: question,
+          submission: submission!,
         });
-    if (isChatPreparationCancelled(itemID)) return;
-    if (mode === "codex_cli") {
-      await handleCodexQuestion({
-        itemID,
-        sessionId: session.sessionId,
-        sessionTitle: session.threadTitle,
-        paperTitle: itemTitle,
-        question,
-        selectedText,
-        annotationIDs: draft?.annotationIDs,
-        useResume: profile === "chat" && Boolean(session.lastCodexSessionID),
-        resumeSessionId:
-          profile === "chat" ? session.lastCodexSessionID : undefined,
-        profile,
-        outputSchema: options?.outputSchema,
-        chatMessages,
-        streamingIndicator,
-        suppressChatMessages: options?.suppressChatMessages,
-        continuationToken: options?.continuationToken,
-        onComplete: options?.onComplete,
-      });
-      return;
+    userTurnPersistedAt = Date.now();
+    submitted = !options?.silentUserMessage;
+    turnId = submitted ? session.lastTurnId : undefined;
+    attemptId = submitted ? session.lastAttemptId : undefined;
+    if (submitted) {
+      chatMessages.querySelector('[data-pp-chat-help="true"]')?.remove();
+      addMessage(chatMessages, options?.displayQuestion || question, "user");
     }
-
-    if (mode === "claude_code") {
-      await handleClaudeQuestion({
-        itemID,
-        sessionId: session.sessionId,
-        sessionTitle: session.threadTitle,
-        paperTitle: itemTitle,
-        question,
-        selectedText,
-        annotationIDs: draft?.annotationIDs,
-        resumeSessionId:
-          profile === "chat" ? session.lastClaudeSessionID : undefined,
-        profile,
-        outputSchema: options?.outputSchema,
-        chatMessages,
-        streamingIndicator,
-        suppressChatMessages: options?.suppressChatMessages,
-        continuationToken: options?.continuationToken,
-        onComplete: options?.onComplete,
-      });
-      return;
-    }
-
-    if (mode === "gemini_cli") {
-      await handleGeminiQuestion({
-        itemID,
-        sessionId: session.sessionId,
-        sessionTitle: session.threadTitle,
-        paperTitle: itemTitle,
-        question,
-        selectedText,
-        annotationIDs: draft?.annotationIDs,
-        resumeSessionId:
-          profile === "chat" ? session.lastGeminiSessionID : undefined,
-        profile,
-        outputSchema: options?.outputSchema,
-        chatMessages,
-        streamingIndicator,
-        suppressChatMessages: options?.suppressChatMessages,
-        continuationToken: options?.continuationToken,
-        onComplete: options?.onComplete,
-      });
-      return;
-    }
-
-    const assistantText = `${placeholderResponse}\n\nGemini CLI mode is active.`;
-    if (!options?.suppressChatMessages) {
-      addMessage(chatMessages, assistantText, "ai");
-      messageStore.append(session.sessionId, {
-        role: "assistant",
-        text: assistantText,
-        sourceMode: mode,
-        status: "done",
-      });
-    }
-    await options?.onComplete?.({
-      success: true,
-      assistantText,
+    const continuity = sessionHistoryService.getContinuityContext({
+      itemID,
+      sourceFingerprint: requestContext.contentFingerprint,
     });
+    const resumeSessionId =
+      profile === "chat"
+        ? getVerifiedProviderResume(
+            session,
+            mode,
+            requestContext.sourceID,
+            requestContext.contentFingerprint,
+          )
+        : undefined;
+    const continuityMode = resumeSessionId
+      ? "Native conversation resume"
+      : continuity.text
+        ? "Fresh provider conversation with saved context"
+        : "Fresh provider conversation; prior context unavailable";
+    const status = input
+      .closest("#paper-pilot-container")
+      ?.querySelector(".pp-chat-context-status");
+    requestContextStatus = `${continuityMode}. ${requestContext.paperTitle} · ${requestContext.source.attachmentKey} · ${continuity.includedTurns} prior turns, ${continuity.includedPins} pins${continuity.usedSummary ? ", summary" : ""}; ${continuity.omitted} omitted. ${requestContext.warnings.join(" ")}`;
+    if (status) status.textContent = requestContextStatus;
+    if (isChatPreparationCancelled(itemID)) return;
+    const common = {
+      itemID,
+      sessionId: session.sessionId,
+      sessionTitle: session.threadTitle,
+      paperTitle: itemTitle,
+      question,
+      selectedText: requestContext.selectedText,
+      annotationIDs: context?.annotationIDs,
+      requestContext,
+      executionSettings,
+      responseLength: admittedDraft.responseLength,
+      turnId,
+      attemptId,
+      profile,
+      outputSchema: options?.outputSchema,
+      chatMessages,
+      streamingIndicator,
+      suppressChatMessages: options?.suppressChatMessages,
+      continuationToken: options?.continuationToken,
+      onComplete: complete,
+    };
+    if (mode === "codex_cli")
+      await handleCodexQuestion({
+        ...common,
+        useResume: Boolean(resumeSessionId),
+        resumeSessionId,
+      });
+    else if (mode === "claude_code")
+      await handleClaudeQuestion({
+        ...common,
+        resumeSessionId,
+      });
+    else
+      await handleGeminiQuestion({
+        ...common,
+        resumeSessionId,
+      });
   } catch (error) {
     logReaderPaneError("Chat request failed", error);
     if (isChatPreparationCancelled(itemID)) return;
+    if (
+      consumed &&
+      !submitted &&
+      restoreChatDraft(itemID, activeSessionID, admittedDraft, submission) &&
+      sessionStore.get(itemID)?.sessionId === activeSessionID
+    )
+      input.value = getChatDraft(itemID, activeSessionID).text;
     const state = failRunProgress({
       itemID,
       engine: mode,
@@ -4479,27 +5086,47 @@ async function handleUserInput(
     });
     const assistantText =
       state?.failure?.userMessage ||
-      "The request could not start. Try sending it again; details are in the run status.";
-    if (!options?.suppressChatMessages) {
-      const session = sessionStore.get(itemID);
-      if (session)
-        messageStore.append(session.sessionId, {
-          role: "assistant",
-          text: assistantText,
-          sourceMode: mode,
-          status: "error",
-        });
+      "The request could not start. Your question is available to edit or send again.";
+    if (submitted && turnId && attemptId)
+      await sessionHistoryService.updateAttempt({
+        itemID,
+        paperTitle: itemTitle,
+        turnId,
+        attemptId,
+        state: "failed",
+        errorCategory: "preparation",
+      });
+    if (!options?.suppressChatMessages)
       addMessage(chatMessages, assistantText, "ai");
-    }
-    await options?.onComplete?.({ success: false, assistantText });
+    await complete({ success: false, assistantText });
   } finally {
     try {
       if (isChatPreparationCancelled(itemID)) {
+        if (
+          consumed &&
+          !submitted &&
+          restoreChatDraft(
+            itemID,
+            activeSessionID,
+            admittedDraft,
+            submission,
+          ) &&
+          sessionStore.get(itemID)?.sessionId === activeSessionID
+        )
+          input.value = getChatDraft(itemID, activeSessionID).text;
+        if (submitted && turnId && attemptId)
+          await sessionHistoryService.updateAttempt({
+            itemID,
+            paperTitle: itemTitle,
+            turnId,
+            attemptId,
+            state: "cancelled",
+          });
         advanceRunProgress(itemID, admissionToken, {
           type: "cancelled",
           canRetry: false,
         });
-        await options?.onComplete?.({
+        await complete({
           success: false,
           assistantText: "Request cancelled before model execution.",
         });

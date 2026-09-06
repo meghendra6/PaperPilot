@@ -1,4 +1,5 @@
 import * as katex from "katex";
+import { safePublicURL } from "../message/publicLinks";
 
 function escapeHtml(value: string) {
   return value
@@ -56,6 +57,36 @@ export function renderInlineMarkdown(value: string) {
     },
   );
 
+  const linkPlaceholders: string[] = [];
+  const codePlaceholders: string[] = [];
+  const linkPrefix = `${placeholderPrefix}LINK_`;
+  const codePrefix = `${placeholderPrefix}CODE_`;
+  withMathExtracted = withMathExtracted.replace(
+    /`([^`]+)`/g,
+    (_match, code) => {
+      const token = `${codePrefix}${codePlaceholders.length}__`;
+      codePlaceholders.push(`<code>${escapeHtml(code)}</code>`);
+      return token;
+    },
+  );
+  const link = (label: string, value: string) => {
+    const url = safePublicURL(value);
+    if (!url) return label;
+    const token = `${linkPrefix}${linkPlaceholders.length}__`;
+    linkPlaceholders.push(
+      `<a href="${escapeHtml(url)}" class="pp-public-source" rel="noopener noreferrer">${escapeHtml(label)}</a>`,
+    );
+    return token;
+  };
+  withMathExtracted = withMathExtracted
+    .replace(/\[([^\]]+)\]\(([^\s)]+)\)/g, (_match, label, url) =>
+      link(label, url),
+    )
+    .replace(/<(https?:\/\/[^<>\s]+)>/g, (_match, url) => link(url, url))
+    .replace(/https?:\/\/[^\s<>]+/g, (url) => {
+      const trimmed = url.replace(/[.,;!?]+$/, "");
+      return link(trimmed, trimmed) + url.slice(trimmed.length);
+    });
   // 2. Escape HTML on the non-math content
   let rendered = escapeHtml(withMathExtracted);
 
@@ -63,7 +94,14 @@ export function renderInlineMarkdown(value: string) {
   rendered = rendered.replace(/`([^`]+)`/g, "<code>$1</code>");
   rendered = rendered.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
   rendered = rendered.replace(/(^|[^*])\*([^*]+)\*(?!\*)/g, "$1<em>$2</em>");
-  rendered = rendered.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, "$1");
+  rendered = rendered.replace(
+    new RegExp(`${linkPrefix}(\\d+)__`, "g"),
+    (_match, index) => linkPlaceholders[Number(index)] ?? "",
+  );
+  rendered = rendered.replace(
+    new RegExp(`${codePrefix}(\\d+)__`, "g"),
+    (_match, index) => codePlaceholders[Number(index)] ?? "",
+  );
 
   // 4. Restore math placeholders
   rendered = rendered.replace(

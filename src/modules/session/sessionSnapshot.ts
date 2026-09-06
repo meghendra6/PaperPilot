@@ -1,6 +1,6 @@
 import type { ComprehensionCheckState } from "../comprehensionCheck/types";
 import type { EngineMode } from "../ai/types";
-import { messageStore } from "../message/messageStore";
+import { messageStore, restoreMessageRecords } from "../message/messageStore";
 import type { MessageRecord } from "../message/types";
 import { resolveSessionHistoryPrefs } from "./historyPrefs";
 import {
@@ -575,6 +575,25 @@ export function captureSessionSnapshot(params: {
     ...(params.session.lastModel
       ? { lastModel: cloneValue(params.session.lastModel) }
       : {}),
+    ...(params.session.branch
+      ? { branch: cloneValue(params.session.branch) }
+      : {}),
+    ...(params.session.pins
+      ? {
+          pins: cloneValue(
+            params.session.pins.filter(
+              (pin) =>
+                pin.role === "user" || prefs.persistAssistantDerivedState,
+            ),
+          ),
+        }
+      : {}),
+    ...(params.session.summary && prefs.persistAssistantDerivedState
+      ? { summary: cloneValue(params.session.summary) }
+      : {}),
+    ...(params.session.providerBindings
+      ? { providerBindings: cloneValue(params.session.providerBindings) }
+      : {}),
     ...(paperArtifacts ? { paperArtifacts } : {}),
     ...(relatedRecommendations ? { relatedRecommendations } : {}),
     ...(mastery ? { mastery } : {}),
@@ -589,8 +608,25 @@ export function applySessionSnapshot(
   snapshot: SessionHistorySnapshot,
 ): PaperSession {
   const data = getAddonData();
+  const interruptedEngines = new Set<EngineMode>();
+  for (const message of snapshot.messages ?? []) {
+    if (
+      !message.attempts?.some((attempt) =>
+        ["pending", "running", "finishing"].includes(attempt.state),
+      )
+    )
+      continue;
+    const mode = message.request?.executionSettings?.mode ?? message.sourceMode;
+    if (mode) interruptedEngines.add(mode);
+    else
+      for (const engine of ["codex_cli", "claude_code", "gemini_cli"] as const)
+        interruptedEngines.add(engine);
+  }
 
-  messageStore.replace(snapshot.sessionId, cloneValue(snapshot.messages ?? []));
+  messageStore.replace(
+    snapshot.sessionId,
+    restoreMessageRecords(cloneValue(snapshot.messages ?? [])),
+  );
 
   if (snapshot.paperArtifacts) {
     data.paperArtifactStates?.set(
@@ -648,16 +684,60 @@ export function applySessionSnapshot(
     data.modeOverrides?.set(snapshot.paperItemID, snapshot.lastMode);
   }
 
-  return {
+  const session: PaperSession = {
     sessionId: snapshot.sessionId,
     itemID: snapshot.paperItemID,
     mode: snapshot.lastMode || "codex_cli",
     createdAt: snapshot.createdAt,
     updatedAt: snapshot.updatedAt,
-    lastCodexSessionID: snapshot.lastCodexSessionID,
-    lastClaudeSessionID: snapshot.lastClaudeSessionID,
-    lastGeminiSessionID: snapshot.lastGeminiSessionID,
+    lastCodexSessionID:
+      snapshot.lastCodexSessionID === "last"
+        ? undefined
+        : snapshot.lastCodexSessionID,
+    lastClaudeSessionID:
+      snapshot.lastClaudeSessionID === "latest"
+        ? undefined
+        : snapshot.lastClaudeSessionID,
+    lastGeminiSessionID:
+      snapshot.lastGeminiSessionID === "latest"
+        ? undefined
+        : snapshot.lastGeminiSessionID,
     lastModel: cloneValue(snapshot.lastModel),
     threadTitle: snapshot.title,
+    ...(snapshot.branch ? { branch: cloneValue(snapshot.branch) } : {}),
+    ...(snapshot.pins
+      ? {
+          pins: cloneValue(
+            snapshot.pins.filter(
+              (pin) =>
+                pin.role === "user" ||
+                resolveSessionHistoryPrefs().persistAssistantDerivedState,
+            ),
+          ),
+        }
+      : {}),
+    ...(snapshot.summary &&
+    resolveSessionHistoryPrefs().persistAssistantDerivedState
+      ? { summary: cloneValue(snapshot.summary) }
+      : {}),
+    ...(snapshot.providerBindings
+      ? { providerBindings: cloneValue(snapshot.providerBindings) }
+      : {}),
   };
+  // The CLI may have consumed an interrupted turn that never reached our saved
+  // transcript. Its previous binding is no longer verified for native resume.
+  const sessionIDKey = {
+    codex_cli: "lastCodexSessionID",
+    claude_code: "lastClaudeSessionID",
+    gemini_cli: "lastGeminiSessionID",
+  } as const;
+  for (const engine of interruptedEngines) {
+    delete session[sessionIDKey[engine]];
+    const binding = session.providerBindings?.[engine];
+    if (binding) {
+      binding.status = "unavailable";
+      delete binding.sessionId;
+    }
+  }
+  return session;
 }

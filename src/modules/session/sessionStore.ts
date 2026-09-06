@@ -4,6 +4,7 @@ import type { PaperSession } from "./types";
 
 class SessionStore {
   private sessions = new Map<string, PaperSession>();
+  private sequence = 0;
 
   private getKey(itemID: number) {
     return String(itemID);
@@ -11,6 +12,12 @@ class SessionStore {
 
   get(itemID: number) {
     return this.sessions.get(this.getKey(itemID));
+  }
+
+  getBySessionId(sessionId: string) {
+    return [...this.sessions.values()].find(
+      (session) => session.sessionId === sessionId,
+    );
   }
 
   set(session: PaperSession) {
@@ -28,7 +35,7 @@ class SessionStore {
 
     const now = new Date().toISOString();
     const session: PaperSession = {
-      sessionId: `paper-${itemID}-${mode}-${Date.now()}`,
+      sessionId: `paper-${itemID}-${mode}-${Date.now()}-${++this.sequence}`,
       itemID,
       mode,
       createdAt: now,

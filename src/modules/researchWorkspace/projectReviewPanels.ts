@@ -1,3 +1,8 @@
+import {
+  isResearchWorkspaceMemberExcluded,
+  memberReadingProgress,
+  memberUnderstanding,
+} from "./memberState";
 import { getPref } from "../../utils/prefs";
 import { copyTextToClipboard } from "../components/ChatMessage";
 import { renderResearchWorkspaceArtifactEnvelope } from "./artifactRenderer";
@@ -17,7 +22,7 @@ import {
   reviewResearchWorkspaceContradictionGap,
   runResearchWorkspaceCitationHealth,
   runResearchWorkspaceContradictionGapDashboard,
-  updateResearchWorkspaceMember,
+  updateResearchWorkspaceReadingState,
   updateResearchWorkspaceScreeningProtocol,
 } from "./facade";
 import { readResearchWorkspaceArtifact } from "./legacyCapabilityAdapters";
@@ -76,7 +81,7 @@ export function renderCitationHealthPanel(
       artifact.status === "complete" && eligibleTypes.has(artifact.type),
   );
   const hasIncludedSource = details.members.some(
-    (member) => member.reviewStatus !== "excluded",
+    (member) => !isResearchWorkspaceMemberExcluded(member),
   );
 
   const draftName = element(doc, "input", "pprw-input");
@@ -453,7 +458,7 @@ export function renderContradictionGapPanel(
     "contradiction-gap-dashboard",
   );
   const includedSources = details.members.filter(
-    (member) => member.reviewStatus !== "excluded",
+    (member) => !isResearchWorkspaceMemberExcluded(member),
   );
   const eligibleTypes = new Set([
     "claim-ledger",
@@ -1018,9 +1023,9 @@ export function renderProjectPapers(
   doc: Document,
   root: HTMLElement,
   details: ResearchWorkspaceProjectDetails,
-  capturedPapers: readonly ResearchWorkspacePaper[],
-  generation: symbol,
-  navigation: ProjectNavigation,
+  _capturedPapers: readonly ResearchWorkspacePaper[],
+  _generation: symbol,
+  _navigation: ProjectNavigation,
 ) {
   const section = element(doc, "section", "pprw-project-panel");
   section.append(element(doc, "h3", "", `Papers · ${details.members.length}`));
@@ -1053,60 +1058,62 @@ export function renderProjectPapers(
       "up-next",
       "skimmed",
       "read",
-      "understood",
     ] as const;
-    if (!progressStatuses.includes(member.reviewStatus as any)) {
-      const current = element(
-        doc,
-        "option",
-        "",
-        `Screened: ${member.reviewStatus}`,
-      );
-      current.value = member.reviewStatus;
-      current.selected = true;
-      select.append(current);
-    }
     for (const status of progressStatuses) {
       const option = element(doc, "option", "", status);
       option.value = status;
-      option.selected = member.reviewStatus === status;
+      option.selected = memberReadingProgress(member) === status;
       select.append(option);
     }
     select.setAttribute(
       "aria-label",
       `Reading progress for ${source?.title ?? member.sourceID}`,
     );
-    if (
-      member.screeningEvents?.length ||
-      !progressStatuses.includes(member.reviewStatus as any)
-    ) {
-      select.disabled = true;
-      select.title = "Use Screening & exclusion log to change this decision.";
+    const understanding = element(doc, "select", "pprw-select");
+    understanding.setAttribute(
+      "aria-label",
+      `Understanding for ${source?.title ?? member.sourceID}`,
+    );
+    for (const status of ["unknown", "needs-review", "understood"] as const) {
+      const option = element(doc, "option", "", status);
+      option.value = status;
+      option.selected = memberUnderstanding(member) === status;
+      understanding.append(option);
     }
+    const saveReading = async () => {
+      select.disabled = understanding.disabled = true;
+      try {
+        await updateResearchWorkspaceReadingState({
+          projectID: details.project.projectID,
+          sourceID: member.sourceID,
+          readingProgress: select.value as (typeof progressStatuses)[number],
+          understanding: understanding.value as
+            | "unknown"
+            | "needs-review"
+            | "understood",
+        });
+        setMessage(
+          root,
+          "Reading progress saved. Screening and active analysis are unchanged.",
+          "success",
+        );
+      } catch (error) {
+        setMessage(
+          root,
+          error instanceof Error ? error.message : String(error),
+          "error",
+        );
+      } finally {
+        select.disabled = understanding.disabled = false;
+      }
+    };
     select.addEventListener("change", () => {
-      void (async () => {
-        try {
-          await updateResearchWorkspaceMember({
-            projectID: details.project.projectID,
-            sourceID: member.sourceID,
-            reviewStatus: select.value as any,
-          });
-          await navigation.renderProject(
-            root,
-            details.project.projectID,
-            capturedPapers,
-            generation,
-          );
-        } catch (error) {
-          setMessage(
-            root,
-            error instanceof Error ? error.message : String(error),
-            "error",
-          );
-        }
-      })();
+      void saveReading();
     });
-    row.append(label, select);
+    understanding.addEventListener("change", () => {
+      void saveReading();
+    });
+    row.append(label, select, understanding);
     list.append(row);
   }
   section.append(list);

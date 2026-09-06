@@ -4,6 +4,8 @@ Status: Core redesign and Sections 25.1-25.5 and 27 delivered in source; remaini
 Last updated: 2026-08-30
 Target: Paper Pilot for Zotero 7-10
 
+This is the historical redesign record. Its baseline observations describe the code at drafting time. For the current chat/source/project-intake contracts and subsequent implementation, see [the 2026-09-07 product review specification](./paperpilot-product-review-and-chat-spec.md) and [architecture](./architecture.md).
+
 ## 1. Summary
 
 Paper Pilot will keep one Zotero add-on, but Research Workspace will no longer

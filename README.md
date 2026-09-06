@@ -8,6 +8,16 @@ Paper Pilot is an AI reading workbench for the Zotero 7-10 PDF reader. It adds a
 
 ![Zotero 7-10](https://img.shields.io/badge/Zotero-7--10-cc2936) ![Node 20+](https://img.shields.io/badge/Node-20%2B-339933) ![Java 11+](https://img.shields.io/badge/Java-11%2B-007396) ![License](https://img.shields.io/badge/License-AGPL--3.0--or--later-blue) ![Engines](https://img.shields.io/badge/Engines-Codex%20CLI%20%7C%20Claude%20Code%20%7C%20Gemini%20CLI-6f42c1)
 
+## Chat workflow
+
+Use **Focus chat** to temporarily hide supporting panels. Draft the next question while a response runs, inspect/remove attached selection context, choose short/default/detailed answers, and open **/ Actions** for Explain, Summarize, Translate and Critique. Search current or saved conversations for the current paper; jumping to a result can reveal messages outside the visible history window.
+
+A submitted question keeps its exact PDF source and execution settings. Retry adds an attempt to that question; **More** offers editing in a separate conversation, branching from an answer, pinning context, a previewed Zotero note, and a comparison question for a chosen project. PDF citation buttons use local quote matching and recheck the source before navigation. A matched location is not a guarantee that the claim is true.
+
+Project inboxes can retain discovery candidates before a PDF is available. Link the intended existing item/PDF explicitly, then manage screening, reading progress and understanding separately. Saved project members can be used without repeating the library selection.
+
+Drafts are memory-only. Full/prompts-only/off history rules also apply to new chat metadata; assistant-derived summaries and pins are excluded from prompts-only continuity. PaperPilot's history setting does not erase external CLI history. Provider availability depends on the installed CLI and account; failures are reported instead of silently using another provider. See the [review/spec](./docs/paperpilot-product-review-and-chat-spec.md), [evaluation](./docs/chat-context-evaluation.md), and [runtime checklist](./docs/manual-qa.md).
+
 ## At a glance
 
 - AI chat directly inside the Zotero Reader
@@ -26,7 +36,7 @@ Research Workspace is built into Paper Pilot and uses the same selected local en
 
 ## Screenshots and demo
 
-Screenshots and demo clips are **not checked into the repository yet**.
+A pre-change reader screenshot is included in the [product review](./docs/paperpilot-product-review-and-chat-spec.md). It is baseline evidence, not a screenshot of the new chat UI.
 
 Recommended visuals to add next:
 

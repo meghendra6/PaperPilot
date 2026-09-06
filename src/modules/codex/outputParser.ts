@@ -23,10 +23,9 @@ function extractText(value: unknown): string[] {
 
 function extractAssistantEventText(event: Record<string, unknown>) {
   const eventType = typeof event.type === "string" ? event.type : "unknown";
+  if (event.role !== undefined && event.role !== "assistant") return [];
 
-  if (eventType === "error") {
-    return extractText(event.message);
-  }
+  if (eventType === "error") return [];
 
   if (
     eventType === "message" ||
@@ -59,6 +58,8 @@ function extractAssistantEventText(event: Record<string, unknown>) {
     return [];
   }
 
+  if (itemRecord.role !== undefined && itemRecord.role !== "assistant")
+    return [];
   return extractText(itemRecord);
 }
 
@@ -77,16 +78,34 @@ export function parseCodexOutput(rawOutput: string) {
   const errorChunks: string[] = [];
   let latestEventType = "unknown";
   let structuredOutput = false;
+  let failed = false;
+  let sessionID: string | undefined;
+  let completedAssistantText: string | undefined;
 
   for (const line of lines) {
     try {
       const parsed = JSON.parse(line) as Record<string, unknown>;
       structuredOutput = true;
+      if (
+        parsed.type === "thread.started" &&
+        typeof parsed.thread_id === "string" &&
+        /^[a-zA-Z0-9][a-zA-Z0-9_-]{7,199}$/.test(parsed.thread_id)
+      )
+        sessionID = parsed.thread_id;
       if (typeof parsed.type === "string") {
         latestEventType = parsed.type;
       }
+      if (parsed.type === "turn.failed") {
+        failed = true;
+        errorChunks.push(...extractText(parsed.error));
+      }
       errorChunks.push(...extractErrorEventText(parsed));
-      chunks.push(...extractAssistantEventText(parsed));
+      const assistantChunks = extractAssistantEventText(parsed);
+      chunks.push(...assistantChunks);
+      // Completed agent messages replace commentary and earlier snapshots.
+      // Concatenating them corrupts a final structured chat answer.
+      if (parsed.type === "item.completed" && assistantChunks.length)
+        completedAssistantText = assistantChunks.join("\n").trim();
     } catch {
       rawTextLines.push(line);
     }
@@ -101,7 +120,8 @@ export function parseCodexOutput(rawOutput: string) {
   const rawText = rawTextLines.join("\n").trim();
 
   return {
-    text: text || (!structuredOutput ? rawText : ""),
+    text:
+      completedAssistantText ?? (text || (!structuredOutput ? rawText : "")),
     rawText,
     errorText: errorChunks
       .map((chunk) => chunk.trim())
@@ -109,6 +129,8 @@ export function parseCodexOutput(rawOutput: string) {
       .join("\n")
       .trim(),
     structuredOutput,
+    failed,
+    sessionID,
     latestEventType,
   };
 }

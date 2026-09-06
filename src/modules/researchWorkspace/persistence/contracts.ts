@@ -71,6 +71,12 @@ export interface ResearchProject {
   name: string;
   description?: string;
   researchQuestion?: string;
+  comparisonQuestions?: Array<{
+    id: string;
+    question: string;
+    provenance: { sessionID: string; messageID: string; sourceID?: string };
+    createdAt: string;
+  }>;
   scope?: ResearchWorkspaceProjectScope;
   templateSnapshot?: ResearchWorkspaceProjectTemplateSnapshot;
   templateAssumptions?: ResearchWorkspaceProjectTemplateAssumption[];
@@ -152,6 +158,8 @@ export interface ResearchWorkspaceProjectMember {
   sourceID: string;
   role: ResearchWorkspaceMemberRole;
   reviewStatus: ResearchWorkspaceReviewStatus;
+  readingProgress?: "unreviewed" | "up-next" | "skimmed" | "read";
+  understanding?: "unknown" | "needs-review" | "understood";
   exclusionReason?: string;
   addedAt: string;
   updatedAt: string;
@@ -267,6 +275,8 @@ export type ResearchWorkspaceArtifactStatus =
   | "superseded";
 
 export interface ResearchWorkspaceArtifactLineage {
+  operationInputFingerprint?: string;
+  scopeFingerprint?: string;
   inputs: Array<{
     sourceID: string;
     contentFingerprint: string;
@@ -278,6 +288,11 @@ export interface ResearchWorkspaceArtifactLineage {
     version: number;
     updatedAt: string;
     payloadFingerprint: string;
+    sourceIDs?: string[];
+    sourceFingerprints?: Array<{
+      sourceID: string;
+      contentFingerprint: string;
+    }>;
   }>;
   membersRevision?: number;
   operation: string;
@@ -335,6 +350,8 @@ export type ResearchWorkspaceRunStatus =
   | "interrupted";
 
 export interface ResearchWorkspaceRun {
+  operationInputFingerprint?: string;
+  scopeFingerprint?: string;
   executionSettings?: import("../../ai/executionSettings").ExecutionSettings;
   runID: string;
   owner: ResearchWorkspaceRunOwner;
@@ -473,10 +490,48 @@ export interface ResearchWorkspacePortableExport {
   exportedAt: string;
   project: ResearchProject;
   members: ResearchWorkspaceProjectMember[];
+  candidates?: ResearchWorkspaceCandidate[];
   sources: ResearchWorkspaceSourceRecord[];
   artifacts: ResearchWorkspaceArtifact[];
   runs: ResearchWorkspaceRun[];
   warnings: string[];
+}
+
+export interface ResearchWorkspaceCandidate {
+  candidateID: string;
+  metadata: {
+    title: string;
+    doi?: string;
+    year?: number;
+    url?: string;
+    authors?: string[];
+  };
+  provenance: {
+    kind: "discovery" | "chat" | "manual";
+    url?: string;
+    sessionID?: string;
+    messageID?: string;
+    note?: string;
+  };
+  userNote?: string;
+  zoteroItem?: { libraryID: number; itemKey: string };
+  binding?: {
+    sourceID: string;
+    libraryID: number;
+    itemKey: string;
+    attachmentKey: string;
+    boundAt: string;
+    contentFingerprint: string;
+  };
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ResearchWorkspaceCandidatesFile {
+  schemaVersion: 1;
+  revision: number;
+  projectID: string;
+  candidates: ResearchWorkspaceCandidate[];
 }
 
 export interface ResearchWorkspaceFileOps {

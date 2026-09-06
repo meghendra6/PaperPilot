@@ -8,6 +8,16 @@ Paper Pilot 是一個面向 Zotero 7-10 PDF 閱讀器的 AI 閱讀工作台。�
 
 ![Zotero 7-10](https://img.shields.io/badge/Zotero-7--10-cc2936) ![Node 20+](https://img.shields.io/badge/Node-20%2B-339933) ![Java 11+](https://img.shields.io/badge/Java-11%2B-007396) ![License](https://img.shields.io/badge/License-AGPL--3.0--or--later-blue) ![Engines](https://img.shields.io/badge/Engines-Codex%20CLI%20%7C%20Claude%20Code%20%7C%20Gemini%20CLI-6f42c1)
 
+## 聊天工作流程
+
+使用 **Focus chat** 暫時隱藏輔助面板。產生回答時仍可起草下一個問題，查看或移除選取內容的上下文，選擇簡短、預設或詳細回答。**/ Actions** 提供解釋、摘要、翻譯和批判四種操作。可搜尋目前論文的目前及已儲存對話，並跳至尚未顯示的歷史訊息。
+
+提交的問題固定確切的 PDF 與執行設定；Retry 在同一問題下新增執行嘗試。訊息的 **More** 支援在獨立對話編輯問題、從回答分支、固定上下文、預覽後儲存 Zotero 筆記，以及向指定專案傳送比較問題。PDF 引文經本地原文比對，點擊時重新檢查來源；位置相符不等於斷言為真。
+
+專案收件匣可儲存尚無 PDF 的探索候選。請明確連結既有項目與特定 PDF，再分別管理篩選、閱讀進度及理解程度。不必重新選取文獻庫項目，也可從專案已儲存成員繼續工作。
+
+草稿僅保留於記憶體。新增聊天資料遵循完整、僅提示詞及關閉歷史的政策；僅提示詞模式不會將助理摘要或固定回答加入後續上下文。PaperPilot 不會清除外部 CLI 自身的歷史。引擎可用性取決於已安裝 CLI 與帳戶，失敗時不會靜默切換引擎。參見[評審與規格](./docs/paperpilot-product-review-and-chat-spec.md)、[評估](./docs/chat-context-evaluation.md)及[執行時檢查表](./docs/manual-qa.md)。
+
 ## 快速總覽
 
 - 直接在 Zotero Reader 中使用 AI 聊天
@@ -26,7 +36,7 @@ Research Workspace 已內建於 Paper Pilot，並共用同一套本機引擎選�
 
 ## 截圖與示範
 
-倉庫中**尚未加入截圖或示範短片**。
+[產品評審](./docs/paperpilot-product-review-and-chat-spec.md)保留了修改前的閱讀器截圖；它不代表新版聊天介面的驗證結果。
 
 下一步建議補充的視覺內容：
 

@@ -6,6 +6,7 @@ import { isPublicReviewURL } from "../discovery/normalize";
 
 export interface DiscoveryRowActions {
   onOpen(paper: RecommendedPaper): void | Promise<void>;
+  onSaveCandidate?(paper: RecommendedPaper): void | Promise<void>;
   onAdd(paper: RecommendedPaper): void | Promise<void>;
   onOpenURL(url: string): void;
   onReviewInsight(paper: RecommendedPaper): void | Promise<void>;
@@ -273,6 +274,16 @@ export function buildDiscoveryRow(params: {
       onError: actions.onError,
     }),
   );
+  if (actions.onSaveCandidate)
+    buttons.appendChild(
+      actionButton({
+        doc,
+        label: "Save candidate",
+        className: "pp-btn pp-btn--secondary",
+        onClick: () => actions.onSaveCandidate!(paper),
+        onError: actions.onError,
+      }),
+    );
   row.append(info, buttons);
   return row;
 }

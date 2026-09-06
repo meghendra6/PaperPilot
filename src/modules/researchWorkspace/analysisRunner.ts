@@ -16,6 +16,7 @@ import {
 } from "../ai/workspaceRun";
 import { cleanupWorkspaceIfEnabled } from "../workspace/cleanup";
 import type { WorkspaceSupplementalFiles } from "../workspace/supplementalFiles";
+import type { PrebuiltWorkspaceInput } from "../context/requestContext";
 
 const RUN_TIMEOUT_MS = 4 * 60 * 1000;
 
@@ -26,6 +27,7 @@ export async function runResearchWorkspaceAnalysis(params: {
   prompt: string;
   outputSchema?: StructuredOutputSchema;
   workspaceFiles?: WorkspaceSupplementalFiles;
+  prebuiltInput?: PrebuiltWorkspaceInput;
   executionSettings?: ExecutionSettings;
   signal?: AbortSignal;
   onStatus?: (status: string) => void;
@@ -61,6 +63,7 @@ export async function runResearchWorkspaceAnalysis(params: {
       profile: "analysis",
       outputSchema: params.outputSchema,
       workspaceFiles: params.workspaceFiles,
+      prebuiltInput: params.prebuiltInput,
       signal: params.signal,
       deadline,
       onDeferredCleanup: (cleanup) => {

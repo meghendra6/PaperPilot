@@ -2,8 +2,17 @@ import { test } from "node:test";
 import * as assert from "node:assert/strict";
 
 import { ResearchWorkspaceOperationCoordinator } from "../src/modules/researchWorkspace/operationCoordinator";
+import {
+  memberReadingProgress,
+  memberUnderstanding,
+  memberScreeningDecision,
+} from "../src/modules/researchWorkspace/memberState";
+import { createProjectOperationAdmission } from "../src/modules/researchWorkspace/operationInputs";
 import type { ResearchWorkspacePaper } from "../src/modules/researchWorkspace/paperSource";
-import type { ResearchWorkspaceFileOps } from "../src/modules/researchWorkspace/persistence/contracts";
+import {
+  ResearchWorkspaceRevisionConflictError,
+  type ResearchWorkspaceFileOps,
+} from "../src/modules/researchWorkspace/persistence/contracts";
 import { ResearchWorkspaceProjectRepository } from "../src/modules/researchWorkspace/persistence/projectRepository";
 import {
   ResearchWorkspaceProjectController,
@@ -58,9 +67,10 @@ function setup() {
   let clock = Date.parse("2026-08-29T10:00:00.000Z");
   const ids = new Map<string, number>();
   const now = () => new Date(clock++);
+  const files = new MemoryProjectFiles();
   const repository = new ResearchWorkspaceProjectRepository({
     rootDir: "/profile/paperpilot-research-workspace",
-    fileOps: new MemoryProjectFiles(),
+    fileOps: files,
     now,
     idFactory: (prefix) => {
       const id = (ids.get(prefix) ?? 0) + 1;
@@ -70,6 +80,7 @@ function setup() {
   });
   let screeningID = 0;
   return {
+    files,
     repository,
     projects: new ResearchWorkspaceProjectController(repository, {
       now,
@@ -552,3 +563,467 @@ test("pre-cancelled operations are recorded as cancelled and never execute", asy
   assert.equal(executed, false);
   assert.equal(runs.runs[0].status, "cancelled");
 });
+
+test("excluded sources are rejected before analysis and cannot create a complete artifact", async () => {
+  const { projects, operations, repository } = setup();
+  const source = paper("A");
+  let details = await projects.createProject(
+    { projectID: "excluded-run", name: "Excluded" },
+    [source],
+  );
+  details = await projects.recordScreeningDecision({
+    projectID: details.project.projectID,
+    sourceID: source.sourceID,
+    stage: "abstract",
+    decision: "exclude",
+    reasonCode: "other",
+    reason: "Outside scope",
+    submissionID: "exclude-1",
+    expectedProjectRevision: details.projectRevision,
+    expectedMembersRevision: details.membersRevision,
+  });
+  let executions = 0;
+  await assert.rejects(
+    operations.run({
+      projectID: details.project.projectID,
+      papers: [source],
+      sourcesPrepared: true,
+      operation: "claim-ledger",
+      operationVersion: "v1",
+      artifactType: "claim-ledger",
+      artifactTitle: "Claims",
+      providerMode: "local",
+      execute: async () => {
+        executions++;
+        return { claims: [] };
+      },
+    }),
+    /source changed/,
+  );
+  assert.equal(executions, 0);
+  assert.equal(
+    (await repository.listArtifacts(details.project.projectID)).artifacts
+      .length,
+    0,
+  );
+});
+
+test("reading and understanding updates preserve screening history and active semantic inputs", async () => {
+  const { projects, operations, repository } = setup();
+  const source = paper("A");
+  let details = await projects.createProject(
+    { projectID: "reading", name: "Reading" },
+    [source],
+  );
+  details = await projects.recordScreeningDecision({
+    projectID: "reading",
+    sourceID: source.sourceID,
+    stage: "abstract",
+    decision: "include",
+    submissionID: "include-1",
+    expectedProjectRevision: details.projectRevision,
+    expectedMembersRevision: details.membersRevision,
+  });
+  const events = JSON.stringify(details.members[0].screeningEvents);
+  const admission = createProjectOperationAdmission(
+    details,
+    [source],
+    { question: "What is the result?" },
+    [],
+  );
+  const completed = await operations.run({
+    projectID: "reading",
+    papers: [source],
+    sourcesPrepared: true,
+    admission,
+    operation: "claim-ledger",
+    operationVersion: "v1",
+    artifactType: "claim-ledger",
+    artifactTitle: "Claims",
+    providerMode: "local",
+    execute: async () => {
+      await projects.updateReadingState({
+        projectID: "reading",
+        sourceID: source.sourceID,
+        readingProgress: "read",
+        understanding: "needs-review",
+      });
+      return { claims: [] };
+    },
+  });
+  const current = await projects.details("reading");
+  assert.equal(current.members[0].readingProgress, "read");
+  assert.equal(current.members[0].understanding, "needs-review");
+  assert.equal(memberScreeningDecision(current.members[0]), "include");
+  assert.equal(JSON.stringify(current.members[0].screeningEvents), events);
+  assert.equal(completed.artifact.artifact.status, "complete");
+  await projects.updateReadingState({
+    projectID: "reading",
+    sourceID: source.sourceID,
+    understanding: "understood",
+  });
+  assert.equal(
+    (
+      await repository.getArtifact(
+        "reading",
+        completed.artifact.artifact.artifactID,
+      )
+    )?.artifact.status,
+    "complete",
+  );
+});
+
+test("legacy progress is projected without inventing reading or rewriting screening", () => {
+  const base = {
+    sourceID: "S",
+    role: "candidate" as const,
+    addedAt: "2026-09-07",
+    updatedAt: "2026-09-07",
+  };
+  for (const reviewStatus of [
+    "included",
+    "maybe",
+    "excluded",
+    "understood",
+  ] as const) {
+    const member = { ...base, reviewStatus };
+    assert.equal(memberReadingProgress(member), "unreviewed");
+    assert.equal(
+      memberUnderstanding(member),
+      reviewStatus === "understood" ? "understood" : "unknown",
+    );
+  }
+  for (const reviewStatus of ["skimmed", "read", "up-next"] as const)
+    assert.equal(
+      memberReadingProgress({ ...base, reviewStatus }),
+      reviewStatus,
+    );
+});
+
+test("candidate inbox saves metadata without fake sources and binds exactly once after interrupted membership", async () => {
+  const { projects, repository, files } = setup();
+  await projects.createProject({
+    projectID: "candidate-project",
+    name: "Candidates",
+  });
+  const input = {
+    projectID: "candidate-project",
+    candidateID: "candidate-A",
+    metadata: { title: "Promising study", doi: "10.1000/example" },
+    provenance: {
+      kind: "discovery" as const,
+      url: "https://example.org/study",
+    },
+    userNote: "Compare its method",
+  };
+  const first = await projects.saveCandidate(input);
+  assert.deepEqual(await projects.saveCandidate(input), first);
+  assert.equal((await projects.details("candidate-project")).members.length, 0);
+  assert.equal(
+    (await repository.getCandidates("candidate-project")).candidates.length,
+    1,
+  );
+  const write = files.writeTextAtomic.bind(files);
+  let fail = true;
+  files.writeTextAtomic = async (path, contents) => {
+    if (fail && path.endsWith("/members.json")) {
+      fail = false;
+      throw new Error("Interrupted member write");
+    }
+    return write(path, contents);
+  };
+  await assert.rejects(
+    projects.bindCandidate({
+      projectID: "candidate-project",
+      candidateID: first.candidateID,
+      paper: paper("A"),
+    }),
+    /Interrupted member write/,
+  );
+  const persisted = await repository.getCandidates("candidate-project");
+  assert.equal(persisted.candidates[0].binding?.sourceID, paper("A").sourceID);
+  await repository.recoverStartup();
+  await projects.bindCandidate({
+    projectID: "candidate-project",
+    candidateID: first.candidateID,
+    paper: paper("A"),
+  });
+  const details = await projects.details("candidate-project");
+  assert.equal(details.members.length, 1);
+  assert.equal(details.members[0].sourceID, paper("A").sourceID);
+  assert.equal(
+    (await repository.exportProject("candidate-project")).candidates?.[0]
+      .userNote,
+    input.userNote,
+  );
+  await assert.rejects(
+    projects.bindCandidate({
+      projectID: "candidate-project",
+      candidateID: first.candidateID,
+      paper: paper("B"),
+    }),
+    /different PDF/,
+  );
+  await repository.deleteProject("candidate-project");
+  assert.equal(
+    files.files.has(repository.getCandidatesPath("candidate-project")),
+    false,
+  );
+});
+
+test("future or malformed candidate inbox is preserved and never replaced by empty data", async () => {
+  const { projects, repository, files } = setup();
+  await projects.createProject({
+    projectID: "future-candidates",
+    name: "Future",
+  });
+  const path = repository.getCandidatesPath("future-candidates");
+  const raw = JSON.stringify({
+    schemaVersion: 99,
+    revision: 2,
+    projectID: "future-candidates",
+    candidates: [],
+  });
+  files.files.set(path, raw);
+  await assert.rejects(
+    repository.getCandidates("future-candidates"),
+    /version/,
+  );
+  const recovered = await repository.recoverStartup();
+  assert(
+    recovered.warnings.some((warning) =>
+      warning.includes("Candidate inbox recovery failed"),
+    ),
+  );
+  assert.equal(files.files.get(path), raw);
+});
+
+test("project question changes during execution reject completion and later changes stale completed results", async () => {
+  const { projects, operations, repository } = setup();
+  const source = paper("A");
+  await projects.createProject(
+    { projectID: "question-scope", name: "Question", researchQuestion: "Q1" },
+    [source],
+  );
+  const operation = {
+    projectID: "question-scope",
+    papers: [source],
+    sourcesPrepared: true,
+    operation: "claim-ledger",
+    operationVersion: "v1",
+    artifactType: "claim-ledger" as const,
+    artifactTitle: "Claims",
+    providerMode: "local" as const,
+  };
+  await assert.rejects(
+    operations.run({
+      ...operation,
+      execute: async () => {
+        await projects.updateProject("question-scope", {
+          researchQuestion: "Q2",
+        });
+        return { claims: [] };
+      },
+    }),
+    /question, criteria, or analysis scope changed/,
+  );
+  const complete = await operations.run({
+    ...operation,
+    execute: async () => ({ claims: [] }),
+  });
+  await projects.updateProject("question-scope", { researchQuestion: "Q3" });
+  assert.equal(
+    (
+      await repository.getArtifact(
+        "question-scope",
+        complete.artifact.artifact.artifactID,
+      )
+    )?.artifact.status,
+    "stale",
+  );
+});
+
+test("screening protocol updates stale completed analysis and its dependents", async () => {
+  const { projects, operations, repository } = setup();
+  const source = paper("PROTOCOL");
+  const details = await projects.createProject(
+    { projectID: "protocol-stale", name: "Protocol", researchQuestion: "Q1" },
+    [source],
+  );
+  const base = {
+    projectID: "protocol-stale",
+    papers: [source],
+    sourcesPrepared: true,
+    operation: "claims",
+    operationVersion: "v1",
+    artifactType: "claim-ledger" as const,
+    artifactTitle: "Claims",
+    providerMode: "local" as const,
+  };
+  const first = await operations.run({
+    ...base,
+    execute: async () => ({ claims: [] }),
+  });
+  const current = await projects.details("protocol-stale");
+  const dependent = await operations.run({
+    ...base,
+    operation: "derived-claims",
+    admission: createProjectOperationAdmission(
+      current,
+      [source],
+      { question: "Q1" },
+      [first.artifact.artifact],
+    ),
+    execute: async () => ({ claims: [] }),
+  });
+  const latest = await projects.details("protocol-stale");
+  await projects.updateScreeningProtocol({
+    projectID: "protocol-stale",
+    expectedProjectRevision: latest.projectRevision,
+    inclusionCriteria: ["Human participants"],
+    exclusionCriteria: [],
+  });
+  assert.equal(
+    (
+      await repository.getArtifact(
+        "protocol-stale",
+        first.artifact.artifact.artifactID,
+      )
+    )?.artifact.status,
+    "stale",
+  );
+  assert.equal(
+    (
+      await repository.getArtifact(
+        "protocol-stale",
+        dependent.artifact.artifact.artifactID,
+      )
+    )?.artifact.status,
+    "stale",
+  );
+  assert.equal(details.members[0].reviewStatus, "unreviewed");
+});
+
+test("rejecting a stale captured batch cannot roll back durable source fingerprints", async () => {
+  const { projects, operations, repository } = setup();
+  const current = paper("CURRENT");
+  await projects.createProject(
+    { projectID: "source-admission", name: "Source admission" },
+    [current],
+  );
+  const completed = await operations.run({
+    projectID: "source-admission",
+    papers: [current],
+    sourcesPrepared: true,
+    operation: "claims",
+    operationVersion: "v1",
+    artifactType: "claim-ledger",
+    artifactTitle: "Claims",
+    providerMode: "local",
+    execute: async () => ({ claims: [] }),
+  });
+  const before = await repository.getSource(current.sourceID);
+  const guarded = new ResearchWorkspaceProjectController(repository, {
+    validateSource: async (source) => {
+      if (source.contentFingerprint.value !== current.contentFingerprint.value)
+        throw new Error("Captured PDF changed");
+    },
+  });
+  const stale = {
+    ...current,
+    contentFingerprint: {
+      ...current.contentFingerprint,
+      value: "old-captured-fingerprint",
+    },
+  };
+  await assert.rejects(
+    guarded.addPapers("source-admission", [stale]),
+    /Captured PDF changed/,
+  );
+  assert.deepEqual(await repository.getSource(current.sourceID), before);
+  assert.equal(
+    (
+      await repository.getArtifact(
+        "source-admission",
+        completed.artifact.artifact.artifactID,
+      )
+    )?.artifact.status,
+    "complete",
+  );
+});
+
+for (const operation of ["add-papers", "bind-candidate"] as const)
+  test(`source refresh during ${operation} CAS cannot be overwritten by stale captured content`, async () => {
+    const { projects, repository } = setup();
+    const captured = paper("A", "old");
+    await projects.createProject(
+      { projectID: "source-cas", name: "CAS race" },
+      [captured],
+    );
+    if (operation === "bind-candidate")
+      await projects.saveCandidate({
+        projectID: "source-cas",
+        candidateID: "candidate-cas",
+        metadata: { title: "Paper" },
+        provenance: { kind: "manual" },
+      });
+    let actual = "old";
+    let validations = 0;
+    let interleave = true;
+    const guarded = new ResearchWorkspaceProjectController(repository, {
+      validateSource: async (source) => {
+        validations++;
+        if (source.contentFingerprint.value !== actual)
+          throw new Error("The captured PDF changed");
+      },
+    });
+    const putSource = repository.putSource.bind(repository);
+    repository.putSource = async (record, revision) => {
+      if (interleave) {
+        interleave = false;
+        actual = "new";
+        const current = await repository.getSource(captured.sourceID);
+        assert(current);
+        await putSource(
+          researchWorkspaceSourceRecordFromPaper(paper("A", "new"), new Date()),
+          current.revision,
+        );
+      }
+      return putSource(record, revision);
+    };
+    const execute = async () => {
+      if (operation === "add-papers")
+        return guarded.addPapers("source-cas", [captured]);
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          return await guarded.bindCandidate({
+            projectID: "source-cas",
+            candidateID: "candidate-cas",
+            paper: captured,
+          });
+        } catch (error) {
+          if (
+            !(error instanceof ResearchWorkspaceRevisionConflictError) ||
+            attempt === 2
+          )
+            throw error;
+        }
+      }
+      throw new Error("Candidate CAS retry limit exceeded");
+    };
+    await assert.rejects(execute, /captured PDF changed/);
+    assert.equal(
+      (await repository.getSource(captured.sourceID))?.source.contentFingerprint
+        ?.value,
+      "new",
+    );
+    assert(
+      validations >= 2,
+      "every CAS retry must validate its captured source again",
+    );
+    if (operation === "bind-candidate")
+      assert.equal(
+        (await repository.getCandidates("source-cas")).candidates[0].binding,
+        undefined,
+      );
+  });

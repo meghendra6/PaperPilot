@@ -1,20 +1,31 @@
 import type { StructuredOutputSchema } from "../ai/structuredOutput";
 import type { WorkspaceSupplementalFiles } from "../workspace/supplementalFiles";
 import type { ResearchWorkspaceContextPlan } from "./contextPlanner";
+import type { ResearchWorkspaceArtifact } from "./persistence/contracts";
 import type { ResearchWorkspacePaper } from "./paperSource";
 import type { ResearchWorkspaceProjectDetails } from "./projectController";
 import { researchWorkspaceSourcePathID } from "./persistence/projectRepository";
+import {
+  admittedProjectArtifacts,
+  createProjectOperationAdmission,
+  projectModelContext,
+  type ProjectOperationAdmission,
+} from "./operationInputs";
 
 export interface ResearchWorkspaceProjectOperationDescriptor {
   operation: string;
   operationVersion: string;
   promptVersion: string;
   parserVersion: string;
+  question?: string;
+  columns?: unknown;
+  input?: unknown;
 }
 
 export interface ResearchWorkspaceProjectWorkspace {
   files: WorkspaceSupplementalFiles;
   indexMarkdown: string;
+  admission: ProjectOperationAdmission;
 }
 
 function json(value: unknown) {
@@ -31,6 +42,7 @@ export function buildResearchWorkspaceProjectWorkspace(params: {
   contextPlan: ResearchWorkspaceContextPlan;
   descriptor: ResearchWorkspaceProjectOperationDescriptor;
   outputSchema: StructuredOutputSchema;
+  consumedArtifacts?: readonly ResearchWorkspaceArtifact[];
 }): ResearchWorkspaceProjectWorkspace {
   const projections = new Map(
     params.contextPlan.projections.map((projection) => [
@@ -43,6 +55,45 @@ export function buildResearchWorkspaceProjectWorkspace(params: {
   );
   const files: Record<string, string> = {};
   const sourcePaths: string[] = [];
+  const priorArtifacts = admittedProjectArtifacts(params.details, params.papers)
+    .filter(
+      (artifact) =>
+        artifact.lineage.operation !== params.descriptor.operation ||
+        params.consumedArtifacts?.some(
+          (input) => input.artifactID === artifact.artifactID,
+        ),
+    )
+    .sort(
+      (a, b) =>
+        Number(
+          params.consumedArtifacts?.some(
+            (input) => input.artifactID === b.artifactID,
+          ),
+        ) -
+        Number(
+          params.consumedArtifacts?.some(
+            (input) => input.artifactID === a.artifactID,
+          ),
+        ),
+    )
+    .slice(0, 12);
+  for (const artifact of params.consumedArtifacts ?? []) {
+    if (
+      !priorArtifacts.some((input) => input.artifactID === artifact.artifactID)
+    )
+      throw new Error(
+        "A required upstream artifact is stale or outside the admitted source scope.",
+      );
+  }
+  const admission = createProjectOperationAdmission(
+    params.details,
+    params.papers,
+    {
+      ...params.descriptor,
+      outputSchema: params.outputSchema,
+    },
+    priorArtifacts,
+  );
 
   for (const paper of [...params.papers].sort((left, right) =>
     left.sourceID.localeCompare(right.sourceID),
@@ -58,7 +109,7 @@ export function buildResearchWorkspaceProjectWorkspace(params: {
     )}`;
     sourcePaths.push(sourcePath);
     const source = sourceRecords.get(paper.sourceID);
-    const claimArtifact = params.details.artifacts.find(
+    const claimArtifact = priorArtifacts.find(
       (artifact) =>
         artifact.type === "claim-ledger" &&
         artifact.status !== "superseded" &&
@@ -117,6 +168,8 @@ export function buildResearchWorkspaceProjectWorkspace(params: {
       includedChunkIDs: projection.includedChunkIDs,
       omittedChunkIDs: projection.omittedChunkIDs,
       includedCharacters: projection.includedCharacters,
+      includedSourceCharacters: projection.includedSourceCharacters,
+      partialChunks: projection.partialChunks,
       omittedCharacters: projection.omittedCharacters,
       availableCharacters: projection.availableCharacters,
       coverage: projection.coverage,
@@ -124,9 +177,6 @@ export function buildResearchWorkspaceProjectWorkspace(params: {
     });
   }
 
-  const priorArtifacts = params.details.artifacts
-    .filter((artifact) => artifact.status !== "superseded")
-    .slice(0, 12);
   files["prior-artifacts/manifest.json"] = json(
     priorArtifacts.map((artifact) => ({
       artifactID: artifact.artifactID,
@@ -152,13 +202,16 @@ export function buildResearchWorkspaceProjectWorkspace(params: {
       });
   }
 
-  files["project.json"] = json({
-    project: params.details.project,
-    members: params.details.members,
-    warnings: params.details.warnings,
-  });
+  files["project.json"] = json(
+    projectModelContext(
+      params.details,
+      params.papers.map((paper) => paper.sourceID),
+    ),
+  );
   files["operation.json"] = json({
     ...params.descriptor,
+    operationInputFingerprint: admission.operationInputFingerprint,
+    scopeFingerprint: admission.scopeFingerprint,
     contextPlan: {
       plannerVersion: params.contextPlan.plannerVersion,
       fingerprint: params.contextPlan.fingerprint,
@@ -195,5 +248,5 @@ export function buildResearchWorkspaceProjectWorkspace(params: {
     "",
   ].join("\n");
   files["PROJECT_INDEX.md"] = indexMarkdown;
-  return { files, indexMarkdown };
+  return { files, indexMarkdown, admission };
 }
