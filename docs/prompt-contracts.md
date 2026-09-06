@@ -225,3 +225,28 @@ For structured workflows (`Research brief`, `Agent-led verified research discove
   - strict parser failures receive one bounded correction run; validation text is trust-labeled untrusted diagnostic data
   - missing citation classifications alone degrade to `unclear`
   - all runs use the shared `analysis` profile and Paper Pilot's selected engine; Research Monitor is intentionally absent
+
+## Ordinary chat envelope
+
+For `profile: "chat"`, all engines request:
+
+```json
+{
+  "paperpilotChatVersion": 1,
+  "answerMarkdown": "The supported answer. [[cite:q1]]",
+  "citationCandidates": [
+    {
+      "id": "q1",
+      "sourceID": "zotero:1:ITEMKEY:PDFKEY",
+      "quote": "An exact source passage.",
+      "pageIndex": 0
+    }
+  ]
+}
+```
+
+Only `paperpilotChatVersion: 1` identifies this envelope. User-requested JSON/code belongs inside `answerMarkdown`; ordinary JSON is not reinterpreted as a chat envelope. Citation IDs are unique bounded tokens, pageIndex is optional and zero-based, and the maximum is 24 candidates with 4,000 characters each. Candidates must name an admitted source and cannot supply `verified` or `verification` authority fields. Invalid candidates remain unverified; malformed output recovers readable answer text when possible without showing internal JSON fragments.
+
+The UI derives citation status from local PDF matching, rechecks the source fingerprint on click, and never treats a model status/confidence as verification. Public HTTP/HTTPS references remain readable and clickable by explicit user action. No chat URL is fetched automatically. Short/default/detailed response length is captured with the submitted request; Retry retains it.
+
+`annotations.json` now contains resolved quote, comment, type, page/location and exact source ID. Missing annotations are excluded with a warning; no surviving selected annotation prevents execution. Image annotation pixels are not inferred from a comment. `metadata.json.imageInput` records whether input is text-only or an image was explicitly supplied. Read `conversation-context.md` for eligible pins, source-bound summaries and completed turns; distinguish all assistant interpretations from paper evidence.

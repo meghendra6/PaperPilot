@@ -1,3 +1,4 @@
+import { memberScreeningDecision } from "./memberState";
 import type {
   ResearchProject,
   ResearchWorkspaceCriterion,
@@ -255,12 +256,7 @@ export function currentScreeningEvent(member: ResearchWorkspaceProjectMember) {
   return member.screeningEvents?.at(-1);
 }
 
-function legacyDecision(member: ResearchWorkspaceProjectMember) {
-  if (member.reviewStatus === "included") return "include" as const;
-  if (member.reviewStatus === "excluded") return "exclude" as const;
-  if (member.reviewStatus === "maybe") return "maybe" as const;
-  return undefined;
-}
+const legacyDecision = memberScreeningDecision;
 
 export function screeningReviewStatus(
   decision: ResearchWorkspaceScreeningDecision,

@@ -33,6 +33,7 @@ class FakeElement {
   children: FakeElement[] = [];
   scrollTop = 0;
   scrollHeight = 64;
+  clientHeight = 20;
   tagName: string;
   ownerDocument: FakeDocument;
   parentElement: FakeElement | null = null;
@@ -40,6 +41,7 @@ class FakeElement {
   type = "";
   disabled = false;
   className = "";
+  dataset: Record<string, string> = {};
   classList = {
     add: (...classes: string[]) => {
       const existing = this.className ? this.className.split(" ") : [];
@@ -95,6 +97,25 @@ class FakeElement {
     this.children.push(child);
     return child;
   }
+  append(...children: FakeElement[]) {
+    for (const child of children) this.appendChild(child);
+  }
+  remove() {
+    if (this.parentElement)
+      this.parentElement.children = this.parentElement.children.filter(
+        (child) => child !== this,
+      );
+    this.parentElement = null;
+  }
+  querySelector(selector: string): FakeElement | null {
+    for (const child of this.children) {
+      if (selector === "[data-pp-new-response]" && child.dataset.ppNewResponse)
+        return child;
+      const nested = child.querySelector(selector);
+      if (nested) return nested;
+    }
+    return null;
+  }
 
   addEventListener(event: string, handler: () => unknown) {
     const handlers = this.listeners.get(event) || [];
@@ -147,13 +168,13 @@ test("addMessage applies CSS classes for assistant messages", () => {
   });
 });
 
-test("sanitizeAssistantText removes links and workspace filenames", () => {
+test("sanitizeAssistantText preserves public links while masking workspace filenames", () => {
   const sanitized = sanitizeAssistantText(
     "Read paper.md, paper.json, and [source](https://example.com/source).\n\nSources: https://example.com",
   );
 
   assert.doesNotMatch(sanitized, /paper\.(?:md|json|txt)/);
-  assert.doesNotMatch(sanitized, /https?:\/\//);
+  assert.match(sanitized, /\[source\]\(https:\/\/example.com\/source\)/);
   assert.match(sanitized, /the paper/);
   assert.match(sanitized, /the paper structure/);
   assert.match(sanitized, /source/);
@@ -178,7 +199,7 @@ test("addMessage injects rendered markdown structure for assistant output", () =
   });
 });
 
-test("addMessage strips assistant source links from rendered output", () => {
+test("addMessage renders public source links without exposing workspace filenames", () => {
   withFakeDocument(() => {
     const container = new FakeElement();
     const message = addMessage(
@@ -188,7 +209,10 @@ test("addMessage strips assistant source links from rendered output", () => {
     ) as unknown as FakeElement;
 
     assert.equal(message.children[0]?.tagName, "p");
-    assert.doesNotMatch(message.children[0]?.innerHTML, /href=/);
+    assert.match(
+      message.children[0]?.innerHTML,
+      /href="https:\/\/example.com\/"/,
+    );
     assert.doesNotMatch(message.textContent, /paper\.txt/);
     assert.match(message.textContent, /the paper/);
   });
@@ -220,7 +244,7 @@ test("setMessageContent preserves assistant markdown on updates", () => {
   });
 });
 
-test("setMessageContent keeps an updated assistant answer at the bottom", () => {
+test("setMessageContent preserves reading position and has no delayed scroll override", () => {
   withFakeDocument(() => {
     const container = new FakeElement();
     const frames: Array<() => void> = [];
@@ -246,13 +270,21 @@ test("setMessageContent keeps an updated assistant answer at the bottom", () => 
       "ai",
     );
 
-    assert.equal(container.scrollTop, container.scrollHeight);
+    assert.equal(container.scrollTop, 0);
     assert.equal(message.children.at(-1), footer);
 
     container.scrollHeight = 640;
     frames.shift()?.();
-    assert.equal(container.scrollTop, 640);
+    assert.equal(container.scrollTop, 0);
     frames.shift()?.();
+    assert.equal(container.scrollTop, 0);
+    assert.equal(frames.length, 0);
+    container.scrollTop = 620;
+    setMessageContent(
+      message as unknown as HTMLElement,
+      "Follow the current answer",
+      "ai",
+    );
     assert.equal(container.scrollTop, 640);
   });
 });
@@ -386,7 +418,7 @@ test("addMessage renders without relying on a global document", () => {
   }
 });
 
-test("addMessage renders markdown links as plain text", () => {
+test("addMessage renders safe markdown links as anchors", () => {
   withFakeDocument(() => {
     const container = new FakeElement();
     const message = addMessage(
@@ -396,6 +428,9 @@ test("addMessage renders markdown links as plain text", () => {
     ) as unknown as FakeElement;
 
     assert.equal(message.children[0]?.tagName, "p");
-    assert.equal(message.children[0]?.innerHTML, "Source");
+    assert.match(
+      message.children[0]?.innerHTML,
+      /href="https:\/\/example.com\/paper"/,
+    );
   });
 });

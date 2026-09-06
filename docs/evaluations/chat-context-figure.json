@@ -1,0 +1,21 @@
+{
+  "kind": "Actual Codex --image versus caption-only synthetic figure probe; not automated Zotero figure extraction",
+  "records": [
+    {
+      "model": "gpt-6-astra",
+      "imageSupplied": false,
+      "expected": "unavailable from caption",
+      "exitCode": 0,
+      "elapsedMs": 5685.273375000001,
+      "answer": "No image is supplied, and the caption contains no point coordinates or error bars. The exact acceptance rate and error bar at temperature 0.5 cannot be recovered."
+    },
+    {
+      "model": "gpt-6-astra",
+      "imageSupplied": true,
+      "expected": "0.70 +/- 0.08",
+      "exitCode": 0,
+      "elapsedMs": 5839.13075,
+      "answer": "At temperature 0.5, the acceptance rate is **0.70**, with an error bar of **±0.08**."
+    }
+  ]
+}

@@ -203,28 +203,48 @@ async function initializeResearchWorkspaceDialog(
     skipped: snapshot.skipped,
   });
   const initialBody = renderWindowFrame(root, snapshot, snapshot.skipped);
-  initialBody.replaceChildren(
-    element(doc, "div", "pprw-window-loading", "Loading captured PDFs…"),
-  );
-
   try {
-    const state = await loadResearchWorkspaceState();
-    const loaded = await loadResearchWorkspaceSnapshotPapers(
-      snapshot,
-      state.preferences.maxPaperCharacters,
-    );
+    // Saved projects and results are available before any PDF extraction.
+    await renderResearchWorkspaceProjectSurface(initialBody);
     if (addon.data.dialog !== dialog || dialog.window.closed) return;
-    const body = renderWindowFrame(root, snapshot, loaded.skipped);
     updateWindowState(snapshot, {
       status: "ready",
-      loadedSourceIDs: Object.freeze(
-        loaded.papers.map((paper) => paper.sourceID),
-      ),
-      skipped: loaded.skipped,
+      loadedSourceIDs: Object.freeze([]),
+      skipped: snapshot.skipped,
     });
-    await renderResearchWorkspaceProjectSurface(body, {
-      capturedPapers: loaded.papers,
-    });
+    if (snapshot.candidates.length) {
+      const prepare = actionButton(
+        doc,
+        `Prepare captured PDFs (${snapshot.candidates.length})`,
+        async () => {
+          prepare.disabled = true;
+          prepare.textContent = "Loading captured PDFs…";
+          try {
+            const state = await loadResearchWorkspaceState();
+            const loaded = await loadResearchWorkspaceSnapshotPapers(
+              snapshot,
+              state.preferences.maxPaperCharacters,
+            );
+            if (addon.data.dialog !== dialog || dialog.window.closed) return;
+            const body = renderWindowFrame(root, snapshot, loaded.skipped);
+            updateWindowState(snapshot, {
+              status: "ready",
+              loadedSourceIDs: Object.freeze(
+                loaded.papers.map((paper) => paper.sourceID),
+              ),
+              skipped: loaded.skipped,
+            });
+            await renderResearchWorkspaceProjectSurface(body, {
+              capturedPapers: loaded.papers,
+            });
+          } finally {
+            prepare.disabled = false;
+            prepare.textContent = `Prepare captured PDFs (${snapshot.candidates.length})`;
+          }
+        },
+      );
+      root.querySelector(".pprw-window-header")?.append(prepare);
+    }
   } catch (error) {
     if (addon.data.dialog !== dialog || dialog.window.closed) return;
     const message = error instanceof Error ? error.message : String(error);

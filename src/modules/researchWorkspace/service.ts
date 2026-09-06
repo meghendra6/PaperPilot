@@ -6,7 +6,7 @@ import * as prompt_7 from "./core/citationStance/prompt";
 import * as controller_1 from "./core/comprehensionCheck/v2/controller";
 import * as viewModel_1 from "./core/comprehensionCheck/v2/viewModel";
 import * as indexExports_1 from "./core/context/hybrid/indexExports";
-import type { EvidenceMatrix, MatrixRow } from "./core/contracts";
+import type { EvidenceMatrix, MatrixRow, MatrixColumn } from "./core/contracts";
 import * as detector_1 from "./core/criticalRead/profiled/detector";
 import * as parser_1 from "./core/criticalRead/profiled/parser";
 import * as profiles_1 from "./core/criticalRead/profiled/profiles";
@@ -439,12 +439,13 @@ class ResearchWorkspaceService {
   createEvidenceMatrixShell(
     papers: readonly ResearchWorkspacePaper[],
     presetID: EvidenceMatrixPresetID = "full",
+    additionalColumns: readonly MatrixColumn[] = [],
   ) {
     const preset = getEvidenceMatrixPreset(presetID);
     return (0, engine_1.createEvidenceMatrix)({
       id: id("matrix"),
       title: `${preset.label} · ${new Date().toLocaleDateString()}`,
-      columns: preset.columns,
+      columns: [...preset.columns, ...additionalColumns],
       papers: papers.map((paper) => ({
         paperKey: paper.paperKey,
         title: paper.title,

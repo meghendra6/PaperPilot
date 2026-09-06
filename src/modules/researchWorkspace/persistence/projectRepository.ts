@@ -1,3 +1,5 @@
+import { parseResearchWorkspaceCandidates } from "./candidates";
+import { projectScopeFingerprint } from "../operationInputs";
 import { stableHash } from "../identity";
 import {
   assertResearchWorkspaceID,
@@ -14,6 +16,8 @@ import {
   ResearchWorkspaceNotFoundError,
   ResearchWorkspaceRevisionConflictError,
   type ResearchProject,
+  type ResearchWorkspaceCandidate,
+  type ResearchWorkspaceCandidatesFile,
   type ResearchWorkspaceArtifact,
   type ResearchWorkspaceArtifactFile,
   type ResearchWorkspaceArtifactList,
@@ -232,6 +236,90 @@ export class ResearchWorkspaceProjectRepository {
 
   getMembersPath(projectID: string) {
     return joinPath(this.getProjectRoot(projectID), "members.json");
+  }
+
+  getCandidatesPath(projectID: string) {
+    return joinPath(this.getProjectRoot(projectID), "candidates-v1.json");
+  }
+
+  async getCandidates(
+    projectID: string,
+  ): Promise<ResearchWorkspaceCandidatesFile> {
+    await this.getProject(projectID);
+    const file = await this.files.read(
+      this.getCandidatesPath(projectID),
+      parseResearchWorkspaceCandidates,
+    );
+    if (file && file.projectID !== projectID)
+      throw new Error("Candidate inbox belongs to another project.");
+    return file ?? { schemaVersion: 1, revision: 0, projectID, candidates: [] };
+  }
+
+  async updateCandidates(
+    projectID: string,
+    expectedRevision: number,
+    mutate: (
+      candidates: ResearchWorkspaceCandidate[],
+    ) => ResearchWorkspaceCandidate[],
+  ) {
+    await this.getProject(projectID);
+    return this.files.mutate({
+      path: this.getCandidatesPath(projectID),
+      parser: parseResearchWorkspaceCandidates,
+      expectedRevision,
+      create: (): ResearchWorkspaceCandidatesFile => ({
+        schemaVersion: 1,
+        revision: 0,
+        projectID,
+        candidates: [],
+      }),
+      mutate: (file) =>
+        parseResearchWorkspaceCandidates({
+          ...file,
+          candidates: mutate(file.candidates),
+        }),
+    });
+  }
+
+  async recoverCandidateMembers(projectID: string) {
+    const inbox = await this.getCandidates(projectID);
+    for (const candidate of inbox.candidates) {
+      const binding = candidate.binding;
+      if (!binding) continue;
+      const source = await this.getSource(binding.sourceID);
+      if (
+        !source ||
+        source.source.identity.libraryID !== binding.libraryID ||
+        source.source.identity.itemKey !== binding.itemKey ||
+        source.source.identity.attachmentKey !== binding.attachmentKey
+      )
+        continue;
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        const bundle = await this.getProject(projectID);
+        if (
+          bundle.members.some((member) => member.sourceID === binding.sourceID)
+        )
+          break;
+        try {
+          const members = await this.addMembers(
+            projectID,
+            bundle.membersRevision,
+            [{ sourceID: binding.sourceID, role: "candidate" }],
+          );
+          await this.markArtifactsStaleForMembersRevision({
+            projectID,
+            membersRevision: members.revision,
+          });
+          break;
+        } catch (error) {
+          if (
+            !(error instanceof ResearchWorkspaceRevisionConflictError) ||
+            attempt === 2
+          )
+            throw error;
+        }
+      }
+    }
   }
 
   getChangeInboxPath(projectID: string) {
@@ -1439,12 +1527,16 @@ export class ResearchWorkspaceProjectRepository {
     reason?: string;
   }) {
     const reason = params.reason ?? "project-source-scope-changed";
+    const bundle = await this.getProject(params.projectID);
     return this.propagateArtifactStaleness({
       projectID: params.projectID,
       reason,
       directMatch: (artifact) =>
-        artifact.lineage.membersRevision !== undefined &&
-        artifact.lineage.membersRevision !== params.membersRevision,
+        artifact.lineage.scopeFingerprint !== undefined
+          ? artifact.lineage.scopeFingerprint !==
+            projectScopeFingerprint(bundle, artifact.sourceIDs)
+          : artifact.lineage.membersRevision !== undefined &&
+            artifact.lineage.membersRevision !== params.membersRevision,
     });
   }
 
@@ -1755,6 +1847,15 @@ export class ResearchWorkspaceProjectRepository {
       repairedCatalog = repair.changed;
       warnings = repair.warnings;
     }
+    for (const project of await this.listProjects({ includeArchived: true })) {
+      try {
+        await this.recoverCandidateMembers(project.projectID);
+      } catch (error) {
+        warnings.push(
+          `Candidate inbox recovery failed for ${project.projectID}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
     const runs = await this.recoverInterruptedRuns();
     warnings.push(...runs.warnings);
     return {
@@ -1792,6 +1893,7 @@ export class ResearchWorkspaceProjectRepository {
       exportedAt: this.timestamp(),
       project: bundle.project,
       members: bundle.members,
+      candidates: (await this.getCandidates(projectID)).candidates,
       sources,
       artifacts: artifactList.artifacts,
       runs: runList.runs,

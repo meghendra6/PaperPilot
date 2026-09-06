@@ -1,6 +1,6 @@
 import type { ComprehensionCheckState } from "../comprehensionCheck/types";
 import type { EngineMode } from "../ai/types";
-import { messageStore } from "../message/messageStore";
+import { messageStore, restoreMessageRecords } from "../message/messageStore";
 import type { MessageRecord } from "../message/types";
 import { resolveSessionHistoryPrefs } from "./historyPrefs";
 import {
@@ -575,6 +575,25 @@ export function captureSessionSnapshot(params: {
     ...(params.session.lastModel
       ? { lastModel: cloneValue(params.session.lastModel) }
       : {}),
+    ...(params.session.branch
+      ? { branch: cloneValue(params.session.branch) }
+      : {}),
+    ...(params.session.pins
+      ? {
+          pins: cloneValue(
+            params.session.pins.filter(
+              (pin) =>
+                pin.role === "user" || prefs.persistAssistantDerivedState,
+            ),
+          ),
+        }
+      : {}),
+    ...(params.session.summary && prefs.persistAssistantDerivedState
+      ? { summary: cloneValue(params.session.summary) }
+      : {}),
+    ...(params.session.providerBindings
+      ? { providerBindings: cloneValue(params.session.providerBindings) }
+      : {}),
     ...(paperArtifacts ? { paperArtifacts } : {}),
     ...(relatedRecommendations ? { relatedRecommendations } : {}),
     ...(mastery ? { mastery } : {}),
@@ -590,7 +609,10 @@ export function applySessionSnapshot(
 ): PaperSession {
   const data = getAddonData();
 
-  messageStore.replace(snapshot.sessionId, cloneValue(snapshot.messages ?? []));
+  messageStore.replace(
+    snapshot.sessionId,
+    restoreMessageRecords(cloneValue(snapshot.messages ?? [])),
+  );
 
   if (snapshot.paperArtifacts) {
     data.paperArtifactStates?.set(
@@ -654,10 +676,38 @@ export function applySessionSnapshot(
     mode: snapshot.lastMode || "codex_cli",
     createdAt: snapshot.createdAt,
     updatedAt: snapshot.updatedAt,
-    lastCodexSessionID: snapshot.lastCodexSessionID,
-    lastClaudeSessionID: snapshot.lastClaudeSessionID,
-    lastGeminiSessionID: snapshot.lastGeminiSessionID,
+    lastCodexSessionID:
+      snapshot.lastCodexSessionID === "last"
+        ? undefined
+        : snapshot.lastCodexSessionID,
+    lastClaudeSessionID:
+      snapshot.lastClaudeSessionID === "latest"
+        ? undefined
+        : snapshot.lastClaudeSessionID,
+    lastGeminiSessionID:
+      snapshot.lastGeminiSessionID === "latest"
+        ? undefined
+        : snapshot.lastGeminiSessionID,
     lastModel: cloneValue(snapshot.lastModel),
     threadTitle: snapshot.title,
+    ...(snapshot.branch ? { branch: cloneValue(snapshot.branch) } : {}),
+    ...(snapshot.pins
+      ? {
+          pins: cloneValue(
+            snapshot.pins.filter(
+              (pin) =>
+                pin.role === "user" ||
+                resolveSessionHistoryPrefs().persistAssistantDerivedState,
+            ),
+          ),
+        }
+      : {}),
+    ...(snapshot.summary &&
+    resolveSessionHistoryPrefs().persistAssistantDerivedState
+      ? { summary: cloneValue(snapshot.summary) }
+      : {}),
+    ...(snapshot.providerBindings
+      ? { providerBindings: cloneValue(snapshot.providerBindings) }
+      : {}),
   };
 }

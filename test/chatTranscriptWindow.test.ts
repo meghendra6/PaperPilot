@@ -115,6 +115,8 @@ class FakeElement {
     for (const listener of this.listeners.get("click") || []) listener();
   }
 
+  setAttribute(_name: string, _value: string) {}
+
   focus(_options?: unknown) {
     // no-op
   }
@@ -275,8 +277,14 @@ test("rendered chat transcript detaches overflow while keeping suspension contro
 
   prepareChatTranscriptAppend(container as unknown as HTMLElement);
   wrappers = container.querySelectorAll(".pp-message-wrapper");
-  assert.equal(wrappers[0]?.dataset.ppTranscriptKey, "message-52");
-  assert.equal(wrappers.at(-1)?.dataset.ppTranscriptKey, "message-99");
+  assert.equal(wrappers[0]?.dataset.ppTranscriptKey, "message-36");
+  assert.equal(wrappers.at(-1)?.dataset.ppTranscriptKey, "message-83");
+  assert.equal(handle.showMessage("message-2"), true);
+  wrappers = container.querySelectorAll(".pp-message-wrapper");
+  assert.ok(
+    wrappers.some((wrapper) => wrapper.dataset.ppTranscriptKey === "message-2"),
+  );
+  assert.equal(handle.showMessage("missing-id"), false);
   handle.dispose();
 });
 

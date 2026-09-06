@@ -727,7 +727,7 @@ test("buildCodexWorkspacePrompt tells Codex to inspect paper workspace files fir
   );
   assert.match(prompt, /Do not create, modify, or delete workspace files/i);
   assert.match(prompt, /Do not mention internal workspace filenames/i);
-  assert.match(prompt, /Do not include source links, raw URLs, or file paths/i);
+  assert.match(prompt, /Preserve relevant public source links/i);
   assert.match(prompt, /Use the full current-paper workspace content/i);
   assert.match(prompt, /cite section, page, figure, or table/i);
   assert.match(prompt, /separate paper claims from your interpretation/i);
@@ -742,14 +742,11 @@ test("all workspace engine prompts apply the same grounding guardrails", () => {
   ];
 
   for (const prompt of prompts) {
-    assert.match(prompt, /inspect the workspace files in this directory/i);
+    assert.match(prompt, /CONTEXT_INDEX\.md/i);
     assert.match(prompt, /paper\.md/i);
     assert.match(prompt, /paper\.json/i);
     assert.match(prompt, /Do not mention internal workspace filenames/i);
-    assert.match(
-      prompt,
-      /Do not include source links, raw URLs, or file paths/i,
-    );
+    assert.match(prompt, /Preserve relevant public source links/i);
     assert.match(prompt, /Use the full current-paper workspace content/i);
     assert.match(prompt, /cite section, page, figure, or table/i);
     assert.match(prompt, /separate paper claims from your interpretation/i);

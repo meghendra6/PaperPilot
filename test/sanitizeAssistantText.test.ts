@@ -3,12 +3,15 @@ import * as assert from "node:assert/strict";
 
 import { sanitizeAssistantText } from "../src/modules/message/assistantOutput";
 
-test("sanitizeAssistantText removes source-only labels and urls", () => {
+test("sanitizeAssistantText preserves requested public sources and URLs", () => {
   const sanitized = sanitizeAssistantText(
     "Sources:\n[paper](https://example.com/paper)\nhttps://example.com/full\nSummary paragraph.",
   );
 
-  assert.equal(sanitized, "paper\n\nSummary paragraph.");
+  assert.equal(
+    sanitized,
+    "Sources:\n[paper](https://example.com/paper)\nhttps://example.com/full\nSummary paragraph.",
+  );
 });
 
 test("sanitizeAssistantText replaces internal workspace filenames with natural phrasing", () => {

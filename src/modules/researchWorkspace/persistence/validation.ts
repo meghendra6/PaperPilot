@@ -254,6 +254,32 @@ function validateProject(value: unknown) {
   text(project.name, "project name");
   optionalText(project.description, "project description");
   optionalText(project.researchQuestion, "project researchQuestion");
+  if (project.comparisonQuestions !== undefined) {
+    if (
+      !Array.isArray(project.comparisonQuestions) ||
+      project.comparisonQuestions.length > 20
+    )
+      throw new Error(
+        "Project comparison questions must be an array of at most 20.",
+      );
+    const ids = new Set<string>();
+    for (const value of project.comparisonQuestions) {
+      const question = object(value, "comparison question");
+      const id = assertResearchWorkspaceID(
+        text(question.id, "comparison question ID"),
+        "comparison question ID",
+      );
+      if (ids.has(id)) throw new Error("Duplicate comparison question ID.");
+      ids.add(id);
+      if (text(question.question, "comparison question").length > 4000)
+        throw new Error("Comparison question is too long.");
+      isoDate(question.createdAt, "comparison question createdAt");
+      const provenance = object(question.provenance, "comparison provenance");
+      text(provenance.sessionID, "comparison sessionID");
+      text(provenance.messageID, "comparison messageID");
+      optionalText(provenance.sourceID, "comparison sourceID");
+    }
+  }
   isoDate(project.createdAt, "project createdAt");
   isoDate(project.updatedAt, "project updatedAt");
   if (project.archivedAt !== undefined)
@@ -357,6 +383,18 @@ export function parseResearchWorkspaceMembersFile(
     text(member.sourceID, "member sourceID");
     oneOf(member.role, MEMBER_ROLES, "member role");
     oneOf(member.reviewStatus, REVIEW_STATUSES, "member reviewStatus");
+    if (member.readingProgress !== undefined)
+      oneOf(
+        member.readingProgress,
+        ["unreviewed", "up-next", "skimmed", "read"],
+        "member readingProgress",
+      );
+    if (member.understanding !== undefined)
+      oneOf(
+        member.understanding,
+        ["unknown", "needs-review", "understood"],
+        "member understanding",
+      );
     isoDate(member.addedAt, "member addedAt");
     isoDate(member.updatedAt, "member updatedAt");
     optionalText(member.exclusionReason, "member exclusionReason");
@@ -786,6 +824,11 @@ export function parseResearchWorkspaceArtifactFile(
   if (artifact.staleReasons !== undefined)
     stringArray(artifact.staleReasons, "artifact staleReasons");
   const lineage = object(artifact.lineage, "artifact lineage");
+  optionalText(
+    lineage.operationInputFingerprint,
+    "operation input fingerprint",
+  );
+  optionalText(lineage.scopeFingerprint, "scope fingerprint");
   text(lineage.operation, "lineage operation");
   text(lineage.operationVersion, "lineage operationVersion");
   text(lineage.promptVersion, "lineage promptVersion");
@@ -849,6 +892,22 @@ export function parseResearchWorkspaceArtifactFile(
       oneOf(item.artifactType, ARTIFACT_TYPES, "lineage artifact input type");
       if (revision(item.version, "lineage artifact input version") < 1) {
         throw new Error("lineage artifact input version must be positive.");
+      }
+      if (item.sourceIDs !== undefined)
+        stringArray(item.sourceIDs, "lineage artifact input sourceIDs");
+      if (item.sourceFingerprints !== undefined) {
+        if (
+          !Array.isArray(item.sourceFingerprints) ||
+          item.sourceFingerprints.length > 500
+        )
+          throw new Error(
+            "Invalid lineage artifact input source fingerprints.",
+          );
+        for (const entry of item.sourceFingerprints) {
+          const source = object(entry, "artifact source fingerprint");
+          text(source.sourceID, "artifact source ID");
+          text(source.contentFingerprint, "artifact source fingerprint");
+        }
       }
       isoDate(item.updatedAt, "lineage artifact input updatedAt");
       text(
@@ -914,6 +973,11 @@ export function parseResearchWorkspaceRunFile(
   schema(root.schemaVersion, RESEARCH_WORKSPACE_RUN_SCHEMA_VERSION, "run file");
   revision(root.revision, "run revision");
   const run = object(root.run, "run");
+  optionalText(
+    run.operationInputFingerprint,
+    "run operation input fingerprint",
+  );
+  optionalText(run.scopeFingerprint, "run scope fingerprint");
   assertResearchWorkspaceID(text(run.runID, "runID"), "runID");
   text(run.operation, "run operation");
   text(run.operationVersion, "run operationVersion");

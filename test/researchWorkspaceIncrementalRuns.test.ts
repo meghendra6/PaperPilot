@@ -12,6 +12,10 @@ import {
 import { validateAndAnnotateRelationshipGraph } from "../src/modules/researchWorkspace/core/literatureGraph/provenance";
 import { ResearchWorkspaceOperationCoordinator } from "../src/modules/researchWorkspace/operationCoordinator";
 import { researchWorkspaceArtifactPayloadFingerprint } from "../src/modules/researchWorkspace/artifactFingerprint";
+import {
+  admittedProjectArtifacts,
+  createProjectOperationAdmission,
+} from "../src/modules/researchWorkspace/operationInputs";
 import { researchWorkspaceOutputSchemaForPurpose } from "../src/modules/researchWorkspace/outputSchemas";
 import type { ResearchWorkspacePaper } from "../src/modules/researchWorkspace/paperSource";
 import type { ResearchWorkspaceFileOps } from "../src/modules/researchWorkspace/persistence/contracts";
@@ -932,3 +936,355 @@ for (const changed of ["projection", "model", "source-during-unit"] as const) {
     }
   });
 }
+
+test("context coverage counts source text and redistributes unused short-paper quota", () => {
+  const tiny = planResearchWorkspaceContext({
+    papers: [paper("A", "v1", "aaaa\n\nbbbb")],
+    operation: "review",
+  });
+  assert.equal(tiny.projections[0].coverage, 1);
+  assert.equal(tiny.projections[0].includedSourceCharacters, 8);
+  assert.equal(tiny.projections[0].includedCharacters, 10);
+  const papers = [
+    paper("A", "v1", "x".repeat(100)),
+    paper("B", "v1", "y".repeat(250000)),
+  ];
+  const plan = planResearchWorkspaceContext({
+    papers,
+    operation: "review",
+    totalCharacters: 180000,
+  });
+  assert.equal(plan.usedCharacters, 180000);
+  assert(
+    plan.projections.every(
+      (entry) => entry.coverage >= 0 && entry.coverage <= 1,
+    ),
+  );
+  assert(plan.projections[1].partialChunks?.length);
+  assert.deepEqual(
+    plan,
+    planResearchWorkspaceContext({
+      papers: [...papers].reverse(),
+      operation: "review",
+      totalCharacters: 180000,
+    }),
+  );
+});
+
+test("workspace supplies only complete current in-scope artifacts and records every supplied dependency", async () => {
+  const { repository } = createRepository();
+  const projects = new ResearchWorkspaceProjectController(repository);
+  const coordinator = new ResearchWorkspaceOperationCoordinator(repository);
+  const papers = [paper("A"), paper("B")];
+  const details = await projects.createProject(
+    { name: "Bounded artifacts" },
+    papers,
+  );
+  const artifact = async (source: ResearchWorkspacePaper, label: string) =>
+    coordinator.run({
+      projectID: details.project.projectID,
+      papers: [source],
+      sourcesPrepared: true,
+      operation: label,
+      operationVersion: "v1",
+      artifactType: "claim-ledger",
+      artifactTitle: label,
+      providerMode: "local",
+      execute: async () => ({ claims: [{ text: label }] }),
+    });
+  const good = await artifact(papers[0], "CURRENT-A");
+  const stale = await artifact(papers[0], "STALE-A");
+  await repository.markArtifactStaleAtomically({
+    projectID: details.project.projectID,
+    artifactID: stale.artifact.artifact.artifactID,
+    reason: "fixture",
+  });
+  await artifact(papers[1], "OUTSIDE-B");
+  const current = await projects.details(details.project.projectID);
+  const workspace = buildResearchWorkspaceProjectWorkspace({
+    details: current,
+    papers: [papers[0]],
+    contextPlan: planResearchWorkspaceContext({
+      papers: [papers[0]],
+      operation: "synthesis",
+    }),
+    descriptor: {
+      operation: "synthesis",
+      operationVersion: "v1",
+      promptVersion: "v1",
+      parserVersion: "v1",
+    },
+    outputSchema: researchWorkspaceOutputSchemaForPurpose("project-synthesis"),
+  });
+  const files = JSON.stringify(workspace.files);
+  assert(files.includes("CURRENT-A"));
+  assert(!files.includes("STALE-A"));
+  assert(!files.includes("OUTSIDE-B"));
+  assert.deepEqual(
+    workspace.admission.artifactInputs.map((entry) => entry.artifactID),
+    [good.artifact.artifact.artifactID],
+  );
+  await assert.rejects(
+    coordinator.run({
+      projectID: details.project.projectID,
+      papers: [papers[0]],
+      sourcesPrepared: true,
+      admission: workspace.admission,
+      operation: "synthesis",
+      operationVersion: "v1",
+      artifactType: "claim-ledger",
+      artifactTitle: "Dependent",
+      providerMode: "local",
+      execute: async () => {
+        const prior = await repository.getArtifact(
+          details.project.projectID,
+          good.artifact.artifact.artifactID,
+        );
+        assert(prior);
+        await repository.updateArtifact(
+          details.project.projectID,
+          prior.artifact.artifactID,
+          prior.revision,
+          (artifact) => ({
+            ...artifact,
+            payload: { claims: [{ text: "changed" }] },
+          }),
+        );
+        return { claims: [] };
+      },
+    }),
+    /upstream artifact changed/,
+  );
+});
+
+test("checkpoint reuse requires identical questions and comparison columns", async () => {
+  const { repository } = createRepository();
+  const projects = new ResearchWorkspaceProjectController(repository);
+  const coordinator = new ResearchWorkspaceOperationCoordinator(repository);
+  const papers = [paper("A"), paper("B")];
+  const details = await projects.createProject(
+    { name: "Question checkpoints" },
+    papers,
+  );
+  const units = papers.map((entry) => ({
+    unitID: entry.sourceID,
+    sourceID: entry.sourceID,
+  }));
+  const initialPayload = {
+    rows: [] as Array<{ sourceID: string; question: string }>,
+  };
+  const base = {
+    projectID: details.project.projectID,
+    papers,
+    sourcesPrepared: true,
+    operation: "matrix",
+    operationVersion: "v1",
+    artifactType: "evidence-matrix" as const,
+    artifactTitle: "Matrix",
+    providerMode: "local" as const,
+    units,
+    initialPayload,
+    mergeUnit: (
+      payload: typeof initialPayload,
+      _unit: (typeof units)[number],
+      result: (typeof initialPayload.rows)[number],
+    ) => ({ rows: [...payload.rows, result] }),
+    reusableUnit: (
+      payload: typeof initialPayload,
+      unit: (typeof units)[number],
+    ) => payload.rows.find((row) => row.sourceID === unit.sourceID),
+  };
+  const admission = (question: string) =>
+    createProjectOperationAdmission(
+      details,
+      papers,
+      { question, columns: [{ id: "axis", instruction: question }] },
+      [],
+    );
+  for (const question of ["Q1", "Q2"]) {
+    const executed: string[] = [];
+    await coordinator.runIncremental({
+      ...base,
+      admission: admission(question),
+      executeUnit: async (unit) => {
+        executed.push(unit.sourceID);
+        if (unit.sourceID === papers[1].sourceID)
+          throw new Error("Interrupted row");
+        return { sourceID: unit.sourceID, question };
+      },
+    });
+    assert.deepEqual(
+      executed,
+      papers.map((entry) => entry.sourceID),
+    );
+  }
+  const executed: string[] = [];
+  const completed = await coordinator.runIncremental({
+    ...base,
+    admission: admission("Q2"),
+    executeUnit: async (unit) => {
+      executed.push(unit.sourceID);
+      return { sourceID: unit.sourceID, question: "Q2" };
+    },
+  });
+  assert.deepEqual(executed, [papers[1].sourceID]);
+  assert(completed.result.rows.every((row) => row.question === "Q2"));
+});
+
+test("derived analysis tolerates reading updates and records semantic lineage", async () => {
+  const { repository } = createRepository();
+  const projects = new ResearchWorkspaceProjectController(repository);
+  const coordinator = new ResearchWorkspaceOperationCoordinator(repository);
+  const papers = [paper("DERIVED-READING")];
+  const created = await projects.createProject(
+    { name: "Derived reading" },
+    papers,
+  );
+  const upstream = await coordinator.run({
+    projectID: created.project.projectID,
+    papers,
+    sourcesPrepared: true,
+    operation: "claims",
+    operationVersion: "v1",
+    artifactType: "claim-ledger",
+    artifactTitle: "Claims",
+    providerMode: "local",
+    execute: async () => ({ claims: [] }),
+  });
+  const details = await projects.details(created.project.projectID);
+  const admission = createProjectOperationAdmission(details, papers, {}, [
+    upstream.artifact.artifact,
+  ]);
+  const result = await coordinator.runDerived({
+    projectID: created.project.projectID,
+    sources: details.sources,
+    artifactInputs: admission.artifactInputs,
+    membersRevision: details.membersRevision,
+    operation: "derived",
+    operationVersion: "v1",
+    promptVersion: "local-v1",
+    parserVersion: "v1",
+    schemaVersion: "v1",
+    artifactType: "claim-ledger",
+    artifactTitle: "Derived",
+    execute: async () => {
+      await projects.updateReadingState({
+        projectID: created.project.projectID,
+        sourceID: papers[0].sourceID,
+        readingProgress: "read",
+        understanding: "understood",
+      });
+      return { claims: [] };
+    },
+  });
+  assert.equal(result.artifact.artifact.status, "complete");
+  assert(result.artifact.artifact.lineage.scopeFingerprint);
+  assert(result.run.run.operationInputFingerprint);
+});
+
+test("an artifact with an out-of-scope ancestor cannot enter model input", async () => {
+  const { repository } = createRepository();
+  const projects = new ResearchWorkspaceProjectController(repository);
+  const coordinator = new ResearchWorkspaceOperationCoordinator(repository);
+  const papers = [paper("A"), paper("B")];
+  const created = await projects.createProject(
+    { name: "Transitive scope" },
+    papers,
+  );
+  const upstream = await coordinator.run({
+    projectID: created.project.projectID,
+    papers,
+    sourcesPrepared: true,
+    operation: "upstream",
+    operationVersion: "v1",
+    artifactType: "claim-ledger",
+    artifactTitle: "A and B",
+    providerMode: "local",
+    execute: async () => ({ claims: [] }),
+  });
+  const details = await projects.details(created.project.projectID);
+  const clone = JSON.parse(JSON.stringify(upstream.artifact.artifact));
+  clone.artifactID = "derived-a";
+  clone.sourceIDs = [papers[0].sourceID];
+  clone.lineage.inputs = clone.lineage.inputs.filter(
+    (input: { sourceID: string }) => input.sourceID === papers[0].sourceID,
+  );
+  delete clone.lineage.scopeFingerprint;
+  clone.lineage.artifactInputs = createProjectOperationAdmission(
+    details,
+    papers,
+    {},
+    [upstream.artifact.artifact],
+  ).artifactInputs;
+  assert.deepEqual(
+    admittedProjectArtifacts(
+      { ...details, artifacts: [clone, upstream.artifact.artifact] },
+      [papers[0]],
+    ),
+    [],
+  );
+});
+
+test("a continued mastery result preserves its supplied predecessor as a valid dependency", async () => {
+  const { repository } = createRepository();
+  const projects = new ResearchWorkspaceProjectController(repository);
+  const coordinator = new ResearchWorkspaceOperationCoordinator(repository);
+  const papers = [paper("MASTERY")];
+  const created = await projects.createProject(
+    { name: "Mastery lineage" },
+    papers,
+  );
+  const base = {
+    projectID: created.project.projectID,
+    papers,
+    sourcesPrepared: true,
+    operation: "paper-mastery",
+    operationVersion: "v1",
+    artifactType: "paper-mastery" as const,
+    artifactTitle: "Mastery",
+    providerMode: "local" as const,
+  };
+  const first = await coordinator.run({
+    ...base,
+    execute: async () => ({ session: { question: "Q1" } }),
+  });
+  const details = await projects.details(created.project.projectID);
+  const next = await coordinator.run({
+    ...base,
+    admission: createProjectOperationAdmission(
+      details,
+      papers,
+      { answer: "A1" },
+      [first.artifact.artifact],
+    ),
+    execute: async () => ({ session: { question: "Q2" } }),
+  });
+  assert.equal(next.artifact.artifact.status, "complete");
+  assert.equal(
+    (
+      await repository.getArtifact(
+        created.project.projectID,
+        first.artifact.artifact.artifactID,
+      )
+    )?.artifact.status,
+    "complete",
+  );
+  assert.deepEqual(
+    next.artifact.artifact.lineage.artifactInputs?.[0].sourceIDs,
+    [papers[0].sourceID],
+  );
+  await repository.markArtifactStaleAtomically({
+    projectID: created.project.projectID,
+    artifactID: first.artifact.artifact.artifactID,
+    reason: "later-source-change",
+  });
+  assert.equal(
+    (
+      await repository.getArtifact(
+        created.project.projectID,
+        next.artifact.artifact.artifactID,
+      )
+    )?.artifact.status,
+    "stale",
+  );
+});

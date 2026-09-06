@@ -1,3 +1,4 @@
+import { isResearchWorkspaceMemberExcluded } from "./memberState";
 import { researchWorkspaceArtifactPayloadFingerprint } from "./artifactFingerprint";
 import type { ResearchWorkspaceProjectDetails } from "./projectController";
 import type {
@@ -891,7 +892,7 @@ export function buildCitationHealthReport(params: {
     params.details.sources.map((source) => [source.sourceID, source]),
   );
   const nonExcludedMemberSourceIDs = params.details.members
-    .filter((member) => member.reviewStatus !== "excluded")
+    .filter((member) => !isResearchWorkspaceMemberExcluded(member))
     .map((member) => member.sourceID)
     .sort();
   const includedSourceIDs = nonExcludedMemberSourceIDs.filter((sourceID) =>
@@ -1395,7 +1396,7 @@ export function buildCitationHealthReport(params: {
       membersRevision: params.details.membersRevision,
       includedSourceIDs,
       excludedSourceIDs: params.details.members
-        .filter((member) => member.reviewStatus === "excluded")
+        .filter((member) => isResearchWorkspaceMemberExcluded(member))
         .map((member) => member.sourceID)
         .sort(),
     },

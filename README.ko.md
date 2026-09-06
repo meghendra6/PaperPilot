@@ -8,6 +8,16 @@ Paper Pilot는 Zotero 7-10 PDF 리더를 위한 AI 읽기 워크벤치입니다.
 
 ![Zotero 7-10](https://img.shields.io/badge/Zotero-7--10-cc2936) ![Node 20+](https://img.shields.io/badge/Node-20%2B-339933) ![Java 11+](https://img.shields.io/badge/Java-11%2B-007396) ![License](https://img.shields.io/badge/License-AGPL--3.0--or--later-blue) ![Engines](https://img.shields.io/badge/Engines-Codex%20CLI%20%7C%20Claude%20Code%20%7C%20Gemini%20CLI-6f42c1)
 
+## Chat 사용 흐름
+
+**Focus chat**으로 보조 패널을 잠시 숨길 수 있습니다. 답변 생성 중에도 다음 질문을 작성하고, 붙은 선택 문맥을 확인·제거하며, 짧게/기본/자세히 답변 길이를 선택하세요. **/ Actions**에는 설명·요약·번역·비판 네 가지 동작이 있습니다. 현재 논문의 현재·저장 대화를 검색하면 화면에 아직 표시되지 않은 과거 메시지로도 이동할 수 있습니다.
+
+제출한 질문은 정확한 PDF와 실행 설정을 고정합니다. Retry는 같은 질문에 실행 시도를 추가합니다. 메시지의 **More**에서 별도 대화로 질문 수정, 답변 시점부터 분기, 문맥 고정, 대상·내용을 확인한 Zotero note 저장, 선택한 프로젝트에 비교 질문 전달을 할 수 있습니다. PDF 인용은 로컬 원문 일치를 확인하고 클릭 시 소스를 재검사합니다. 구절의 위치가 일치한다는 뜻이며 주장 자체가 참이라는 판정은 아닙니다.
+
+프로젝트 inbox에는 PDF 없는 발견 후보도 저장할 수 있습니다. 기존 item과 정확한 PDF를 직접 연결한 뒤 screening, 읽기 진행, 이해도를 따로 관리하세요. 라이브러리에서 다시 선택하지 않아도 저장된 프로젝트 자료로 작업을 재개할 수 있습니다.
+
+초안은 메모리에만 유지됩니다. 새 chat metadata에도 full/prompts-only/off 저장 정책이 적용되며, prompts-only의 후속 문맥에는 assistant 요약·pin이 들어가지 않습니다. PaperPilot 설정이 외부 CLI 기록까지 삭제하지는 않습니다. 엔진 사용 가능 여부는 설치된 CLI와 계정에 달려 있고, 실패 시 다른 엔진으로 몰래 전환하지 않습니다. [리뷰·스펙](./docs/paperpilot-product-review-and-chat-spec.md), [평가 결과](./docs/chat-context-evaluation.md), [실제 환경 검증 목록](./docs/manual-qa.md)을 참고하세요.
+
 ## 한눈에 보기
 
 - Zotero Reader 안에서 바로 사용하는 AI 채팅
@@ -26,7 +36,7 @@ Research Workspace는 Paper Pilot 본체에 포함되며 동일한 로컬 엔진
 
 ## 스크린샷과 데모
 
-현재 저장소에는 **스크린샷이나 데모 클립이 아직 포함되어 있지 않습니다**.
+[제품 리뷰](./docs/paperpilot-product-review-and-chat-spec.md)에 개선 전 리더 화면을 기록했습니다. 새 chat UI의 검증 화면과는 구분합니다.
 
 다음과 같은 시각 자료를 추가하면 좋습니다.
 

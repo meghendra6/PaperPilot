@@ -1,3 +1,9 @@
+import {
+  assertRequestContextCurrent,
+  type RequestContextSnapshot,
+} from "../context/requestContext";
+import { parseChatAnswer } from "../message/chatAnswer";
+import type { ExecutionSettings } from "../ai/executionSettings";
 import { addMessage, setMessageContent } from "../components/ChatMessage";
 import {
   getActiveReaderRunMode,
@@ -32,10 +38,7 @@ import { getRunProgressState } from "../ai/runProgress";
 import { armRunTimeout, completeTimedOutRun } from "../ai/runTimeout";
 import { sanitizeAssistantText } from "../message/assistantOutput";
 import { sessionHistoryService } from "../session/sessionHistoryService";
-import {
-  cleanupPaperWorkspaceForItemIfEnabled,
-  cleanupWorkspaceIfEnabled,
-} from "../workspace/cleanup";
+import { cleanupWorkspaceIfEnabled } from "../workspace/cleanup";
 import { clearClaudePollerForItem } from "./poller";
 import {
   clearClaudeRunStateForItem,
@@ -67,6 +70,11 @@ export async function handleClaudeQuestion(params: {
   continuationToken?: ReaderRunToken;
   profile?: RunProfile;
   outputSchema?: StructuredOutputSchema;
+  requestContext?: RequestContextSnapshot;
+  executionSettings?: ExecutionSettings;
+  turnId?: string;
+  attemptId?: string;
+  responseLength?: "short" | "default" | "detailed";
   onComplete?: (result: ReaderRunCompletionResult) => void | Promise<void>;
 }) {
   const profile = params.profile || "chat";
@@ -112,6 +120,11 @@ export async function handleClaudeQuestion(params: {
       sessionTitle: params.sessionTitle,
       paperTitle: params.paperTitle,
       question: params.question,
+      requestContext: params.requestContext,
+      executionSettings: params.executionSettings,
+      turnId: params.turnId,
+      attemptId: params.attemptId,
+      responseLength: params.responseLength,
       selectedText: params.selectedText,
       annotationIDs: params.annotationIDs,
       resumeSessionId: params.resumeSessionId,
@@ -122,6 +135,10 @@ export async function handleClaudeQuestion(params: {
   startRunProgress(params.itemID, "claude_code", runToken);
   let assistantMessage: HTMLElement | null | undefined = null;
   const pendingCompletion = {
+    sessionId: params.sessionId,
+    paperTitle: params.paperTitle,
+    turnId: params.turnId,
+    attemptId: params.attemptId,
     mode: "claude_code" as const,
     token: runToken,
     retryable: !params.suppressChatMessages,
@@ -172,23 +189,42 @@ export async function handleClaudeQuestion(params: {
     pendingCompletion.cancelTimeout = armTimeout(5_000);
   };
 
-  const result = await startClaudeRunForQuestion({
-    itemID: params.itemID,
-    title: params.sessionTitle,
-    sessionId: params.sessionId,
-    question: params.question,
-    selectedText: params.selectedText,
-    annotationIDs: params.annotationIDs,
-    resumeSessionId: params.resumeSessionId,
-    profile,
-    outputSchema: params.outputSchema,
-  }).catch(async (error) => {
-    cancelTimeout();
-    await cleanupPaperWorkspaceForItemIfEnabled({
+  let preparingWorkspacePath: string | undefined;
+  const prepare = async () => {
+    if (params.turnId && params.attemptId)
+      await sessionHistoryService.updateAttempt({
+        itemID: params.itemID,
+        paperTitle: params.paperTitle || params.sessionTitle,
+        turnId: params.turnId,
+        attemptId: params.attemptId,
+        state: "running",
+      });
+    return startClaudeRunForQuestion({
       itemID: params.itemID,
-      title: params.sessionTitle,
+      title: params.paperTitle || params.sessionTitle,
+      paperTitle: params.paperTitle,
+      requestContext: params.requestContext,
+      executionSettings: params.executionSettings,
+      responseLength: params.responseLength,
+      shouldContinue: () =>
+        isReaderRunTokenActive(params.itemID, runToken) &&
+        !getPendingEngineCompletion(params.itemID)?.terminalClaim,
+      onWorkspaceAllocated: (path) => {
+        preparingWorkspacePath = path;
+      },
+      sessionId: params.sessionId,
+      question: params.question,
+      selectedText: params.selectedText,
+      annotationIDs: params.annotationIDs,
+      resumeSessionId: params.resumeSessionId,
       profile,
+      outputSchema: params.outputSchema,
     });
+  };
+  const result = await prepare().catch(async (error) => {
+    cancelTimeout();
+    if (preparingWorkspacePath)
+      await cleanupWorkspaceIfEnabled(preparingWorkspacePath);
     if (!isReaderRunTokenActive(params.itemID, runToken)) {
       markPendingEnginePreparationSettled(params.itemID, runToken);
       return undefined;
@@ -211,6 +247,11 @@ export async function handleClaudeQuestion(params: {
     try {
       await sessionHistoryService
         .persistAssistantTurn({
+          turnId: params.turnId,
+          attemptId: params.attemptId,
+          requestContext: params.requestContext,
+          executionSettings: params.executionSettings,
+          responseLength: params.responseLength,
           itemID: params.itemID,
           sessionId: params.sessionId,
           mode: "claude_code",
@@ -219,6 +260,7 @@ export async function handleClaudeQuestion(params: {
           success: false,
           rawEvent: detail,
           suppressMessage: params.suppressChatMessages,
+          updateResumeMetadata: profile === "chat",
         })
         .catch(() => undefined);
       if (!params.suppressChatMessages) {
@@ -234,6 +276,7 @@ export async function handleClaudeQuestion(params: {
   });
 
   if (!result) return;
+  if (result.ok) params.requestContext ??= result.requestContext;
 
   pendingCompletion.workspacePath = result.workspacePath;
 
@@ -359,7 +402,20 @@ export async function handleClaudeQuestion(params: {
 
     if (!progress.completed) {
       if (assistantMessage) {
-        setMessageContent(assistantMessage, "Running Claude Code…", "ai");
+        const partial =
+          progress.structuredOutput && progress.parsedOutput
+            ? profile === "chat"
+              ? parseChatAnswer(progress.parsedOutput, { partial: true })
+                  .answerMarkdown
+              : progress.parsedOutput
+            : "";
+        if (partial && result.timings && !result.timings.firstAssistantAt)
+          result.timings.firstAssistantAt = Date.now();
+        setMessageContent(
+          assistantMessage,
+          partial || "Running Claude Code…",
+          "ai",
+        );
       }
       return;
     }
@@ -375,7 +431,32 @@ export async function handleClaudeQuestion(params: {
     const rawAssistantText =
       progress.parsedOutput ||
       "Claude Code ran successfully, but returned no assistant message.";
-    const success = progress.exitCode === "0";
+    let success =
+      progress.exitCode === "0" &&
+      !progress.providerFailed &&
+      Boolean(progress.parsedOutput?.trim());
+    const parsedAnswer =
+      profile === "chat"
+        ? parseChatAnswer(rawAssistantText, {
+            allowedSourceIDs: new Set(
+              result.requestContext ? [result.requestContext.sourceID] : [],
+            ),
+          })
+        : { answerMarkdown: rawAssistantText, citationCandidates: [] };
+    let sourceChanged = false;
+    if (success && result.requestContext) {
+      try {
+        await assertRequestContextCurrent(result.requestContext);
+      } catch {
+        sourceChanged = true;
+        success = false;
+      }
+    }
+    if (result.timings) {
+      result.timings.finishedAt = Date.now();
+      if (progress.parsedOutput && !result.timings.firstAssistantAt)
+        result.timings.firstAssistantAt = result.timings.finishedAt;
+    }
     const terminalFailure = success
       ? undefined
       : classifyRunFailure({
@@ -384,9 +465,11 @@ export async function handleClaudeQuestion(params: {
           source: "process_exit",
         });
     let assistantText = success
-      ? sanitizeAssistantText(rawAssistantText)
+      ? sanitizeAssistantText(parsedAnswer.answerMarkdown)
       : (terminalFailure?.userMessage ?? "Claude Code run failed.");
 
+    if (sourceChanged)
+      assistantText = `${sanitizeAssistantText(parsedAnswer.answerMarkdown)}\n\nThe PDF changed while this answer was generated. Its evidence needs review.`;
     if (assistantMessage) {
       setMessageContent(assistantMessage, assistantText, "ai");
     }
@@ -394,15 +477,29 @@ export async function handleClaudeQuestion(params: {
     try {
       await finishRunAfterCleanup({
         prepare: async () => {
+          if (params.turnId && params.attemptId)
+            await sessionHistoryService.updateAttempt({
+              itemID: params.itemID,
+              paperTitle: params.paperTitle || params.sessionTitle,
+              turnId: params.turnId,
+              attemptId: params.attemptId,
+              state: "finishing",
+            });
           await sessionHistoryService.persistAssistantTurn({
+            turnId: params.turnId,
+            attemptId: params.attemptId,
+            requestContext: params.requestContext,
+            executionSettings: params.executionSettings,
+            responseLength: params.responseLength,
             itemID: params.itemID,
             sessionId: params.sessionId,
             mode: "claude_code",
             paperTitle: params.paperTitle || params.sessionTitle,
             assistantText,
             success,
+            citationCandidates: parsedAnswer.citationCandidates,
             rawEvent: progress.rawOutput,
-            resumeSessionId: params.resumeSessionId,
+            resumeSessionId: progress.resumeSessionId,
             suppressMessage: params.suppressChatMessages,
             updateResumeMetadata: profile === "chat",
           });
@@ -410,6 +507,7 @@ export async function handleClaudeQuestion(params: {
             clearClaudeRunStateForItem(params.itemID);
           }
           params.streamingIndicator.style.display = "none";
+          if (result.timings) result.timings.persistedAt = Date.now();
         },
         cleanup: () => cleanupWorkspaceIfEnabled(result.workspacePath),
         shouldComplete: () =>
@@ -419,6 +517,8 @@ export async function handleClaudeQuestion(params: {
           params.onComplete?.({
             success,
             assistantText,
+            timings: result.timings,
+            requestContext: result.requestContext,
             continuationToken: runToken,
           }),
         incomplete: (error) => {

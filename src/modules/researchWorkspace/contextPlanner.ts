@@ -11,6 +11,12 @@ export interface ResearchWorkspaceContextProjection {
   includedChunkIDs: string[];
   omittedChunkIDs: string[];
   includedCharacters: number;
+  includedSourceCharacters?: number;
+  partialChunks?: Array<{
+    id: string;
+    includedCharacters: number;
+    availableCharacters: number;
+  }>;
   omittedCharacters: number;
   availableCharacters: number;
   coverage: number;
@@ -116,6 +122,11 @@ function chooseChunks(
 ) {
   const available = candidates(paper, searchTerms);
   const selected: CandidateChunk[] = [];
+  const partialChunks: Array<{
+    id: string;
+    includedCharacters: number;
+    availableCharacters: number;
+  }> = [];
   let used = 0;
   for (const chunk of available) {
     const separator = selected.length ? 2 : 0;
@@ -124,6 +135,12 @@ function chooseChunks(
     const text = chunk.text.slice(0, remaining).trim();
     if (!text) continue;
     selected.push({ ...chunk, text });
+    if (text.length < chunk.text.length)
+      partialChunks.push({
+        id: chunk.id,
+        includedCharacters: text.length,
+        availableCharacters: chunk.text.length,
+      });
     used += separator + text.length;
     if (text.length < chunk.text.length) break;
   }
@@ -137,9 +154,18 @@ function chooseChunks(
     includedText,
     includedChunkIDs: selected.map((chunk) => chunk.id),
     omittedChunkIDs: available
-      .filter((chunk) => !includedIDs.has(chunk.id))
+      .filter(
+        (chunk) =>
+          !includedIDs.has(chunk.id) ||
+          partialChunks.some((partial) => partial.id === chunk.id),
+      )
       .map((chunk) => chunk.id),
     includedCharacters: includedText.length,
+    includedSourceCharacters: selected.reduce(
+      (sum, chunk) => sum + chunk.text.length,
+      0,
+    ),
+    partialChunks,
     availableCharacters,
   };
 }
@@ -184,11 +210,52 @@ export function planResearchWorkspaceContext(params: {
     assigned += allocation;
     return base + allocation;
   });
+  let choices = papers.map((paper, index) =>
+    chooseChunks(paper, searchTerms, quotas[index]),
+  );
+  // Reclaim quota a short source cannot use, then allocate it to sources with
+  // remaining text. Source order and remainder handling are deterministic.
+  for (let round = 0; round <= papers.length; round += 1) {
+    const remaining =
+      requestedBudget -
+      choices.reduce((sum, chosen) => sum + chosen.includedCharacters, 0);
+    const eligible = choices
+      .map((chosen, index) => ({ chosen, index }))
+      .filter(
+        ({ chosen }) =>
+          chosen.includedSourceCharacters < chosen.availableCharacters,
+      );
+    if (remaining <= 0 || !eligible.length) break;
+    const weight = eligible.reduce(
+      (sum, entry) => sum + relevance[entry.index],
+      0,
+    );
+    let allocated = 0;
+    for (const [ordinal, { chosen, index }] of eligible.entries()) {
+      const extraQuota =
+        ordinal === eligible.length - 1
+          ? remaining - allocated
+          : Math.floor((remaining * relevance[index]) / weight);
+      allocated += extraQuota;
+      quotas[index] = chosen.includedCharacters + extraQuota;
+    }
+    const next = papers.map((paper, index) =>
+      chooseChunks(paper, searchTerms, quotas[index]),
+    );
+    if (
+      next.every(
+        (chosen, index) =>
+          chosen.includedCharacters === choices[index].includedCharacters,
+      )
+    )
+      break;
+    choices = next;
+  }
   const projections = papers.map((paper, index) => {
-    const chosen = chooseChunks(paper, searchTerms, quotas[index]);
+    const chosen = choices[index];
     const omittedCharacters = Math.max(
       0,
-      chosen.availableCharacters - chosen.includedCharacters,
+      chosen.availableCharacters - chosen.includedSourceCharacters,
     );
     const projection: ResearchWorkspaceContextProjection = {
       sourceID: paper.sourceID,
@@ -197,11 +264,13 @@ export function planResearchWorkspaceContext(params: {
       includedChunkIDs: chosen.includedChunkIDs,
       omittedChunkIDs: chosen.omittedChunkIDs,
       includedCharacters: chosen.includedCharacters,
+      includedSourceCharacters: chosen.includedSourceCharacters,
+      partialChunks: chosen.partialChunks,
       omittedCharacters,
       availableCharacters: chosen.availableCharacters,
       coverage:
         chosen.availableCharacters > 0
-          ? chosen.includedCharacters / chosen.availableCharacters
+          ? chosen.includedSourceCharacters / chosen.availableCharacters
           : 0,
       fingerprint: stableFingerprint(
         [

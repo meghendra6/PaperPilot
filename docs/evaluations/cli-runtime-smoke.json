@@ -1,0 +1,60 @@
+{
+  "date": "2026-09-07",
+  "scope": "Actual local CLI requests with synthetic tokens; not Zotero GUI runs",
+  "codex": {
+    "version": "codex-cli 0.153.4",
+    "builder": "production command builders; installed ignore-user-config flag for isolated synthetic probe",
+    "separateSessions": true,
+    "steps": [
+      {
+        "step": "first-A",
+        "exitCode": 0,
+        "elapsedMs": 4540,
+        "answer": "ACK",
+        "nativeSessionMatches": true
+      },
+      {
+        "step": "first-B",
+        "exitCode": 0,
+        "elapsedMs": 5029,
+        "answer": "ACK",
+        "nativeSessionMatches": true
+      },
+      {
+        "step": "resume-A",
+        "exitCode": 0,
+        "elapsedMs": 4749,
+        "answer": "PAPERPILOT_NATIVE_A17",
+        "nativeSessionMatches": true
+      },
+      {
+        "step": "followup-A",
+        "exitCode": 0,
+        "elapsedMs": 5328,
+        "answer": "PAPERPILOT_NATIVE_A17",
+        "nativeSessionMatches": true
+      }
+    ]
+  },
+  "claude": {
+    "version": "2.1.263",
+    "model": "sonnet",
+    "firstExitCode": 0,
+    "resumeExitCode": 0,
+    "firstElapsedMs": 3070,
+    "resumeElapsedMs": 3360,
+    "nativeSessionMatches": true,
+    "rememberedSyntheticToken": true,
+    "settingsIsolation": "--setting-sources project,local"
+  },
+  "gemini": {
+    "version": "0.40.1",
+    "exitCode": 55,
+    "category": "external CLI/account incompatibility",
+    "observedError": "IneligibleTierError / UNSUPPORTED_CLIENT; installed Gemini CLI reports this client is no longer supported and requests migration to Antigravity"
+  },
+  "zoteroUI": {
+    "status": "not yet executed for new build",
+    "reason": "CUA returns cgWindowNotFound for Zotero and Finder; separate baseline screenshot is not new-build proof"
+  }
+}

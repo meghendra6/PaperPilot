@@ -4,7 +4,7 @@ export function getChatComposerPresentation(params: {
   canStop: boolean;
 }) {
   return {
-    inputDisabled: params.busy,
+    inputDisabled: false,
     buttonDisabled: params.busy && (params.stopping || !params.canStop),
     label: params.stopping ? "Stopping…" : params.busy ? "Stop" : "Send",
     ariaLabel: params.stopping
@@ -13,9 +13,9 @@ export function getChatComposerPresentation(params: {
         ? "Stop response"
         : "Send message",
     placeholder: params.stopping
-      ? "Stopping the current request…"
+      ? "Draft your next question while this request stops."
       : params.busy
-        ? "Wait for the answer, or press Stop to ask a new question."
+        ? "Draft your next question. Press Stop to cancel the current response."
         : "Ask a question about this paper or the current selection.",
   };
 }

@@ -55,6 +55,8 @@ interface ViewRuntime {
 }
 
 export interface ResearchWorkspaceViewOptions {
+  projectQuestion?: string;
+  scopeLabel?: string;
   preloadedPaper?: ResearchWorkspacePaper;
   capturedPapers?: readonly ResearchWorkspacePaper[];
   standalone?: boolean;
@@ -312,7 +314,7 @@ export async function renderResearchWorkspaceView(
       "p",
       "",
       options.capturedPapers
-        ? "Evidence-grounded workflows for the immutable selection captured when this workspace opened."
+        ? `${options.scopeLabel ?? "Captured PDFs"} · ${options.capturedPapers.length} exact source(s). This analysis scope remains fixed until you prepare another selection.`
         : "Evidence-grounded workflows for this paper and the current Zotero selection.",
     ),
   );
@@ -572,6 +574,7 @@ export async function renderResearchWorkspaceView(
     "Ask a project question across the captured papers",
     3,
   );
+  synthesisQuestion.value = options.projectQuestion ?? "";
   const runMulti = (
     operation: ResearchWorkspaceMultiOperation,
     label: string,

@@ -1,7 +1,12 @@
 import { isClaudeRunActiveForItem } from "../claude/runState";
 import { isCodexRunActiveForItem } from "../codex/runState";
 import { isGeminiRunActiveForItem } from "../gemini/runState";
-import { cleanupPaperWorkspaceForItemIfEnabled } from "../workspace/cleanup";
+import { cleanupWorkspaceIfEnabled } from "../workspace/cleanup";
+import type {
+  PrebuiltWorkspaceInput,
+  RequestContextSnapshot,
+  RunTimings,
+} from "../context/requestContext";
 import type { WorkspaceSupplementalFiles } from "../workspace/supplementalFiles";
 import type { ExecutionSettings } from "./executionSettings";
 import { stopDetachedRunProcess } from "./runCompletion";
@@ -27,6 +32,8 @@ export interface WorkspaceRunResult {
   exitCodePath: string;
   pidPath: string;
   processId?: string;
+  requestContext?: RequestContextSnapshot;
+  timings?: RunTimings;
 }
 
 export interface FailedWorkspaceRun {
@@ -117,6 +124,8 @@ export async function startWorkspaceTextRun(params: {
   profile: Exclude<RunProfile, "chat">;
   outputSchema?: StructuredOutputSchema;
   workspaceFiles?: WorkspaceSupplementalFiles;
+  prebuiltInput?: PrebuiltWorkspaceInput;
+  requestContext?: RequestContextSnapshot;
   executionSettings?: ExecutionSettings;
   requiredDiscoveryCapabilities?: import("../discovery/types").DiscoveryCapabilities;
   signal?: AbortSignal;
@@ -153,6 +162,22 @@ export async function startWorkspaceTextRun(params: {
     throw new Error(interruptionMessage());
   }
 
+  const shouldContinue = () =>
+    !owner.isShuttingDown() &&
+    isDirectWorkspaceRunClaimCurrent(
+      params.reservationItemID,
+      params.reservationToken,
+    ) &&
+    !params.signal?.aborted &&
+    (params.deadline === undefined || Date.now() < params.deadline);
+  let allocatedPath: string | undefined;
+  const onWorkspaceAllocated = (path: string) => {
+    allocatedPath = path;
+  };
+  const cleanupAllocated = () =>
+    allocatedPath
+      ? cleanupWorkspaceIfEnabled(allocatedPath)
+      : Promise.resolve(false);
   const prepare = async () => {
     let result: WorkspaceRunResult | FailedWorkspaceRun;
     if (params.mode === "claude_code") {
@@ -165,6 +190,10 @@ export async function startWorkspaceTextRun(params: {
         profile: params.profile,
         outputSchema: params.outputSchema,
         workspaceFiles: params.workspaceFiles,
+        prebuiltInput: params.prebuiltInput,
+        requestContext: params.requestContext,
+        onWorkspaceAllocated,
+        shouldContinue,
         executionSettings: params.executionSettings,
       });
     } else if (params.mode === "gemini_cli") {
@@ -177,6 +206,10 @@ export async function startWorkspaceTextRun(params: {
         profile: params.profile,
         outputSchema: params.outputSchema,
         workspaceFiles: params.workspaceFiles,
+        prebuiltInput: params.prebuiltInput,
+        requestContext: params.requestContext,
+        onWorkspaceAllocated,
+        shouldContinue,
         executionSettings: params.executionSettings,
       });
     } else {
@@ -201,6 +234,10 @@ export async function startWorkspaceTextRun(params: {
         profile: params.profile,
         outputSchema: params.outputSchema,
         workspaceFiles: params.workspaceFiles,
+        prebuiltInput: params.prebuiltInput,
+        requestContext: params.requestContext,
+        onWorkspaceAllocated,
+        shouldContinue,
         executionSettings: params.executionSettings,
       });
     }
@@ -208,6 +245,7 @@ export async function startWorkspaceTextRun(params: {
     return result;
   };
   const preparation = (params.prepareRun || prepare)().then((result) => {
+    allocatedPath = result.workspacePath;
     if (result.ok) owner.registerProcess(params.mode, result.processId);
     return result;
   });
@@ -247,18 +285,10 @@ export async function startWorkspaceTextRun(params: {
               requireProcessId: true,
             });
           }
-          await cleanupPaperWorkspaceForItemIfEnabled({
-            itemID: params.itemID,
-            title: params.title,
-            profile: params.profile,
-          });
+          await cleanupAllocated();
         },
         async () => {
-          await cleanupPaperWorkspaceForItemIfEnabled({
-            itemID: params.itemID,
-            title: params.title,
-            profile: params.profile,
-          });
+          await cleanupAllocated();
         },
       );
       if (params.onDeferredCleanup) {
@@ -267,11 +297,7 @@ export async function startWorkspaceTextRun(params: {
         await deferredCleanup;
       }
     } else {
-      await cleanupPaperWorkspaceForItemIfEnabled({
-        itemID: params.itemID,
-        title: params.title,
-        profile: params.profile,
-      });
+      await cleanupAllocated();
     }
     throw error;
   } finally {

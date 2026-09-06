@@ -1,7 +1,10 @@
 import { test } from "node:test";
 import * as assert from "node:assert/strict";
 
-import { messageStore } from "../src/modules/message/messageStore";
+import {
+  messageStore,
+  restoreMessageRecords,
+} from "../src/modules/message/messageStore";
 import { sessionStore } from "../src/modules/session/sessionStore";
 import {
   SESSION_HISTORY_STORAGE_VERSION,
@@ -11,6 +14,16 @@ import {
 import { SessionHistoryRepository } from "../src/modules/session/sessionHistoryRepository";
 import { SessionHistoryService } from "../src/modules/session/sessionHistoryService";
 import type { ComprehensionCheckState } from "../src/modules/comprehensionCheck/types";
+import { buildSessionContinuity } from "../src/modules/session/continuity";
+import { persistChatDraftSubmission } from "../src/modules/ui/chatAdmission";
+import {
+  clearChatDrafts,
+  createChatDraftSubmission,
+  consumeChatDraft,
+  getChatDraft,
+  restoreChatDraft,
+  updateChatDraft,
+} from "../src/modules/ui/chatDraft";
 import {
   buildInitialCriticalReadState,
   completeCriticalReadStep,
@@ -146,6 +159,478 @@ function createService(prefs: Record<string, unknown>) {
 
   return { globals, fileOps, repository, service };
 }
+
+test("logical request Retry groups attempts and ignores delayed terminal callbacks", async () => {
+  const { service, globals } = createService({ privacySavePromptsOnly: false });
+  const itemID = 8101;
+  try {
+    const session = await service.persistUserMessage({
+      itemID,
+      mode: "codex_cli",
+      paperTitle: "Paper",
+      text: "Explain the result",
+      turnId: "stable-turn",
+      responseLength: "short",
+    });
+    const firstAttempt = session.lastAttemptId!;
+    await service.persistAssistantTurn({
+      itemID,
+      sessionId: session.sessionId,
+      mode: "codex_cli",
+      paperTitle: "Paper",
+      assistantText: "Safe failure",
+      success: false,
+      turnId: "stable-turn",
+      attemptId: firstAttempt,
+    });
+    const retry = await service.startRetry({
+      itemID,
+      paperTitle: "Paper",
+      turnId: "stable-turn",
+    });
+    assert.equal(retry.request.responseLength, "short");
+    await service.persistAssistantTurn({
+      itemID,
+      sessionId: session.sessionId,
+      mode: "codex_cli",
+      paperTitle: "Paper",
+      assistantText: "Final answer",
+      success: true,
+      turnId: "stable-turn",
+      attemptId: retry.attempt.id,
+    });
+    await service.persistAssistantTurn({
+      itemID,
+      sessionId: session.sessionId,
+      mode: "codex_cli",
+      paperTitle: "Paper",
+      assistantText: "Late failure",
+      success: false,
+      turnId: "stable-turn",
+      attemptId: retry.attempt.id,
+    });
+    const messages = messageStore.listRaw(session.sessionId);
+    assert.equal(
+      messages.filter((message) => message.role === "user").length,
+      1,
+    );
+    assert.deepEqual(
+      messages[0].attempts?.map((attempt) => attempt.state),
+      ["failed", "completed"],
+    );
+    assert.equal(
+      messages.filter((message) => message.text === "Final answer").length,
+      1,
+    );
+    assert.ok(!messages.some((message) => message.text === "Late failure"));
+    assert.doesNotMatch(
+      buildSessionContinuity({ sessionId: session.sessionId }).text,
+      /Safe failure|Late failure/,
+    );
+  } finally {
+    sessionStore.reset(itemID);
+    globals.restore();
+  }
+});
+
+test("repeating persistence after an index write failure keeps one turn and one attempt", async () => {
+  const { service, fileOps, globals } = createService({
+    privacySavePromptsOnly: false,
+  });
+  const itemID = 8102;
+  const write = fileOps.writeTextAtomic.bind(fileOps);
+  let fail = true;
+  fileOps.writeTextAtomic = async (path, contents) => {
+    if (fail && path.endsWith("index.json")) {
+      fail = false;
+      throw new Error("disk interrupted");
+    }
+    await write(path, contents);
+  };
+  try {
+    const request = {
+      itemID,
+      mode: "codex_cli" as const,
+      paperTitle: "Paper",
+      text: "Same request",
+      turnId: "durable-turn",
+    };
+    await assert.rejects(
+      service.persistUserMessage(request),
+      /disk interrupted/,
+    );
+    const session = await service.persistUserMessage(request);
+    const users = messageStore
+      .listRaw(session.sessionId)
+      .filter((message) => message.role === "user");
+    assert.equal(users.length, 1);
+    assert.equal(users[0].attempts?.length, 1);
+    assert.equal((await service.listSavedSessions({ itemID })).length, 1);
+    await assert.rejects(
+      service.persistUserMessage({ ...request, text: "Changed request" }),
+      /changed/,
+    );
+  } finally {
+    sessionStore.reset(itemID);
+    globals.restore();
+  }
+});
+
+test("composer storage rejection restores the same request and resend creates only another attempt", async () => {
+  const { service, fileOps, globals } = createService({
+    privacySavePromptsOnly: false,
+  });
+  const itemID = 8110;
+  clearChatDrafts();
+  const session = sessionStore.getOrCreate(itemID, "codex_cli", "Paper");
+  const admitted = updateChatDraft(itemID, session.sessionId, {
+    text: "Original question",
+    responseLength: "short",
+  });
+  const submission = createChatDraftSubmission({
+    question: admitted.text,
+    responseLength: admitted.responseLength,
+    executionSettings: {
+      mode: "codex_cli",
+      model: "captured-model",
+      responseLanguage: "English",
+    },
+  });
+  const write = fileOps.writeTextAtomic.bind(fileOps);
+  let rejectWrites = true;
+  fileOps.writeTextAtomic = async (path, contents) => {
+    if (rejectWrites && path.endsWith("index.json"))
+      throw new Error("storage unavailable");
+    await write(path, contents);
+  };
+  try {
+    consumeChatDraft(itemID, session.sessionId, admitted.revision);
+    await assert.rejects(
+      persistChatDraftSubmission(
+        { itemID, paperTitle: "Paper", mode: "codex_cli", submission },
+        service,
+      ),
+      /storage unavailable/,
+    );
+    assert.equal(
+      restoreChatDraft(itemID, session.sessionId, admitted, submission),
+      true,
+    );
+    const restored = getChatDraft(itemID, session.sessionId);
+    assert.equal(restored.text, admitted.text);
+    assert.equal(
+      service.getCurrentTurn({ itemID, turnId: submission.turnId })
+        ?.attempts?.[0].state,
+      "failed",
+    );
+    rejectWrites = false;
+    consumeChatDraft(itemID, session.sessionId, restored.revision);
+    const resent = await persistChatDraftSubmission(
+      {
+        itemID,
+        paperTitle: "Paper",
+        mode: "codex_cli",
+        submission: restored.submission!,
+      },
+      service,
+    );
+    const users = messageStore
+      .listRaw(resent.sessionId)
+      .filter((message) => message.role === "user");
+    assert.equal(users.length, 1);
+    assert.deepEqual(
+      users[0].attempts?.map((attempt) => attempt.state),
+      ["failed", "pending"],
+    );
+    assert.deepEqual(users[0].request, submission.request);
+    assert.equal((await service.listSavedSessions({ itemID })).length, 1);
+  } finally {
+    clearChatDrafts();
+    sessionStore.reset(itemID);
+    globals.restore();
+  }
+});
+
+test("answer and edit forks preserve exact prefixes and never copy provider bindings or later state", async () => {
+  const { service, globals } = createService({ privacySavePromptsOnly: false });
+  const itemID = 8103;
+  try {
+    const original = await service.persistUserMessage({
+      itemID,
+      mode: "codex_cli",
+      paperTitle: "Paper",
+      text: "First question",
+    });
+    await service.persistAssistantTurn({
+      itemID,
+      sessionId: original.sessionId,
+      mode: "codex_cli",
+      paperTitle: "Paper",
+      assistantText: "First answer",
+      success: true,
+      resumeSessionId: "actual-provider-id",
+    });
+    const firstPair = [...messageStore.listRaw(original.sessionId)];
+    await service.togglePin({
+      itemID,
+      messageId: firstPair[0].id,
+      paperTitle: "Paper",
+    });
+    await service.persistUserMessage({
+      itemID,
+      mode: "codex_cli",
+      paperTitle: "Paper",
+      text: "Second question",
+    });
+    await service.persistAssistantTurn({
+      itemID,
+      sessionId: original.sessionId,
+      mode: "codex_cli",
+      paperTitle: "Paper",
+      assistantText: "Second answer",
+      success: true,
+    });
+    const laterAnswer = messageStore.listRaw(original.sessionId).at(-1)!;
+    await service.togglePin({
+      itemID,
+      messageId: laterAnswer.id,
+      paperTitle: "Paper",
+    });
+    await service.setSummary({
+      itemID,
+      text: "Later summary",
+      basedOnMessageId: laterAnswer.id,
+      sourceFingerprint: "pdf-v1",
+      paperTitle: "Paper",
+    });
+    const branch = await service.forkSession({
+      itemID,
+      sessionId: original.sessionId,
+      messageId: firstPair[1].id,
+      kind: "answer",
+      paperTitle: "Paper",
+    });
+    assert.notEqual(branch.sessionId, original.sessionId);
+    assert.deepEqual(
+      messageStore.listRaw(branch.sessionId).map((message) => message.id),
+      firstPair.map((message) => message.id),
+    );
+    assert.equal(branch.lastCodexSessionID, undefined);
+    assert.equal(branch.providerBindings, undefined);
+    assert.equal(branch.summary, undefined);
+    assert.deepEqual(
+      branch.pins?.map((pin) => pin.messageId),
+      [firstPair[0].id],
+    );
+    assert.equal(messageStore.listRaw(original.sessionId).length, 4);
+    const edit = await service.forkSession({
+      itemID,
+      sessionId: original.sessionId,
+      messageId: laterAnswer.id,
+      kind: "edit",
+      paperTitle: "Paper",
+    });
+    assert.deepEqual(
+      messageStore.listRaw(edit.sessionId).map((message) => message.id),
+      firstPair.map((message) => message.id),
+    );
+    assert.equal(edit.branch?.kind, "edit");
+  } finally {
+    sessionStore.reset(itemID);
+    globals.restore();
+  }
+});
+
+test("new continuity, pin and summary metadata follows all history modes", async () => {
+  for (const mode of ["full", "prompts-only", "off"] as const) {
+    const { service, fileOps, globals } = createService({
+      privacySavePromptsOnly: mode === "prompts-only",
+      saveDocumentSessions: mode !== "off",
+    });
+    const itemID =
+      mode === "full" ? 8104 : mode === "prompts-only" ? 8105 : 8106;
+    try {
+      const session = await service.persistUserMessage({
+        itemID,
+        mode: "codex_cli",
+        paperTitle: "Paper",
+        text: "User definition keeps its meaning",
+      });
+      await service.persistAssistantTurn({
+        itemID,
+        sessionId: session.sessionId,
+        mode: "codex_cli",
+        paperTitle: "Paper",
+        assistantText: "PRIVATE_ASSISTANT_ANSWER",
+        success: true,
+      });
+      const records = messageStore.listRaw(session.sessionId);
+      for (const record of records)
+        await service.togglePin({
+          itemID,
+          messageId: record.id,
+          paperTitle: "Paper",
+        });
+      if (mode !== "prompts-only")
+        await service.setSummary({
+          itemID,
+          text: "PRIVATE_SUMMARY",
+          basedOnMessageId: records[1].id,
+          sourceFingerprint: "v1",
+          paperTitle: "Paper",
+        });
+      else
+        await assert.rejects(
+          service.setSummary({
+            itemID,
+            text: "PRIVATE_SUMMARY",
+            basedOnMessageId: records[1].id,
+            sourceFingerprint: "v1",
+          }),
+          /prompts-only/,
+        );
+      const stored = [...fileOps.files.values()].join("\n");
+      const continuity = buildSessionContinuity({
+        sessionId: session.sessionId,
+        sourceFingerprint: "v1",
+      });
+      if (mode === "full") {
+        assert.match(stored, /PRIVATE_ASSISTANT_ANSWER/);
+        assert.match(continuity.text, /PRIVATE_SUMMARY/);
+        assert.ok(
+          continuity.text.indexOf("User definition") <
+            continuity.text.indexOf("PRIVATE_SUMMARY"),
+        );
+        assert.ok(
+          continuity.text.indexOf("PRIVATE_SUMMARY") <
+            continuity.text.indexOf("PRIVATE_ASSISTANT_ANSWER"),
+        );
+        const bounded = buildSessionContinuity({
+          sessionId: session.sessionId,
+          sourceFingerprint: "v1",
+          maxChars: 150,
+        });
+        assert.equal(bounded.usedSummary, true);
+        assert.equal(bounded.includedPins, 1);
+      } else {
+        assert.doesNotMatch(stored, /PRIVATE_ASSISTANT_ANSWER|PRIVATE_SUMMARY/);
+        assert.doesNotMatch(
+          continuity.text,
+          /PRIVATE_ASSISTANT_ANSWER|PRIVATE_SUMMARY/,
+        );
+      }
+      if (mode === "off") assert.equal(fileOps.files.size, 0);
+      assert.match(continuity.text, /User definition/);
+      assert.ok(
+        buildSessionContinuity({
+          sessionId: session.sessionId,
+          sourceFingerprint: "v1",
+          maxChars: 30,
+        }).text.length <= 30,
+      );
+    } finally {
+      sessionStore.reset(itemID);
+      globals.restore();
+    }
+  }
+});
+
+test("history search covers full current and saved data, including legitimate JSON answers", async () => {
+  const { service, globals } = createService({ privacySavePromptsOnly: false });
+  const itemID = 8107;
+  try {
+    const first = await service.persistUserMessage({
+      itemID,
+      mode: "codex_cli",
+      paperTitle: "Paper",
+      text: "이전 한국어 질문",
+    });
+    await service.persistAssistantTurn({
+      itemID,
+      sessionId: first.sessionId,
+      mode: "codex_cli",
+      paperTitle: "Paper",
+      assistantText: '{"question":"json needle","summary":"literal answer"}',
+      success: true,
+    });
+    for (let index = 0; index < 80; index++)
+      messageStore.append(first.sessionId, {
+        role: "user",
+        text: `Message ${index}`,
+        sourceMode: "codex_cli",
+        status: "done",
+      });
+    await service.startNewSessionDraft({
+      itemID,
+      mode: "codex_cli",
+      paperTitle: "Paper",
+    });
+    await service.persistUserMessage({
+      itemID,
+      mode: "codex_cli",
+      paperTitle: "Paper",
+      text: "현재 한국어 질문",
+    });
+    assert.equal(
+      (await service.searchMessages({ itemID, query: "한국어", scope: "all" }))
+        .length,
+      2,
+    );
+    const jsonResult = await service.searchMessages({
+      itemID,
+      query: "json needle",
+      scope: "saved",
+    });
+    assert.equal(jsonResult.length, 1);
+    assert.equal(jsonResult[0].sessionId, first.sessionId);
+    assert.equal(
+      (await service.searchMessages({ itemID: 999999, query: "한국어" }))
+        .length,
+      0,
+    );
+  } finally {
+    sessionStore.reset(itemID);
+    globals.restore();
+  }
+});
+
+test("legacy migration keeps IDs and duplicate questions and interrupts only active attempts", () => {
+  const records = [
+    {
+      id: "q1",
+      role: "user" as const,
+      text: "Repeat",
+      createdAt: "date",
+      sourceMode: "codex_cli" as const,
+      status: "done" as const,
+    },
+    {
+      id: "q2",
+      role: "user" as const,
+      text: "Repeat",
+      createdAt: "date",
+      sourceMode: "codex_cli" as const,
+      status: "done" as const,
+      attempts: [
+        {
+          id: "a2",
+          turnId: "turn:q2",
+          ordinal: 1,
+          state: "running" as const,
+          startedAt: "date",
+        },
+      ],
+    },
+  ];
+  const restored = restoreMessageRecords(records);
+  assert.deepEqual(
+    restored.map((record) => record.id),
+    ["q1", "q2"],
+  );
+  assert.equal(restored[1].attempts?.[0].state, "interrupted");
+  assert.deepEqual(restoreMessageRecords(restored), restored);
+  assert.equal(records[1].attempts?.[0].state, "running");
+});
 
 function buildSavedSnapshot(itemID: number): SessionHistorySnapshot {
   return {
@@ -609,6 +1094,7 @@ test("SessionHistoryService honors prompts-only persistence for snapshots", asyn
     assert.deepEqual(persisted?.messages, [
       {
         id: persisted?.messages?.[0].id,
+        turnId: persisted?.messages?.[0].turnId,
         role: "user",
         text: "Keep only the prompts.",
         createdAt: persisted?.messages?.[0].createdAt,
@@ -664,7 +1150,7 @@ test("SessionHistoryService opens a saved snapshot into the in-memory stores", a
     assert.equal(opened?.mode, "gemini_cli");
     assert.deepEqual(
       messageStore.recentRaw(snapshot.sessionId, 10),
-      snapshot.messages,
+      restoreMessageRecords(snapshot.messages ?? []),
     );
     assert.deepEqual(
       (

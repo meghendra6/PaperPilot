@@ -1,3 +1,9 @@
+import {
+  assertRequestContextCurrent,
+  type RequestContextSnapshot,
+} from "../context/requestContext";
+import { parseChatAnswer } from "../message/chatAnswer";
+import type { ExecutionSettings } from "../ai/executionSettings";
 import { addMessage, setMessageContent } from "../components/ChatMessage";
 import {
   getActiveReaderRunMode,
@@ -32,10 +38,7 @@ import {
 } from "../ai/runCompletion";
 import { sanitizeAssistantText } from "../message/assistantOutput";
 import { sessionHistoryService } from "../session/sessionHistoryService";
-import {
-  cleanupPaperWorkspaceForItemIfEnabled,
-  cleanupWorkspaceIfEnabled,
-} from "../workspace/cleanup";
+import { cleanupWorkspaceIfEnabled } from "../workspace/cleanup";
 import { clearCodexPollerForItem } from "./poller";
 import {
   buildCodexRunState,
@@ -69,6 +72,11 @@ export async function handleCodexQuestion(params: {
   continuationToken?: ReaderRunToken;
   profile?: RunProfile;
   outputSchema?: StructuredOutputSchema;
+  requestContext?: RequestContextSnapshot;
+  executionSettings?: ExecutionSettings;
+  turnId?: string;
+  attemptId?: string;
+  responseLength?: "short" | "default" | "detailed";
   onComplete?: (result: ReaderRunCompletionResult) => void | Promise<void>;
 }) {
   const profile = params.profile || "chat";
@@ -114,6 +122,11 @@ export async function handleCodexQuestion(params: {
       sessionTitle: params.sessionTitle,
       paperTitle: params.paperTitle,
       question: params.question,
+      requestContext: params.requestContext,
+      executionSettings: params.executionSettings,
+      turnId: params.turnId,
+      attemptId: params.attemptId,
+      responseLength: params.responseLength,
       selectedText: params.selectedText,
       annotationIDs: params.annotationIDs,
       useResume: params.useResume,
@@ -125,6 +138,10 @@ export async function handleCodexQuestion(params: {
   startRunProgress(params.itemID, "codex_cli", runToken);
   let assistantMessage: HTMLElement | null | undefined = null;
   const pendingCompletion = {
+    sessionId: params.sessionId,
+    paperTitle: params.paperTitle,
+    turnId: params.turnId,
+    attemptId: params.attemptId,
     mode: "codex_cli" as const,
     token: runToken,
     retryable: !params.suppressChatMessages,
@@ -175,24 +192,43 @@ export async function handleCodexQuestion(params: {
     pendingCompletion.cancelTimeout = armTimeout(5_000);
   };
 
-  const result = await startCodexRunForQuestion({
-    itemID: params.itemID,
-    title: params.sessionTitle,
-    sessionId: params.sessionId,
-    question: params.question,
-    selectedText: params.selectedText,
-    annotationIDs: params.annotationIDs,
-    useResume: params.useResume,
-    resumeSessionId: params.resumeSessionId,
-    profile,
-    outputSchema: params.outputSchema,
-  }).catch(async (error) => {
-    cancelTimeout();
-    await cleanupPaperWorkspaceForItemIfEnabled({
+  let preparingWorkspacePath: string | undefined;
+  const prepare = async () => {
+    if (params.turnId && params.attemptId)
+      await sessionHistoryService.updateAttempt({
+        itemID: params.itemID,
+        paperTitle: params.paperTitle || params.sessionTitle,
+        turnId: params.turnId,
+        attemptId: params.attemptId,
+        state: "running",
+      });
+    return startCodexRunForQuestion({
       itemID: params.itemID,
-      title: params.sessionTitle,
+      title: params.paperTitle || params.sessionTitle,
+      paperTitle: params.paperTitle,
+      requestContext: params.requestContext,
+      executionSettings: params.executionSettings,
+      responseLength: params.responseLength,
+      shouldContinue: () =>
+        isReaderRunTokenActive(params.itemID, runToken) &&
+        !getPendingEngineCompletion(params.itemID)?.terminalClaim,
+      onWorkspaceAllocated: (path) => {
+        preparingWorkspacePath = path;
+      },
+      sessionId: params.sessionId,
+      question: params.question,
+      selectedText: params.selectedText,
+      annotationIDs: params.annotationIDs,
+      useResume: params.useResume,
+      resumeSessionId: params.resumeSessionId,
       profile,
+      outputSchema: params.outputSchema,
     });
+  };
+  const result = await prepare().catch(async (error) => {
+    cancelTimeout();
+    if (preparingWorkspacePath)
+      await cleanupWorkspaceIfEnabled(preparingWorkspacePath);
     if (!isReaderRunTokenActive(params.itemID, runToken)) {
       markPendingEnginePreparationSettled(params.itemID, runToken);
       return undefined;
@@ -215,6 +251,11 @@ export async function handleCodexQuestion(params: {
     try {
       await sessionHistoryService
         .persistAssistantTurn({
+          turnId: params.turnId,
+          attemptId: params.attemptId,
+          requestContext: params.requestContext,
+          executionSettings: params.executionSettings,
+          responseLength: params.responseLength,
           itemID: params.itemID,
           sessionId: params.sessionId,
           mode: "codex_cli",
@@ -223,6 +264,7 @@ export async function handleCodexQuestion(params: {
           success: false,
           rawEvent: detail,
           suppressMessage: params.suppressChatMessages,
+          updateResumeMetadata: profile === "chat",
         })
         .catch(() => undefined);
       if (!params.suppressChatMessages) {
@@ -238,6 +280,7 @@ export async function handleCodexQuestion(params: {
   });
 
   if (!result) return;
+  if (result.ok) params.requestContext ??= result.requestContext;
 
   pendingCompletion.workspacePath = result.workspacePath;
 
@@ -369,6 +412,7 @@ export async function handleCodexQuestion(params: {
       loginState: "ready",
     }),
     processId: result.processId,
+    workspacePath: result.workspacePath,
     runStatus: "running",
     latestEventType: "spawned",
   });
@@ -387,12 +431,20 @@ export async function handleCodexQuestion(params: {
 
     if (!progress.completed) {
       if (assistantMessage) {
-        const displayText = sanitizeAssistantText(
+        const partial =
           progress.structuredOutput && progress.parsedOutput
-            ? progress.parsedOutput
-            : "Running Codex CLI…",
+            ? profile === "chat"
+              ? parseChatAnswer(progress.parsedOutput, { partial: true })
+                  .answerMarkdown
+              : progress.parsedOutput
+            : "";
+        if (partial && result.timings && !result.timings.firstAssistantAt)
+          result.timings.firstAssistantAt = Date.now();
+        setMessageContent(
+          assistantMessage,
+          partial || "Running Codex CLI…",
+          "ai",
         );
-        setMessageContent(assistantMessage, displayText, "ai");
       }
       setCodexRunStateForItem(params.itemID, {
         ...buildCodexRunState({
@@ -401,6 +453,7 @@ export async function handleCodexQuestion(params: {
           loginState: "ready",
         }),
         processId: result.processId,
+        workspacePath: result.workspacePath,
         runStatus: "running",
         latestEventType: progress.latestEventType,
       });
@@ -418,8 +471,33 @@ export async function handleCodexQuestion(params: {
     const rawAssistantText =
       progress.parsedOutput ||
       "Codex CLI ran successfully, but returned no assistant message.";
-    const success = progress.exitCode === "0";
-    let assistantText = sanitizeAssistantText(rawAssistantText);
+    let success =
+      progress.exitCode === "0" &&
+      !progress.providerFailed &&
+      Boolean(progress.parsedOutput?.trim());
+    const parsedAnswer =
+      profile === "chat"
+        ? parseChatAnswer(rawAssistantText, {
+            allowedSourceIDs: new Set(
+              result.requestContext ? [result.requestContext.sourceID] : [],
+            ),
+          })
+        : { answerMarkdown: rawAssistantText, citationCandidates: [] };
+    let sourceChanged = false;
+    if (success && result.requestContext) {
+      try {
+        await assertRequestContextCurrent(result.requestContext);
+      } catch {
+        sourceChanged = true;
+        success = false;
+      }
+    }
+    if (result.timings) {
+      result.timings.finishedAt = Date.now();
+      if (progress.parsedOutput && !result.timings.firstAssistantAt)
+        result.timings.firstAssistantAt = result.timings.finishedAt;
+    }
+    let assistantText = sanitizeAssistantText(parsedAnswer.answerMarkdown);
     const terminalFailure = success
       ? undefined
       : classifyRunFailure({
@@ -429,25 +507,12 @@ export async function handleCodexQuestion(params: {
         });
     if (terminalFailure) assistantText = terminalFailure.userMessage;
 
+    if (sourceChanged)
+      assistantText = `${sanitizeAssistantText(parsedAnswer.answerMarkdown)}\n\nThe PDF changed while this answer was generated. Its evidence needs review.`;
     if (assistantMessage) {
       setMessageContent(assistantMessage, assistantText, "ai");
     }
-    const resumedThreadId = progress.rawOutput
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter(Boolean)
-      .map((line) => {
-        try {
-          return JSON.parse(line) as Record<string, unknown>;
-        } catch {
-          return undefined;
-        }
-      })
-      .find(
-        (event) =>
-          event?.type === "thread.started" &&
-          typeof event.thread_id === "string",
-      )?.thread_id as string | undefined;
+    const resumedThreadId = progress.resumeSessionId;
 
     setCodexRunStateForItem(params.itemID, {
       ...buildCodexRunState({
@@ -459,6 +524,7 @@ export async function handleCodexQuestion(params: {
               progress.diagnosticOutput || rawAssistantText,
             ),
       }),
+      workspacePath: result.workspacePath,
       runStatus: success ? "completed" : "error",
       latestEventType: progress.latestEventType,
     });
@@ -467,14 +533,28 @@ export async function handleCodexQuestion(params: {
     try {
       await finishRunAfterCleanup({
         prepare: async () => {
+          if (params.turnId && params.attemptId)
+            await sessionHistoryService.updateAttempt({
+              itemID: params.itemID,
+              paperTitle: params.paperTitle || params.sessionTitle,
+              turnId: params.turnId,
+              attemptId: params.attemptId,
+              state: "finishing",
+            });
           if (success) {
             await sessionHistoryService.persistAssistantTurn({
+              turnId: params.turnId,
+              attemptId: params.attemptId,
+              requestContext: params.requestContext,
+              executionSettings: params.executionSettings,
+              responseLength: params.responseLength,
               itemID: params.itemID,
               sessionId: params.sessionId,
               mode: "codex_cli",
               paperTitle: params.paperTitle || params.sessionTitle,
               assistantText,
               success: true,
+              citationCandidates: parsedAnswer.citationCandidates,
               rawEvent: progress.rawOutput,
               resumeSessionId: resumedThreadId,
               suppressMessage: params.suppressChatMessages,
@@ -482,6 +562,11 @@ export async function handleCodexQuestion(params: {
             });
           } else {
             await sessionHistoryService.persistAssistantTurn({
+              turnId: params.turnId,
+              attemptId: params.attemptId,
+              requestContext: params.requestContext,
+              executionSettings: params.executionSettings,
+              responseLength: params.responseLength,
               itemID: params.itemID,
               sessionId: params.sessionId,
               mode: "codex_cli",
@@ -496,6 +581,7 @@ export async function handleCodexQuestion(params: {
               updateResumeMetadata: profile === "chat",
             });
           }
+          if (result.timings) result.timings.persistedAt = Date.now();
         },
         cleanup: () => cleanupWorkspaceIfEnabled(result.workspacePath),
         shouldComplete: () =>
@@ -505,6 +591,8 @@ export async function handleCodexQuestion(params: {
           params.onComplete?.({
             success,
             assistantText,
+            timings: result.timings,
+            requestContext: result.requestContext,
             continuationToken: runToken,
           }),
         incomplete: (error) => {

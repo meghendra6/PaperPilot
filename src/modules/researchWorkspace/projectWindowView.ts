@@ -1,3 +1,6 @@
+import { renderProjectCandidateInbox } from "./projectCandidatePanel";
+import { isResearchWorkspaceMemberExcluded } from "./memberState";
+import { isResearchWorkspaceOwnerActive } from "./projectRunAdmission";
 import { element } from "./dom";
 import {
   addPapersToResearchWorkspaceProject,
@@ -9,6 +12,7 @@ import {
   loadResearchWorkspaceChangeInbox,
   loadResearchWorkspaceHome,
   loadResearchWorkspaceProject,
+  loadResearchWorkspaceProjectPapers,
   updateResearchWorkspaceProject,
 } from "./facade";
 import type { ResearchWorkspacePaper } from "./paperSource";
@@ -161,6 +165,12 @@ async function renderProject(
   );
   if (templateSettings) root.append(templateSettings);
 
+  root.append(
+    renderProjectCandidateInbox(doc, root, details, () =>
+      renderProject(root, projectID, capturedPapers, generation),
+    ),
+  );
+
   if (capturedPapers.length) {
     const captured = element(doc, "section", "pprw-project-panel");
     captured.append(
@@ -248,30 +258,126 @@ async function renderProject(
   );
   root.append(renderArtifactHistory(doc, root, details));
 
-  if (capturedPapers.length) {
-    const operations = element(doc, "section", "pprw-project-operations");
-    activeOperationRoots.set(root, operations);
-    root.append(operations);
-    await renderResearchWorkspaceView(operations, undefined, {
-      preloadedPaper: capturedPapers[0],
-      capturedPapers,
-      standalone: true,
-      projectID,
-      recommendedCapabilityIDs: details.project.capabilityPresetIDs,
-    });
-  } else {
-    const empty = element(doc, "section", "pprw-project-panel");
-    empty.append(
-      element(doc, "h3", "", "Run an analysis"),
+  const scope = element(doc, "section", "pprw-project-panel");
+  scope.append(
+    element(doc, "h3", "", "Analysis scope"),
+    element(
+      doc,
+      "p",
+      "pprw-muted",
+      "Choose up to 12 project sources for this batch. Excluded sources are omitted. Unreviewed or maybe papers are not counted as screening inclusions.",
+    ),
+  );
+  const checks: Array<{ sourceID: string; input: HTMLInputElement }> = [];
+  let defaults = 0;
+  for (const member of details.members) {
+    const source = details.sources.find(
+      (entry) => entry.sourceID === member.sourceID,
+    );
+    const label = element(doc, "label", "pprw-row");
+    const input = element(doc, "input", "");
+    input.type = "checkbox";
+    input.disabled = isResearchWorkspaceMemberExcluded(member);
+    input.checked = !input.disabled && defaults++ < 12;
+    input.setAttribute(
+      "aria-label",
+      `Analyze ${source?.title ?? member.sourceID}`,
+    );
+    label.append(
+      input,
       element(
         doc,
-        "p",
-        "pprw-muted",
-        "Capture one or more Zotero PDFs with Start a new selection, then open this project and add them.",
+        "span",
+        "",
+        `${source?.title ?? member.sourceID} · ${input.disabled ? "excluded" : (source?.availability ?? "unavailable")}`,
       ),
     );
-    root.append(empty);
+    scope.append(label);
+    checks.push({ sourceID: member.sourceID, input });
   }
+  const operations = element(doc, "section", "pprw-project-operations");
+  const activate = async (
+    papers: readonly ResearchWorkspacePaper[],
+    scopeLabel: string,
+  ) => {
+    if (!isCurrent(root, generation)) return;
+    if (!papers.length)
+      throw new Error(
+        "No readable non-excluded PDF is available in this scope.",
+      );
+    disposeOperations(root);
+    activeOperationRoots.set(root, operations);
+    await renderResearchWorkspaceView(operations, undefined, {
+      preloadedPaper: papers[0],
+      capturedPapers: papers,
+      standalone: true,
+      projectID,
+      projectQuestion: details.project.researchQuestion,
+      scopeLabel,
+      recommendedCapabilityIDs: details.project.capabilityPresetIDs,
+    });
+  };
+  scope.append(
+    button(
+      doc,
+      "Prepare selected project papers",
+      async () => {
+        if (isResearchWorkspaceOwnerActive({ kind: "project", projectID }))
+          throw new Error(
+            "Finish or cancel the active project analysis before changing its scope.",
+          );
+        const sourceIDs = checks
+          .filter((entry) => entry.input.checked)
+          .map((entry) => entry.sourceID);
+        if (!sourceIDs.length)
+          throw new Error("Select one or more project sources.");
+        setMessage(root, "Preparing the selected project PDFs…");
+        const loaded = await loadResearchWorkspaceProjectPapers(
+          projectID,
+          sourceIDs,
+        );
+        await activate(loaded.papers, "Selected project papers");
+        setMessage(
+          root,
+          `${loaded.papers.length} exact PDFs ready.${loaded.skipped.length ? ` Omitted: ${loaded.skipped.join("; ")}` : ""}`,
+          loaded.skipped.length ? "warning" : "success",
+        );
+      },
+      true,
+    ),
+  );
+  if (capturedPapers.length)
+    scope.append(
+      button(doc, `Use captured PDFs (${capturedPapers.length})`, async () => {
+        if (isResearchWorkspaceOwnerActive({ kind: "project", projectID }))
+          throw new Error(
+            "Finish or cancel the active project analysis first.",
+          );
+        await addPapersToResearchWorkspaceProject(projectID, capturedPapers);
+        const refreshed = await loadResearchWorkspaceProject(projectID);
+        const papers = capturedPapers.filter((paper) =>
+          refreshed.members.some(
+            (member) =>
+              member.sourceID === paper.sourceID &&
+              !isResearchWorkspaceMemberExcluded(member),
+          ),
+        );
+        await activate(papers, "Captured PDFs");
+      }),
+    );
+  if (details.project.comparisonQuestions?.length) {
+    scope.append(element(doc, "h4", "", "Comparison questions from chat"));
+    for (const question of details.project.comparisonQuestions)
+      scope.append(
+        element(
+          doc,
+          "p",
+          "pprw-muted",
+          `${question.question} · conversation ${question.provenance.sessionID}, message ${question.provenance.messageID}`,
+        ),
+      );
+  }
+  root.append(scope, operations);
 }
 
 function renderHomeCards(

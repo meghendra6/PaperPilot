@@ -37,3 +37,39 @@ export function buildPaperWorkspacePath(params: {
   const slug = sanitizeSegment(params.title) || `paper-${params.itemID}`;
   return `${params.root.replace(/\/+$/, "")}/${params.itemID}-${slug}`;
 }
+
+let runSequence = 0;
+export function createWorkspaceRunID() {
+  return `${Date.now().toString(36)}-${(++runSequence).toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+}
+
+export function workspaceIdentityToken(value: string) {
+  let first = 2166136261;
+  let second = 5381;
+  for (const char of value) {
+    first = Math.imul(first ^ char.charCodeAt(0), 16777619);
+    second = Math.imul(second, 33) ^ char.charCodeAt(0);
+  }
+  return `${(first >>> 0).toString(16).padStart(8, "0")}${(second >>> 0).toString(16).padStart(8, "0")}`;
+}
+
+/** The display title never determines a current run's identity or cleanup path. */
+export function buildRunWorkspacePath(params: {
+  root: string;
+  itemID: number;
+  sessionId: string;
+  profile: "chat" | "analysis" | "discovery";
+  runID: string;
+}) {
+  const identity =
+    params.profile === "chat"
+      ? `chat-${workspaceIdentityToken(params.sessionId)}`
+      : `${params.profile}-${params.runID}`;
+  if (
+    !Number.isSafeInteger(params.itemID) ||
+    params.itemID <= 0 ||
+    !/^[a-z0-9-]+$/.test(identity)
+  )
+    throw new Error("Invalid workspace identity.");
+  return `${params.root.replace(/[\\/]+$/g, "")}/${params.itemID}-${identity}`;
+}

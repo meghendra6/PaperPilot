@@ -1,3 +1,5 @@
+import { sessionHistoryService } from "../session/sessionHistoryService";
+import { sessionStore } from "../session/sessionStore";
 import { stopClaudeRunSilently } from "../claude/stopRun";
 import { stopCodexRunSilently } from "../codex/stopRun";
 import { stopGeminiRunSilently } from "../gemini/stopRun";
@@ -51,6 +53,22 @@ export async function cancelActiveEngineRun(itemID: number): Promise<boolean> {
   });
   markReaderRunFinished(itemID, pending.token);
 
+  if (pending.retryable) {
+    const session = sessionStore.get(itemID);
+    const turnId = pending.turnId ?? session?.lastTurnId;
+    const attemptId = pending.attemptId ?? session?.lastAttemptId;
+    if (session?.sessionId === pending.sessionId && turnId && attemptId)
+      await sessionHistoryService
+        .updateAttempt({
+          itemID,
+          paperTitle: pending.paperTitle || "",
+          turnId,
+          attemptId,
+          state: "cancelled",
+          errorCategory: "cancelled",
+        })
+        .catch(() => undefined);
+  }
   const completeCancellation = () =>
     pending.onComplete?.({
       success: false,

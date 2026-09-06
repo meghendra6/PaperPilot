@@ -12,6 +12,22 @@ import type { EngineMode } from "../ai/types";
 import { buildSessionTitle } from "./sessionTitle";
 import { sanitizeAssistantText } from "../message/assistantOutput";
 import type { MessageRecord } from "../message/types";
+import type { ExecutionSettings } from "../ai/executionSettings";
+import type { RequestContextSnapshot } from "../context/requestContext";
+import {
+  parseChatAnswer,
+  type ChatCitationCandidate,
+} from "../message/chatAnswer";
+import { verifyChatCitations } from "../message/chatCitations";
+import {
+  cloneChatValue,
+  isTerminalAttempt,
+  type ChatAttemptState,
+  type ChatRequestSnapshot,
+  type ChatResponseLength,
+} from "../message/chatTypes";
+import { buildSessionContinuity } from "./continuity";
+import { isLikelySilentToolMessage } from "./silentTurnFilter";
 import { resolveSessionHistoryPrefs } from "./historyPrefs";
 import { getPref } from "../../utils/prefs";
 import {
@@ -80,17 +96,26 @@ function applyResumeMetadata<
     resumeSessionId?: string;
   },
 ) {
+  const realID =
+    params.resumeSessionId &&
+    !["last", "latest"].includes(params.resumeSessionId) &&
+    /^[A-Za-z0-9][A-Za-z0-9._:-]{3,255}$/.test(params.resumeSessionId)
+      ? params.resumeSessionId
+      : undefined;
+  if (!params.success || !realID) {
+    if (params.mode === "codex_cli") delete target.lastCodexSessionID;
+    if (params.mode === "claude_code") delete target.lastClaudeSessionID;
+    if (params.mode === "gemini_cli") delete target.lastGeminiSessionID;
+    return;
+  }
   if (params.mode === "codex_cli" && params.success) {
-    target.lastCodexSessionID =
-      params.resumeSessionId || target.lastCodexSessionID || "last";
+    target.lastCodexSessionID = realID;
   }
   if (params.mode === "claude_code" && params.success) {
-    target.lastClaudeSessionID =
-      params.resumeSessionId || target.lastClaudeSessionID || "latest";
+    target.lastClaudeSessionID = realID;
   }
   if (params.mode === "gemini_cli" && params.success) {
-    target.lastGeminiSessionID =
-      params.resumeSessionId || target.lastGeminiSessionID || "latest";
+    target.lastGeminiSessionID = realID;
   }
 }
 
@@ -200,21 +225,58 @@ export class SessionHistoryService {
     mode: EngineMode;
     paperTitle: string;
     text: string;
+    turnId?: string;
+    request?: ChatRequestSnapshot;
+    requestContext?: RequestContextSnapshot;
+    executionSettings?: ExecutionSettings;
+    responseLength?: ChatResponseLength;
   }) {
     const session = sessionStore.touch(params.itemID, params.mode);
-    messageStore.append(session.sessionId, {
-      role: "user",
-      text: params.text,
-      sourceMode: params.mode,
-      status: "done",
-    });
+    const existing = params.turnId
+      ? messageStore.getTurn(session.sessionId, params.turnId)
+      : undefined;
+    const request = cloneChatValue(
+      params.request ?? {
+        question: params.text,
+        responseLength: params.responseLength ?? "default",
+        ...(params.requestContext
+          ? { requestContext: params.requestContext }
+          : {}),
+        ...(params.executionSettings
+          ? { executionSettings: params.executionSettings }
+          : {}),
+      },
+    );
+    if (
+      existing &&
+      (existing.text !== params.text ||
+        JSON.stringify(existing.request) !== JSON.stringify(request))
+    )
+      throw new Error(
+        "This submitted question has changed. Edit it in a new conversation.",
+      );
+    const message =
+      existing ??
+      messageStore.append(session.sessionId, {
+        role: "user",
+        text: params.text,
+        sourceMode: params.mode,
+        status: "done",
+        ...(params.turnId ? { turnId: params.turnId } : {}),
+        request,
+      });
+    const attempt =
+      (existing && existing.attempts?.at(-1)) ||
+      messageStore.beginAttempt(session.sessionId, message.turnId);
+    session.lastTurnId = message.turnId;
+    session.lastAttemptId = attempt.id;
 
     await this.persistActiveSession({
       itemID: params.itemID,
       paperTitle: params.paperTitle,
     });
 
-    return session;
+    return sessionStore.get(params.itemID) || session;
   }
 
   async persistAssistantTurn(params: {
@@ -228,9 +290,30 @@ export class SessionHistoryService {
     resumeSessionId?: string;
     suppressMessage?: boolean;
     updateResumeMetadata?: boolean;
+    turnId?: string;
+    attemptId?: string;
+    requestContext?: RequestContextSnapshot;
+    executionSettings?: ExecutionSettings;
+    citationCandidates?: ChatCitationCandidate[];
+    attemptState?: "completed" | "failed" | "cancelled" | "interrupted";
+    responseLength?: ChatResponseLength;
   }) {
-    const session = sessionStore.get(params.itemID);
     const createdAt = this.now().toISOString();
+    const parsed = params.suppressMessage
+      ? undefined
+      : parseChatAnswer(params.assistantText, {
+          allowedSourceIDs: params.requestContext
+            ? new Set([params.requestContext.sourceID])
+            : undefined,
+        });
+    const assistantText = parsed?.answerMarkdown ?? params.assistantText;
+    const candidates =
+      params.citationCandidates ?? parsed?.citationCandidates ?? [];
+    const citations =
+      params.requestContext && candidates.length
+        ? await verifyChatCitations(candidates, params.requestContext)
+        : [];
+    const session = sessionStore.get(params.itemID);
 
     if (!session || session.sessionId !== params.sessionId) {
       const prefs = resolveSessionHistoryPrefs();
@@ -244,12 +327,17 @@ export class SessionHistoryService {
       }
 
       const messages = [...(snapshot.messages ?? [])];
+      if (
+        params.attemptId &&
+        messages.some((message) => message.attemptId === params.attemptId)
+      )
+        return snapshot;
       if (prefs.persistAssistantMessages && !params.suppressMessage) {
         messages.push(
           buildAssistantMessageRecord({
             sessionId: params.sessionId,
             createdAt,
-            assistantText: params.assistantText,
+            assistantText,
             mode: params.mode,
             success: params.success,
             rawEvent: params.rawEvent,
@@ -257,6 +345,31 @@ export class SessionHistoryService {
           }),
         );
       }
+      const added = messages.at(-1);
+      if (added?.role === "assistant" && params.attemptId)
+        Object.assign(added, {
+          turnId: params.turnId,
+          attemptId: params.attemptId,
+          requestContext: cloneChatValue(params.requestContext),
+          executionSettings: cloneChatValue(params.executionSettings),
+          citations,
+        });
+      const turn = messages.find(
+        (message) =>
+          message.role === "user" && message.turnId === params.turnId,
+      );
+      const attempt = turn?.attempts?.find(
+        (entry) => entry.id === params.attemptId,
+      );
+      if (attempt && !isTerminalAttempt(attempt.state))
+        Object.assign(attempt, {
+          state:
+            params.attemptState ?? (params.success ? "completed" : "failed"),
+          finishedAt: createdAt,
+          ...(prefs.persistAssistantMessages && added?.role === "assistant"
+            ? { assistantMessageId: added.id }
+            : {}),
+        });
       const updatedSnapshot = {
         ...snapshot,
         updatedAt: createdAt,
@@ -276,14 +389,42 @@ export class SessionHistoryService {
       return updatedSnapshot;
     }
 
+    const turn = params.suppressMessage
+      ? undefined
+      : messageStore.getTurn(session.sessionId, params.turnId);
+    const attempt =
+      turn?.attempts?.find((entry) => entry.id === params.attemptId) ??
+      turn?.attempts?.at(-1);
+    if (params.attemptId && attempt && isTerminalAttempt(attempt.state))
+      return this.persistActiveSession({
+        itemID: params.itemID,
+        paperTitle: params.paperTitle,
+      });
     if (!params.suppressMessage) {
-      messageStore.append(session.sessionId, {
+      const message = messageStore.append(session.sessionId, {
         role: "assistant",
-        text: params.assistantText,
+        text: assistantText,
         sourceMode: params.mode,
         status: params.success ? "done" : "error",
         ...(params.rawEvent ? { rawEvent: params.rawEvent } : {}),
+        turnId: turn?.turnId ?? params.turnId,
+        attemptId: attempt?.id ?? params.attemptId,
+        requestContext: cloneChatValue(
+          params.requestContext ?? turn?.request?.requestContext,
+        ),
+        executionSettings: cloneChatValue(
+          params.executionSettings ?? turn?.request?.executionSettings,
+        ),
+        ...(citations.length ? { citations } : {}),
       });
+      if (turn?.turnId && attempt)
+        messageStore.transitionAttempt(
+          session.sessionId,
+          turn.turnId,
+          attempt.id,
+          params.attemptState ?? (params.success ? "completed" : "failed"),
+          { assistantMessageId: message.id },
+        );
     }
 
     if (params.updateResumeMetadata !== false) {
@@ -293,6 +434,27 @@ export class SessionHistoryService {
         session.threadTitle,
         (existing) => {
           applyResumeMetadata(existing, params);
+          existing.providerBindings ||= {};
+          const key =
+            params.mode === "codex_cli"
+              ? "lastCodexSessionID"
+              : params.mode === "claude_code"
+                ? "lastClaudeSessionID"
+                : "lastGeminiSessionID";
+          const id = existing[key];
+          existing.providerBindings[params.mode] = {
+            engine: params.mode,
+            ...(id && !["last", "latest"].includes(id)
+              ? { sessionId: id }
+              : {}),
+            status:
+              id && !["last", "latest"].includes(id)
+                ? "verified"
+                : "unavailable",
+            sourceID: params.requestContext?.sourceID,
+            sourceFingerprint: params.requestContext?.contentFingerprint,
+            paperpilotSessionId: existing.sessionId,
+          };
         },
       );
     }
@@ -301,6 +463,303 @@ export class SessionHistoryService {
       itemID: params.itemID,
       paperTitle: params.paperTitle,
     });
+  }
+
+  getCurrentTurn(params: { itemID: number; turnId?: string }) {
+    const session = sessionStore.get(params.itemID);
+    return session
+      ? messageStore.getTurn(session.sessionId, params.turnId)
+      : undefined;
+  }
+
+  async startRetry(params: {
+    itemID: number;
+    paperTitle: string;
+    turnId?: string;
+  }) {
+    const session = sessionStore.get(params.itemID);
+    const turn =
+      session && messageStore.getTurn(session.sessionId, params.turnId);
+    if (!session || !turn?.request || !turn.turnId)
+      throw new Error(
+        "The original request is unavailable. Edit the question before asking again.",
+      );
+    const attempt = messageStore.beginAttempt(session.sessionId, turn.turnId);
+    session.lastTurnId = turn.turnId;
+    session.lastAttemptId = attempt.id;
+    await this.persistActiveSession({
+      itemID: params.itemID,
+      paperTitle: params.paperTitle,
+    });
+    return { session, turn, attempt, request: cloneChatValue(turn.request) };
+  }
+
+  async updateAttempt(params: {
+    itemID: number;
+    paperTitle: string;
+    turnId: string;
+    attemptId: string;
+    state: ChatAttemptState;
+    errorCategory?: string;
+  }) {
+    const session = sessionStore.get(params.itemID);
+    if (!session) return false;
+    const updated = messageStore.transitionAttempt(
+      session.sessionId,
+      params.turnId,
+      params.attemptId,
+      params.state,
+      params.errorCategory
+        ? { errorCategory: params.errorCategory.slice(0, 80) }
+        : {},
+    );
+    if (
+      updated &&
+      ["failed", "cancelled", "interrupted"].includes(params.state)
+    ) {
+      const turn = messageStore.getTurn(session.sessionId, params.turnId);
+      const engine = turn?.request?.executionSettings?.mode ?? turn?.sourceMode;
+      if (engine) {
+        applyResumeMetadata(session, { mode: engine, success: false });
+        session.providerBindings ||= {};
+        session.providerBindings[engine] = {
+          engine,
+          status: "unavailable",
+          paperpilotSessionId: session.sessionId,
+          sourceID: turn?.request?.requestContext?.sourceID,
+        };
+      }
+    }
+    if (updated)
+      await this.persistActiveSession({
+        itemID: params.itemID,
+        paperTitle: params.paperTitle,
+      });
+    return updated;
+  }
+
+  async forkSession(params: {
+    itemID: number;
+    sessionId: string;
+    messageId: string;
+    kind: "answer" | "edit";
+    paperTitle: string;
+  }) {
+    const active = sessionStore.get(params.itemID);
+    const snapshot =
+      active?.sessionId === params.sessionId
+        ? undefined
+        : await this.repository.readSessionSnapshot(
+            params.itemID,
+            params.sessionId,
+          );
+    const original =
+      active?.sessionId === params.sessionId
+        ? active
+        : snapshot
+          ? {
+              sessionId: snapshot.sessionId,
+              itemID: params.itemID,
+              mode: snapshot.lastMode ?? ("codex_cli" as const),
+              createdAt: snapshot.createdAt,
+              updatedAt: snapshot.updatedAt,
+              threadTitle: snapshot.title,
+              pins: snapshot.pins,
+            }
+          : undefined;
+    if (!original) throw new Error("The original conversation is unavailable.");
+    const allMessages = cloneChatValue(
+      snapshot?.messages ?? messageStore.listRaw(params.sessionId),
+    );
+    let index = allMessages.findIndex(
+      (message) => message.id === params.messageId,
+    );
+    if (index < 0) throw new Error("The branch point is unavailable.");
+    if (params.kind === "edit" && allMessages[index].role === "assistant") {
+      const turnId = allMessages[index].turnId;
+      index = allMessages.findIndex(
+        (message) => message.role === "user" && message.turnId === turnId,
+      );
+    }
+    if (
+      index < 0 ||
+      (params.kind === "answer" &&
+        (allMessages[index].role !== "assistant" ||
+          allMessages[index].status !== "done"))
+    )
+      throw new Error(
+        "Branch from a completed answer or edit an existing question.",
+      );
+    await this.persistActiveSession({
+      itemID: params.itemID,
+      paperTitle: params.paperTitle,
+    });
+    const prefs = resolveSessionHistoryPrefs();
+    const branchMessages = allMessages
+      .slice(0, index + (params.kind === "answer" ? 1 : 0))
+      .filter(
+        (message) => message.role === "user" || prefs.mode !== "prompts-only",
+      )
+      .map((message) => ({
+        ...message,
+        provenance: message.provenance ?? {
+          sessionId: params.sessionId,
+          messageId: message.id,
+        },
+      }));
+    sessionStore.reset(params.itemID);
+    const branch = this.ensureDraftSession({
+      itemID: params.itemID,
+      mode: original.mode,
+      title: `${original.threadTitle} (branch)`,
+    });
+    branch.branch = {
+      parentSessionId: params.sessionId,
+      branchPointMessageId: allMessages[index].id,
+      kind: params.kind,
+    };
+    const ids = new Set(branchMessages.map((message) => message.id));
+    branch.pins = cloneChatValue(
+      (original.pins ?? []).filter(
+        (pin) =>
+          ids.has(pin.messageId) &&
+          (pin.role === "user" || prefs.mode !== "prompts-only"),
+      ),
+    );
+    messageStore.replace(branch.sessionId, branchMessages);
+    await this.persistActiveSession({
+      itemID: params.itemID,
+      paperTitle: params.paperTitle,
+    });
+    return sessionStore.get(params.itemID) || branch;
+  }
+
+  async togglePin(params: {
+    itemID: number;
+    messageId: string;
+    paperTitle?: string;
+  }) {
+    const session = sessionStore.get(params.itemID);
+    const message =
+      session && messageStore.get(session.sessionId, params.messageId);
+    if (!session || !message || message.status !== "done")
+      throw new Error("Only an available completed message can be pinned.");
+    session.pins ||= [];
+    const exists = session.pins.some((pin) => pin.messageId === message.id);
+    session.pins = exists
+      ? session.pins.filter((pin) => pin.messageId !== message.id)
+      : [
+          ...session.pins,
+          {
+            id: `pin:${message.id}`,
+            messageId: message.id,
+            role: message.role,
+            text: message.text,
+            createdAt: this.now().toISOString(),
+          },
+        ];
+    await this.persistActiveSession({
+      itemID: params.itemID,
+      paperTitle: params.paperTitle ?? session.threadTitle,
+    });
+    return !exists;
+  }
+
+  async setSummary(params: {
+    itemID: number;
+    text: string;
+    basedOnMessageId: string;
+    sourceFingerprint: string;
+    paperTitle?: string;
+  }) {
+    const session = sessionStore.get(params.itemID);
+    if (
+      !session ||
+      !messageStore.get(session.sessionId, params.basedOnMessageId)
+    )
+      throw new Error(
+        "The conversation changed before summarization completed.",
+      );
+    if (resolveSessionHistoryPrefs().mode === "prompts-only")
+      throw new Error(
+        "Conversation summaries are unavailable in prompts-only mode.",
+      );
+    session.summary = {
+      text: params.text.slice(0, 12_000),
+      basedOnMessageId: params.basedOnMessageId,
+      sourceFingerprint: params.sourceFingerprint,
+      createdAt: this.now().toISOString(),
+      author: "model",
+    };
+    await this.persistActiveSession({
+      itemID: params.itemID,
+      paperTitle: params.paperTitle ?? session.threadTitle,
+    });
+    return session.summary;
+  }
+
+  getContinuityContext(params: {
+    itemID: number;
+    sourceFingerprint?: string;
+    maxChars?: number;
+  }) {
+    return buildSessionContinuity({
+      sessionId: sessionStore.get(params.itemID)?.sessionId ?? "",
+      ...params,
+    });
+  }
+
+  async searchMessages(params: {
+    itemID: number;
+    query: string;
+    scope?: "current" | "saved" | "all";
+  }) {
+    const query = params.query.trim().normalize("NFKC").toLocaleLowerCase();
+    if (!query) return [];
+    const active = sessionStore.get(params.itemID);
+    const sessions = new Map<
+      string,
+      { title: string; messages: MessageRecord[] }
+    >();
+    if (params.scope !== "saved" && active)
+      sessions.set(active.sessionId, {
+        title: active.threadTitle,
+        messages: messageStore.listRaw(active.sessionId),
+      });
+    if (
+      params.scope !== "current" &&
+      resolveSessionHistoryPrefs().persistHistory
+    ) {
+      for (const entry of await this.repository.listSessions(params.itemID)) {
+        if (sessions.has(entry.sessionId)) continue;
+        const snapshot = await this.repository.readSessionSnapshot(
+          params.itemID,
+          entry.sessionId,
+        );
+        if (snapshot)
+          sessions.set(entry.sessionId, {
+            title: snapshot.title,
+            messages: snapshot.messages ?? [],
+          });
+      }
+    }
+    const prefs = resolveSessionHistoryPrefs();
+    return [...sessions].flatMap(([sessionId, session]) =>
+      session.messages
+        .filter(
+          (message) =>
+            (message.role === "user" || prefs.mode !== "prompts-only") &&
+            !isLikelySilentToolMessage(message) &&
+            message.text.normalize("NFKC").toLocaleLowerCase().includes(query),
+        )
+        .map((message) => ({
+          sessionId,
+          title: session.title,
+          messageId: message.id,
+          text: message.text,
+          role: message.role,
+        })),
+    );
   }
 
   async openSavedSession(params: { itemID: number; sessionId: string }) {

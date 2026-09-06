@@ -1,5 +1,11 @@
 import type { EngineMode } from "../ai/types";
 import type { MessageRecord } from "../message/types";
+import type {
+  ConversationBranch,
+  ConversationPin,
+  ConversationSummary,
+  ProviderBinding,
+} from "../message/chatTypes";
 
 export const SESSION_HISTORY_STORAGE_VERSION = 1 as const;
 
@@ -41,6 +47,10 @@ export interface SessionHistorySnapshot {
   relatedRecommendations?: unknown;
   mastery?: unknown;
   criticalRead?: unknown;
+  branch?: ConversationBranch;
+  pins?: ConversationPin[];
+  summary?: ConversationSummary;
+  providerBindings?: Partial<Record<EngineMode, ProviderBinding>>;
 }
 
 export interface SessionHistoryListEntry {

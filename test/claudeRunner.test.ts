@@ -71,7 +71,7 @@ test("Claude launch reports a rejected shell exec as a start failure", async () 
   assert.deepEqual(result, { ok: false, error: "claude launch rejected" });
 });
 
-test("buildClaudeCommand uses Claude Code continue mode for the latest session marker", () => {
+test("buildClaudeCommand refuses the ambiguous latest session marker", () => {
   const buildClaudeCommand = (
     claudeRunner as unknown as { buildClaudeCommand?: BuildClaudeCommand }
   ).buildClaudeCommand;
@@ -91,7 +91,7 @@ test("buildClaudeCommand uses Claude Code continue mode for the latest session m
     permissionMode: "default",
   });
 
-  assert.match(script, / --continue /);
+  assert.doesNotMatch(script, / --continue | --resume /);
   assert.doesNotMatch(script, /--resume 'latest'/);
 });
 

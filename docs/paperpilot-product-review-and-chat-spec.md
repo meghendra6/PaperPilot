@@ -1,7 +1,7 @@
 # PaperPilot 제품 리뷰와 Chat 개선 스펙
 
 작성일: 2026-09-07 KST  
-상태: **독립 리뷰 반영 스펙 · 전체 구현 대상**  
+상태: **독립 리뷰 반영 스펙 · 구현과 검증 기록은 §13 참조**
 기준: 최신 `origin/main`의 `bb6a67275bbb83e668a5aa76c6e280a317a12a2d`  
 주요 사용자 요구: PDF를 읽으며 가장 자주 사용하는 **chat의 신뢰성·연속성·사용성 개선**
 
@@ -711,7 +711,7 @@ retrieval 실험은 근거 찾기와 답변 품질 향상 없이 평균 시간�
 `53d8123620d737e3d44e45b55eb6cec53df6e5014502d80e1ccfa98865c328fb`로 같았다.
 이 사실은 현재 HEAD를 새로 빌드·설치해 runtime QA를 완료했다는 뜻이 아니다.
 
-이 문서 작업에서 build, 새 AI 왕복, 실제 provider A/B 재개, 생성 중 Stop/scroll,
+최초 리뷰 단계에서는 build, 새 AI 왕복, 실제 provider A/B 재개, 생성 중 Stop/scroll,
 전체 Zotero/OS matrix, note/library 쓰기 QA는 수행하지 않았다. 해당 항목은 위
 구현 phase의 검증 gate로 남는다. 현재 tests 통과와 별도로, 재현된 입력·저장
 결함 및 확인된 설계 공백을 수정할 필요가 있다.
@@ -883,3 +883,60 @@ figure 처리 각각의 비교와 채택/기각 이유를 남긴다. 존재하�
    확인. 미실행 Zotero 버전·OS는 별도로 표시하고 전 플랫폼 완전 검증으로 포장하지 않는다.
 
 release 자체가 만들어졌다는 사실만으로 이 gate를 통과시키지 않는다.
+
+## 13. 구현 및 전달 검증 기록
+
+이 절은 위의 초기 리뷰·요구사항과 구분되는 구현 기록이다. 독립 스펙 리뷰에서
+보완한 저장·privacy·입력 소유권·migration 계약을 먼저 확정하고 구현했다.
+구현 교차 리뷰에서 추가 발견한 저장 실패 중복 turn, 오래된 source 쓰기,
+protocol 변경 후 stale 미전파, 준비 중 취소 후 spawn, legacy 폴더 정리,
+source fingerprint 없는 native resume도 회귀 검사와 함께 수정했다.
+
+| 요구 | 구현 경로                                                                                                | 주요 검증 / 남은 실환경 범위                                                                                            |
+| ---- | -------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| R01  | `context/requestContext.ts`, 세 engine runner, `researchWorkspace/analysisRunner.ts`                     | exact attachment/library, 동기 선택 캡처, 주석 내용, 없는 파일·교체 파일, prebuilt source 회귀                          |
+| R02  | `workspace/pathBuilder.ts`, provider output parsers, `session/providerBinding.ts`                        | 제목과 실행 경로 분리, source/session/fingerprint 일치, 실제 Codex A/B/A 및 Claude native resume                        |
+| R03  | `message/messageStore.ts`, `ui/chatAdmission.ts`, `sessionHistoryService.ts`, `ai/retryEngineRequest.ts` | 저장 실패 뒤 같은 제출 재전송, 다중 attempt, terminal guard, migration·분기·privacy                                     |
+| R04  | `ui/chatDraft.ts`, `ui/chatComposer.ts`, `readerActions.ts`, `readerPane.ts`                             | 초안 revision·편집된 제출 분리, 작성 중 새 초안 보존, 독립 quick/structured 질문                                        |
+| R05  | `message/chatAnswer.ts`, `chatCitations.ts`, `publicLinks.ts`, `ChatMessage.ts`                          | envelope 식별·위조 후보 거부·정확 quote/page·stale·안전 링크·Copy/persistence                                           |
+| R06  | `session/continuity.ts`, `providerBinding.ts`, `readerPane.ts`                                           | pin→summary→완료 문답 budget, prompts-only 제한, fingerprint 바뀐 요약/재개 차단                                        |
+| R07  | `ui/chatTranscriptWindow.ts`, `ChatMessage.ts`, pane CSS                                                 | bounded window, 과거 메시지 이동·읽기 anchor·선택 보존, 단일 새 응답 제어; 실제 Zotero 폭/테마/IME matrix는 별도        |
+| R08  | `sessionHistoryService.ts`, `note/chatNote.ts`, 메시지 메뉴                                              | 분기점 prefix·원본 provenance·provider 분리, 질문/답변/소스/인용 상태 note preview                                      |
+| R09  | `ui/chatTools.ts`, session 검색, `readerActionPrompt.ts`                                                 | 전체 저장 기록 검색, paper scope, 편집 가능한 네 slash 동작, 요청별 응답 길이                                           |
+| R10  | `requestContext.ts` timing, 세 controller/runner, `runControl.ts`                                        | admission/capture/persistence/spawn/first-answer/finish/display 구분, cancellation-before-spawn, JSONL assistant만 표시 |
+| R11  | RW coordinator/project controller/context planner/operation inputs                                       | 제외·stale source/upstream 차단, 질문/columns/protocol fingerprint, 쓰기 전 전체 batch 검사, quota 재분배               |
+| R12  | RW candidate persistence/panel/facade, member state, discovery row                                       | PDF 없는 후보→명시적 binding→screening·reading·understanding, recovery/export/delete, chat 비교 질문 전달               |
+| R13  | `scripts/evaluate-chat-context.mjs`, 30개 CC0 fixture, [평가 보고서](./chat-context-evaluation.md)       | 30문항×4 입력 방식, 실제 모델 9회 및 caption/image 2회; 빠른 경로·reranking 기본 채택 기각                              |
+
+### 자동 검사와 실제 실행의 구분
+
+- 구현 후보 전체 Node suite: **925 pass, 0 fail, 0 skip**. 최종 전달 시 추가
+  회귀와 required CI 결과를 함께 확인한다.
+- TypeScript source/test 검사 통과. Read-only lint gate는 오류 0이며 기존 및
+  새 코드의 non-null assertion 경고를 성공과 구분해 기록한다.
+- [CLI 실행 기록](./evaluations/cli-runtime-smoke.json)은 synthetic 자료를 사용한
+  실제 Codex/Claude 실행이다. Codex는 서로 다른 A/B 대화 생성 후 A를 두 번
+  재개해 A의 token만 복원했다. Claude는 실제 UUID를 지정한 재개에서 token을
+  복원했다. 이것은 Zotero pane 자체의 runtime 검증과는 다르다.
+- Gemini 0.40.1은 `UNSUPPORTED_CLIENT` / `IneligibleTierError`와 exit 55를
+  반환했다. 설치된 CLI·계정의 외부 실행 제한으로 분류하며, parser/runner
+  회귀 통과를 실제 Gemini 답변 성공으로 표현하지 않는다.
+- 실제 컴포넌트를 사용한 브라우저 fixture에서 320/420px 폭, 작성 중 busy 전환,
+  200개 메시지의 48개 window, 범위 밖 검색 이동, 과거 읽기 anchor 유지,
+  단일 새 응답 버튼을 확인했다. [420px 화면](./assets/product-review/chat-components-420.png)은
+  합성 자료와 callback simulation이며 Zotero·모델·저장 실행 증거가 아니다.
+- 새 build의 Zotero 화면은 CUA가 Zotero/Finder 모두 `cgWindowNotFound`를
+  반환해 검증하지 못했다. §3의 화면은 개선 전 설치본의 baseline이다.
+  최종 보고에 실제로 실행하지 못한 Zotero/OS matrix를 유지한다.
+
+### 전달 순서
+
+스펙 commit → 구현과 회귀 검사 → 최종 SHA 독립 리뷰 → required CI 통과한
+구현 PR merge → `package.json`/lockfile의 버전만 `0.1.5`로 변경한 별도 PR
+검증·merge → version-tag 일치 검사 → `v0.1.5` release workflow → 게시 자산의
+실제 다운로드·ZIP/manifest/update URL/hash 검사 순서로 진행한다.
+
+기존 사용자 `package-lock.json` 변경과 미추적 작업 폴더는 전달 commit에
+섞지 않는다. 불필요한 과거 build worktree는 상태를 확인한 뒤 제거했으며
+root checkout에서 작업한다. PR·merge·release의 최종 SHA와 게시 자산 검사는
+릴리스 기록에 남기고, 이 문서의 이전 baseline 수치와 구분한다.

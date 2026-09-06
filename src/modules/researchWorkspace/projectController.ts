@@ -1,4 +1,10 @@
+import { researchWorkspaceArtifactPayloadFingerprint } from "./artifactFingerprint";
 import type { ResearchWorkspacePaper } from "./paperSource";
+import {
+  isResearchWorkspaceMemberExcluded,
+  memberReadingProgress,
+  memberUnderstanding,
+} from "./memberState";
 import {
   OPEN_DATA_LOADER_EXTRACTOR_VERSION,
   ZOTERO_ATTACHMENT_TEXT_EXTRACTOR_VERSION,
@@ -12,6 +18,7 @@ import {
   type ResearchWorkspaceProjectMember,
   type ResearchWorkspaceReviewStatus,
   type ResearchWorkspaceSourceRecord,
+  type ResearchWorkspaceCandidate,
 } from "./persistence/contracts";
 import {
   buildResearchWorkspaceScreeningLog,
@@ -41,6 +48,8 @@ export interface ResearchWorkspaceProjectDetails {
   sources: ResearchWorkspaceSourceRecord[];
   artifacts: ResearchWorkspaceArtifact[];
   warnings: string[];
+  candidates?: ResearchWorkspaceCandidate[];
+  candidatesRevision?: number;
 }
 
 export interface ResearchWorkspaceProjectHome {
@@ -103,6 +112,9 @@ function quickProjectID(papers: readonly ResearchWorkspacePaper[]) {
 
 export class ResearchWorkspaceProjectController {
   private readonly now: () => Date;
+  private readonly validateSource?: (
+    paper: ResearchWorkspacePaper,
+  ) => Promise<void>;
   private readonly screeningIDFactory: (prefix: string) => string;
   private readonly addPaperQueues = new Map<string, Promise<void>>();
 
@@ -110,10 +122,12 @@ export class ResearchWorkspaceProjectController {
     private readonly repository: ResearchWorkspaceProjectRepository,
     options: {
       now?: () => Date;
+      validateSource?: (paper: ResearchWorkspacePaper) => Promise<void>;
       screeningIDFactory?: (prefix: string) => string;
     } = {},
   ) {
     this.now = options.now ?? (() => new Date());
+    this.validateSource = options.validateSource;
     this.screeningIDFactory =
       options.screeningIDFactory ??
       ((prefix) =>
@@ -188,6 +202,12 @@ export class ResearchWorkspaceProjectController {
           capabilityPresetIDs: params.capabilityPresetIDs,
         }),
     );
+    const bundle = await this.repository.getProject(params.projectID);
+    await this.repository.markArtifactsStaleForMembersRevision({
+      projectID: params.projectID,
+      membersRevision: bundle.membersRevision,
+      reason: "project-assumptions-changed",
+    });
     return this.details(params.projectID);
   }
 
@@ -237,6 +257,8 @@ export class ResearchWorkspaceProjectController {
     const unique = [
       ...new Map(papers.map((paper) => [paper.sourceID, paper])).values(),
     ];
+    // Validate the entire captured batch before replacing any durable source record.
+    for (const paper of unique) await this.validateSource?.(paper);
     for (const paper of unique) {
       const invalidateAffectedProjects = async () => {
         const projectIDs = await this.repository.listProjectIDsForSource(
@@ -352,6 +374,18 @@ export class ResearchWorkspaceProjectController {
       sources,
       artifacts: artifactList.artifacts,
       warnings,
+      ...(await this.repository
+        .getCandidates(projectID)
+        .then((inbox) => ({
+          candidates: inbox.candidates,
+          candidatesRevision: inbox.revision,
+        }))
+        .catch((error) => {
+          warnings.push(
+            `Candidate inbox could not be read: ${error instanceof Error ? error.message : String(error)}`,
+          );
+          return {};
+        })),
     };
   }
 
@@ -364,6 +398,7 @@ export class ResearchWorkspaceProjectController {
       | "researchQuestion"
       | "scope"
       | "defaultEngineMode"
+      | "comparisonQuestions"
     >,
   ) {
     const bundle = await this.repository.getProject(projectID);
@@ -372,6 +407,11 @@ export class ResearchWorkspaceProjectController {
       bundle.projectRevision,
       (project) => ({ ...project, ...patch }),
     );
+    await this.repository.markArtifactsStaleForMembersRevision({
+      projectID,
+      membersRevision: bundle.membersRevision,
+      reason: "project-operation-inputs-changed",
+    });
     return this.details(projectID);
   }
 
@@ -409,14 +449,225 @@ export class ResearchWorkspaceProjectController {
             : member,
         ),
     );
-    await this.repository.markArtifactsStaleForMembersRevision({
-      projectID: params.projectID,
-      membersRevision: membersFile.revision,
-      reason:
-        previous.reviewStatus !== params.reviewStatus
-          ? "project-review-scope-changed"
-          : "project-member-record-changed",
-    });
+    if (
+      isResearchWorkspaceMemberExcluded(previous) !==
+        isResearchWorkspaceMemberExcluded({
+          ...previous,
+          reviewStatus: params.reviewStatus,
+        }) ||
+      ["included", "excluded", "maybe"].includes(params.reviewStatus)
+    )
+      await this.repository.markArtifactsStaleForMembersRevision({
+        projectID: params.projectID,
+        membersRevision: membersFile.revision,
+        reason:
+          previous.reviewStatus !== params.reviewStatus
+            ? "project-review-scope-changed"
+            : "project-member-record-changed",
+      });
+    return this.details(params.projectID);
+  }
+
+  async updateReadingState(params: {
+    projectID: string;
+    sourceID: string;
+    readingProgress?: ResearchWorkspaceProjectMember["readingProgress"];
+    understanding?: ResearchWorkspaceProjectMember["understanding"];
+  }) {
+    const bundle = await this.repository.getProject(params.projectID);
+    if (!bundle.members.some((member) => member.sourceID === params.sourceID))
+      throw new Error("Project source not found.");
+    await this.repository.updateMembers(
+      params.projectID,
+      bundle.membersRevision,
+      (members) =>
+        members.map((member) =>
+          member.sourceID === params.sourceID
+            ? {
+                ...member,
+                readingProgress:
+                  params.readingProgress ?? memberReadingProgress(member),
+                understanding:
+                  params.understanding ?? memberUnderstanding(member),
+                updatedAt: timestamp(this.now),
+              }
+            : member,
+        ),
+    );
+    return this.details(params.projectID);
+  }
+
+  async saveCandidate(params: {
+    projectID: string;
+    candidateID: string;
+    metadata: ResearchWorkspaceCandidate["metadata"];
+    provenance: ResearchWorkspaceCandidate["provenance"];
+    userNote?: string;
+  }) {
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const inbox = await this.repository.getCandidates(params.projectID);
+      const existing = inbox.candidates.find(
+        (candidate) => candidate.candidateID === params.candidateID,
+      );
+      if (existing) {
+        if (
+          researchWorkspaceArtifactPayloadFingerprint({
+            metadata: existing.metadata,
+            provenance: existing.provenance,
+          }) !==
+          researchWorkspaceArtifactPayloadFingerprint({
+            metadata: params.metadata,
+            provenance: params.provenance,
+          })
+        )
+          throw new Error(
+            "Candidate identity already exists with different metadata or provenance.",
+          );
+        return existing;
+      }
+      const now = timestamp(this.now);
+      const candidate: ResearchWorkspaceCandidate = {
+        candidateID: params.candidateID,
+        metadata: params.metadata,
+        provenance: params.provenance,
+        ...(params.userNote?.trim()
+          ? { userNote: params.userNote.trim() }
+          : {}),
+        createdAt: now,
+        updatedAt: now,
+      };
+      try {
+        await this.repository.updateCandidates(
+          params.projectID,
+          inbox.revision,
+          (candidates) => [...candidates, candidate],
+        );
+        return candidate;
+      } catch (error) {
+        if (
+          !(error instanceof ResearchWorkspaceRevisionConflictError) ||
+          attempt === 2
+        )
+          throw error;
+      }
+    }
+    throw new Error("Could not save candidate.");
+  }
+
+  async updateCandidate(params: {
+    projectID: string;
+    candidateID: string;
+    expectedRevision: number;
+    userNote?: string;
+    zoteroItem?: ResearchWorkspaceCandidate["zoteroItem"];
+  }) {
+    const inbox = await this.repository.getCandidates(params.projectID);
+    const existing = inbox.candidates.find(
+      (candidate) => candidate.candidateID === params.candidateID,
+    );
+    if (!existing) throw new Error("Candidate not found.");
+    if (
+      existing.binding &&
+      params.zoteroItem &&
+      (existing.binding.libraryID !== params.zoteroItem.libraryID ||
+        existing.binding.itemKey !== params.zoteroItem.itemKey)
+    )
+      throw new Error(
+        "The linked Zotero item must match this candidate's exact PDF binding.",
+      );
+    return this.repository.updateCandidates(
+      params.projectID,
+      params.expectedRevision,
+      (candidates) =>
+        candidates.map((candidate) =>
+          candidate.candidateID === params.candidateID
+            ? {
+                ...candidate,
+                ...(params.userNote !== undefined
+                  ? { userNote: params.userNote.trim() || undefined }
+                  : {}),
+                ...(params.zoteroItem ? { zoteroItem: params.zoteroItem } : {}),
+                updatedAt: timestamp(this.now),
+              }
+            : candidate,
+        ),
+    );
+  }
+
+  async bindCandidate(params: {
+    projectID: string;
+    candidateID: string;
+    paper: ResearchWorkspacePaper;
+  }) {
+    const inbox = await this.repository.getCandidates(params.projectID);
+    const candidate = inbox.candidates.find(
+      (entry) => entry.candidateID === params.candidateID,
+    );
+    if (!candidate) throw new Error("Candidate not found.");
+    if (
+      candidate.binding &&
+      candidate.binding.sourceID !== params.paper.sourceID
+    )
+      throw new Error(
+        "This candidate is already bound to a different PDF. Create another candidate for a different source.",
+      );
+    // Source first, durable binding second, member last. Recovery replays the last
+    // step from the binding without re-extracting or making library writes.
+    const current = await this.repository.getSource(params.paper.sourceID);
+    const changedSource =
+      current?.source.contentFingerprint?.value !==
+      params.paper.contentFingerprint.value;
+    const invalidate = async () => {
+      if (!changedSource) return;
+      for (const projectID of await this.repository.listProjectIDsForSource(
+        params.paper.sourceID,
+        { includeArchived: true },
+      ))
+        await this.repository.markArtifactsStaleForSource({
+          projectID,
+          sourceID: params.paper.sourceID,
+          contentFingerprint: params.paper.contentFingerprint.value,
+        });
+    };
+    await invalidate();
+    await this.repository.putSource(
+      researchWorkspaceSourceRecordFromPaper(params.paper, this.now()),
+      current?.revision,
+    );
+    await invalidate();
+    if (
+      !candidate.binding ||
+      candidate.binding.contentFingerprint !==
+        params.paper.contentFingerprint.value
+    ) {
+      const paper = params.paper;
+      await this.repository.updateCandidates(
+        params.projectID,
+        inbox.revision,
+        (candidates) =>
+          candidates.map((entry) =>
+            entry.candidateID === params.candidateID
+              ? {
+                  ...entry,
+                  zoteroItem: {
+                    libraryID: paper.libraryID,
+                    itemKey: paper.itemKey,
+                  },
+                  binding: {
+                    sourceID: paper.sourceID,
+                    libraryID: paper.libraryID,
+                    itemKey: paper.itemKey,
+                    attachmentKey: paper.attachmentKey,
+                    contentFingerprint: paper.contentFingerprint.value,
+                    boundAt: timestamp(this.now),
+                  },
+                  updatedAt: timestamp(this.now),
+                }
+              : entry,
+          ),
+      );
+    }
+    await this.repository.recoverCandidateMembers(params.projectID);
     return this.details(params.projectID);
   }
 
@@ -457,6 +708,11 @@ export class ResearchWorkspaceProjectController {
         },
       }),
     );
+    await this.repository.markArtifactsStaleForMembersRevision({
+      projectID: params.projectID,
+      membersRevision: bundle.membersRevision,
+      reason: "screening-protocol-changed",
+    });
     return this.details(params.projectID);
   }
 

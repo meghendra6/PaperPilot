@@ -1358,7 +1358,7 @@
   margin-top: 6px;
   padding-top: 4px;
   border-top: 1px solid var(--pp-border-light);
-  opacity: 0;
+  opacity: 1;
   transition: opacity 0.15s;
 }
 
@@ -3436,4 +3436,155 @@ button.pprw-render-evidence-link {
   .pprw-graph-relationship strong:last-child {
     text-align: start;
   }
+}
+
+/* Chat workspace controls inherit Zotero's light/dark palette. */
+#paper-pilot-container [hidden] {
+  display: none !important;
+}
+.pp-chat-tools {
+  flex: 0 0 auto;
+  min-width: 0;
+  margin-block: 4px;
+}
+.pp-chat-tools__bar,
+.pp-chat-commands {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+.pp-chat-tools .pp-btn,
+.pp-message-footer .pp-btn,
+.pp-chat-focus,
+.pp-chat-length {
+  min-height: 26px;
+  padding: 3px 7px;
+}
+.pp-chat-tools select,
+.pp-chat-tools input,
+.pp-chat-tools textarea {
+  font: inherit;
+  color: var(--pp-text-primary);
+  background: var(--pp-bg-primary);
+  border: 1px solid var(--pp-border-medium);
+  border-radius: 4px;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+.pp-chat-context-status {
+  font-size: var(--pp-font-size-xs);
+  color: var(--pp-text-secondary);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  margin-block: 4px;
+}
+.pp-chat-search,
+.pp-chat-review {
+  border: 1px solid var(--pp-border-medium);
+  border-radius: var(--pp-radius-md);
+  padding: 8px;
+  margin-block: 6px;
+  background: var(--pp-bg-secondary);
+}
+.pp-chat-search input,
+.pp-chat-review textarea {
+  width: 100%;
+  min-height: 30px;
+  padding: 6px;
+}
+.pp-chat-search__results,
+.pp-chat-review__body {
+  max-height: 180px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.pp-chat-search__results .pp-btn {
+  display: block;
+  text-align: start;
+  width: 100%;
+  white-space: normal;
+  margin-block: 4px;
+}
+.pp-chat-review textarea {
+  min-height: 76px;
+  margin-block: 6px;
+  resize: vertical;
+}
+#paper-pilot-draft {
+  flex-wrap: wrap;
+  gap: 5px;
+  font-size: var(--pp-font-size-xs);
+}
+.pp-chat-source {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#paper-pilot-draft details {
+  width: 100%;
+}
+#paper-pilot-draft summary {
+  cursor: pointer;
+  min-height: 24px;
+}
+#paper-pilot-draft details div {
+  max-height: 110px;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+.pp-chat-new-response {
+  position: sticky;
+  bottom: 4px;
+  align-self: center;
+  z-index: 2;
+  background: var(--pp-bg-primary);
+  border: 1px solid var(--pp-border-medium);
+}
+.pp-message--ai {
+  line-height: 1.55;
+}
+.pp-message--ai pre {
+  max-width: 100%;
+  overflow-x: auto;
+  white-space: pre;
+}
+.pp-message--ai table {
+  display: block;
+  overflow-x: auto;
+  max-width: 100%;
+  border-collapse: collapse;
+}
+.pp-message--ai th,
+.pp-message--ai td {
+  padding: 5px 8px;
+  border: 1px solid var(--pp-border-light);
+}
+.pp-message-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  margin-top: 7px;
+}
+.pp-message-wrapper:focus-visible,
+.pp-chat-tools :focus-visible,
+#paper-pilot-draft :focus-visible {
+  outline: 2px solid var(--pp-accent, Highlight);
+  outline-offset: 2px;
+}
+
+.pp-message-actions > summary {
+  cursor: pointer;
+  min-height: 26px;
+  padding: 3px 7px;
+  box-sizing: border-box;
+}
+.pp-message-actions[open] {
+  max-width: 100%;
+}
+.pp-message-actions[open] .pp-btn {
+  display: block;
+  text-align: start;
 }

@@ -786,3 +786,23 @@ After running mastery and one or more workbench tools (research brief, contribut
   changes, completed cards and revision dialogs use the selected language, and
   original reader/model prose is preserved. Save a report to a test note and check
   its headings use the selected language. Existing notes must remain untouched.
+
+## Chat and project intake release checks
+
+Record Zotero/OS/CLI versions and the installed XPI hash; a successful Node test or ZIP build is not a completed checkbox below.
+
+- [ ] With one parent and two PDFs, select the second PDF, Ask AI, rename the chat, and ask two follow-ups. Inspect metadata and citations: the same second attachment and paper title remain fixed.
+- [ ] Select text or multiple annotations, inspect/remove context, and use Ask AI without losing an existing draft. Try deleted annotations, comments, image annotations and a replaced PDF.
+- [ ] During preparation, output, Stop and cleanup, type draft B while request A runs. A's failure/cancellation never deletes B. Quick actions and Mastery/Critical Read never replace the composer text.
+- [ ] In Codex, Claude and Gemini, capture the actual provider session ID for a first request and resume it for two follow-ups. If no ID is emitted, show fresh-session fallback and include eligible continuity. An external CLI authentication failure is recorded separately.
+- [ ] Retry the same failed turn repeatedly; one user question has numbered attempts. Edit branches before the selected question, fork branches through a completed answer, and the original session/provider binding remains isolated.
+- [ ] Search a 200-message current conversation and saved conversations for this paper. Jump outside the visible window and return to the original reading anchor. Scroll up/select/copy while a response updates; only an explicit jump resumes following.
+- [ ] Exercise Focus chat, slash actions, response length, keyboard/IME, Escape and visible focus at 320/420/640 px, 200% zoom, light/dark, long Korean, math, tables and code.
+- [ ] Verify a supported citation, changed PDF, missing PDF and wrong source. Only a locally matched, current source opens its exact page. Public URLs open only on click; local/privileged schemes remain inert.
+- [ ] Pin/unpin user and assistant messages, create a summary, switch engine, and confirm displayed included/omitted context. Repeat with full/prompts-only/off history and inspect newly persisted files for assistant-derived leakage.
+- [ ] Preview a chat note under its original parent and save once. Preview/edit a comparison question and destination project; saving does not start a model run.
+- [ ] Save a discovery candidate without a PDF, reopen the project with no selected item, link an existing parent, select an exact PDF, and make an inclusion decision. Keep screening separate from reading/understanding. Export/recover/delete the candidate with its project.
+- [ ] Run from saved members, change question/columns/protocol, exclude a member or replace an upstream artifact, then retry/reuse. Changed semantic inputs cannot produce a false current checkpoint. Reading progress alone does not invalidate analysis.
+- [ ] Keep workspace auto-clean off and run A+B then A-only. Inspect actual files and prompt: B's owned inputs disappear before spawn; unrelated user files survive.
+
+See [the evaluation report](./chat-context-evaluation.md) for the synthetic model sample and [the implementation record](./paperpilot-product-review-and-chat-spec.md) for executed checks and environment limits.

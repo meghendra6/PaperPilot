@@ -13,7 +13,9 @@ export function buildWorkspaceArtifacts(params: {
   extractionMethod?: string;
   extractionNotes?: string[];
   payload: ContextPayload;
-  annotations?: string[];
+  annotations?: Array<
+    string | import("./requestContext").RequestAnnotationSnapshot
+  >;
   recentTurns: Array<{ role: string; text: string; createdAt: string }>;
   requestText?: string;
 }) {
@@ -112,7 +114,7 @@ export function buildWorkspaceArtifacts(params: {
       "- paper.txt — compatibility text snapshot with metadata and extracted content",
       "- selection.json — current question context, selected text, page number, retrieved chunks",
       "- recent-turns.json — recent conversation turns for follow-up continuity",
-      "- annotations.json — annotation ids related to this request",
+      "- annotations.json — captured annotation quotes, comments and source locations",
       "- metadata.json — structured bibliographic metadata",
       "- figures/ — place image assets here when needed",
       discoveryRequest

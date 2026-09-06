@@ -103,7 +103,55 @@ function isSessionHistorySnapshot(
     typeof value.createdAt === "string" &&
     typeof value.updatedAt === "string" &&
     (value.lastMode === undefined || isEngineMode(value.lastMode)) &&
-    (value.messages === undefined || Array.isArray(value.messages))
+    (value.messages === undefined ||
+      (Array.isArray(value.messages) &&
+        value.messages.every(
+          (message) =>
+            isPlainObject(message) &&
+            typeof message.id === "string" &&
+            typeof message.text === "string" &&
+            typeof message.createdAt === "string" &&
+            ["user", "assistant"].includes(String(message.role)) &&
+            ["done", "error"].includes(String(message.status)) &&
+            isEngineMode(message.sourceMode) &&
+            (message.attempts === undefined ||
+              (Array.isArray(message.attempts) &&
+                message.attempts.every(
+                  (attempt) =>
+                    isPlainObject(attempt) &&
+                    typeof attempt.id === "string" &&
+                    typeof attempt.turnId === "string" &&
+                    typeof attempt.startedAt === "string" &&
+                    Number.isInteger(attempt.ordinal) &&
+                    Number(attempt.ordinal) > 0 &&
+                    [
+                      "pending",
+                      "running",
+                      "finishing",
+                      "completed",
+                      "failed",
+                      "cancelled",
+                      "interrupted",
+                    ].includes(String(attempt.state)),
+                ))),
+        ))) &&
+    (value.pins === undefined ||
+      (Array.isArray(value.pins) &&
+        value.pins.every(
+          (pin) =>
+            isPlainObject(pin) &&
+            typeof pin.id === "string" &&
+            typeof pin.messageId === "string" &&
+            typeof pin.text === "string" &&
+            typeof pin.createdAt === "string" &&
+            ["user", "assistant"].includes(String(pin.role)),
+        ))) &&
+    (value.summary === undefined ||
+      (isPlainObject(value.summary) &&
+        typeof value.summary.text === "string" &&
+        typeof value.summary.basedOnMessageId === "string" &&
+        typeof value.summary.sourceFingerprint === "string" &&
+        value.summary.author === "model"))
   );
 }
 
@@ -511,6 +559,32 @@ export class SessionHistoryRepository {
     paperTitle: string;
     snapshot: SessionHistorySnapshot;
   }) {
+    const existingPath = this.getSessionSnapshotPath(
+      params.paperItemID,
+      params.snapshot.sessionId,
+    );
+    if (await this.fileOps.exists(existingPath)) {
+      let existing: unknown;
+      try {
+        existing = JSON.parse(
+          (await this.fileOps.readText(existingPath)) || "",
+        );
+      } catch {
+        throw new Error(
+          "The existing conversation file is unreadable; it was preserved for recovery.",
+        );
+      }
+      if (
+        !isSessionHistorySnapshot(
+          existing,
+          params.paperItemID,
+          params.snapshot.sessionId,
+        )
+      )
+        throw new Error(
+          "The existing conversation uses an unsupported or invalid format; it was preserved for recovery.",
+        );
+    }
     const snapshot = {
       ...params.snapshot,
       storageVersion: SESSION_HISTORY_STORAGE_VERSION,
