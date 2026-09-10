@@ -806,3 +806,12 @@ Record Zotero/OS/CLI versions and the installed XPI hash; a successful Node test
 - [ ] Keep workspace auto-clean off and run A+B then A-only. Inspect actual files and prompt: B's owned inputs disappear before spawn; unrelated user files survive.
 
 See [the evaluation report](./chat-context-evaluation.md) for the synthetic model sample and [the implementation record](./paperpilot-product-review-and-chat-spec.md) for executed checks and environment limits.
+
+### Native chat regression checks
+
+- [ ] Match a new answer's exact quote and click its citation. Confirm the correct page opens and normal Reader navigation still works after extraction cleanup.
+- [ ] Verify exact-file extraction with no PDF reader open and with a different PDF visible. Never use the live Reader's cached text as evidence for another file.
+- [ ] Save an older answer after version-only attachment drift with identical file size, mtime and dateModified. Changed or unavailable PDF metadata and rebound identities must still reject the snapshot.
+- [ ] Search wrapped Korean and long unbroken text in a narrow pane. Confirm result buttons grow, remain separated, scroll, and can be activated using the keyboard.
+
+See the [native repair specification](./chat-runtime-followup-spec.md) for the observed v0.1.5 failures, acceptance criteria and runtime coverage.
