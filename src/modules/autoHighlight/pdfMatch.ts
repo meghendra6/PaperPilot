@@ -368,16 +368,76 @@ function buildPageIndex(page: PDFPageText) {
 async function extractPdfTextPagesInCurrentContext(
   filePath: string,
 ): Promise<PDFPageText[]> {
+  const win = (globalThis as { Zotero?: any }).Zotero?.getMainWindow?.();
+  if (win) {
+    // Import inside a chrome Window, which has Gecko's module ScriptLoader.
+    // An installed XPI cannot resolve a development node_modules specifier.
+    const pdfjs = await new win.Function(
+      "specifier",
+      "return import(specifier)",
+    )("resource://zotero/reader/pdf/build/pdf.mjs");
+    return extractPdfTextPagesWithOwnedWorker(filePath, {
+      pdfjs,
+      createWorker: () =>
+        new win.Worker("resource://zotero/reader/pdf/build/pdf.worker.mjs", {
+          type: "module",
+        }),
+      readData: async (path) => new win.Uint8Array(await readBinary(path)),
+    });
+  }
   const pdfjs = await dynamicImportPdfJs();
-  const document = await (
+  const task = (
     pdfjs.getDocument as (params: { data: any; disableWorker: boolean }) => {
       promise: Promise<any>;
+      destroy: () => Promise<void>;
     }
   )({
     data: await readBinary(filePath),
     disableWorker: true,
-  }).promise;
-  return extractPdfTextPagesFromPdfDocument(document);
+  });
+  try {
+    return await extractPdfTextPagesFromPdfDocument(await task.promise);
+  } finally {
+    await task.destroy();
+  }
+}
+
+/** Load fresh file bytes without borrowing the Reader's document or worker. */
+export async function extractPdfTextPagesWithOwnedWorker(
+  filePath: string,
+  runtime: {
+    pdfjs: {
+      PDFWorker: new (options: { port: any }) => { destroy(): void };
+      getDocument(options: { data: Uint8Array<ArrayBuffer>; worker: any }): {
+        promise: Promise<
+          Parameters<typeof extractPdfTextPagesFromPdfDocument>[0]
+        >;
+        destroy(): Promise<void>;
+      };
+    };
+    createWorker(): { terminate(): void };
+    readData(path: string): Promise<Uint8Array<ArrayBuffer>>;
+  },
+) {
+  const data = await runtime.readData(filePath);
+  const port = runtime.createWorker();
+  let worker: InstanceType<typeof runtime.pdfjs.PDFWorker> | undefined;
+  let task: ReturnType<typeof runtime.pdfjs.getDocument> | undefined;
+  try {
+    worker = new runtime.pdfjs.PDFWorker({ port });
+    task = runtime.pdfjs.getDocument({ data, worker });
+    return await extractPdfTextPagesFromPdfDocument(await task.promise);
+  } finally {
+    try {
+      await task?.destroy();
+    } finally {
+      try {
+        worker?.destroy();
+      } finally {
+        port.terminate();
+      }
+    }
+  }
 }
 
 async function extractPdfTextPagesViaSubprocess(

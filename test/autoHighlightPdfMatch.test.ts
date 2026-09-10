@@ -8,6 +8,7 @@ import {
   extractPdfTextPagesFromPdfDocument,
   extractPdfTextPagesFromReader,
   extractPdfTextPagesWithFallback,
+  extractPdfTextPagesWithOwnedWorker,
   matchQuoteInPages,
   mergeRectsOnSameLine,
   parsePdfExtractionSubprocessOutput,
@@ -18,6 +19,88 @@ import {
 
 test("normalizeQuoteText removes punctuation and whitespace", () => {
   assert.equal(normalizeQuoteText(' Z"otero — tool! '), "zoterotool");
+});
+
+test("native PDF extraction reads the exact file and owns cleanup across failure boundaries", async () => {
+  for (const failure of [
+    "none",
+    "worker",
+    "getDocument",
+    "load",
+    "text",
+    "cleanup",
+  ]) {
+    const events: string[] = [];
+    const bytes = new Uint8Array([1, 2, 3]);
+    const port = {
+      terminate: () => {
+        events.push("terminate");
+      },
+    };
+    const workers: unknown[] = [];
+    const pending = extractPdfTextPagesWithOwnedWorker("/exact/pdf-B.pdf", {
+      readData: async (path) => {
+        assert.equal(path, "/exact/pdf-B.pdf");
+        return bytes;
+      },
+      createWorker: () => port,
+      pdfjs: {
+        PDFWorker: class {
+          constructor(options: { port: unknown }) {
+            assert.equal(options.port, port);
+            if (failure === "worker") throw new Error(failure);
+            workers.push(this);
+          }
+          destroy() {
+            events.push("worker.destroy");
+          }
+        },
+        getDocument(options) {
+          assert.equal(options.data, bytes);
+          assert.equal(options.worker, workers[0]);
+          if (failure === "getDocument") throw new Error(failure);
+          return {
+            promise:
+              failure === "load"
+                ? Promise.reject(new Error(failure))
+                : Promise.resolve({
+                    numPages: 1,
+                    getPage: async () => ({
+                      getTextContent: async () => {
+                        if (failure === "text") throw new Error(failure);
+                        return {
+                          items: [
+                            {
+                              str: "Exact PDF B text",
+                              transform: [10, 0, 0, 10, 5, 20],
+                              width: 40,
+                              height: 10,
+                            },
+                          ],
+                        };
+                      },
+                    }),
+                  }),
+            async destroy() {
+              events.push("task.destroy");
+              if (failure === "cleanup") throw new Error(failure);
+            },
+          };
+        },
+      },
+    });
+    if (failure === "none")
+      assert.equal((await pending)[0].spans[0].text, "Exact PDF B text");
+    else await assert.rejects(pending, new RegExp(failure));
+    assert.deepEqual(
+      events,
+      failure === "worker"
+        ? ["terminate"]
+        : failure === "getDocument"
+          ? ["worker.destroy", "terminate"]
+          : ["task.destroy", "worker.destroy", "terminate"],
+    );
+  }
 });
 
 test("extractPdfTextPages and matchQuoteInPages resolve a fixture quote", async () => {

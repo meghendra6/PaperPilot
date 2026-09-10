@@ -3502,6 +3502,11 @@ button.pprw-render-evidence-link {
 }
 .pp-chat-search__results .pp-btn {
   display: block;
+  height: auto;
+  max-height: none;
+  block-size: auto;
+  max-block-size: none;
+  appearance: none;
   text-align: start;
   width: 100%;
   white-space: normal;

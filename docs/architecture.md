@@ -91,6 +91,14 @@ unverified unless the response also supplies text that is matched against the
 local PDF. A locator alone never enters the verified claim or contradiction
 sets.
 
+In Zotero, local quote extraction imports the native PDF.js resource through a
+chrome Window and creates a dedicated worker and document from the exact file
+bytes. It does not borrow the open Reader's cached document or shared worker.
+All owned PDF resources are released after extraction, including failures. The
+Node fixture path remains separate. See the
+[runtime repair specification](./chat-runtime-followup-spec.md) for exercised
+versions and the distinction between metadata freshness and byte identity.
+
 Research Workspace durable state remains separate from transient run
 workspaces under `<Zotero profile>/paperpilot-research-workspace/`. The current
 store uses revisioned `catalog-v1.json` and `preferences-v1.json`, shared source

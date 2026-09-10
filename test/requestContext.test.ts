@@ -5,6 +5,7 @@ import {
   readRequestPaperContent,
   assertRequestContextCurrent,
   prepareRunInput,
+  matchesRequestContentFingerprint,
 } from "../src/modules/context/requestContext";
 
 function install() {
@@ -35,6 +36,7 @@ function install() {
     libraryID: 1,
     parentItemID: 1,
     version: 1,
+    getField: () => "",
     isAttachment: () => true,
     attachmentContentType: "application/pdf",
     getFilePathAsync: async () => `/test/${key}.pdf`,
@@ -88,6 +90,55 @@ test("request snapshot binds explicit PDF B and real annotations, never parent P
   } finally {
     env.restore();
   }
+});
+
+test("request freshness admits version-only sync drift but rejects changed or unknown PDF metadata", async () => {
+  const env = install();
+  const runtime = globalThis as any;
+  const oldIO = runtime.IOUtils;
+  const dateModified = "2026-09-05 15:39:03";
+  env.b.getField = () => dateModified;
+  let stat = { size: 574982, lastModified: 1788622743528 };
+  runtime.IOUtils = { exists: async () => true, stat: async () => stat };
+  try {
+    const context = await captureRequestContext({
+      itemID: 1,
+      attachmentID: 22,
+    });
+    const original = JSON.stringify(context);
+    env.b.version += 5;
+    await assertRequestContextCurrent(context);
+    assert.equal(JSON.stringify(context), original);
+    stat = { ...stat, size: stat.size + 1 };
+    await assert.rejects(() => assertRequestContextCurrent(context), /changed/);
+    stat = { size: 574982, lastModified: 1788622743529 };
+    await assert.rejects(() => assertRequestContextCurrent(context), /changed/);
+  } finally {
+    runtime.IOUtils = oldIO;
+    env.restore();
+  }
+  const saved = `577:574982:1788622743528:${dateModified}`;
+  assert(
+    matchesRequestContentFingerprint(
+      `582:574982:1788622743528:${dateModified}`,
+      saved,
+    ),
+  );
+  for (const changed of [
+    "582:574982:1788622743528:2026-09-06 15:39:03",
+    `582:unknown:1788622743528:${dateModified}`,
+    `582:574982:unknown:${dateModified}`,
+    "582:574982:1788622743528:unknown",
+    "582:574982:1788622743528:",
+    `unknown:574982:1788622743528:${dateModified}`,
+    `999999999999999999999999:574982:1788622743528:${dateModified}`,
+    `582:574982:1788622743528:${dateModified}:extra`,
+  ])
+    assert.equal(
+      matchesRequestContentFingerprint(changed, saved),
+      false,
+      changed,
+    );
 });
 
 test("ambiguous parent, wrong paper and unavailable annotations fail before model input", async () => {

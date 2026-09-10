@@ -246,11 +246,36 @@ async function resolveSnapshotItems(snapshot: RequestContextSnapshot) {
     attachment,
     await availableAttachmentPath(attachment),
   );
-  if (fingerprint.value !== snapshot.contentFingerprint)
+  if (
+    !matchesRequestContentFingerprint(
+      fingerprint.value,
+      snapshot.contentFingerprint,
+    )
+  )
     throw new Error(
       "The PDF changed since this question was prepared. Capture its context again.",
     );
   return { item, attachment };
+}
+
+/** v1 attachment versions can change on sync without changing PDF metadata. */
+export function matchesRequestContentFingerprint(
+  current: string,
+  saved: string,
+) {
+  if (current === saved) return true;
+  const parse = (value: string) =>
+    /^(\d+):(\d+):(\d+):(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})$/.exec(value);
+  const a = parse(current);
+  const b = parse(saved);
+  if (!a || !b) return false;
+  if (
+    ![a[1], a[2], a[3], b[1], b[2], b[3]].every((value) =>
+      Number.isSafeInteger(Number(value)),
+    )
+  )
+    return false;
+  return a[2] === b[2] && a[3] === b[3] && a[4] === b[4];
 }
 
 export async function assertRequestContextCurrent(
