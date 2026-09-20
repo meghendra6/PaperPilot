@@ -9,7 +9,10 @@ import {
   type AdmittedEvidenceSource,
   type EvidenceReferenceV2,
 } from "../src/modules/researchWorkspace/evidenceVerification";
-import { openVerifiedResearchWorkspaceEvidence } from "../src/modules/researchWorkspace/evidenceNavigation";
+import {
+  openVerifiedResearchWorkspaceEvidence,
+  type EvidenceNavigationLocation,
+} from "../src/modules/researchWorkspace/evidenceNavigation";
 import { ResearchWorkspaceService } from "../src/modules/researchWorkspace/service";
 import { toPdfNavigationTarget } from "../src/modules/researchWorkspace/core/evidence/types";
 
@@ -303,13 +306,15 @@ test("Research Workspace verifies claim evidence before persistence", async () =
 
 test("verified evidence navigation resolves one exact library and never scans", async () => {
   const calls: Array<[number, string]> = [];
-  const opens: Array<[number, { pageIndex?: number }]> = [];
+  const opens: Array<[number, EvidenceNavigationLocation]> = [];
   const reference: EvidenceReferenceV2 = {
     schemaVersion: 2,
     sourceID: "zotero:7:ITEM:ATTACH",
     libraryID: 7,
     attachmentKey: "ATTACH",
-    pageIndex: 3,
+    pageIndex: 0,
+    exactQuote: "The exact local evidence sentence.",
+    boundingBoxes: [{ pageIndex: 0, rect: [0, 0, 1, 1] }],
     verification: {
       status: "verified",
       method: "pdf-exact-quote",
@@ -320,15 +325,99 @@ test("verified evidence navigation resolves one exact library and never scans", 
   await openVerifiedResearchWorkspaceEvidence(reference, {
     getByLibraryAndKey: (libraryID, attachmentKey) => {
       calls.push([libraryID, attachmentKey]);
-      return { id: 12, libraryID: 7, key: "ATTACH" };
+      return {
+        id: 12,
+        libraryID: 7,
+        key: "ATTACH",
+        getFilePathAsync: async () => "/tmp/current-paper.pdf",
+      };
     },
+    extractPages: localDependencies().extractPages,
     openReader: async (attachmentID, options) => {
       opens.push([attachmentID, options]);
     },
   });
 
   assert.deepEqual(calls, [[7, "ATTACH"]]);
-  assert.deepEqual(opens, [[12, { pageIndex: 3 }]]);
+  assert.deepEqual(opens, [
+    [
+      12,
+      {
+        pageIndex: 0,
+        position: { pageIndex: 0, rects: [[10, 20, 200, 40]] },
+      },
+    ],
+  ]);
+});
+
+test("historical evidence cannot navigate after its exact local quote disappears", async () => {
+  const reference: EvidenceReferenceV2 = {
+    schemaVersion: 2,
+    sourceID: source.sourceID,
+    libraryID: source.libraryID,
+    attachmentKey: source.attachmentKey,
+    pageIndex: 0,
+    exactQuote: "The previously verified sentence is no longer in the PDF.",
+    boundingBoxes: [{ pageIndex: 0, rect: [10, 20, 200, 40] }],
+    verification: {
+      status: "verified",
+      method: "pdf-exact-quote",
+    },
+  };
+  let opened = false;
+  const dependencies = {
+    getByLibraryAndKey: () => ({
+      id: source.attachmentID,
+      libraryID: source.libraryID,
+      key: source.attachmentKey,
+      getFilePathAsync: async () => "/tmp/replaced-paper.pdf",
+    }),
+    extractPages: localDependencies().extractPages,
+    openReader: () => {
+      opened = true;
+    },
+  };
+  await assert.rejects(
+    openVerifiedResearchWorkspaceEvidence(reference, dependencies),
+    /quote cannot be verified in the current PDF/,
+  );
+  await assert.rejects(
+    openVerifiedResearchWorkspaceEvidence(
+      { ...reference, exactQuote: "The exact local evidence sentence." },
+      {
+        ...dependencies,
+        extractPages: async () => {
+          throw new Error("The local PDF is missing.");
+        },
+      },
+    ),
+    /quote cannot be verified in the current PDF/,
+  );
+  assert.equal(opened, false);
+});
+
+test("verified status without an exact quote cannot navigate to a guessed page", async () => {
+  await assert.rejects(
+    openVerifiedResearchWorkspaceEvidence(
+      {
+        schemaVersion: 2,
+        sourceID: source.sourceID,
+        libraryID: source.libraryID,
+        attachmentKey: source.attachmentKey,
+        pageIndex: 0,
+        verification: { status: "verified", method: "metadata-only" },
+      },
+      {
+        getByLibraryAndKey: () => ({
+          id: source.attachmentID,
+          libraryID: source.libraryID,
+          key: source.attachmentKey,
+        }),
+        openReader: () => assert.fail("must not open a guessed page"),
+      },
+    ),
+    /quote cannot be verified in the current PDF/,
+  );
 });
 
 test("Research Workspace view exposes no cross-library evidence scan", () => {

@@ -162,6 +162,313 @@ function createService(prefs: Record<string, unknown>) {
   return { globals, fileOps, repository, service };
 }
 
+function deferNextSnapshotRead(repository: SessionHistoryRepository) {
+  const read = repository.readSessionSnapshot.bind(repository);
+  let release!: () => void;
+  let notifyEntered!: () => void;
+  const entered = new Promise<void>((resolve) => {
+    notifyEntered = resolve;
+  });
+  const blocked = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let shouldBlock = true;
+  repository.readSessionSnapshot = async (...args) => {
+    if (shouldBlock) {
+      shouldBlock = false;
+      notifyEntered();
+      await blocked;
+    }
+    return read(...args);
+  };
+  return { entered, release, read };
+}
+
+test("a delayed pin save cannot overwrite a completed assistant turn", async () => {
+  const { service, globals, repository } = createService({
+    privacySavePromptsOnly: false,
+  });
+  const itemID = 8901;
+  let gate: ReturnType<typeof deferNextSnapshotRead> | undefined;
+  let sessionID: string | undefined;
+  try {
+    const session = await service.persistUserMessage({
+      itemID,
+      mode: "codex_cli",
+      paperTitle: "Paper",
+      text: "Question",
+    });
+    sessionID = session.sessionId;
+    const question = messageStore.listRaw(sessionID)[0];
+    const attempt = question.attempts?.at(-1);
+    assert.ok(attempt);
+    gate = deferNextSnapshotRead(repository);
+    const pinned = service.togglePin({
+      itemID,
+      messageId: question.id,
+      paperTitle: "Paper",
+    });
+    await gate.entered;
+    const completed = service.persistAssistantTurn({
+      itemID,
+      sessionId: sessionID,
+      mode: "codex_cli",
+      paperTitle: "Paper",
+      assistantText: "Final answer",
+      success: true,
+      turnId: question.turnId,
+      attemptId: attempt.id,
+    });
+    gate.release();
+    await Promise.all([pinned, completed]);
+    const saved = await gate.read(itemID, sessionID);
+    assert.deepEqual(
+      saved?.messages?.map((message) => message.text),
+      ["Question", "Final answer"],
+    );
+    assert.equal(saved?.pins?.[0].messageId, question.id);
+    assert.equal(saved?.messages?.[0].attempts?.[0].state, "completed");
+  } finally {
+    gate?.release();
+    if (sessionID) messageStore.clear(sessionID);
+    sessionStore.reset(itemID);
+    globals.restore();
+  }
+});
+
+test("rename and later persistence keep their order behind an in-flight save", async () => {
+  const { service, globals, repository } = createService({
+    privacySavePromptsOnly: false,
+  });
+  const itemID = 8902;
+  let gate: ReturnType<typeof deferNextSnapshotRead> | undefined;
+  let sessionID: string | undefined;
+  try {
+    const session = await service.persistUserMessage({
+      itemID,
+      mode: "codex_cli",
+      paperTitle: "Paper",
+      text: "Question",
+    });
+    sessionID = session.sessionId;
+    gate = deferNextSnapshotRead(repository);
+    const earlierSave = service.persistActiveSession({
+      itemID,
+      paperTitle: "Paper",
+    });
+    await gate.entered;
+    const renamed = service.renameSavedSession({
+      itemID,
+      sessionId: sessionID,
+      title: "My chosen title",
+    });
+    const laterSave = service.persistActiveSession({
+      itemID,
+      paperTitle: "Paper",
+    });
+    gate.release();
+    await Promise.all([earlierSave, renamed, laterSave]);
+    assert.equal(
+      (await gate.read(itemID, sessionID))?.title,
+      "My chosen title",
+    );
+    assert.equal(sessionStore.get(itemID)?.threadTitle, "My chosen title");
+  } finally {
+    gate?.release();
+    if (sessionID) messageStore.clear(sessionID);
+    sessionStore.reset(itemID);
+    globals.restore();
+  }
+});
+
+for (const deleteAll of [false, true])
+  test(`queued ${deleteAll ? "delete all" : "delete session"} cannot be undone by an older save`, async () => {
+    const { service, globals, repository } = createService({
+      privacySavePromptsOnly: false,
+    });
+    const itemID = deleteAll ? 8904 : 8903;
+    let gate: ReturnType<typeof deferNextSnapshotRead> | undefined;
+    let sessionID: string | undefined;
+    try {
+      const session = await service.persistUserMessage({
+        itemID,
+        mode: "codex_cli",
+        paperTitle: "Paper",
+        text: "Question",
+      });
+      sessionID = session.sessionId;
+      gate = deferNextSnapshotRead(repository);
+      const save = service.persistActiveSession({
+        itemID,
+        paperTitle: "Paper",
+      });
+      await gate.entered;
+      const deleted = deleteAll
+        ? service.deleteAllSavedSessions({ itemID })
+        : service.deleteSavedSession({ itemID, sessionId: sessionID });
+      const afterDelete = service.persistActiveSession({
+        itemID,
+        paperTitle: "Paper",
+      });
+      gate.release();
+      await Promise.all([save, deleted]);
+      assert.equal(await afterDelete, undefined);
+      assert.equal(await gate.read(itemID, sessionID), undefined);
+      assert.deepEqual(await service.listSavedSessions({ itemID }), []);
+      assert.equal(sessionStore.get(itemID), undefined);
+    } finally {
+      gate?.release();
+      if (sessionID) messageStore.clear(sessionID);
+      sessionStore.reset(itemID);
+      globals.restore();
+    }
+  });
+
+test("a rejected persistence operation does not poison the next save", async () => {
+  const { service, globals, repository, fileOps } = createService({
+    privacySavePromptsOnly: false,
+  });
+  const itemID = 8905;
+  let sessionID: string | undefined;
+  try {
+    const session = await service.persistUserMessage({
+      itemID,
+      mode: "codex_cli",
+      paperTitle: "Paper",
+      text: "Question",
+    });
+    sessionID = session.sessionId;
+    const write = fileOps.writeTextAtomic.bind(fileOps);
+    let failOnce = true;
+    fileOps.writeTextAtomic = async (path, contents) => {
+      if (failOnce) {
+        failOnce = false;
+        throw new Error("Transient write failure");
+      }
+      return write(path, contents);
+    };
+    const failed = service.persistActiveSession({
+      itemID,
+      paperTitle: "Paper",
+    });
+    const recovered = service.renameSavedSession({
+      itemID,
+      sessionId: sessionID,
+      title: "Recovered title",
+    });
+    await assert.rejects(failed, /Transient write failure/);
+    await recovered;
+    assert.equal(
+      (await repository.readSessionSnapshot(itemID, sessionID))?.title,
+      "Recovered title",
+    );
+  } finally {
+    if (sessionID) messageStore.clear(sessionID);
+    sessionStore.reset(itemID);
+    globals.restore();
+  }
+});
+
+test("opening a saved conversation waits for the previous session save", async () => {
+  const { service, globals, repository } = createService({
+    privacySavePromptsOnly: false,
+  });
+  const itemID = 8908;
+  const sessionIDs: string[] = [];
+  let gate: ReturnType<typeof deferNextSnapshotRead> | undefined;
+  try {
+    const saved = await service.persistUserMessage({
+      itemID,
+      mode: "codex_cli",
+      paperTitle: "Paper",
+      text: "Saved question",
+    });
+    sessionIDs.push(saved.sessionId);
+    const current = await service.startNewSessionDraft({
+      itemID,
+      mode: "codex_cli",
+      paperTitle: "Paper",
+    });
+    sessionIDs.push(current.sessionId);
+    await service.persistUserMessage({
+      itemID,
+      mode: "codex_cli",
+      paperTitle: "Paper",
+      text: "Current question",
+    });
+    gate = deferNextSnapshotRead(repository);
+    const saving = service.persistActiveSession({
+      itemID,
+      paperTitle: "Paper",
+    });
+    await gate.entered;
+    const opening = service.openSavedSession({
+      itemID,
+      sessionId: saved.sessionId,
+    });
+    gate.release();
+    await Promise.all([saving, opening]);
+    assert.equal(sessionStore.get(itemID)?.sessionId, saved.sessionId);
+    assert.equal(
+      (await gate.read(itemID, current.sessionId))?.messages?.[0].text,
+      "Current question",
+    );
+  } finally {
+    gate?.release();
+    for (const sessionID of sessionIDs) messageStore.clear(sessionID);
+    sessionStore.reset(itemID);
+    globals.restore();
+  }
+});
+
+test(
+  "a slow save for one paper does not block another paper",
+  { timeout: 2000 },
+  async () => {
+    const { service, globals, repository } = createService({
+      privacySavePromptsOnly: false,
+    });
+    const itemID = 8906;
+    const otherItemID = 8907;
+    const sessionIDs: string[] = [];
+    let gate: ReturnType<typeof deferNextSnapshotRead> | undefined;
+    try {
+      const session = await service.persistUserMessage({
+        itemID,
+        mode: "codex_cli",
+        paperTitle: "Paper A",
+        text: "Question A",
+      });
+      sessionIDs.push(session.sessionId);
+      gate = deferNextSnapshotRead(repository);
+      const slowSave = service.persistActiveSession({
+        itemID,
+        paperTitle: "Paper A",
+      });
+      await gate.entered;
+      const other = await service.persistUserMessage({
+        itemID: otherItemID,
+        mode: "codex_cli",
+        paperTitle: "Paper B",
+        text: "Question B",
+      });
+      sessionIDs.push(other.sessionId);
+      assert.equal(
+        (await gate.read(otherItemID, other.sessionId))?.messages?.[0].text,
+        "Question B",
+      );
+      gate.release();
+      await slowSave;
+    } finally {
+      gate?.release();
+      for (const sessionID of sessionIDs) messageStore.clear(sessionID);
+      sessionStore.reset(itemID);
+      sessionStore.reset(otherItemID);
+      globals.restore();
+    }
+  },
+);
+
 test("logical request Retry groups attempts and ignores delayed terminal callbacks", async () => {
   const { service, globals } = createService({ privacySavePromptsOnly: false });
   const itemID = 8101;

@@ -85,6 +85,8 @@ From PDF selections or annotations, the plugin can seed AI workflows such as:
 - **Summarize**
 - **Translate**
 
+Select a word or short phrase in a PDF and click **Naver Dictionary**. A separate, modeless Zotero dictionary window shows the matching headword, pronunciation symbols, up to three meanings, and the dictionary source. Inflected words can show their dictionary headword. Keep reading the PDF while the window is open; another lookup updates the same window. Close with **Esc** or **Close dictionary**. **More on Naver** opens the source only when clicked. This online lookup sends only the selected query, starts no AI run, and does not save results to Paper Pilot history. The button accepts up to 80 characters and 8 words. It uses Naver's internal search response, which may change; failures and missing matches are shown in place with a retry option for failures.
+
 ### 3. Paper workbench tools
 
 The reader pane includes structured paper workflows for the active paper:

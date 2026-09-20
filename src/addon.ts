@@ -137,6 +137,7 @@ class Addon {
       import("./modules/criticalRead/types").CriticalReadState
     >;
     dialog?: DialogHelper;
+    dictionaryWindow?: import("./modules/ui/dictionaryPopup").DictionaryWindowState;
     researchWorkspaceWindowState?: import("./modules/researchWorkspace/window").ResearchWorkspaceWindowState;
     researchWorkspaceOpening?: Promise<void>;
   };

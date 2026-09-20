@@ -21,6 +21,7 @@ import {
   getWorkspaceEngineLabel,
   getWorkspaceEngineActiveMessage,
   readWorkspaceRunProgress,
+  releaseReservationAfterConfirmedCleanup,
   releaseWorkspaceRunReservation,
   startWorkspaceTextRun,
 } from "../ai/workspaceRun";
@@ -54,6 +55,7 @@ async function waitForWorkspaceText(params: {
   modeItemID: number;
   reservationToken: symbol;
   onTerminationFailure: () => void;
+  onDeferredCleanup: (cleanup: Promise<void>) => void;
   title: string;
   question: string;
   onStatus?: (status: string) => void;
@@ -72,7 +74,16 @@ async function waitForWorkspaceText(params: {
     question: params.question,
     profile: "analysis",
     outputSchema: AUTO_HIGHLIGHT_OUTPUT_SCHEMA,
+    signal: params.signal,
+    deadline: params.deadline,
+    onDeferredCleanup: params.onDeferredCleanup,
   }).catch(() => {
+    if (params.signal?.aborted) {
+      throw new Error("Automatic highlighting cancelled.");
+    }
+    if (Date.now() >= params.deadline) {
+      throw new Error("Automatic highlighting timed out.");
+    }
     throw new Error(`${engineLabel} highlight run could not start.`);
   });
 
@@ -143,28 +154,41 @@ async function waitForWorkspaceText(params: {
 }
 
 async function resolveOpenPDFAttachment(itemID: number) {
+  const selected = await Zotero.Items.getAsync(itemID);
+  if (!selected) {
+    throw new Error("The requested paper is unavailable.");
+  }
   const reader = await getActiveReader();
-  const readerAttachmentID = reader?.itemID;
-  const selected = await Zotero.Items.getAsync(readerAttachmentID || itemID);
-
   if (selected?.isPDFAttachment?.()) {
-    return { attachment: selected as Zotero.Item, reader };
+    return {
+      attachment: selected as Zotero.Item,
+      reader: reader?.itemID === selected.id ? reader : undefined,
+    };
   }
 
   const item = selected as Zotero.Item;
-  const attachmentID = item?.isAttachment?.()
-    ? item.id
-    : item?.getAttachments?.().find((candidateID) => {
-        const attachment = Zotero.Items.get(candidateID);
-        return attachment?.isPDFAttachment?.();
-      });
-
-  const attachment = attachmentID ? Zotero.Items.get(attachmentID) : undefined;
-  if (!attachment?.isPDFAttachment?.()) {
+  if (item.isAttachment?.()) {
     throw new Error("Open reader item is not a PDF attachment.");
   }
+  const attachments = (item.getAttachments?.() ?? [])
+    .map((id) => Zotero.Items.get(id))
+    .filter(
+      (attachment) =>
+        attachment?.isPDFAttachment?.() &&
+        attachment.parentItemID === item.id &&
+        attachment.libraryID === item.libraryID,
+    );
+  const attachment =
+    attachments.find((candidate) => candidate.id === reader?.itemID) ??
+    attachments[0];
+  if (!attachment) {
+    throw new Error("The requested paper has no PDF attachment.");
+  }
 
-  return { attachment, reader };
+  return {
+    attachment,
+    reader: reader?.itemID === attachment.id ? reader : undefined,
+  };
 }
 
 export async function runAutoHighlightWorkflow(params: {
@@ -190,6 +214,17 @@ export async function runAutoHighlightWorkflow(params: {
   const retainReservationAfterStopFailure = () => {
     releaseReservation = false;
   };
+  const onDeferredCleanup = (cleanup: Promise<void>) => {
+    releaseReservation = false;
+    releaseReservationAfterConfirmedCleanup(
+      cleanup,
+      () => releaseWorkspaceRunReservation(params.itemID, reservationToken),
+      () =>
+        params.onStatus?.(
+          "Automatic highlighting could not be stopped. The paper remains reserved until Zotero restarts.",
+        ),
+    );
+  };
   try {
     const { attachment, reader } = await resolveOpenPDFAttachment(
       params.itemID,
@@ -200,6 +235,7 @@ export async function runAutoHighlightWorkflow(params: {
       modeItemID: params.itemID,
       reservationToken,
       onTerminationFailure: retainReservationAfterStopFailure,
+      onDeferredCleanup,
       title: params.itemTitle,
       question: buildAutoHighlightQuestion(DEFAULT_AUTO_HIGHLIGHT_LIMIT),
       onStatus: params.onStatus,
@@ -217,6 +253,7 @@ export async function runAutoHighlightWorkflow(params: {
           modeItemID: params.itemID,
           reservationToken,
           onTerminationFailure: retainReservationAfterStopFailure,
+          onDeferredCleanup,
           signal: params.signal,
           deadline,
         }),

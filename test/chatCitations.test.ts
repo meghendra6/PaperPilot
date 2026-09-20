@@ -92,8 +92,15 @@ test("citation activation rechecks current source and opens only its exact libra
     deps,
   );
   const opened: number[] = [];
+  let extractionCount = 0;
+  const extractPages = deps.extractPages;
+  assert.ok(extractPages);
   await openChatCitation(citation, snapshot, {
     ...deps,
+    extractPages: async (path) => {
+      extractionCount += 1;
+      return extractPages(path);
+    },
     navigation: {
       getByLibraryAndKey: (libraryID, key) => {
         assert.equal(libraryID, 1);
@@ -103,10 +110,15 @@ test("citation activation rechecks current source and opens only its exact libra
       openReader: (id, options) => {
         opened.push(id);
         assert.equal(options.pageIndex, 0);
+        assert.deepEqual(options.position, {
+          pageIndex: 0,
+          rects: [[0, 0, 40, 12]],
+        });
       },
     },
   });
   assert.deepEqual(opened, [2]);
+  assert.equal(extractionCount, 1);
   await assert.rejects(
     openChatCitation(citation, snapshot, {
       ...deps,

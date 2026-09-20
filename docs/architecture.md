@@ -53,6 +53,39 @@ record when needed. The full transcript remains available to session
 persistence and engine resume logic; only expensive rendered Markdown nodes are
 detached.
 
+`ui/paneAutoSize.ts` derives the default pane height from its actual top position
+and remaining viewport space. Resize observers track preceding sections; sidebar
+scrolling does not continually resize content. An explicit manual height takes
+precedence until reset. `ui/chatSearchReturn.ts` retains a temporary in-memory
+return snapshot when visiting saved search results, including draft-only sessions
+that are intentionally absent from disk history.
+
+## Selection dictionary lookup
+
+`dictionaryLookup.ts` bounds the selected query and parses Naver's internal
+English–Korean search response into one matching headword, pronunciation symbols,
+up to three senses, and source attribution. Exact headwords take priority;
+provider-marked inflections can resolve to their headword, while loosely related
+results are omitted. Unknown response shapes and mismatched queries fail visibly.
+Provider markup is converted to text and rendered with DOM text nodes only.
+
+`dictionaryRequest.ts` makes an anonymous, fixed-host request from the add-on
+context, outside the reader's network-blocked document. Requests have a ten-second
+timeout, a one-megabyte body limit, no automatic retries or redirects, and a
+canceller. Only the selected query is supplied; no paper context or session data
+is added. Naver's internal response is not a versioned public API and may change.
+
+`ui/dictionaryPopup.ts` owns a separate, modeless Zotero dictionary window using
+`DialogHelper`, independent of the reader's selection-popup layout and lifecycle.
+Only its launch button is appended to the selection menu. The result document
+uses explicitly namespaced HTML elements and renders parsed text, never a remote
+page or iframe. Loading, no-match, error/retry and source attribution appear in
+the same window. `addon.data.dictionaryWindow` owns this singleton; subsequent
+lookups cancel the previous request and use a generation guard to reject stale
+responses. Window close and add-on shutdown release requests and listeners.
+No query is made on selection alone and no lookup is added to AI/chat state or
+Paper Pilot persistence. Source links open externally only on explicit clicks.
+
 ## Integrated Research Workspace boundary
 
 `src/modules/researchWorkspace/` owns the paper- and project-level research
@@ -516,6 +549,13 @@ Two layers, easy to confuse:
   (`SESSION_HISTORY_STORAGE_VERSION`), per-paper session index plus snapshots.
   `sessionHistoryService.ts` is the API the controllers call;
   `sessionSnapshot.ts` captures and reapplies pane state when a session reopens.
+
+The service serializes asynchronous mutations per item, including snapshot
+capture, persistence, pin/summary changes, rename/delete and session replacement.
+Nested operations use private methods within the same queue admission. A failed
+operation rejects its caller without blocking later work, and different papers
+remain independent. This prevents an older save from overwriting a completed
+answer or recreating deleted history.
 
 The message store and on-disk snapshot remain authoritative even when the chat
 view suspends older entries. Windowing is presentation-only: it must not trim

@@ -8,6 +8,10 @@ import { getModeForItem } from "./ai/modeStore";
 import { clearReaderActionDraft, setReaderActionDraft } from "./readerPane";
 import { sessionStore } from "./session/sessionStore";
 import { ensureSelectionPopupStyles } from "./ui/selectionPopup";
+import {
+  buildDictionaryButton,
+  closeDictionaryPopups,
+} from "./ui/dictionaryPopup";
 import { getActiveReaderRunMode } from "./ai/runPresentation";
 import {
   getPendingEngineCompletion,
@@ -201,6 +205,11 @@ const renderTextSelectionPopup = (event: TextSelectionPopupEvent) => {
   wrapper.className = "pp-selection-actions";
   wrapper.setAttribute("role", "group");
   wrapper.setAttribute("aria-label", "Paper Pilot");
+  const dictionary = buildDictionaryButton(
+    event.doc,
+    event.params.annotation?.text,
+  );
+  if (dictionary) wrapper.append(dictionary);
   for (const item of SELECTION_ACTIONS) {
     wrapper.append(
       buildSelectionActionButton({
@@ -249,6 +258,7 @@ export function registerReaderActionPlaceholders() {
 }
 
 export function unregisterReaderActionPlaceholders() {
+  closeDictionaryPopups();
   Zotero.Reader.unregisterEventListener(
     "renderTextSelectionPopup",
     renderTextSelectionPopup,

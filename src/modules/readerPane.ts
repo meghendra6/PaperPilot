@@ -34,6 +34,7 @@ import {
 import type { RunProfile } from "./ai/runProfile";
 import { getRunProgressState } from "./ai/runProgress";
 import { renderChatComposer } from "./ui/chatComposer";
+import { captureChatSearchReturn } from "./ui/chatSearchReturn";
 import { getStatusLabel } from "./ai/statusLabels";
 import type { StructuredOutputSchema } from "./ai/structuredOutput";
 import type { EngineMode } from "./ai/types";
@@ -194,6 +195,10 @@ import {
   renderModelRow,
 } from "./ui/paneHeader";
 import { createVerticalResizeHandle } from "./ui/paneResize";
+import {
+  installAutomaticPaneHeight,
+  MIN_READER_PANE_HEIGHT,
+} from "./ui/paneAutoSize";
 import type { PaneSectionID } from "./ui/paneSectionState";
 import { installPopoverDismissal } from "./ui/popoverDismissal";
 import {
@@ -459,11 +464,15 @@ export function registerPaperPilotPaneSection() {
         paneContainer.getBoundingClientRect().height || 720;
       const getSectionBodyMaxHeight = () =>
         Math.max(360, getPaneHeight() - 180);
+      const automaticPaneHeight = installAutomaticPaneHeight({
+        target: paneContainer,
+        hasManualHeight: () => paneLayout.paneHeight !== undefined,
+      });
       const paneResize = createVerticalResizeHandle({
         doc: body.ownerDocument,
         target: paneContainer,
         label: "Resize Paper Pilot pane",
-        minHeight: 560,
+        minHeight: MIN_READER_PANE_HEIGHT,
         getMaxHeight: () =>
           Math.max(
             1200,
@@ -472,6 +481,7 @@ export function registerPaperPilotPaneSection() {
         initialHeight: paneLayout.paneHeight,
         onHeightChange: (height) => {
           paneLayout.paneHeight = height;
+          if (height === undefined) automaticPaneHeight.refresh();
         },
       });
       paneResize.root.id = "paper-pilot-pane-resize";
@@ -569,6 +579,7 @@ export function registerPaperPilotPaneSection() {
         () => sessionsSection.dispose(),
         () => workspaceResize.dispose(),
         () => paneResize.dispose(),
+        () => automaticPaneHeight.dispose(),
       ];
       let disposed = false;
       const isCurrentRender = () => !disposed;
@@ -1773,12 +1784,9 @@ export function registerPaperPilotPaneSection() {
           | {
               sessionId: string;
               position: ReturnType<typeof captureChatPosition>;
+              restore?: () => void;
             }
           | undefined;
-        const showActionError = (error: unknown) =>
-          chatTools.setStatus(
-            error instanceof Error ? error.message : String(error),
-          );
         const chatTools = createChatTools({
           doc: body.ownerDocument,
           input,
@@ -1818,23 +1826,39 @@ export function registerPaperPilotPaneSection() {
                 "Wait for the current response before opening a search result.",
               );
             if (result.sessionId !== sessionStore.get(item.id)?.sessionId) {
-              await runSessionRuntimeTransition(async () => {
+              const changed = await runSessionRuntimeTransition(async () => {
                 await sessionHistoryService.persistActiveSession({
                   itemID: item.id,
                   paperTitle: String(item.getField("title") || ""),
                 });
-                const opened = await sessionHistoryService.openSavedSession({
-                  itemID: item.id,
-                  sessionId: result.sessionId,
-                });
-                if (!opened)
-                  throw new Error("This conversation is no longer saved.");
+                const current = sessionStore.get(item.id);
+                if (current && current.sessionId === searchOrigin?.sessionId) {
+                  searchOrigin.restore = captureChatSearchReturn(
+                    current,
+                    addon.data,
+                  );
+                }
+                if (
+                  result.sessionId === searchOrigin?.sessionId &&
+                  searchOrigin.restore
+                ) {
+                  searchOrigin.restore();
+                } else {
+                  const opened = await sessionHistoryService.openSavedSession({
+                    itemID: item.id,
+                    sessionId: result.sessionId,
+                  });
+                  if (!opened)
+                    throw new Error("This conversation is no longer saved.");
+                }
               });
+              if (!changed)
+                throw new Error("Wait for the conversation change to finish.");
               await rerenderPane();
             }
             jumpToChatMessage(chatMessages, result.messageId);
           },
-          onSearchClose: () => {
+          onSearchClose: async () => {
             const origin = searchOrigin;
             if (!origin) return true;
             if (
@@ -1846,29 +1870,34 @@ export function registerPaperPilotPaneSection() {
               );
               return false;
             }
-            searchOrigin = undefined;
-            void (async () => {
-              if (origin.sessionId !== sessionStore.get(item.id)?.sessionId) {
-                if (isReaderChatBusy(item.id)) return;
-                await runSessionRuntimeTransition(async () => {
-                  await sessionHistoryService.persistActiveSession({
-                    itemID: item.id,
-                    paperTitle: String(item.getField("title") || ""),
-                  });
-                  await sessionHistoryService.openSavedSession({
+            if (origin.sessionId !== sessionStore.get(item.id)?.sessionId) {
+              const changed = await runSessionRuntimeTransition(async () => {
+                await sessionHistoryService.persistActiveSession({
+                  itemID: item.id,
+                  paperTitle: String(item.getField("title") || ""),
+                });
+                if (origin.restore) origin.restore();
+                else {
+                  const opened = await sessionHistoryService.openSavedSession({
                     itemID: item.id,
                     sessionId: origin.sessionId,
                   });
-                });
-                await rerenderPane();
-              }
-              if (origin.position)
-                jumpToChatMessage(
-                  chatMessages,
-                  origin.position.key,
-                  origin.position.offset,
-                );
-            })().catch(showActionError);
+                  if (!opened)
+                    throw new Error(
+                      "The original conversation is no longer available.",
+                    );
+                }
+              });
+              if (!changed) return false;
+              await rerenderPane();
+            }
+            if (origin.position)
+              jumpToChatMessage(
+                chatMessages,
+                origin.position.key,
+                origin.position.offset,
+              );
+            searchOrigin = undefined;
             return true;
           },
           onSummary: async () => {
