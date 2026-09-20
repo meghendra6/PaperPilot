@@ -19,7 +19,7 @@ export function createChatTools(params: {
     scope: "current" | "saved",
   ): Promise<ChatSearchResult[]>;
   onResult(result: ChatSearchResult): Promise<void>;
-  onSearchClose(): boolean | void;
+  onSearchClose(): boolean | void | Promise<boolean | void>;
   onSummary(): Promise<void>;
 }) {
   const doc = params.doc;
@@ -40,6 +40,10 @@ export function createChatTools(params: {
   commands.className = "pp-chat-commands";
   commands.setAttribute("role", "group");
   commands.setAttribute("aria-label", "Paper actions");
+  const setCommandsOpen = (open: boolean) => {
+    commands.hidden = !open;
+    actionButton.setAttribute("aria-expanded", String(open));
+  };
   for (const action of [
     "explain",
     "summarize",
@@ -48,13 +52,12 @@ export function createChatTools(params: {
   ] as const)
     commands.append(
       button(action[0].toUpperCase() + action.slice(1), () => {
-        commands.hidden = true;
+        setCommandsOpen(false);
         params.onAction(action);
       }),
     );
   const actionButton = button("/ Actions", () => {
-    commands.hidden = !commands.hidden;
-    actionButton.setAttribute("aria-expanded", String(!commands.hidden));
+    setCommandsOpen(commands.hidden);
     if (!commands.hidden) commands.querySelector("button")?.focus();
   });
   actionButton.setAttribute("aria-expanded", "false");
@@ -98,12 +101,22 @@ export function createChatTools(params: {
   results.className = "pp-chat-search__results";
   results.setAttribute("aria-live", "polite");
   let searchRevision = 0;
+  let disposed = false;
+  let closingSearch = false;
+  const ownsSearch = (revision: number) =>
+    !disposed && revision === searchRevision && !search.hidden;
   const runSearch = async () => {
     const revision = ++searchRevision;
-    const found = query.value.trim()
-      ? await params.onSearch(query.value, scope.value as "current" | "saved")
-      : [];
-    if (revision !== searchRevision || search.hidden) return;
+    let found: ChatSearchResult[];
+    try {
+      found = query.value.trim()
+        ? await params.onSearch(query.value, scope.value as "current" | "saved")
+        : [];
+    } catch (error) {
+      if (ownsSearch(revision)) results.textContent = String(error);
+      return;
+    }
+    if (!ownsSearch(revision)) return;
     results.replaceChildren();
     if (!found.length) {
       results.textContent = query.value.trim()
@@ -116,8 +129,9 @@ export function createChatTools(params: {
         button(
           `${result.title} · ${result.role}: ${result.text.slice(0, 160)}`,
           () => {
+            if (closingSearch) return;
             void params.onResult(result).catch((error) => {
-              results.textContent = String(error);
+              if (ownsSearch(revision)) results.textContent = String(error);
             });
           },
         ),
@@ -130,17 +144,35 @@ export function createChatTools(params: {
       );
   };
   const onSearchInput = () => {
-    void runSearch().catch((error) => {
-      results.textContent = String(error);
-    });
+    if (closingSearch) return;
+    void runSearch();
   };
   query.addEventListener("input", onSearchInput);
   scope.addEventListener("change", onSearchInput);
   const closeSearch = () => {
-    if (params.onSearchClose() === false) return;
-    search.hidden = true;
-    searchRevision++;
-    params.input.focus();
+    if (closingSearch) return;
+    closingSearch = true;
+    query.disabled = true;
+    scope.disabled = true;
+    search.setAttribute("aria-busy", "true");
+    const revision = searchRevision;
+    void Promise.resolve()
+      .then(() => params.onSearchClose())
+      .then((closed) => {
+        if (disposed || search.hidden || closed === false) return;
+        search.hidden = true;
+        searchRevision++;
+        params.input.focus();
+      })
+      .catch((error) => {
+        if (ownsSearch(revision)) results.textContent = String(error);
+      })
+      .finally(() => {
+        closingSearch = false;
+        query.disabled = false;
+        scope.disabled = false;
+        search.setAttribute("aria-busy", "false");
+      });
   };
   search.append(
     query,
@@ -150,6 +182,7 @@ export function createChatTools(params: {
   );
   search.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
+      event.preventDefault();
       event.stopPropagation();
       closeSearch();
     }
@@ -182,16 +215,22 @@ export function createChatTools(params: {
   status.setAttribute("role", "status");
   root.append(bar, commands, search, status);
   const onInput = () => {
-    commands.hidden = !/^\/[a-z]*$/i.test(params.input.value);
-    actionButton.setAttribute("aria-expanded", String(!commands.hidden));
+    setCommandsOpen(/^\/[a-z]*$/i.test(params.input.value));
   };
   const onKey = (event: KeyboardEvent) => {
-    if (!commands.hidden && event.key === "ArrowDown") {
+    if (commands.hidden) return;
+    if (event.target === params.input && event.key === "ArrowDown") {
       event.preventDefault();
       commands.querySelector("button")?.focus();
     }
-    if (event.key === "Escape") commands.hidden = true;
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      setCommandsOpen(false);
+      params.input.focus();
+    }
   };
+  root.addEventListener("keydown", onKey);
   params.input.addEventListener("input", onInput);
   params.input.addEventListener("keydown", onKey);
   return {
@@ -203,7 +242,9 @@ export function createChatTools(params: {
       length.value = params.getLength();
     },
     dispose() {
+      disposed = true;
       searchRevision++;
+      root.removeEventListener("keydown", onKey);
       params.input.removeEventListener("input", onInput);
       params.input.removeEventListener("keydown", onKey);
     },

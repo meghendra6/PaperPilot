@@ -145,10 +145,28 @@ function shouldPreserveSessionTitle(
 export class SessionHistoryService {
   private readonly repository: SessionHistoryRepository;
   private readonly now: () => Date;
+  private readonly pendingMutations = new Map<number, Promise<void>>();
 
   constructor(options: SessionHistoryServiceOptions = {}) {
     this.repository = options.repository || sessionHistoryRepository;
     this.now = options.now || (() => new Date());
+  }
+
+  /** Keep capture, disk writes and session replacement in item order. */
+  private serializeMutation<T>(itemID: number, operation: () => Promise<T>) {
+    const previous = this.pendingMutations.get(itemID) ?? Promise.resolve();
+    const result = previous.then(operation);
+    // A failed write must reach its caller without poisoning later recovery.
+    const settled = result.then(
+      () => {},
+      () => {},
+    );
+    this.pendingMutations.set(itemID, settled);
+    void settled.then(() => {
+      if (this.pendingMutations.get(itemID) === settled)
+        this.pendingMutations.delete(itemID);
+    });
+    return result;
   }
 
   ensureDraftSession(params: {
@@ -173,6 +191,14 @@ export class SessionHistoryService {
   }
 
   async persistActiveSession(params: { itemID: number; paperTitle: string }) {
+    return this.serializeMutation(params.itemID, () =>
+      this.persistActiveSessionNow(params),
+    );
+  }
+
+  private async persistActiveSessionNow(
+    params: Parameters<SessionHistoryService["persistActiveSession"]>[0],
+  ) {
     const session = sessionStore.get(params.itemID);
     if (!session) {
       return undefined;
@@ -231,6 +257,14 @@ export class SessionHistoryService {
     executionSettings?: ExecutionSettings;
     responseLength?: ChatResponseLength;
   }) {
+    return this.serializeMutation(params.itemID, () =>
+      this.persistUserMessageNow(params),
+    );
+  }
+
+  private async persistUserMessageNow(
+    params: Parameters<SessionHistoryService["persistUserMessage"]>[0],
+  ) {
     const session = sessionStore.touch(params.itemID, params.mode);
     const existing = params.turnId
       ? messageStore.getTurn(session.sessionId, params.turnId)
@@ -271,7 +305,7 @@ export class SessionHistoryService {
     session.lastTurnId = message.turnId;
     session.lastAttemptId = attempt.id;
 
-    await this.persistActiveSession({
+    await this.persistActiveSessionNow({
       itemID: params.itemID,
       paperTitle: params.paperTitle,
     });
@@ -298,6 +332,14 @@ export class SessionHistoryService {
     attemptState?: "completed" | "failed" | "cancelled" | "interrupted";
     responseLength?: ChatResponseLength;
   }) {
+    return this.serializeMutation(params.itemID, () =>
+      this.persistAssistantTurnNow(params),
+    );
+  }
+
+  private async persistAssistantTurnNow(
+    params: Parameters<SessionHistoryService["persistAssistantTurn"]>[0],
+  ) {
     const createdAt = this.now().toISOString();
     const parsed = params.suppressMessage
       ? undefined
@@ -396,7 +438,7 @@ export class SessionHistoryService {
       turn?.attempts?.find((entry) => entry.id === params.attemptId) ??
       turn?.attempts?.at(-1);
     if (params.attemptId && attempt && isTerminalAttempt(attempt.state))
-      return this.persistActiveSession({
+      return this.persistActiveSessionNow({
         itemID: params.itemID,
         paperTitle: params.paperTitle,
       });
@@ -459,7 +501,7 @@ export class SessionHistoryService {
       );
     }
 
-    return this.persistActiveSession({
+    return this.persistActiveSessionNow({
       itemID: params.itemID,
       paperTitle: params.paperTitle,
     });
@@ -477,6 +519,14 @@ export class SessionHistoryService {
     paperTitle: string;
     turnId?: string;
   }) {
+    return this.serializeMutation(params.itemID, () =>
+      this.startRetryNow(params),
+    );
+  }
+
+  private async startRetryNow(
+    params: Parameters<SessionHistoryService["startRetry"]>[0],
+  ) {
     const session = sessionStore.get(params.itemID);
     const turn =
       session && messageStore.getTurn(session.sessionId, params.turnId);
@@ -487,7 +537,7 @@ export class SessionHistoryService {
     const attempt = messageStore.beginAttempt(session.sessionId, turn.turnId);
     session.lastTurnId = turn.turnId;
     session.lastAttemptId = attempt.id;
-    await this.persistActiveSession({
+    await this.persistActiveSessionNow({
       itemID: params.itemID,
       paperTitle: params.paperTitle,
     });
@@ -502,6 +552,14 @@ export class SessionHistoryService {
     state: ChatAttemptState;
     errorCategory?: string;
   }) {
+    return this.serializeMutation(params.itemID, () =>
+      this.updateAttemptNow(params),
+    );
+  }
+
+  private async updateAttemptNow(
+    params: Parameters<SessionHistoryService["updateAttempt"]>[0],
+  ) {
     const session = sessionStore.get(params.itemID);
     if (!session) return false;
     const updated = messageStore.transitionAttempt(
@@ -531,7 +589,7 @@ export class SessionHistoryService {
       }
     }
     if (updated)
-      await this.persistActiveSession({
+      await this.persistActiveSessionNow({
         itemID: params.itemID,
         paperTitle: params.paperTitle,
       });
@@ -545,6 +603,14 @@ export class SessionHistoryService {
     kind: "answer" | "edit";
     paperTitle: string;
   }) {
+    return this.serializeMutation(params.itemID, () =>
+      this.forkSessionNow(params),
+    );
+  }
+
+  private async forkSessionNow(
+    params: Parameters<SessionHistoryService["forkSession"]>[0],
+  ) {
     const active = sessionStore.get(params.itemID);
     const snapshot =
       active?.sessionId === params.sessionId
@@ -590,7 +656,7 @@ export class SessionHistoryService {
       throw new Error(
         "Branch from a completed answer or edit an existing question.",
       );
-    await this.persistActiveSession({
+    await this.persistActiveSessionNow({
       itemID: params.itemID,
       paperTitle: params.paperTitle,
     });
@@ -627,7 +693,7 @@ export class SessionHistoryService {
       ),
     );
     messageStore.replace(branch.sessionId, branchMessages);
-    await this.persistActiveSession({
+    await this.persistActiveSessionNow({
       itemID: params.itemID,
       paperTitle: params.paperTitle,
     });
@@ -639,6 +705,14 @@ export class SessionHistoryService {
     messageId: string;
     paperTitle?: string;
   }) {
+    return this.serializeMutation(params.itemID, () =>
+      this.togglePinNow(params),
+    );
+  }
+
+  private async togglePinNow(
+    params: Parameters<SessionHistoryService["togglePin"]>[0],
+  ) {
     const session = sessionStore.get(params.itemID);
     const message =
       session && messageStore.get(session.sessionId, params.messageId);
@@ -658,7 +732,7 @@ export class SessionHistoryService {
             createdAt: this.now().toISOString(),
           },
         ];
-    await this.persistActiveSession({
+    await this.persistActiveSessionNow({
       itemID: params.itemID,
       paperTitle: params.paperTitle ?? session.threadTitle,
     });
@@ -672,6 +746,14 @@ export class SessionHistoryService {
     sourceFingerprint: string;
     paperTitle?: string;
   }) {
+    return this.serializeMutation(params.itemID, () =>
+      this.setSummaryNow(params),
+    );
+  }
+
+  private async setSummaryNow(
+    params: Parameters<SessionHistoryService["setSummary"]>[0],
+  ) {
     const session = sessionStore.get(params.itemID);
     if (
       !session ||
@@ -691,7 +773,7 @@ export class SessionHistoryService {
       createdAt: this.now().toISOString(),
       author: "model",
     };
-    await this.persistActiveSession({
+    await this.persistActiveSessionNow({
       itemID: params.itemID,
       paperTitle: params.paperTitle ?? session.threadTitle,
     });
@@ -763,6 +845,14 @@ export class SessionHistoryService {
   }
 
   async openSavedSession(params: { itemID: number; sessionId: string }) {
+    return this.serializeMutation(params.itemID, () =>
+      this.openSavedSessionNow(params),
+    );
+  }
+
+  private async openSavedSessionNow(
+    params: Parameters<SessionHistoryService["openSavedSession"]>[0],
+  ) {
     const snapshot = await this.repository.readSessionSnapshot(
       params.itemID,
       params.sessionId,
@@ -785,6 +875,14 @@ export class SessionHistoryService {
     sessionId: string;
     title: string;
   }) {
+    return this.serializeMutation(params.itemID, () =>
+      this.renameSavedSessionNow(params),
+    );
+  }
+
+  private async renameSavedSessionNow(
+    params: Parameters<SessionHistoryService["renameSavedSession"]>[0],
+  ) {
     const snapshot = await this.repository.readSessionSnapshot(
       params.itemID,
       params.sessionId,
@@ -819,6 +917,14 @@ export class SessionHistoryService {
   }
 
   async deleteSavedSession(params: { itemID: number; sessionId: string }) {
+    return this.serializeMutation(params.itemID, () =>
+      this.deleteSavedSessionNow(params),
+    );
+  }
+
+  private async deleteSavedSessionNow(
+    params: Parameters<SessionHistoryService["deleteSavedSession"]>[0],
+  ) {
     await this.repository.deleteSession(params.itemID, params.sessionId);
     const activeSession = sessionStore.get(params.itemID);
     if (activeSession?.sessionId === params.sessionId) {
@@ -831,6 +937,14 @@ export class SessionHistoryService {
   }
 
   async deleteAllSavedSessions(params: { itemID: number }) {
+    return this.serializeMutation(params.itemID, () =>
+      this.deleteAllSavedSessionsNow(params),
+    );
+  }
+
+  private async deleteAllSavedSessionsNow(
+    params: Parameters<SessionHistoryService["deleteAllSavedSessions"]>[0],
+  ) {
     await this.repository.deleteAllSessions(params.itemID);
     const activeSession = sessionStore.get(params.itemID);
     if (activeSession) {
@@ -847,7 +961,15 @@ export class SessionHistoryService {
     mode: EngineMode;
     paperTitle: string;
   }) {
-    await this.persistActiveSession({
+    return this.serializeMutation(params.itemID, () =>
+      this.startNewSessionDraftNow(params),
+    );
+  }
+
+  private async startNewSessionDraftNow(
+    params: Parameters<SessionHistoryService["startNewSessionDraft"]>[0],
+  ) {
+    await this.persistActiveSessionNow({
       itemID: params.itemID,
       paperTitle: params.paperTitle,
     });

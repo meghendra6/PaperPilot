@@ -155,10 +155,13 @@ export async function openChatCitation(
   );
   if (!current?.reference || current.status !== "verified")
     throw new Error("The quote cannot be verified in the current PDF.");
-  await openVerifiedResearchWorkspaceEvidence(
-    current.reference,
-    dependencies.navigation,
-  );
+  const reference = current.reference;
+  await openVerifiedResearchWorkspaceEvidence(reference, {
+    ...dependencies.navigation,
+    // This exact reference was just rechecked with the chat source snapshot.
+    // Reuse that result instead of extracting the same PDF a second time.
+    verifyCurrent: async () => reference,
+  });
 }
 
 export function chatCitationLabel(citation: ChatCitation) {

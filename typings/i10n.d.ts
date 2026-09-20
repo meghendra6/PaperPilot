@@ -3,6 +3,13 @@
 /* eslint-disable */
 // @ts-nocheck
 export type FluentMessageId =
+  | 'dictionary-close'
+  | 'dictionary-empty'
+  | 'dictionary-error'
+  | 'dictionary-loading'
+  | 'dictionary-lookup-hint'
+  | 'dictionary-open-browser'
+  | 'dictionary-retry'
   | 'item-section-paperpilot-head-text'
   | 'item-section-paperpilot-sidenav-tooltip'
   | 'item-section-research-workspace-head-text'
@@ -60,6 +67,7 @@ export type FluentMessageId =
   | 'reader-action-annotation-explain'
   | 'reader-action-annotation-summarize'
   | 'reader-action-ask-ai'
+  | 'reader-action-dictionary'
   | 'reader-action-explain'
   | 'reader-action-find-prior-work'
   | 'reader-action-summarize'

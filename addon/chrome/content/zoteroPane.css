@@ -167,11 +167,12 @@
   display: flex;
   flex-direction: column;
   height: 800px;
-  height: clamp(560px, calc(100vh - 96px), 1400px);
+  height: var(--pp-auto-pane-height, clamp(420px, calc(100vh - 96px), 1400px));
   min-height: 0;
   width: 100%;
   max-width: 100%;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
   box-sizing: border-box;
   container-name: paper-pilot;
   container-type: inline-size;
@@ -667,7 +668,7 @@
    ============================================================ */
 #chat-messages {
   flex: 1 1 auto;
-  min-height: 180px;
+  min-height: 96px;
   min-width: 0;
   overflow-y: auto;
   margin: 6px 0;

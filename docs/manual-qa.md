@@ -46,7 +46,12 @@ Use this checklist inside real Zotero 7, 8, 9, and 10 runtimes before claiming r
 - [ ] On a fresh session, confirm the `Start with this paper` guidance is visually distinct from assistant messages and disappears after the first admitted question
 - [ ] Confirm the unavailable Compare helper names the visible `Related papers` and `Find verified prior work` controls exactly
 - [ ] With a screen reader, confirm new conversation entries, Compare availability changes, and the visible `Thinking…` state are announced without repeating the elapsed timer
-- [ ] Fill the pane with chat, recommendation, session, and mastery content; confirm chat keeps at least 180px and each expanded section scrolls internally without pushing the composer away
+- [ ] At a short window height with Zotero sections above Paper Pilot, confirm automatic sizing keeps the composer visible; manually resize and reset the pane, then resize the window and expand preceding Zotero sections
+- [ ] Fill the pane with chat, recommendation, session, and mastery content; confirm chat keeps at least 96px and each expanded section scrolls internally; constrained layouts must allow scrolling to the composer
+- [ ] Type an unsent draft with attached PDF context, search saved conversations, open a result, then Return to reading; confirm the original draft/context and conversation are restored without saving a draft-only history entry
+- [ ] Delay an old search failure until after a new search succeeds; confirm the current results remain. Delay restoration and confirm search stays open with controls disabled until restoration succeeds; failures allow retry
+- [ ] Open Actions, focus a command and press Escape; confirm the menu closes, its expanded state is false, and focus returns to the composer
+- [ ] Pin a message as an answer finishes, then reopen history; confirm the answer and pin both survive. Repeat delayed persistence across rename, deletion and opening another saved session
 - [ ] Drag the Workbench, Related papers, and Past sessions resize handles independently; confirm every expanded body can grow beyond the old 240px cap and still scroll when its content is taller
 - [ ] Drag the Workbench/chat boundary in both directions; confirm one area grows while the other remains usable, then use Up/Down, Home/End, and Enter on the focused separator
 - [ ] Drag the bottom Paper Pilot handle beyond the old 960px pane cap, then double-click it to restore the responsive default height
@@ -131,6 +136,27 @@ Use this checklist inside real Zotero 7, 8, 9, and 10 runtimes before claiming r
 - [ ] Trigger annotation context menu action
 - [ ] Confirm annotation-origin draft appears in pane
 
+### Naver dictionary popup
+
+- [ ] Select `cost` and activate Naver Dictionary; confirm a separate Zotero dictionary window opens, with no inline result next to Ask AI and no browser page or iframe
+- [ ] Confirm `cost` displays its headword, phonetic symbols, noun and verb meanings, and source; selection alone must not send a request
+- [ ] Keep the window open and continue reading the PDF; look up `models`, a Korean query and a multi-word term, and confirm the same window updates
+- [ ] Start another lookup before the first completes; confirm only the latest word can populate the window
+- [ ] Confirm related search hits are not substituted for a missing definition; empty matches and network/schema failures have distinct states, and failures offer Retry
+- [ ] Close via Escape, the Close dictionary button, the native window close control, and disabling the add-on; confirm late responses cannot reopen the window
+- [ ] Repeat lookup during an AI run; confirm no changes to the draft, attached context, transcript, provider session or model activity
+- [ ] Check keyboard focus, light/dark themes and resizing; meanings must scroll within the dictionary window
+- [ ] Confirm More on Naver opens only on click and points to the displayed entry (or the selected query when no exact entry URL exists)
+- [ ] Verify empty and oversized selections (over 80 characters or 8 words) have no dictionary button; repeated lookups and Retry must not accumulate active requests or listeners
+
+### Review verification — 2026-09-21
+
+See [the product review](product-review-2026-09-21.md) for confirmed defects,
+automated verification and the separate native Zotero evidence. The earlier
+browser-only inline-card check did not establish native rendering correctness;
+the replacement dictionary window has now displayed the live `cost` meanings
+and phonetics in native Zotero 10.0.3.
+
 ## 4. Research brief + paper-tool checks
 
 - [ ] Trigger the research-brief entry point for the active paper
@@ -211,6 +237,9 @@ Use this checklist inside real Zotero 7, 8, 9, and 10 runtimes before claiming r
 
 ## 9. Verified discovery / Critical Read / auto-highlight checks
 
+- [ ] Start Auto Highlight in a detached reader for paper A while the main window selects paper B; confirm only A supplies text, geometry and annotations. Repeat for a parent item with a second PDF attachment open
+- [ ] Cancel Auto Highlight during delayed workspace preparation; confirm no late provider starts, a replacement remains blocked until cleanup settles, and an unconfirmed stop retains ownership
+- [ ] Open a saved Research Workspace evidence link after changing or removing the source PDF; confirm a missing quote fails visibly. With an unchanged quote, confirm navigation uses the currently matched passage rectangles
 - [ ] Ask auto-highlight to process a short residue such as `Δ = 0.5` and a quote repeated twice; confirm neither produces an annotation
 - [ ] Auto-highlight one sufficiently long Greek quote and one sufficiently long CJK quote; confirm each lands on the unique exact passage
 
