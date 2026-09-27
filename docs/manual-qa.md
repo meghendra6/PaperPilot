@@ -109,9 +109,11 @@ Use this checklist inside real Zotero 7, 8, 9, and 10 runtimes before claiming r
 - [ ] Switch to `Claude Code`
 - [ ] Confirm Claude Code model controls and mode messaging update correctly
 - [ ] Switch to `Codex CLI`
-- [ ] Confirm the unified run-progress card and Codex model controls offer GPT-6 Astra plus GPT-5.6 Sol, Terra, and Luna; a fresh install, empty preference, or unknown/retired saved model defaults to Astra; with no saved reasoning effort, it uses `medium`
-- [ ] Confirm an explicitly saved GPT-5.6 model/effort remains selected after upgrading; selecting Astra persists across a pane refresh and starts/resumes a run with `gpt-6-astra`
+- [ ] Confirm the unified run-progress card and Codex model controls offer GPT-6 Astra, Sol, and Luna plus GPT-5.6 Sol, Terra, and Luna; a fresh install, empty preference, or unknown/retired saved model defaults to Astra; with no saved reasoning effort, it uses `medium`
+- [ ] Confirm an explicitly saved GPT-5.6 model/effort remains selected after upgrading; selecting each GPT-6 model persists across a pane refresh and starts/resumes a run with its exact model ID (`gpt-6-astra`, `gpt-6-sol`, or `gpt-6-luna`)
 - [ ] Confirm Astra offers `low`, `medium`, `high`, `xhigh`, `max`, and `ultra` as supported by the installed Codex CLI, with invalid effort values falling back to `medium`
+- [ ] Confirm GPT-6 Sol offers `low` through `ultra` and invalid effort values fall back to `low`; GPT-6 Luna offers `low` through `max`, excludes `ultra`, and invalid effort values fall back to `medium`
+- [ ] With a custom `codexAllowedModels` list, confirm only listed supported models appear; explicitly include `gpt-6-sol` and `gpt-6-luna` to enable them in a restricted picker
 - [ ] Confirm per-paper mode override does not affect another document unexpectedly
 
 ### Korean terminology in generated answers

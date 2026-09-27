@@ -27,11 +27,12 @@ test("Codex allowed models determine both effective selection and picker options
   assert(getAllowedCodexModels("gpt-5.6").includes("gpt-6-astra"));
   const globals = globalThis as any;
   const previous = { Zotero: globals.Zotero, addon: globals.addon };
+  let allowedModels = "gpt-5.6-luna";
   globals.addon = { data: {} };
   globals.Zotero = {
     Prefs: {
       get: (key: string) =>
-        key.endsWith(".codexAllowedModels") ? "gpt-5.6-luna" : undefined,
+        key.endsWith(".codexAllowedModels") ? allowedModels : undefined,
     },
   };
   const options: { value: string }[] = [];
@@ -49,6 +50,40 @@ test("Codex allowed models determine both effective selection and picker options
       [...new Set(options.map((entry) => entry.value.split("|")[0]))],
       ["gpt-5.6-luna"],
     );
+    allowedModels = "gpt-6-sol,gpt-6-luna";
+    renderModelHistory(container as any, input as any, "codex_cli");
+    assert.deepEqual(
+      options.map((entry) => entry.value),
+      [
+        "gpt-6-sol|low",
+        "gpt-6-sol|medium",
+        "gpt-6-sol|high",
+        "gpt-6-sol|xhigh",
+        "gpt-6-sol|max",
+        "gpt-6-sol|ultra",
+        "gpt-6-luna|low",
+        "gpt-6-luna|medium",
+        "gpt-6-luna|high",
+        "gpt-6-luna|xhigh",
+        "gpt-6-luna|max",
+      ],
+    );
+    for (const model of ["gpt-6-sol", "gpt-6-luna"]) {
+      const prefs: Record<string, string> = {
+        codexAllowedModels: allowedModels,
+        codexDefaultModel: model,
+        codexReasoningEffort: "ultra",
+      };
+      const settings = captureExecutionSettings(
+        "codex_cli",
+        ((key: string) => prefs[key]) as any,
+      );
+      assert.equal(settings.model, model);
+      assert.equal(
+        settings.reasoningEffort,
+        model === "gpt-6-sol" ? "ultra" : "medium",
+      );
+    }
     rememberRecentModel("codex_cli", "gpt-6-astra");
     rememberRecentModel("claude_code", "sonnet");
     assert.deepEqual(getRecentModels("gemini_cli"), []);
