@@ -2,6 +2,12 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 import * as assert from "node:assert/strict";
+import { runInNewContext } from "node:vm";
+import {
+  CODEX_DEFAULT_MODEL,
+  getCodexBuiltInModels,
+  parseAllowedModels,
+} from "../src/modules/codex/modelOptions";
 
 function keys(source: string, pattern: RegExp) {
   return new Set([...source.matchAll(pattern)].map((match) => match[1]));
@@ -16,6 +22,24 @@ function readTypeScriptBelow(directory: string): string[] {
       : [];
   });
 }
+
+test("shipped Codex preferences expose the complete built-in model catalog", () => {
+  const defaults = new Map<string, unknown>();
+  runInNewContext(
+    readFileSync(join(process.cwd(), "addon", "prefs.js"), "utf8"),
+    { pref: (key: string, value: unknown) => defaults.set(key, value) },
+  );
+  assert.deepEqual(
+    parseAllowedModels(
+      String(defaults.get("__prefsPrefix__.codexAllowedModels")),
+    ),
+    getCodexBuiltInModels(),
+  );
+  assert.equal(
+    defaults.get("__prefsPrefix__.codexDefaultModel"),
+    CODEX_DEFAULT_MODEL,
+  );
+});
 
 test("preference defaults, types, UI declarations, and source usage stay in sync", () => {
   const root = process.cwd();

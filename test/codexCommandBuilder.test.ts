@@ -466,6 +466,8 @@ test("Codex run settings default to Astra and preserve saved supported models in
       ["", "gpt-6-astra"],
       ["retired-model", "gpt-6-astra"],
       ["gpt-6-astra", "gpt-6-astra"],
+      ["gpt-6-sol", "gpt-6-sol"],
+      ["gpt-6-luna", "gpt-6-luna"],
       ["gpt-5.6-sol", "gpt-5.6-sol"],
       ["gpt-5.6-terra", "gpt-5.6-terra"],
       ["gpt-5.6-luna", "gpt-5.6-luna"],
@@ -499,6 +501,8 @@ test("Codex run settings default to Astra and preserve saved supported models in
 test("getCodexBuiltInModelCatalog exposes only current recommended models", () => {
   assert.deepEqual(getCodexBuiltInModels(), [
     "gpt-6-astra",
+    "gpt-6-sol",
+    "gpt-6-luna",
     "gpt-5.6-sol",
     "gpt-5.6-terra",
     "gpt-5.6-luna",
@@ -519,6 +523,18 @@ test("getCodexBuiltInModelCatalog exposes only current recommended models", () =
     reasoningEfforts: ["low", "medium", "high", "xhigh", "max", "ultra"],
     defaultReasoningEffort: "low",
   });
+  assert.deepEqual(bySlug.get("gpt-6-sol"), {
+    slug: "gpt-6-sol",
+    displayName: "GPT-6-Sol",
+    reasoningEfforts: ["low", "medium", "high", "xhigh", "max", "ultra"],
+    defaultReasoningEffort: "low",
+  });
+  assert.deepEqual(bySlug.get("gpt-6-luna"), {
+    slug: "gpt-6-luna",
+    displayName: "GPT-6-Luna",
+    reasoningEfforts: ["low", "medium", "high", "xhigh", "max"],
+    defaultReasoningEffort: "medium",
+  });
   assert.deepEqual(bySlug.get("gpt-5.6-terra"), {
     slug: "gpt-5.6-terra",
     displayName: "GPT-5.6-Terra",
@@ -529,6 +545,8 @@ test("getCodexBuiltInModelCatalog exposes only current recommended models", () =
 
 test("normalizeCodexModel keeps known catalog slugs and coerces unknown models to the default", () => {
   assert.equal(normalizeCodexModel(" gpt-6-astra "), "gpt-6-astra");
+  assert.equal(normalizeCodexModel(" gpt-6-sol "), "gpt-6-sol");
+  assert.equal(normalizeCodexModel("gpt-6-luna"), "gpt-6-luna");
   assert.equal(normalizeCodexModel("gpt-5.6-sol"), "gpt-5.6-sol");
   assert.equal(normalizeCodexModel("gpt-5.6-terra"), "gpt-5.6-terra");
   assert.equal(normalizeCodexModel("gpt-5.6-luna"), "gpt-5.6-luna");
@@ -541,10 +559,13 @@ test("normalizeCodexModelList removes retired saved options from the picker", ()
     normalizeCodexModelList([
       "retired-model",
       "gpt-6-astra",
+      "gpt-6-sol",
+      "gpt-6-luna",
+      "gpt-6-sol",
       "gpt-5.6-sol",
       "gpt-5.6-terra",
     ]),
-    ["gpt-6-astra", "gpt-5.6-sol", "gpt-5.6-terra"],
+    ["gpt-6-astra", "gpt-6-sol", "gpt-6-luna", "gpt-5.6-sol", "gpt-5.6-terra"],
   );
 });
 
@@ -554,6 +575,12 @@ test("normalizeCodexReasoningEffort validates efforts against the selected model
   }
   assert.equal(normalizeCodexReasoningEffort("none", "gpt-6-astra"), "medium");
   assert.equal(normalizeCodexReasoningEffort("", "gpt-6-astra"), "medium");
+  assert.equal(normalizeCodexReasoningEffort("ultra", "gpt-6-sol"), "ultra");
+  assert.equal(normalizeCodexReasoningEffort("max", "gpt-6-luna"), "max");
+  assert.equal(normalizeCodexReasoningEffort("ultra", "gpt-6-luna"), "medium");
+  assert.equal(normalizeCodexReasoningEffort("", "gpt-6-sol"), "low");
+  assert.equal(normalizeCodexReasoningEffort("none", "gpt-6-sol"), "low");
+  assert.equal(normalizeCodexReasoningEffort("none", "gpt-6-luna"), "medium");
   // Model-aware: gpt-5.6-sol supports ultra; gpt-5.6-luna does not.
   assert.equal(normalizeCodexReasoningEffort("ultra", "gpt-5.6-sol"), "ultra");
   assert.equal(normalizeCodexReasoningEffort("max", "gpt-5.6-luna"), "max");

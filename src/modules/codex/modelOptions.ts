@@ -26,6 +26,18 @@ const CODEX_BUILT_IN_MODEL_CATALOG: CodexBuiltInModel[] = [
     defaultReasoningEffort: "medium",
   },
   {
+    slug: "gpt-6-sol",
+    displayName: "GPT-6-Sol",
+    reasoningEfforts: ["low", "medium", "high", "xhigh", "max", "ultra"],
+    defaultReasoningEffort: "low",
+  },
+  {
+    slug: "gpt-6-luna",
+    displayName: "GPT-6-Luna",
+    reasoningEfforts: ["low", "medium", "high", "xhigh", "max"],
+    defaultReasoningEffort: "medium",
+  },
+  {
     slug: "gpt-5.6-sol",
     displayName: "GPT-5.6-Sol",
     reasoningEfforts: ["low", "medium", "high", "xhigh", "max", "ultra"],
