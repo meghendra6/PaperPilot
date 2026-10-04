@@ -249,7 +249,8 @@ Only `paperpilotChatVersion: 1` identifies this envelope. User-requested JSON/co
 
 Prompts require valid JSON escaping, including doubled backslashes for literal
 LaTeX commands. For a malformed envelope, recovery may repair invalid backslash
-escapes within a complete `answerMarkdown` string; valid JSON escapes retain
+escapes and raw control characters within a complete `answerMarkdown` string;
+valid JSON escapes retain
 their meaning and citation candidates are discarded. Ambiguous valid escapes
 such as `\t` are not guessed to be LaTeX commands. If decoding and sanitization
 leave no readable answer, a zero CLI exit code still becomes a failed turn with

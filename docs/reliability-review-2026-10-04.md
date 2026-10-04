@@ -38,7 +38,7 @@ atomic against external writers.
 - The baseline passed 973 Node tests. File-preservation and invalid-LaTeX
   regressions were reproduced before their fixes; added outcome tests cover
   empty answers, provider/process failures and unchanged non-chat contracts.
-- The updated suite passes 995 tests with no failures or skips. Source/test
+- The updated suite passes 996 tests with no failures or skips. Source/test
   TypeScript checks and the production XPI build pass.
 - The repository lint gate has zero errors and 122 existing warnings.
 - Production dependency audit reports zero known vulnerabilities.

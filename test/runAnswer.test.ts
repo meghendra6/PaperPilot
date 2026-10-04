@@ -51,6 +51,22 @@ test("valid JSON escapes retain their meaning in chat answers", () => {
   assert.equal(answer.answerMarkdown, markdown);
 });
 
+test("complete chat strings recover raw line breaks and control characters", () => {
+  const markdown =
+    "First line\nSecond\tcolumn\r\n" +
+    Array.from({ length: 32 }, (_, index) => String.fromCharCode(index)).join(
+      "",
+    );
+  const answer = resolveRunAnswer({
+    profile: "chat",
+    parsedOutput: `{"paperpilotChatVersion":1,"answerMarkdown":"${markdown}","citationCandidates":[]}`,
+    exitCode: "0",
+  });
+  assert.equal(answer.success, true);
+  assert.equal(answer.answerMarkdown, markdown);
+  assert.deepEqual(answer.citationCandidates, []);
+});
+
 test("a readable answer does not override process or provider failure", () => {
   for (const status of [
     { exitCode: "1" },

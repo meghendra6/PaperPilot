@@ -101,10 +101,13 @@ export function parseChatAnswer(
         answerMarkdown = JSON.parse(answer[1]);
       } catch {
         // Consume valid escape pairs intact; repair only otherwise-invalid
-        // backslashes in the complete answer string, never citation metadata.
+        // backslashes and raw controls in the complete answer string, never
+        // citation metadata.
         const repaired = answer[1].replace(
-          /\\(?:["\\/bfnrt]|u[0-9a-fA-F]{4})|\\/g,
-          (escape) => (escape.length === 1 ? "\\\\" : escape),
+          // eslint-disable-next-line no-control-regex -- Raw JSON string controls need escaping.
+          /\\(?:["\\/bfnrt]|u[0-9a-fA-F]{4})|\\|[\u0000-\u001f]/g,
+          (escape) =>
+            escape.length === 1 ? JSON.stringify(escape).slice(1, -1) : escape,
         );
         try {
           answerMarkdown = JSON.parse(repaired);

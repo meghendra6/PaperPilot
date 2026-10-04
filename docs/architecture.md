@@ -430,8 +430,9 @@ Per-engine file names inside the workspace:
 
 Codex emits JSONL events, so `outputParser.ts` extracts assistant text and
 `codex/controller.ts` extracts the resumable `thread_id`. Claude and Gemini use
-their stream-JSON output parsers for assistant text, provider session identity
-and terminal provider errors. Progress readers sample the exit file before
+stream-JSON when the installed CLI supports it, otherwise plain text. Their
+event parsers extract assistant text, provider session identity and terminal
+provider errors. Progress readers sample the exit file before
 stdout/stderr: an observed completion marker therefore precedes the final output
 read, preventing completion from using an older partial output snapshot.
 The shared `resolveRunAnswer` helper also requires readable decoded chat text
