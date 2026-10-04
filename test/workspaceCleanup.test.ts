@@ -91,9 +91,89 @@ test("cleanup preserves edited inputs and blocks later replacement before any da
           sourceIDs: ["A"],
           scopeFingerprint: "A",
         }),
-      /changed outside/,
+      /paper\.md.*changed outside.*42-chat-123.*new conversation/,
     );
     assert.equal(env.files.get(`${path}/paper.md`), "user edited source");
+  } finally {
+    env.restore();
+  }
+});
+
+for (const previousManifest of [false, true]) {
+  test(`new inputs cannot overwrite unowned workspace files (manifest=${previousManifest})`, async () => {
+    const env = fixture();
+    const path = "/tmp/work/42-chat-123";
+    try {
+      if (previousManifest) {
+        await writeOwnedWorkspaceInputs({
+          workspacePath: path,
+          files: { "paper.md": "old source" },
+          runID: "old",
+          sourceIDs: ["A"],
+          scopeFingerprint: "A",
+        });
+      }
+      env.files.set(`${path}/papers/notes.md`, "user notes");
+      const before = new Map(env.files);
+      await assert.rejects(
+        () =>
+          writeOwnedWorkspaceInputs({
+            workspacePath: path,
+            files: { "paper.md": "new source", "papers/notes.md": "new input" },
+            runID: "new",
+            sourceIDs: ["A"],
+            scopeFingerprint: "A",
+          }),
+        /papers\/notes\.md.*not owned.*preserved.*42-chat-123.*new conversation/i,
+      );
+      assert.deepEqual(env.files, before);
+      assert.equal(env.removals.length, 0);
+    } finally {
+      env.restore();
+    }
+  });
+}
+
+test("a manifest cannot claim an existing unowned runtime output for cleanup", async () => {
+  const env = fixture();
+  const path = "/tmp/work/42-chat-123";
+  try {
+    env.files.set(`${path}/claude-output.txt`, "unowned previous output");
+    const before = new Map(env.files);
+    await assert.rejects(
+      () =>
+        writeOwnedWorkspaceInputs({
+          workspacePath: path,
+          files: { "paper.md": "source" },
+          runID: "new",
+          sourceIDs: ["A"],
+          scopeFingerprint: "A",
+        }),
+      /not owned.*preserved/i,
+    );
+    assert.deepEqual(env.files, before);
+    assert.equal(await cleanupWorkspaceIfEnabled(path), false);
+    assert.deepEqual(env.files, before);
+  } finally {
+    env.restore();
+  }
+});
+
+test("workspace inputs cannot replace their ownership manifest", async () => {
+  const env = fixture();
+  try {
+    await assert.rejects(
+      () =>
+        writeOwnedWorkspaceInputs({
+          workspacePath: "/tmp/work/42-chat-123",
+          files: { "paperpilot-input-manifest.json": "replacement" },
+          runID: "new",
+          sourceIDs: ["A"],
+          scopeFingerprint: "A",
+        }),
+      /reserved/i,
+    );
+    assert.equal(env.files.size, 0);
   } finally {
     env.restore();
   }

@@ -603,6 +603,109 @@ test("SessionHistoryRepository rejects invalid and future snapshots with a warni
   assert(fileOps.files.has(snapshotPath));
 });
 
+for (const cached of [false, true]) {
+  for (const operation of [
+    "save",
+    "write-index",
+    "delete",
+    "delete-all",
+  ] as const) {
+    test(`future session index prevents ${operation} before changing any files (cached=${cached})`, async () => {
+      const fileOps = new MemoryFileOps();
+      const repo = new SessionHistoryRepository({
+        rootDir: "/session-history",
+        fileOps,
+        warn: () => {},
+      });
+      const snapshot = buildSnapshot();
+      fileOps.files.set(
+        repo.getSessionSnapshotPath(42, snapshot.sessionId),
+        JSON.stringify(snapshot),
+      );
+      const index = await repo.readPaperIndex(42);
+      const target = cached
+        ? repo
+        : new SessionHistoryRepository({
+            rootDir: "/session-history",
+            fileOps,
+            warn: () => {},
+          });
+      fileOps.files.set(
+        repo.getPaperIndexPath(42),
+        JSON.stringify({
+          ...index,
+          storageVersion: SESSION_HISTORY_STORAGE_VERSION + 1,
+          futureMetadata: { retained: true },
+        }),
+      );
+      const before = new Map(fileOps.files);
+      await assert.rejects(async () => {
+        if (operation === "save") {
+          await target.saveSessionSnapshot({
+            paperItemID: 42,
+            paperTitle: "Changed paper",
+            snapshot: { ...snapshot, title: "Changed conversation" },
+          });
+        } else if (operation === "write-index") {
+          await target.writePaperIndex(index);
+        } else if (operation === "delete") {
+          await target.deleteSession(42, snapshot.sessionId);
+        } else {
+          await target.deleteAllSessions(42);
+        }
+      }, /newer version.*preserved/i);
+      assert.deepEqual(fileOps.files, before);
+    });
+  }
+}
+
+test("default file operations do not treat an index existence error as a missing file", async () => {
+  const runtime = globalThis as unknown as {
+    Zotero?: unknown;
+    IOUtils?: unknown;
+  };
+  const previous = { Zotero: runtime.Zotero, IOUtils: runtime.IOUtils };
+  const files = new MemoryFileOps();
+  const repo = new SessionHistoryRepository({
+    rootDir: "/session-history",
+    warn: () => {},
+  });
+  files.files.set(
+    repo.getPaperIndexPath(42),
+    JSON.stringify({ storageVersion: SESSION_HISTORY_STORAGE_VERSION + 1 }),
+  );
+  const before = new Map(files.files);
+  runtime.IOUtils = {
+    exists: async () => {
+      throw new Error("Cannot inspect history files");
+    },
+  };
+  runtime.Zotero = {
+    File: {
+      getContentsAsync: (path: string) => files.readText(path),
+      putContentsAsync: (path: string, text: string) =>
+        files.writeTextAtomic(path, text),
+      createDirectoryIfMissingAsync: (path: string) =>
+        files.ensureDirectory(path),
+      iterateDirectory: async () => {},
+    },
+  };
+  try {
+    await assert.rejects(
+      () =>
+        repo.saveSessionSnapshot({
+          paperItemID: 42,
+          paperTitle: "Paper",
+          snapshot: buildSnapshot(),
+        }),
+      /Cannot inspect history files/,
+    );
+    assert.deepEqual(files.files, before);
+  } finally {
+    Object.assign(runtime, previous);
+  }
+});
+
 test("SessionHistoryRepository uses platform-safe path joining", () => {
   const previousPathUtils = (globalThis as { PathUtils?: unknown }).PathUtils;
   (globalThis as { PathUtils?: unknown }).PathUtils = {

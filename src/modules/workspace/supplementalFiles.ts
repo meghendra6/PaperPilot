@@ -40,6 +40,9 @@ function validatedWorkspaceEntries(files: WorkspaceSupplementalFiles) {
   let totalCharacters = 0;
   for (const [relativePath, contents] of entries) {
     validateWorkspaceSupplementalFilePath(relativePath);
+    if (relativePath === "paperpilot-input-manifest.json") {
+      throw new Error("The workspace input manifest path is reserved.");
+    }
     if (typeof contents !== "string") {
       throw new Error(
         `Supplemental workspace file ${relativePath} is not text.`,
@@ -161,14 +164,32 @@ export async function writeOwnedWorkspaceInputs(params: {
   validatedWorkspaceEntries(params.files);
   const manifestPath = `${params.workspacePath}/paperpilot-input-manifest.json`;
   const io = (globalThis as typeof globalThis & { IOUtils?: any }).IOUtils;
+  if (!io?.exists) {
+    throw new Error("Cannot safely check existing workspace inputs.");
+  }
   let previous: WorkspaceInputManifest | undefined;
-  if (io?.exists && (await io.exists(manifestPath))) {
+  if (await io.exists(manifestPath)) {
     try {
       const text = await Zotero.File.getContentsAsync(manifestPath);
       previous = parseWorkspaceInputManifest(JSON.parse(String(text)));
     } catch {
       throw new Error(
         "The previous workspace input manifest is unreadable; its files were preserved.",
+      );
+    }
+  }
+  // A new manifest may only adopt paths that do not already contain unowned data.
+  const ownedPaths = new Set(previous?.files.map((entry) => entry.path));
+  for (const path of new Set([
+    ...Object.keys(params.files),
+    ...WORKSPACE_RUNTIME_FILE_PATHS,
+  ])) {
+    if (
+      !ownedPaths.has(path) &&
+      (await io.exists(`${params.workspacePath}/${path}`))
+    ) {
+      throw new Error(
+        `Workspace file "${path}" is not owned by Paper Pilot. Its files were preserved; move the conflicting file from "${params.workspacePath}" before retrying, or start a new conversation.`,
       );
     }
   }
@@ -186,7 +207,7 @@ export async function writeOwnedWorkspaceInputs(params: {
     );
     if (workspaceInputContentFingerprint(current) !== entry.contentFingerprint)
       throw new Error(
-        "A workspace input was changed outside this run. Its files were preserved; move the edited file before retrying.",
+        `Workspace input "${entry.path}" was changed outside this run. Its files were preserved; move the edited file from "${params.workspacePath}" before retrying, or start a new conversation.`,
       );
   }
   for (const entry of previous?.files ?? []) {

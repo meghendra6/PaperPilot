@@ -67,6 +67,20 @@ test("run failure keeps unknown raw diagnostics out of its user message", () => 
   }
 });
 
+test("an unreadable answer is a response failure, not an authentication guess", () => {
+  const rawError = '{"paperpilotChatVersion":1,"answerMarkdown":"not logged in';
+  const failure = classifyRunFailure({
+    engine: "codex_cli",
+    source: "response",
+    rawError,
+  });
+  assert.equal(failure.kind, "unknown");
+  assert.equal(failure.action, undefined);
+  assert.match(failure.userMessage, /no readable answer.*Retry/);
+  assert.equal(failure.rawError, rawError);
+  assert.equal(failure.userMessage.includes("paperpilotChatVersion"), false);
+});
+
 test("pre-controller errors do not suggest changing model authentication or workspace permissions", () => {
   const failure = classifyRunFailure({
     engine: "codex_cli",

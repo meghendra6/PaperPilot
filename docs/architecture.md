@@ -429,9 +429,14 @@ Per-engine file names inside the workspace:
 | Gemini | `gemini-prompt.txt` | `gemini-output.txt`  | `gemini-stderr.log` | `gemini-exit.txt` | `gemini-pid.txt` |
 
 Codex emits JSONL events, so `outputParser.ts` extracts assistant text and
-`codex/controller.ts` extracts the resumable `thread_id`. Claude runs with
-`-p --output-format text` and Gemini returns plain text, so both are read
-directly.
+`codex/controller.ts` extracts the resumable `thread_id`. Claude and Gemini use
+stream-JSON when the installed CLI supports it, otherwise plain text. Their
+event parsers extract assistant text, provider session identity and terminal
+provider errors. Progress readers sample the exit file before
+stdout/stderr: an observed completion marker therefore precedes the final output
+read, preventing completion from using an older partial output snapshot.
+The shared `resolveRunAnswer` helper also requires readable decoded chat text
+before controllers persist a successful turn or retain a provider resume binding.
 
 The current local-process adapter is macOS/POSIX-specific: it launches
 `/bin/zsh` and uses `/usr/bin/pgrep` and `/bin/ps`. Windows is not a supported
@@ -556,6 +561,12 @@ Nested operations use private methods within the same queue admission. A failed
 operation rejects its caller without blocking later work, and different papers
 remain independent. This prevents an older save from overwriting a completed
 answer or recreating deleted history.
+
+History mutations reread the on-disk index version even when its entries are
+cached. An index from a newer version blocks snapshot writes, index replacement
+and deletion before those operations change files; readable snapshots remain
+available for recovery. Malformed JSON indexes retain the existing quarantine
+and snapshot-recovery behavior.
 
 The message store and on-disk snapshot remain authoritative even when the chat
 view suspends older entries. Windowing is presentation-only: it must not trim
@@ -720,6 +731,14 @@ regenerate saved AI prose or translate verbatim paper evidence.
 Ordinary chat captures one `RequestContextSnapshot` before persistence. It records the exact library, parent item, PDF attachment, fingerprint, selection, page and resolved annotation quote/comment. All three engines read that snapshot through `context/requestContext.ts`; a removed/replaced source fails closed. Project operations use an admitted `PrebuiltWorkspaceInput` with explicit source IDs and never recover a parent paper as hidden fallback input.
 
 A chat workspace is keyed by item and PaperPilot session identity, independently of the editable thread title. Non-chat runs have unique directories. `workspace/supplementalFiles.ts` records and replaces owned inputs with a manifest. Only previously owned input files are removed; unknown legacy/user files are not broadly deleted. Full paper files remain available; the [retrieval evaluation](./chat-context-evaluation.md) did not justify narrowing the default context.
+
+Before replacing inputs, the writer checks every planned input and runtime path.
+An existing path outside the previous manifest's ownership blocks the write
+without adopting or deleting that file. The manifest path itself is reserved.
+Edited-input and ownership-conflict diagnostics identify the relative file and
+workspace, with moving the file or starting a new conversation as recovery paths.
+These preflight checks do not provide a filesystem transaction against external
+writers changing files during preparation.
 
 `ui/chatAdmission.ts` retains a stable submitted identity across rejected session/index writes; changing the recovered draft discards that association. `session/providerBinding.ts` requires the observed provider ID, PaperPilot session, exact source and fingerprint to match before native resume. User messages own immutable request snapshots and numbered execution attempts. Retry creates another attempt on the original question. Edit creates a separate conversation before the edited question; branching includes history through the selected completed answer. Provider session IDs are not copied to branches, and only an actual emitted provider ID can be resumed. A provider without a confirmed binding starts fresh with privacy-eligible PaperPilot continuity: user pins, a valid source-bound summary, and recent completed turns within 24,000 characters.
 

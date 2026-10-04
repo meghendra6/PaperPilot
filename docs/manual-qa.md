@@ -835,11 +835,14 @@ Record Zotero/OS/CLI versions and the installed XPI hash; a successful Node test
 - [ ] Save a discovery candidate without a PDF, reopen the project with no selected item, link an existing parent, select an exact PDF, and make an inclusion decision. Keep screening separate from reading/understanding. Export/recover/delete the candidate with its project.
 - [ ] Run from saved members, change question/columns/protocol, exclude a member or replace an upstream artifact, then retry/reuse. Changed semantic inputs cannot produce a false current checkpoint. Reading progress alone does not invalidate analysis.
 - [ ] Keep workspace auto-clean off and run A+B then A-only. Inspect actual files and prompt: B's owned inputs disappear before spawn; unrelated user files survive.
+- [ ] In a disposable chat workspace, place an unowned file at a planned input/runtime path, then prepare the next run. Confirm preparation fails before launch, the file survives, and Raw logs identifies the file and workspace. Move it or start a new conversation and confirm chat can continue. Repeat with an externally edited owned input.
+- [ ] In a disposable profile, raise a paper's history index `storageVersion` above the supported version, both before and after its index is cached. Attempt save, rename and deletion; confirm an actionable error and unchanged index/snapshot files. Do not alter real conversation history for this check.
 
 See [the evaluation report](./chat-context-evaluation.md) for the synthetic model sample and [the implementation record](./paperpilot-product-review-and-chat-spec.md) for executed checks and environment limits.
 
 ### Native chat regression checks
 
+- [ ] Ask each provider for an answer containing LaTeX commands and verify rendered equations and saved/reopened text. Supply an unrecoverable chat envelope through a disposable response fixture; confirm a failed turn with Retry guidance, no empty completed answer, and invalidated native resume state.
 - [ ] Match a new answer's exact quote and click its citation. Confirm the correct page opens and normal Reader navigation still works after extraction cleanup.
 - [ ] Verify exact-file extraction with no PDF reader open and with a different PDF visible. Never use the live Reader's cached text as evidence for another file.
 - [ ] Save an older answer after version-only attachment drift with identical file size, mtime and dateModified. Changed or unavailable PDF metadata and rebound identities must still reject the snapshot.

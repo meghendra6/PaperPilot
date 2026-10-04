@@ -8,6 +8,8 @@ import type {
   RunTimings,
 } from "../context/requestContext";
 import type { WorkspaceSupplementalFiles } from "../workspace/supplementalFiles";
+import { parseChatAnswer } from "../message/chatAnswer";
+import { sanitizeAssistantText } from "../message/assistantOutput";
 import type { ExecutionSettings } from "./executionSettings";
 import { stopDetachedRunProcess } from "./runCompletion";
 import {
@@ -53,6 +55,29 @@ export interface WorkspaceRunProgress {
   /** Original exit-code file value, retained for diagnostics. */
   processExitCode?: string;
   providerFailed?: boolean;
+}
+
+/** A successful process must also produce a readable answer after decoding. */
+export function resolveRunAnswer(params: {
+  profile: RunProfile;
+  parsedOutput: string;
+  exitCode: string;
+  providerFailed?: boolean;
+  allowedSourceIDs?: ReadonlySet<string>;
+}) {
+  const answer =
+    params.profile === "chat"
+      ? parseChatAnswer(params.parsedOutput, {
+          allowedSourceIDs: params.allowedSourceIDs,
+        })
+      : { answerMarkdown: params.parsedOutput, citationCandidates: [] };
+  const processSucceeded = params.exitCode === "0" && !params.providerFailed;
+  const readable = Boolean(sanitizeAssistantText(answer.answerMarkdown).trim());
+  return {
+    ...answer,
+    success: processSucceeded && readable,
+    invalidAnswer: processSucceeded && !readable,
+  };
 }
 
 export function getWorkspaceEngineLabel(mode: EngineMode) {

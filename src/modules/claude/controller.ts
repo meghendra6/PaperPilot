@@ -47,7 +47,10 @@ import {
 } from "./runState";
 import { startClaudeRunForQuestion, readClaudeRunProgress } from "./runner";
 import { stopClaudeRunSilently } from "./stopRun";
-import { isWorkspaceRunReservedForItem } from "../ai/workspaceRun";
+import {
+  isWorkspaceRunReservedForItem,
+  resolveRunAnswer,
+} from "../ai/workspaceRun";
 import type { RunProfile } from "../ai/runProfile";
 import type { StructuredOutputSchema } from "../ai/structuredOutput";
 
@@ -431,18 +434,16 @@ export async function handleClaudeQuestion(params: {
     const rawAssistantText =
       progress.parsedOutput ||
       "Claude Code ran successfully, but returned no assistant message.";
-    let success =
-      progress.exitCode === "0" &&
-      !progress.providerFailed &&
-      Boolean(progress.parsedOutput?.trim());
-    const parsedAnswer =
-      profile === "chat"
-        ? parseChatAnswer(rawAssistantText, {
-            allowedSourceIDs: new Set(
-              result.requestContext ? [result.requestContext.sourceID] : [],
-            ),
-          })
-        : { answerMarkdown: rawAssistantText, citationCandidates: [] };
+    const parsedAnswer = resolveRunAnswer({
+      profile,
+      parsedOutput: progress.parsedOutput || "",
+      exitCode: progress.exitCode,
+      providerFailed: progress.providerFailed,
+      allowedSourceIDs: new Set(
+        result.requestContext ? [result.requestContext.sourceID] : [],
+      ),
+    });
+    let success = parsedAnswer.success;
     let sourceChanged = false;
     if (success && result.requestContext) {
       try {
@@ -462,7 +463,7 @@ export async function handleClaudeQuestion(params: {
       : classifyRunFailure({
           engine: "claude_code",
           rawError: progress.diagnosticOutput || rawAssistantText,
-          source: "process_exit",
+          source: parsedAnswer.invalidAnswer ? "response" : "process_exit",
         });
     let assistantText = success
       ? sanitizeAssistantText(parsedAnswer.answerMarkdown)

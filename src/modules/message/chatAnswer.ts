@@ -100,11 +100,24 @@ export function parseChatAnswer(
       try {
         answerMarkdown = JSON.parse(answer[1]);
       } catch {
-        /* incomplete string */
+        // Consume valid escape pairs intact; repair only otherwise-invalid
+        // backslashes and raw controls in the complete answer string, never
+        // citation metadata.
+        const repaired = answer[1].replace(
+          // eslint-disable-next-line no-control-regex -- Raw JSON string controls need escaping.
+          /\\(?:["\\/bfnrt]|u[0-9a-fA-F]{4})|\\|[\u0000-\u001f]/g,
+          (escape) =>
+            escape.length === 1 ? JSON.stringify(escape).slice(1, -1) : escape,
+        );
+        try {
+          answerMarkdown = JSON.parse(repaired);
+        } catch {
+          /* An incomplete or otherwise invalid string cannot become an answer. */
+        }
       }
     }
     return {
-      answerMarkdown,
+      answerMarkdown: answerMarkdown.slice(0, MAX_ANSWER_LENGTH),
       citationCandidates: [],
       envelope: true,
       malformed: true,
@@ -141,6 +154,7 @@ export function buildChatAnswerInstructions() {
   return [
     'For ordinary reader chat return one JSON object: {"paperpilotChatVersion":1,"answerMarkdown":"your answer","citationCandidates":[]}.',
     "Put the user-facing answer, including any requested code or JSON, in answerMarkdown. Do not expose this envelope as prose.",
+    String.raw`Escape every literal backslash in JSON strings, including LaTeX commands (JSON "\\alpha" represents \alpha). Use \n for line breaks.`,
     'For exact support use [[cite:ID]] in answerMarkdown and a candidate {"id":"ID","sourceID":"the admitted zotero source ID","quote":"exact PDF text","pageIndex":0}. pageIndex is optional and zero-based.',
     "Use at most 24 candidates and at most 4000 characters per exact quote. Never invent a source ID, quote or page. Never emit verified or verification fields.",
     "Citation matching checks text location, not whether a claim is true. If there is no exact support, explain the limitation and leave citationCandidates empty.",

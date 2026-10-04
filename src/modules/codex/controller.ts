@@ -49,7 +49,10 @@ import {
 import { readCodexRunProgress, startCodexRunForQuestion } from "./runner";
 import { stopCodexRunSilently } from "./stopRun";
 import { classifyCodexLoginFailure } from "./statusClassification";
-import { isWorkspaceRunReservedForItem } from "../ai/workspaceRun";
+import {
+  isWorkspaceRunReservedForItem,
+  resolveRunAnswer,
+} from "../ai/workspaceRun";
 import type { RunProfile } from "../ai/runProfile";
 import type { StructuredOutputSchema } from "../ai/structuredOutput";
 
@@ -471,18 +474,16 @@ export async function handleCodexQuestion(params: {
     const rawAssistantText =
       progress.parsedOutput ||
       "Codex CLI ran successfully, but returned no assistant message.";
-    let success =
-      progress.exitCode === "0" &&
-      !progress.providerFailed &&
-      Boolean(progress.parsedOutput?.trim());
-    const parsedAnswer =
-      profile === "chat"
-        ? parseChatAnswer(rawAssistantText, {
-            allowedSourceIDs: new Set(
-              result.requestContext ? [result.requestContext.sourceID] : [],
-            ),
-          })
-        : { answerMarkdown: rawAssistantText, citationCandidates: [] };
+    const parsedAnswer = resolveRunAnswer({
+      profile,
+      parsedOutput: progress.parsedOutput || "",
+      exitCode: progress.exitCode,
+      providerFailed: progress.providerFailed,
+      allowedSourceIDs: new Set(
+        result.requestContext ? [result.requestContext.sourceID] : [],
+      ),
+    });
+    let success = parsedAnswer.success;
     let sourceChanged = false;
     if (success && result.requestContext) {
       try {
@@ -503,7 +504,7 @@ export async function handleCodexQuestion(params: {
       : classifyRunFailure({
           engine: "codex_cli",
           rawError: progress.diagnosticOutput || rawAssistantText,
-          source: "process_exit",
+          source: parsedAnswer.invalidAnswer ? "response" : "process_exit",
         });
     if (terminalFailure) assistantText = terminalFailure.userMessage;
 

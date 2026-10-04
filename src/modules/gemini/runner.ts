@@ -261,12 +261,14 @@ export async function readGeminiRunProgress(paths: {
   stderrPath: string;
   exitCodePath: string;
 }) {
+  // Read the exit code first. The shell writes it only after the CLI closes its
+  // output files, so a present exit code means the output read below is final.
+  const exitCodeText = await readOptionalRunTextFile(paths.exitCodePath);
+  const exitCode = exitCodeText?.trim() ?? "file-read-error";
   const stdout = (await readOptionalRunTextFile(paths.outputPath)) ?? "";
   const stderr = (await readOptionalRunTextFile(paths.stderrPath)) ?? "";
   const rawOutput = [stdout, stderr].filter(Boolean).join("\n");
   const parsed = parseGeminiOutput(stdout);
-  const exitCodeText = await readOptionalRunTextFile(paths.exitCodePath);
-  const exitCode = exitCodeText?.trim() ?? "file-read-error";
 
   return {
     rawOutput,

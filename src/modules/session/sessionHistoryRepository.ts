@@ -281,11 +281,8 @@ function createDefaultFileOps(): SessionHistoryFileOps {
     async exists(path: string) {
       const ioUtils = getGlobalIOUtils();
       if (ioUtils?.exists) {
-        try {
-          return await ioUtils.exists(path);
-        } catch {
-          return false;
-        }
+        // Missing paths return false; an IO failure cannot authorize replacement.
+        return await ioUtils.exists(path);
       }
 
       const zotero = getGlobalZotero();
@@ -422,6 +419,31 @@ export class SessionHistoryRepository {
     return false;
   }
 
+  private async assertWritablePaperIndex(itemID: number) {
+    const path = this.getPaperIndexPath(itemID);
+    if (!(await this.fileOps.exists(path))) return;
+    let raw: string | undefined;
+    try {
+      raw = await this.fileOps.readText(path);
+    } catch {
+      throw new Error(
+        "The conversation index could not be read; its files were preserved for recovery.",
+      );
+    }
+    let candidate: unknown;
+    try {
+      candidate = JSON.parse(raw ?? "");
+    } catch {
+      // Malformed indexes still use the existing snapshot recovery path.
+      return;
+    }
+    if (this.rejectsFutureVersion(candidate, path)) {
+      throw new Error(
+        "The conversation index uses a newer version of Paper Pilot; its files were preserved. Use that version to change this paper's history.",
+      );
+    }
+  }
+
   private async ensurePaperDirectories(itemID: number) {
     await this.fileOps.ensureDirectory(this.getPaperRoot(itemID));
     await this.fileOps.ensureDirectory(this.getSessionsRoot(itemID));
@@ -525,6 +547,7 @@ export class SessionHistoryRepository {
   }
 
   async writePaperIndex(index: SessionHistoryIndex) {
+    await this.assertWritablePaperIndex(index.paperItemID);
     const normalized = this.normalizeIndex(index);
     await this.ensurePaperDirectories(normalized.paperItemID);
     await this.fileOps.writeTextAtomic(
@@ -559,6 +582,8 @@ export class SessionHistoryRepository {
     paperTitle: string;
     snapshot: SessionHistorySnapshot;
   }) {
+    // Check disk even when the index is cached, before changing the snapshot.
+    await this.assertWritablePaperIndex(params.paperItemID);
     const existingPath = this.getSessionSnapshotPath(
       params.paperItemID,
       params.snapshot.sessionId,
@@ -611,6 +636,7 @@ export class SessionHistoryRepository {
   }
 
   async deleteSession(itemID: number, sessionId: string) {
+    await this.assertWritablePaperIndex(itemID);
     const index = await this.readPaperIndex(itemID);
     const remainingSessions = index.sessions.filter(
       (entry) => entry.sessionId !== sessionId,
@@ -630,6 +656,7 @@ export class SessionHistoryRepository {
   }
 
   async deleteAllSessions(itemID: number) {
+    await this.assertWritablePaperIndex(itemID);
     const index = await this.readPaperIndex(itemID);
     await Promise.all(
       index.sessions.map((entry) =>

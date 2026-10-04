@@ -247,6 +247,15 @@ For `profile: "chat"`, all engines request:
 
 Only `paperpilotChatVersion: 1` identifies this envelope. User-requested JSON/code belongs inside `answerMarkdown`; ordinary JSON is not reinterpreted as a chat envelope. Citation IDs are unique bounded tokens, pageIndex is optional and zero-based, and the maximum is 24 candidates with 4,000 characters each. Candidates must name an admitted source and cannot supply `verified` or `verification` authority fields. Invalid candidates remain unverified; malformed output recovers readable answer text when possible without showing internal JSON fragments.
 
+Prompts require valid JSON escaping, including doubled backslashes for literal
+LaTeX commands. For a malformed envelope, recovery may repair invalid backslash
+escapes and raw control characters within a complete `answerMarkdown` string;
+valid JSON escapes retain
+their meaning and citation candidates are discarded. Ambiguous valid escapes
+such as `\t` are not guessed to be LaTeX commands. If decoding and sanitization
+leave no readable answer, a zero CLI exit code still becomes a failed turn with
+Retry guidance and raw diagnostics, never an empty completed answer.
+
 The UI derives citation status from local PDF matching, rechecks the source fingerprint on click, and never treats a model status/confidence as verification. Public HTTP/HTTPS references remain readable and clickable by explicit user action. No chat URL is fetched automatically. Short/default/detailed response length is captured with the submitted request; Retry retains it.
 
 `annotations.json` now contains resolved quote, comment, type, page/location and exact source ID. Missing annotations are excluded with a warning; no surviving selected annotation prevents execution. Image annotation pixels are not inferred from a comment. `metadata.json.imageInput` records whether input is text-only or an image was explicitly supplied. Read `conversation-context.md` for eligible pins, source-bound summaries and completed turns; distinguish all assistant interpretations from paper evidence.
