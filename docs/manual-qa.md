@@ -842,6 +842,7 @@ See [the evaluation report](./chat-context-evaluation.md) for the synthetic mode
 
 ### Native chat regression checks
 
+- [ ] Ask each provider for an answer containing LaTeX commands and verify rendered equations and saved/reopened text. Supply an unrecoverable chat envelope through a disposable response fixture; confirm a failed turn with Retry guidance, no empty completed answer, and invalidated native resume state.
 - [ ] Match a new answer's exact quote and click its citation. Confirm the correct page opens and normal Reader navigation still works after extraction cleanup.
 - [ ] Verify exact-file extraction with no PDF reader open and with a different PDF visible. Never use the live Reader's cached text as evidence for another file.
 - [ ] Save an older answer after version-only attachment drift with identical file size, mtime and dateModified. Changed or unavailable PDF metadata and rebound identities must still reject the snapshot.

@@ -65,6 +65,19 @@ test("malformed envelopes recover only complete answer strings and hide partial 
     "",
   );
 });
+test("malformed chat answers recover invalid LaTeX escapes without changing valid JSON escapes", () => {
+  const parsed = parseChatAnswer(
+    String.raw`{"paperpilotChatVersion":1,"answerMarkdown":"loss is $\alpha \cdot x$; keep \\theta and \"quoted\"\nnext","citationCandidates":[{"id":"q","sourceID":"zotero:1:ITEM:PDF","quote":"candidate"}]}`,
+  );
+  assert.equal(
+    parsed.answerMarkdown,
+    String.raw`loss is $\alpha \cdot x$; keep \theta and "quoted"` + "\nnext",
+  );
+  assert.equal(parsed.malformed, true);
+  assert.deepEqual(parsed.citationCandidates, []);
+  const ordinaryJSON = String.raw`{"example":"\alpha"}`;
+  assert.equal(parseChatAnswer(ordinaryJSON).answerMarkdown, ordinaryJSON);
+});
 test("URLs survive sanitization and safe rendering; code stays literal and privileged schemes never activate", () => {
   const text = "[Source](https://example.org/paper.md?q=a&x=b)";
   assert.equal(sanitizeAssistantText(text), text);

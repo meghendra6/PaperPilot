@@ -281,11 +281,8 @@ function createDefaultFileOps(): SessionHistoryFileOps {
     async exists(path: string) {
       const ioUtils = getGlobalIOUtils();
       if (ioUtils?.exists) {
-        try {
-          return await ioUtils.exists(path);
-        } catch {
-          return false;
-        }
+        // Missing paths return false; an IO failure cannot authorize replacement.
+        return await ioUtils.exists(path);
       }
 
       const zotero = getGlobalZotero();

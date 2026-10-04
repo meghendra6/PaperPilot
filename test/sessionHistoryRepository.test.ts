@@ -659,6 +659,53 @@ for (const cached of [false, true]) {
   }
 }
 
+test("default file operations do not treat an index existence error as a missing file", async () => {
+  const runtime = globalThis as unknown as {
+    Zotero?: unknown;
+    IOUtils?: unknown;
+  };
+  const previous = { Zotero: runtime.Zotero, IOUtils: runtime.IOUtils };
+  const files = new MemoryFileOps();
+  const repo = new SessionHistoryRepository({
+    rootDir: "/session-history",
+    warn: () => {},
+  });
+  files.files.set(
+    repo.getPaperIndexPath(42),
+    JSON.stringify({ storageVersion: SESSION_HISTORY_STORAGE_VERSION + 1 }),
+  );
+  const before = new Map(files.files);
+  runtime.IOUtils = {
+    exists: async () => {
+      throw new Error("Cannot inspect history files");
+    },
+  };
+  runtime.Zotero = {
+    File: {
+      getContentsAsync: (path: string) => files.readText(path),
+      putContentsAsync: (path: string, text: string) =>
+        files.writeTextAtomic(path, text),
+      createDirectoryIfMissingAsync: (path: string) =>
+        files.ensureDirectory(path),
+      iterateDirectory: async () => {},
+    },
+  };
+  try {
+    await assert.rejects(
+      () =>
+        repo.saveSessionSnapshot({
+          paperItemID: 42,
+          paperTitle: "Paper",
+          snapshot: buildSnapshot(),
+        }),
+      /Cannot inspect history files/,
+    );
+    assert.deepEqual(files.files, before);
+  } finally {
+    Object.assign(runtime, previous);
+  }
+});
+
 test("SessionHistoryRepository uses platform-safe path joining", () => {
   const previousPathUtils = (globalThis as { PathUtils?: unknown }).PathUtils;
   (globalThis as { PathUtils?: unknown }).PathUtils = {

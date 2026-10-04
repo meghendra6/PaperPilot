@@ -20,6 +20,7 @@ export type RunFailureSource =
   | "workspace"
   | "spawn"
   | "process_exit"
+  | "response"
   | "timeout";
 
 const LOGIN_PATTERNS: Record<EngineMode, RegExp[]> = {
@@ -68,6 +69,15 @@ export function classifyRunFailure(params: {
 }): RunFailure {
   const rawError = String(params.rawError || "").trim();
   const label = getEngineLabel(params.engine);
+
+  if (params.source === "response") {
+    return {
+      kind: "unknown",
+      engine: params.engine,
+      userMessage: `${label} returned no readable answer. Retry the question.`,
+      rawError,
+    };
+  }
 
   if (params.source === "request") {
     return {

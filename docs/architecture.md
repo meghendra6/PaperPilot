@@ -429,9 +429,13 @@ Per-engine file names inside the workspace:
 | Gemini | `gemini-prompt.txt` | `gemini-output.txt`  | `gemini-stderr.log` | `gemini-exit.txt` | `gemini-pid.txt` |
 
 Codex emits JSONL events, so `outputParser.ts` extracts assistant text and
-`codex/controller.ts` extracts the resumable `thread_id`. Claude runs with
-`-p --output-format text` and Gemini returns plain text, so both are read
-directly.
+`codex/controller.ts` extracts the resumable `thread_id`. Claude and Gemini use
+their stream-JSON output parsers for assistant text, provider session identity
+and terminal provider errors. Progress readers sample the exit file before
+stdout/stderr: an observed completion marker therefore precedes the final output
+read, preventing completion from using an older partial output snapshot.
+The shared `resolveRunAnswer` helper also requires readable decoded chat text
+before controllers persist a successful turn or retain a provider resume binding.
 
 The current local-process adapter is macOS/POSIX-specific: it launches
 `/bin/zsh` and uses `/usr/bin/pgrep` and `/bin/ps`. Windows is not a supported

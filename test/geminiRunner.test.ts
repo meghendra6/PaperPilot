@@ -158,3 +158,43 @@ test("Gemini progress keeps successful stderr out of parsed assistant text", asy
     (globalThis as { Zotero?: unknown }).Zotero = previousZotero;
   }
 });
+
+test("Gemini progress never pairs a late exit code with output read before it", async () => {
+  const runtime = globalThis as { Zotero?: unknown; IOUtils?: unknown };
+  const previous = { Zotero: runtime.Zotero, IOUtils: runtime.IOUtils };
+  const files = new Map([["/tmp/output.txt", "partial"]]);
+  let finished = false;
+  runtime.IOUtils = { exists: async (path: string) => files.has(path) };
+  runtime.Zotero = {
+    File: {
+      getContentsAsync: async (path: string) => {
+        const text = files.get(path);
+        if (text === undefined) throw new Error(`missing ${path}`);
+        // The CLI finishes right after this tick's stdout snapshot.
+        if (path === "/tmp/output.txt" && !finished) {
+          finished = true;
+          files.set("/tmp/output.txt", "partial answer, now complete");
+          files.set("/tmp/exit.txt", "0");
+        }
+        return text;
+      },
+    },
+  };
+  const paths = {
+    outputPath: "/tmp/output.txt",
+    stderrPath: "/tmp/stderr.log",
+    exitCodePath: "/tmp/exit.txt",
+  };
+
+  try {
+    const racing = await geminiRunner.readGeminiRunProgress(paths);
+    if (racing.completed)
+      assert.equal(racing.parsedOutput, "partial answer, now complete");
+    const settled = await geminiRunner.readGeminiRunProgress(paths);
+    assert.equal(settled.completed, true);
+    assert.equal(settled.exitCode, "0");
+    assert.equal(settled.parsedOutput, "partial answer, now complete");
+  } finally {
+    Object.assign(runtime, previous);
+  }
+});
