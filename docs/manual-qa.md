@@ -835,6 +835,8 @@ Record Zotero/OS/CLI versions and the installed XPI hash; a successful Node test
 - [ ] Save a discovery candidate without a PDF, reopen the project with no selected item, link an existing parent, select an exact PDF, and make an inclusion decision. Keep screening separate from reading/understanding. Export/recover/delete the candidate with its project.
 - [ ] Run from saved members, change question/columns/protocol, exclude a member or replace an upstream artifact, then retry/reuse. Changed semantic inputs cannot produce a false current checkpoint. Reading progress alone does not invalidate analysis.
 - [ ] Keep workspace auto-clean off and run A+B then A-only. Inspect actual files and prompt: B's owned inputs disappear before spawn; unrelated user files survive.
+- [ ] In a disposable chat workspace, place an unowned file at a planned input/runtime path, then prepare the next run. Confirm preparation fails before launch, the file survives, and Raw logs identifies the file and workspace. Move it or start a new conversation and confirm chat can continue. Repeat with an externally edited owned input.
+- [ ] In a disposable profile, raise a paper's history index `storageVersion` above the supported version, both before and after its index is cached. Attempt save, rename and deletion; confirm an actionable error and unchanged index/snapshot files. Do not alter real conversation history for this check.
 
 See [the evaluation report](./chat-context-evaluation.md) for the synthetic model sample and [the implementation record](./paperpilot-product-review-and-chat-spec.md) for executed checks and environment limits.
 
