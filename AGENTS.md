@@ -7,7 +7,7 @@ It is the source of truth; [`CLAUDE.md`](./CLAUDE.md) points here rather than du
 
 Paper Pilot is a Zotero 7-10 plugin that turns the PDF reader into an AI-assisted paper workbench. The repo mixes reader-pane UI code, local CLI provider integration, paper-context/workspace generation, and structured prompt/parsing logic.
 
-There is no server and no network model client: every AI run shells out to a local CLI (Codex CLI, Claude Code, or Gemini CLI) that the user already installed and authenticated.
+There is no server and no network model client: every AI run shells out to a local CLI (Codex CLI or Claude Code) that the user already installed and authenticated.
 
 Default goal: make small, verifiable changes that keep the reader experience compact, paper-grounded, and honest about runtime limitations.
 
@@ -19,7 +19,7 @@ Read [`docs/architecture.md`](./docs/architecture.md) before changing engine, wo
   - `index.ts`, `addon.ts`, `hooks.ts`: singleton bootstrap, `addon.data` mutable state, Zotero lifecycle wiring
   - `modules/readerPane.ts`, `readerActions.ts`: reader UI wiring and action flow
   - `modules/ai/`: `EngineMode` union, per-item mode overrides, provider registry, and the mode-dispatching `workspaceRun.ts` helpers
-  - `modules/codex/`, `modules/claude/`, `modules/gemini/`: one near-duplicate module per engine (`runner`, `controller`, `runState`, `poller`, `stopRun`); Codex carries the extra command/executable/model/status surface
+  - `modules/codex/`, `modules/claude/`: one near-duplicate module per engine (`runner`, `controller`, `runState`, `poller`, `stopRun`); Codex carries the extra command/executable/model/status surface
   - `modules/context/`: retrieval, chunk indexing, and workspace artifact construction
   - `modules/workspace/`: workspace path building, writability probe, cleanup, and collection artifact bundles
   - `modules/researchWorkspace/`: project persistence, selection capture, verified evidence, project capabilities, and modeless-window UI
@@ -95,8 +95,8 @@ CLI flag-ordering integration test. When unset, the test uses `codex` from
 
 ### Provider / workspace / CLI changes
 
-- Keep Codex CLI, Claude Code, and Gemini CLI behavior scoped to the active paper. Run state, mode overrides, pollers, and card state are keyed by `itemID` in `addon.data`; leaking state across papers is the most common regression here.
-- Engine behavior that should be identical across the three belongs in `modules/ai/workspaceRun.ts`, not in cross-engine imports. The engine modules are deliberately near-duplicates for isolation.
+- Keep Codex CLI and Claude Code behavior scoped to the active paper. Run state, mode overrides, pollers, and card state are keyed by `itemID` in `addon.data`; leaking state across papers is the most common regression here.
+- Engine behavior that should be identical across both engines belongs in `modules/ai/workspaceRun.ts`, not in cross-engine imports. The engine modules are deliberately near-duplicates for isolation.
 - Runs are file-based and polled, not streamed: the runner spawns a detached shell job that writes output, exit-code, and pid files, and the controller polls them every 800 ms. Preserve that contract when touching a runner or controller.
 - Preserve workspace grounding behavior and compatibility fallbacks, including the `extractionMethod` distinction between `opendataloader-pdf` and `zotero-attachment-text`.
 - A new workspace artifact is dead weight unless the prompt tells the engine to read it. Update the runner and the prompt together. All engines receive `CONTEXT_INDEX.md`; only `figures/` is Codex-only today.

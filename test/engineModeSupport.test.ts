@@ -17,26 +17,19 @@ import {
 test("provider registry reports only observed readiness", () => {
   const codex = getProvider("codex_cli").getDescriptor();
   const claude = getProvider("claude_code").getDescriptor();
-  const gemini = getProvider("gemini_cli").getDescriptor();
 
   assert.deepEqual(
     { mode: codex.mode, status: codex.status, label: codex.label },
     { mode: "codex_cli", status: "checking", label: "Codex CLI" },
   );
   assert.deepEqual(
-    { mode: gemini.mode, status: gemini.status, label: gemini.label },
-    { mode: "gemini_cli", status: "idle", label: "Gemini CLI" },
-  );
-  assert.deepEqual(
     { mode: claude.mode, status: claude.status, label: claude.label },
     { mode: "claude_code", status: "idle", label: "Claude Code" },
   );
-  assert.match(gemini.placeholderResponse, /Open the Gemini header/i);
   assert.match(claude.placeholderResponse, /Open the Claude header/i);
   assert.match(codex.placeholderResponse, /Open the Codex header/i);
   assert.equal(codex.discoveryCapabilities.agentWebSearch, false);
   assert.equal(claude.discoveryCapabilities.agentWebSearch, false);
-  assert.equal(gemini.discoveryCapabilities.agentWebSearch, false);
   assert.equal(
     codex.discoveryCapabilities.structuredCandidateSearch,
     typeof fetch === "function",
@@ -73,10 +66,7 @@ test("mode overrides are stored per item without changing the default mode", () 
   const previousZotero = (globalThis as { Zotero?: unknown }).Zotero;
   (globalThis as { addon?: unknown }).addon = {
     data: {
-      modeOverrides: new Map<
-        number,
-        "codex_cli" | "claude_code" | "gemini_cli"
-      >(),
+      modeOverrides: new Map<number, "codex_cli" | "claude_code">(),
     },
   };
   (globalThis as { Zotero?: unknown }).Zotero = {
@@ -102,10 +92,9 @@ test("provider descriptor resolution respects per-item mode overrides", () => {
   const previousZotero = (globalThis as { Zotero?: unknown }).Zotero;
   (globalThis as { addon?: unknown }).addon = {
     data: {
-      modeOverrides: new Map<
-        number,
-        "codex_cli" | "claude_code" | "gemini_cli"
-      >([[7, "claude_code"]]),
+      modeOverrides: new Map<number, "codex_cli" | "claude_code">([
+        [7, "claude_code"],
+      ]),
     },
   };
   (globalThis as { Zotero?: unknown }).Zotero = {

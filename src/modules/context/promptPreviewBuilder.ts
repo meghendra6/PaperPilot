@@ -85,20 +85,6 @@ export function buildCodexWorkspacePrompt(
     .join("\n");
 }
 
-export function buildGeminiWorkspacePrompt(promptPreview: string) {
-  return [
-    "You are helping inside a Zotero paper workspace.",
-    "Read CONTEXT_INDEX.md first. Read conversation-context.md when present for the explicitly supplied conversation context, then inspect the relevant admitted paper files.",
-    "Prefer paper.md and paper.json over paper.txt when they are available.",
-    "For a discovery request, also read the discovery-*.json source-data files when present; candidate records are not acceptance proof.",
-    "Ground your answer in the local paper workspace contents rather than guessing.",
-    ...buildWorkspaceAnswerStyleRules(),
-    "",
-    "User request:",
-    promptPreview,
-  ].join("\n");
-}
-
 export function buildClaudeWorkspacePrompt(promptPreview: string) {
   return [
     "You are helping inside a Zotero paper workspace through Claude Code.",

@@ -24,7 +24,7 @@ Zotero item panes
         └── modules/researchWorkspace/       feature service and typed analysis core
               └── modules/ai/workspaceRun.ts
                     └── <engine>/runner.ts   workspace build + process launch
-                          └── codex | claude | gemini CLI
+                          └── codex | claude CLI
                                 └── reads the paper workspace directory
 ```
 
@@ -234,11 +234,11 @@ is shown as unresolved and is not eligible for undo or reapplication.
 
 ## Engine abstraction
 
-`src/modules/ai/` is the thin layer over the three engines.
+`src/modules/ai/` is the thin layer over the two engines.
 
 | File                    | Role                                                                     |
 | ----------------------- | ------------------------------------------------------------------------ |
-| `types.ts`              | `EngineMode = "codex_cli" \| "claude_code" \| "gemini_cli"`              |
+| `types.ts`              | `EngineMode = "codex_cli" \| "claude_code"`                              |
 | `modeStore.ts`          | default mode from prefs, per-item override in `addon.data.modeOverrides` |
 | `providerRegistry.ts`   | mode → provider descriptor (label, status)                               |
 | `runCompletion.ts`      | cleanup-before-callback ordering for terminal controller transitions     |
@@ -256,12 +256,12 @@ is shown as unresolved and is not eligible for undo or reapplication.
 `workspaceRun.ts` is the shared entry point used by non-chat workflows (research
 brief, paper tools, compare, verified discovery, Critical Read, auto-highlight,
 mastery). It dynamically imports
-the engine runner so the three engine modules stay independently loadable.
+the engine runner so the engine modules stay independently loadable.
 
 Each engine then has a parallel module with the same five files:
 
 ```text
-src/modules/{codex,claude,gemini}/
+src/modules/{codex,claude}/
   runner.ts      builds the workspace, builds the command, launches the process
   controller.ts  owns the run lifecycle: guard, poll, persist, clean up
   runState.ts    per-item run state in addon.data
@@ -275,8 +275,17 @@ Codex has extra modules because it exposes the most surface: `commandBuilder.ts`
 (login state), `modelOptions.ts` / `modelHistory.ts`, `diagnostics.ts`,
 `authAction.ts`.
 
-`modelOptions.ts` under `codex/` is shared by all three engines — it holds the
-normalizers for Claude and Gemini model lists too. The filename is historical.
+`modelOptions.ts` under `codex/` is shared by both engines — it holds the Claude
+model catalog, model-name normalizers, and effort levels too. The filename is
+historical. The built-in Claude picker lists the CLI family aliases (`sonnet`,
+the default, plus `opus`, `haiku`, and `fable`), which the installed CLI
+resolves to the newest model in each family, followed by pinned version ids.
+`normalizeClaudeModel` canonicalizes hand-typed names (`Opus 5.5` and
+`claude-opus-5.5` become `claude-opus-5-5`) and keeps a context suffix such as
+`[1m]`; any other id, including Bedrock/Vertex ids, passes to the CLI unchanged.
+`claudeReasoningEffort` is empty (the CLI default) or one of `low`, `medium`,
+`high`, `xhigh`, and `max`; it is set in preferences or with the effort select
+next to the reader-pane model picker, which is shown only in Claude mode.
 
 ## How one run works
 
@@ -326,7 +335,7 @@ that document boundary.
    - builds the CLI argv and wraps it in a **detached background shell script**;
      first and resumed Codex turns carry the same configured approval and
      sandbox modes, and every engine prepends its executable directory to PATH
-     (`codex/shell.ts` for Codex; inline in the runner for Claude and Gemini)
+     (`codex/shell.ts` for Codex; inline in the runner for Claude)
    - runs `Zotero.Utilities.Internal.exec("/bin/zsh", ["-lc", script])`
 4. The script writes stdout and stderr to separate files, writes the exit code
    when done, and records the detached shell pid. `exec` returns as soon as the
@@ -359,7 +368,7 @@ that document boundary.
    no controller renders raw in-flight output. A separate card timer updates
    only the elapsed-time node every second. The shared watchdog enforces a
    30-minute absolute limit from workspace preparation onward without treating
-   an empty Claude/Gemini output file as a stall.
+   an empty Claude output file as a stall.
 6. On completion the controller sanitizes the text
    (`message/assistantOutput.ts`), persists the turn via
    `session/sessionHistoryService.ts`, updates run state, and calls
@@ -398,8 +407,8 @@ that document boundary.
    It does not reconstruct legacy directories from mutable paper titles.
 
 Failures are classified in `ai/runFailure.ts`. Workspace and timeout sources
-take precedence over string matching; executable and login patterns cover all
-three CLIs. Process-exit classification reads stderr plus explicit CLI error
+take precedence over string matching; executable and login patterns cover both
+CLIs. Process-exit classification reads stderr plus explicit CLI error
 events, never the full stdout/tool-event stream. Session history stores the safe `userMessage` as replayable text and
 keeps raw stderr only in `rawEvent`, which the run card exposes under a collapsed
 Raw logs disclosure. Direct workspace workflows likewise derive visible text
@@ -412,12 +421,10 @@ result. `ui/runProgressCard.ts` renders the
 same progress, cancel, retry, settings, and login-help surface for every engine.
 Only normal chat turns enter `addon.data.lastEngineRequests`; silent Workbench
 Paper Mastery, and Critical Read runs continue to use their own workflow buttons.
-Normal chat uses the configured provider permissions. Gemini's default approval
-mode prompts instead of accepting actions automatically, and Paper Pilot adds
-Gemini's sandbox flag when the installed CLI advertises it. Analysis is
-read-only (Codex read-only sandbox, Claude plan permission, Gemini plan
-approval) and has no web search. Discovery keeps the same filesystem boundary
-while admitting the verified web-search path. Hidden completion can persist
+Normal chat uses the configured provider permissions. Analysis is read-only
+(Codex read-only sandbox, Claude plan permission) and has no web search.
+Discovery keeps the same filesystem boundary while admitting the verified
+web-search path. Hidden completion can persist
 workflow state without changing the visible session's provider resume id.
 
 Per-engine file names inside the workspace:
@@ -426,17 +433,21 @@ Per-engine file names inside the workspace:
 | ------ | ------------------- | -------------------- | ------------------- | ----------------- | ---------------- |
 | Codex  | `prompt.txt`        | `codex-output.jsonl` | `codex-stderr.log`  | `codex-exit.txt`  | `codex-pid.txt`  |
 | Claude | `claude-prompt.txt` | `claude-output.txt`  | `claude-stderr.log` | `claude-exit.txt` | `claude-pid.txt` |
-| Gemini | `gemini-prompt.txt` | `gemini-output.txt`  | `gemini-stderr.log` | `gemini-exit.txt` | `gemini-pid.txt` |
 
 Codex emits JSONL events, so `outputParser.ts` extracts assistant text and
-`codex/controller.ts` extracts the resumable `thread_id`. Claude and Gemini use
-stream-JSON when the installed CLI supports it, otherwise plain text. Their
-event parsers extract assistant text, provider session identity and terminal
-provider errors. Progress readers sample the exit file before
-stdout/stderr: an observed completion marker therefore precedes the final output
-read, preventing completion from using an older partial output snapshot.
-The shared `resolveRunAnswer` helper also requires readable decoded chat text
-before controllers persist a successful turn or retain a provider resume binding.
+`codex/controller.ts` extracts the resumable `thread_id`. Claude runs in print
+mode (`claude -p`). When the installed CLI's help lists `stream-json`,
+`--verbose`, and `--include-partial-messages`, it writes stream-json events that
+`claude/outputParser.ts` parses for assistant text, provider session identity
+and terminal provider errors; otherwise `--output-format text` output is read
+directly. The command passes the normalized model id through `--model` and adds
+`--effort <level>` only when an effort is configured and the CLI's `--help`
+lists `--effort`; older CLIs silently run without it. Progress readers sample
+the exit file before stdout/stderr: an observed completion marker therefore
+precedes the final output read, preventing completion from using an older
+partial output snapshot. The shared `resolveRunAnswer` helper also requires
+readable decoded chat text before controllers persist a successful turn or
+retain a provider resume binding.
 
 The current local-process adapter is macOS/POSIX-specific: it launches
 `/bin/zsh` and uses `/usr/bin/pgrep` and `/bin/ps`. Windows is not a supported
@@ -463,7 +474,7 @@ runtime until those process-control assumptions have a platform adapter.
 | `figures/`                  | Codex only                      | empty directory for image assets                                                 |
 | `output-schema.json`        | supported Codex structured runs | native final-output JSON Schema                                                  |
 
-All three engine prompts instruct the agent to read `CONTEXT_INDEX.md`. Discovery
+Both engine prompts instruct the agent to read `CONTEXT_INDEX.md`. Discovery
 runs additionally stage the four `discovery-*.json` files for a reproducible
 candidate-discovery and publication-verification protocol. The agent owns field
 and venue judgment; these files standardize inputs and evidence boundaries rather
@@ -515,8 +526,8 @@ program or proceedings authority is established. Public-review links stay
 hidden until this live reconstruction succeeds.
 
 Discovery admission uses one observed capability snapshot for the whole run.
-Codex binds its configured web-search state at admission; Claude Code and Gemini
-fail closed for verified discovery until Paper Pilot can observe a usable web
+Codex binds its configured web-search state at admission; Claude Code fails
+closed for verified discovery until Paper Pilot can observe a usable web
 capability instead of assuming one from the executable alone.
 
 `extractionMethod` is `opendataloader-pdf` when Java 11+ ran the bundled JAR, and
@@ -527,7 +538,7 @@ language off this, so keep it accurate.
 
 Prompt construction and response parsing live next to the workflow they serve.
 `context/promptPreviewBuilder.ts` holds the shared workspace preamble and the
-common answer-style rules used by all three engines.
+common answer-style rules used by both engines.
 
 | Workflow           | Module                                             | Output                                       |
 | ------------------ | -------------------------------------------------- | -------------------------------------------- |
@@ -554,6 +565,15 @@ Two layers, easy to confuse:
   (`SESSION_HISTORY_STORAGE_VERSION`), per-paper session index plus snapshots.
   `sessionHistoryService.ts` is the API the controllers call;
   `sessionSnapshot.ts` captures and reapplies pane state when a session reopens.
+
+Gemini CLI support has been removed, but saved history can still name
+`gemini_cli`. `sessionHistoryRepository.ts` migrates such files on read instead
+of rejecting them: Gemini resume ids, provider bindings, last-mode and
+last-model hints, and Gemini-tagged execution settings are dropped, and a legacy
+message `sourceMode` is rewritten to `codex_cli` only so native-resume
+invalidation keeps working. Research Workspace lineage validation still accepts
+`gemini_cli` so historical artifacts load; new runs record only `codex_cli` or
+`claude_code`.
 
 The service serializes asynchronous mutations per item, including snapshot
 capture, persistence, pin/summary changes, rename/delete and session replacement.
@@ -609,8 +629,8 @@ Preferences are declared in three places that must stay in sync:
 3. `addon/chrome/content/preferences.xhtml` — the settings UI
 
 Read them through `utils/prefs.ts` (`getPref` / `setPref`), never
-`Zotero.Prefs` directly. Groups: General, Claude Code, Gemini CLI, Codex CLI,
-Retrieval, Privacy.
+`Zotero.Prefs` directly. Groups: General, Claude Code, Codex CLI, Retrieval,
+Privacy. `defaultMode` accepts `codex_cli` or `claude_code`.
 
 ## Build and release
 
@@ -648,7 +668,7 @@ covered by [`manual-qa.md`](./manual-qa.md) instead.
 - `src/modules/readerPane.ts` is still large and wires every pane workflow. Add
   new rendering logic in a focused `modules/ui/` module and wire it in, rather
   than growing this file.
-- The three engine modules are near-duplicates by design (isolation over reuse).
+- The two engine modules are near-duplicates by design (isolation over reuse).
   Shared behavior belongs in `ai/workspaceRun.ts`, not in cross-engine imports.
 - `addon/` is excluded from `tsconfig.json`, so `bootstrap.js`,
   `preferences.xhtml`, and `prefs.js` get no typecheck. Validate them in Zotero.
@@ -656,8 +676,9 @@ covered by [`manual-qa.md`](./manual-qa.md) instead.
 
 ## Analysis consistency and maintenance boundaries
 
-`ai/executionSettings.ts` captures the provider, CLI model argument, Codex reasoning
-level, and response language before analysis preparation. The facade shares that
+`ai/executionSettings.ts` captures the provider, CLI model argument, reasoning level
+(Codex reasoning effort, or the configured Claude effort when one is set), and
+response language before analysis preparation. The facade shares that
 immutable snapshot with prompt construction, every incremental unit, run history, and artifact
 lineage. Provider aliases such as `sonnet` record the CLI argument, not a resolved
 server-side model revision. Local extraction and corrections use `local` lineage.
@@ -687,7 +708,7 @@ preserved. Java/extraction failure still falls back to Zotero attachment text.
 shell, with template, sync, and review panels in separate modules. Navigation is
 passed to panels explicitly, while `projectSurfaceShared.ts` owns surface lifecycle
 and controls. `ui/readerWorkbench.ts` owns reader workbench card state and rendering.
-The three CLI engine modules remain separate for provider isolation.
+The two CLI engine modules remain separate for provider isolation.
 
 All previously unchecked ported core modules and `service.ts` participate in strict
 TypeScript checks. `serviceState.ts` describes admitted analysis state; legacy
@@ -704,10 +725,8 @@ quality.
 For setup diagnosis, run `bash scripts/doctor.sh . [Zotero-profile-directory]`.
 The bounded runtime probes check the actual `/bin/zsh` login-shell CLI paths,
 versions, Codex/Claude authentication status, and optionally the profile JAR.
-Authentication details are not printed. Gemini has no read-only auth-status command
-in the supported CLI surface, so the doctor reports it as unverified; a user-triggered
-analysis is the runtime check. The detached runner needs Unix tools and `/bin/zsh`;
-native Windows execution is not supported, and Linux needs those tools installed.
+Authentication details are not printed. The detached runner needs Unix tools
+and `/bin/zsh`; native Windows execution is not supported, and Linux needs those tools installed.
 
 Zotero shutdown listeners await best-effort termination of registered CLI process
 trees before the runtime closes. The bootstrap application-shutdown path invokes
@@ -728,7 +747,7 @@ regenerate saved AI prose or translate verbatim paper evidence.
 
 ## Chat request identity and continuity
 
-Ordinary chat captures one `RequestContextSnapshot` before persistence. It records the exact library, parent item, PDF attachment, fingerprint, selection, page and resolved annotation quote/comment. All three engines read that snapshot through `context/requestContext.ts`; a removed/replaced source fails closed. Project operations use an admitted `PrebuiltWorkspaceInput` with explicit source IDs and never recover a parent paper as hidden fallback input.
+Ordinary chat captures one `RequestContextSnapshot` before persistence. It records the exact library, parent item, PDF attachment, fingerprint, selection, page and resolved annotation quote/comment. Both engines read that snapshot through `context/requestContext.ts`; a removed/replaced source fails closed. Project operations use an admitted `PrebuiltWorkspaceInput` with explicit source IDs and never recover a parent paper as hidden fallback input.
 
 A chat workspace is keyed by item and PaperPilot session identity, independently of the editable thread title. Non-chat runs have unique directories. `workspace/supplementalFiles.ts` records and replaces owned inputs with a manifest. Only previously owned input files are removed; unknown legacy/user files are not broadly deleted. Full paper files remain available; the [retrieval evaluation](./chat-context-evaluation.md) did not justify narrowing the default context.
 

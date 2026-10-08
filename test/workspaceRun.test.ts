@@ -43,7 +43,6 @@ test("run profiles isolate hidden workflows from the visible chat session", () =
 test("workspace run labels cover all configured engines", () => {
   assert.equal(getWorkspaceEngineLabel("codex_cli"), "Codex CLI");
   assert.equal(getWorkspaceEngineLabel("claude_code"), "Claude Code");
-  assert.equal(getWorkspaceEngineLabel("gemini_cli"), "Gemini CLI");
 });
 
 test("workspace run active messages name the selected engine and task", () => {
@@ -102,8 +101,6 @@ test("workspace reservations block direct runs and pending controller preparatio
       codexRunPollers: new Map(),
       claudeRunStates: new Map(),
       claudeRunPollers: new Map(),
-      geminiRunStates: new Map(),
-      geminiRunPollers: new Map(),
     },
   };
 
@@ -119,7 +116,7 @@ test("workspace reservations block direct runs and pending controller preparatio
 
     const controllerToken = Symbol("controller-preparation");
     registerPendingEngineCompletion(44, {
-      mode: "gemini_cli",
+      mode: "claude_code",
       token: controllerToken,
       retryable: false,
     });
@@ -155,8 +152,6 @@ test("workspace preparation cancellation returns promptly and owns late cleanup"
       codexRunPollers: new Map(),
       claudeRunStates: new Map(),
       claudeRunPollers: new Map(),
-      geminiRunStates: new Map(),
-      geminiRunPollers: new Map(),
     },
   };
   (globalThis as { Zotero?: unknown }).Zotero = {

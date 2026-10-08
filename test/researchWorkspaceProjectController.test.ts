@@ -549,7 +549,7 @@ test("pre-cancelled operations are recorded as cancelled and never execute", asy
       operationVersion: "paper-to-code-v1",
       artifactType: "paper-to-code",
       artifactTitle: "Paper-to-Code",
-      providerMode: "gemini_cli",
+      providerMode: "claude_code",
       signal: controller.signal,
       execute: async () => {
         executed = true;

@@ -1,4 +1,4 @@
-export type EngineMode = "gemini_cli" | "claude_code" | "codex_cli";
+export type EngineMode = "claude_code" | "codex_cli";
 
 export type ProviderStatus =
   | "ready"

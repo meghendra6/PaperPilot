@@ -110,7 +110,7 @@ function installGlobals(prefs: Record<string, unknown>) {
   (globalThis as { addon?: unknown }).addon = {
     data: {
       currentSessionId: undefined,
-      modeOverrides: new Map<number, "gemini_cli" | "codex_cli">(),
+      modeOverrides: new Map<number, "claude_code" | "codex_cli">(),
       paperArtifactStates: new Map(),
       relatedRecommendationStates: new Map(),
       comprehensionCheckStates: new Map(),
@@ -949,12 +949,12 @@ function buildSavedSnapshot(itemID: number): SessionHistorySnapshot {
     title: "Saved session",
     createdAt: "2026-04-14T09:30:00.000Z",
     updatedAt: "2026-04-14T09:45:00.000Z",
-    lastMode: "gemini_cli",
+    lastMode: "claude_code",
     lastCodexSessionID: "codex-thread-1",
-    lastGeminiSessionID: "gemini-thread-1",
+    lastClaudeSessionID: "claude-thread-1",
     lastModel: {
-      mode: "gemini_cli",
-      model: "gemini-3.1-pro-preview",
+      mode: "claude_code",
+      model: "opus",
     },
     messages: [
       {
@@ -970,7 +970,7 @@ function buildSavedSnapshot(itemID: number): SessionHistorySnapshot {
         role: "assistant",
         text: "The hybrid index plus snapshot model is the smallest fit.",
         createdAt: "2026-04-14T09:32:00.000Z",
-        sourceMode: "gemini_cli",
+        sourceMode: "claude_code",
         status: "done",
       },
     ],
@@ -1036,13 +1036,13 @@ test("SessionHistoryService keeps one transient draft session per paper and does
       itemID: 501,
       mode: "codex_cli",
     });
-    const geminiDraft = service.ensureDraftSession({
+    const claudeDraft = service.ensureDraftSession({
       itemID: 501,
-      mode: "gemini_cli",
+      mode: "claude_code",
     });
 
-    assert.equal(geminiDraft.sessionId, codexDraft.sessionId);
-    assert.equal(geminiDraft.mode, "gemini_cli");
+    assert.equal(claudeDraft.sessionId, codexDraft.sessionId);
+    assert.equal(claudeDraft.mode, "claude_code");
     assert.equal(
       (globalThis as { addon?: { data?: { currentSessionId?: string } } }).addon
         ?.data?.currentSessionId,
@@ -1086,15 +1086,15 @@ test("SessionHistoryService persists the active session snapshot with mixed-mode
     messageStore.append(session.sessionId, {
       role: "assistant",
       text: "Persist them after the first meaningful event.",
-      sourceMode: "gemini_cli",
+      sourceMode: "claude_code",
       status: "done",
     });
-    sessionStore.update(502, "gemini_cli", undefined, (existing) => {
+    sessionStore.update(502, "claude_code", undefined, (existing) => {
       existing.lastCodexSessionID = "codex-thread-2";
-      existing.lastGeminiSessionID = "gemini-thread-2";
+      existing.lastClaudeSessionID = "claude-thread-2";
       existing.lastModel = {
-        mode: "gemini_cli",
-        model: "gemini-3.1-pro-preview",
+        mode: "claude_code",
+        model: "opus",
       };
     });
 
@@ -1183,14 +1183,14 @@ test("SessionHistoryService persists the active session snapshot with mixed-mode
 
     assert.ok(persisted);
     assert.equal(persisted?.title, "How should draft sessions be persisted");
-    assert.equal(persisted?.lastMode, "gemini_cli");
+    assert.equal(persisted?.lastMode, "claude_code");
     assert.deepEqual(persisted?.lastModel, {
-      mode: "gemini_cli",
-      model: "gemini-3.1-pro-preview",
+      mode: "claude_code",
+      model: "opus",
     });
     assert.equal(persisted?.messages?.length, 2);
     assert.equal(persisted?.messages?.[0].sourceMode, "codex_cli");
-    assert.equal(persisted?.messages?.[1].sourceMode, "gemini_cli");
+    assert.equal(persisted?.messages?.[1].sourceMode, "claude_code");
     assert.deepEqual(persisted?.paperArtifacts, {
       running: false,
       status: "Ready",
@@ -1346,7 +1346,7 @@ test("SessionHistoryService honors prompts-only persistence for snapshots", asyn
     messageStore.append(session.sessionId, {
       role: "assistant",
       text: "This response should not be persisted.",
-      sourceMode: "gemini_cli",
+      sourceMode: "claude_code",
       status: "done",
     });
     sessionStore.update(503, "codex_cli", undefined, (existing) => {
@@ -1456,7 +1456,7 @@ test("SessionHistoryService opens a saved snapshot into the in-memory stores", a
 
     assert.ok(opened);
     assert.equal(opened?.sessionId, snapshot.sessionId);
-    assert.equal(opened?.mode, "gemini_cli");
+    assert.equal(opened?.mode, "claude_code");
     assert.deepEqual(
       messageStore.recentRaw(snapshot.sessionId, 10),
       restoreMessageRecords(snapshot.messages ?? []),
@@ -1518,7 +1518,7 @@ test("SessionHistoryService opens a saved snapshot into the in-memory stores", a
           };
         }
       ).addon?.data?.modeOverrides?.get(504),
-      "gemini_cli",
+      "claude_code",
     );
     assert.equal(
       (
@@ -2151,20 +2151,20 @@ test("SessionHistoryService.persistAssistantTurn with suppressMessage skips mess
     // Simulate a previously persisted snapshot that the user has since switched away from.
     const priorSession = service.ensureDraftSession({
       itemID: 602,
-      mode: "gemini_cli",
+      mode: "claude_code",
     });
     const priorSessionId = priorSession.sessionId;
 
     messageStore.append(priorSessionId, {
       role: "user",
       text: "Original question.",
-      sourceMode: "gemini_cli",
+      sourceMode: "claude_code",
       status: "done",
     });
     messageStore.append(priorSessionId, {
       role: "assistant",
       text: "Original response.",
-      sourceMode: "gemini_cli",
+      sourceMode: "claude_code",
       status: "done",
     });
     await service.persistActiveSession({
@@ -2173,14 +2173,14 @@ test("SessionHistoryService.persistAssistantTurn with suppressMessage skips mess
     });
 
     // User starts a new draft -- the active session is now different.
-    sessionStore.reset(602, "gemini_cli");
+    sessionStore.reset(602, "claude_code");
     // Directly set a session with a guaranteed-different ID to avoid
     // Date.now() collisions when both calls happen in the same millisecond.
-    const newSessionId = `paper-602-gemini_cli-new-draft`;
+    const newSessionId = `paper-602-claude_code-new-draft`;
     sessionStore.set({
       sessionId: newSessionId,
       itemID: 602,
-      mode: "gemini_cli",
+      mode: "claude_code",
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       threadTitle: "New draft",
@@ -2192,11 +2192,11 @@ test("SessionHistoryService.persistAssistantTurn with suppressMessage skips mess
     const result = await service.persistAssistantTurn({
       itemID: 602,
       sessionId: priorSessionId,
-      mode: "gemini_cli",
+      mode: "claude_code",
       paperTitle: "Late completion paper",
       assistantText: '{"understood":true,"confidence":0.9,"evaluation":"ok"}',
       success: true,
-      resumeSessionId: "gemini-thread-late",
+      resumeSessionId: "claude-thread-late",
       suppressMessage: true,
     });
 
@@ -2211,20 +2211,20 @@ test("SessionHistoryService.persistAssistantTurn with suppressMessage skips mess
     // ...but resume metadata on the persisted snapshot is updated.
     const saved = await repository.readSessionSnapshot(602, priorSessionId);
     assert.equal(saved?.messages?.length, 2);
-    assert.equal(saved?.lastGeminiSessionID, "gemini-thread-late");
+    assert.equal(saved?.lastClaudeSessionID, "claude-thread-late");
 
     messageStore.clear(priorSessionId);
     messageStore.clear(newDraft.sessionId);
-    sessionStore.reset(602, "gemini_cli");
+    sessionStore.reset(602, "claude_code");
   } finally {
     globals.restore();
   }
 });
 
-for (const mode of ["codex_cli", "claude_code", "gemini_cli"] as const)
+for (const mode of ["codex_cli", "claude_code"] as const)
   test(`restoring interrupted ${mode} context invalidates only its native binding`, () => {
     const globals = installGlobals({ privacySavePromptsOnly: false });
-    const modes = ["codex_cli", "claude_code", "gemini_cli"] as const;
+    const modes = ["codex_cli", "claude_code"] as const;
     try {
       for (const state of ["pending", "running", "finishing"] as const) {
         const snapshot: SessionHistorySnapshot = {
@@ -2237,7 +2237,6 @@ for (const mode of ["codex_cli", "claude_code", "gemini_cli"] as const)
           lastMode: mode,
           lastCodexSessionID: "codex-session-123",
           lastClaudeSessionID: "claude-session-123",
-          lastGeminiSessionID: "gemini-session-123",
           providerBindings: {},
           messages: [
             {
@@ -2267,9 +2266,7 @@ for (const mode of ["codex_cli", "claude_code", "gemini_cli"] as const)
             sessionId:
               engine === "codex_cli"
                 ? snapshot.lastCodexSessionID
-                : engine === "claude_code"
-                  ? snapshot.lastClaudeSessionID
-                  : snapshot.lastGeminiSessionID,
+                : snapshot.lastClaudeSessionID,
             status: "verified",
             sourceID: "zotero:1:PAPER:PDF",
             sourceFingerprint: "fingerprint",

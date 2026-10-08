@@ -193,6 +193,7 @@ function validateProjectScope(value: unknown) {
   }
 }
 
+// Includes the removed Gemini engine so historical lineage stays readable.
 const ENGINE_MODES = ["codex_cli", "claude_code", "gemini_cli"] as const;
 const MEMBER_ROLES = [
   "seed",

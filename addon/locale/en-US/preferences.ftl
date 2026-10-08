@@ -1,5 +1,5 @@
 pref-surface-title = Paper Pilot settings
-pref-surface-intro = Configure Codex CLI, Claude Code, Gemini CLI, retrieval behavior, and local privacy/session preferences.
+pref-surface-intro = Configure Codex CLI, Claude Code, retrieval behavior, and local privacy/session preferences.
 
 pref-section-general-title = General
 pref-section-general-desc = General reader pane behavior and session defaults.
@@ -11,18 +11,12 @@ pref-general-response-language-korean = Korean
 pref-general-response-language-chinese = Chinese
 
 pref-section-claude-title = Claude Code
-pref-section-claude-desc = Claude Code executable, model, and permission options.
+pref-section-claude-desc = Claude Code executable, model, effort, and permission options.
 pref-claude-executable-path = Claude executable path
 pref-claude-default-model = Claude default model
+pref-claude-reasoning-effort = Claude effort
 pref-claude-allowed-models = Claude allowed models list
 pref-claude-permission-mode = Claude permission mode
-
-pref-section-gemini-title = Gemini CLI
-pref-section-gemini-desc = Gemini CLI executable and default model options.
-pref-gemini-executable-path = Gemini executable path
-pref-gemini-default-model = Gemini default model
-pref-gemini-allowed-models = Gemini allowed models list
-pref-gemini-approval-mode = Gemini approval mode
 
 pref-section-codex-title = Codex CLI
 pref-section-codex-desc = Codex CLI executable, model, reasoning, sandbox, and workspace options.

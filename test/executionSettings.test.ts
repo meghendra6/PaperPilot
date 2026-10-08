@@ -8,10 +8,7 @@ import {
   getAllowedCodexModels,
   resolveCodexModel,
 } from "../src/modules/codex/modelOptions";
-import {
-  getRecentModels,
-  rememberRecentModel,
-} from "../src/modules/codex/modelHistory";
+import { rememberRecentModel } from "../src/modules/codex/modelHistory";
 import { renderModelHistory } from "../src/modules/ui/paneHeader";
 import { summarizeCitationStances } from "../src/modules/researchWorkspace/core/citationStance/engine";
 
@@ -86,11 +83,11 @@ test("Codex allowed models determine both effective selection and picker options
     }
     rememberRecentModel("codex_cli", "gpt-6-astra");
     rememberRecentModel("claude_code", "sonnet");
-    assert.deepEqual(getRecentModels("gemini_cli"), []);
     renderModelHistory(container as any, input as any, "claude_code");
     assert(!options.some((entry) => entry.value.startsWith("gpt-")));
-    renderModelHistory(container as any, input as any, "gemini_cli");
-    assert(!options.some((entry) => /^(sonnet|gpt-)/.test(entry.value)));
+    assert(options.some((entry) => entry.value === "claude-opus-5-5|"));
+    renderModelHistory(container as any, input as any, "codex_cli");
+    assert(!options.some((entry) => /^(sonnet|claude-)/.test(entry.value)));
   } finally {
     Object.assign(globals, previous);
   }
@@ -118,6 +115,23 @@ test("execution settings pin normalized model, effort, language, and provider", 
     () => executionSettingsForMode("claude_code", settings),
     /do not match/,
   );
+});
+
+test("Claude execution settings normalize the model and carry an explicit effort", () => {
+  const prefs: Record<string, string> = {
+    claudeDefaultModel: "Opus 5.5",
+    claudeReasoningEffort: "high",
+  };
+  const read = ((key: string) => prefs[key]) as any;
+  const settings = captureExecutionSettings("claude_code", read);
+  assert.equal(settings.model, "claude-opus-5-5");
+  assert.equal(settings.reasoningEffort, "high");
+
+  prefs.claudeDefaultModel = "";
+  prefs.claudeReasoningEffort = "ultra";
+  const defaults = captureExecutionSettings("claude_code", read);
+  assert.equal(defaults.model, "sonnet");
+  assert.equal("reasoningEffort" in defaults, false);
 });
 
 test("missing citation confidence cannot turn the summary into NaN", () => {

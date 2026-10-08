@@ -172,7 +172,7 @@ test("buildInitialMasteryPrompt returns a prompt asking for JSON", () => {
 });
 
 test("buildInitialMasteryPrompt forbids reasoning prose before the JSON", () => {
-  // Reasoning-first models (Codex, Gemini thinking mode) tend to emit a plan
+  // Reasoning-first models (Codex, Claude with thinking) tend to emit a plan
   // before the JSON. The rendered chat panel then shows that prose and confuses
   // the reader. Prompt must explicitly forbid any pre-JSON text.
   const prompt = buildInitialMasteryPrompt();

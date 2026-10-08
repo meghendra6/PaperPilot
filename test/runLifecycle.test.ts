@@ -185,9 +185,9 @@ test("silent failure remains non-retryable even when a chat request exists", () 
 
   try {
     const token = Symbol("run-61");
-    startRunProgress(61, "gemini_cli", token);
+    startRunProgress(61, "claude_code", token);
     rememberLastEngineRequest(61, {
-      mode: "gemini_cli",
+      mode: "claude_code",
       sessionId: "session-61",
       sessionTitle: "Paper 61",
       question: "What is the contribution?",
@@ -195,7 +195,7 @@ test("silent failure remains non-retryable even when a chat request exists", () 
     assert.equal(hasLastEngineRequest(61), true);
     const state = failRunProgress({
       itemID: 61,
-      engine: "gemini_cli",
+      engine: "claude_code",
       token,
       rawError: "command not found",
       source: "spawn",

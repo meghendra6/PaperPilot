@@ -6,7 +6,6 @@ import {
 } from "./modules/ai/shutdownRuns";
 import { clearClaudePollerForItem } from "./modules/claude/poller";
 import { clearCodexPollerForItem } from "./modules/codex/poller";
-import { clearGeminiPollerForItem } from "./modules/gemini/poller";
 import { registerPrefsScripts } from "./modules/preferenceScript";
 import {
   registerReaderActionPlaceholders,
@@ -145,9 +144,6 @@ async function onShutdown(): Promise<void> {
   );
   addon.data.claudeRunPollers?.forEach((_poller, itemID) =>
     clearClaudePollerForItem(itemID),
-  );
-  addon.data.geminiRunPollers?.forEach((_poller, itemID) =>
-    clearGeminiPollerForItem(itemID),
   );
   addon.data.pendingEngineCompletions?.forEach((pending) =>
     pending.cancelTimeout?.(),

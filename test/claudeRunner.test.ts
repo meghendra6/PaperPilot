@@ -15,6 +15,7 @@ type BuildClaudeCommand = (params: {
   pidPath: string;
   workspacePath: string;
   model: string;
+  reasoningEffort?: string;
   resumeSessionId?: string;
   executablePath: string;
   permissionMode: string;
@@ -69,6 +70,34 @@ test("Claude launch reports a rejected shell exec as a start failure", async () 
     },
   );
   assert.deepEqual(result, { ok: false, error: "claude launch rejected" });
+});
+
+test("buildClaudeCommand passes pinned model ids and effort to the CLI", () => {
+  const buildClaudeCommand = (
+    claudeRunner as unknown as { buildClaudeCommand?: BuildClaudeCommand }
+  ).buildClaudeCommand!;
+  const params = {
+    promptPath: "/tmp/paper/claude-prompt.txt",
+    outputPath: "/tmp/paper/claude-output.txt",
+    stderrPath: "/tmp/paper/claude-stderr.log",
+    exitCodePath: "/tmp/paper/claude-exit.txt",
+    pidPath: "/tmp/paper/claude-pid.txt",
+    workspacePath: "/tmp/paper",
+    model: "claude-opus-5-5[1m]",
+    executablePath: "claude",
+    permissionMode: "plan",
+  };
+
+  const withEffort = buildClaudeCommand({
+    ...params,
+    reasoningEffort: "xhigh",
+  });
+  assert.equal(checkShellSyntax(withEffort).status, 0);
+  assert.match(withEffort, /--model 'claude-opus-5-5\[1m\]'/);
+  assert.match(withEffort, /--effort 'xhigh'/);
+
+  const cliDefault = buildClaudeCommand(params);
+  assert.doesNotMatch(cliDefault, /--effort/);
 });
 
 test("buildClaudeCommand refuses the ambiguous latest session marker", () => {

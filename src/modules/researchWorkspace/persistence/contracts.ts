@@ -8,6 +8,8 @@ export const RESEARCH_WORKSPACE_PREFERENCES_SCHEMA_VERSION = 1 as const;
 export const RESEARCH_WORKSPACE_MIGRATION_SCHEMA_VERSION = 1 as const;
 export const RESEARCH_WORKSPACE_CHANGE_INBOX_SCHEMA_VERSION = 1 as const;
 
+// "gemini_cli" is retained only so lineage written before Gemini CLI support
+// was removed still validates; new runs record "codex_cli" or "claude_code".
 export type ResearchWorkspaceEngineMode =
   | "codex_cli"
   | "claude_code"

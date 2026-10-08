@@ -152,9 +152,6 @@ test("project-only engine preparation never reads Zotero parent data and creates
   const { startClaudeRunForQuestion } = await import(
     "../src/modules/claude/runner"
   );
-  const { startGeminiRunForQuestion } = await import(
-    "../src/modules/gemini/runner"
-  );
   const runtime = globalThis as any;
   const oldZ = runtime.Zotero;
   const oldIO = runtime.IOUtils;
@@ -201,7 +198,6 @@ test("project-only engine preparation never reads Zotero parent data and creates
   try {
     for (const [start, mode] of [
       [startClaudeRunForQuestion, "claude_code"],
-      [startGeminiRunForQuestion, "gemini_cli"],
     ] as const) {
       const previousPaths: string[] = [];
       for (const names of [["A", "B"], ["A"]]) {
@@ -213,7 +209,7 @@ test("project-only engine preparation never reads Zotero parent data and creates
           profile: "analysis",
           executionSettings: {
             mode,
-            model: mode === "claude_code" ? "sonnet" : "gemini-3.1-pro-preview",
+            model: "sonnet",
             responseLanguage: "English",
           },
           prebuiltInput: {
@@ -237,7 +233,7 @@ test("project-only engine preparation never reads Zotero parent data and creates
       }
       assert.notEqual(previousPaths[0], previousPaths[1]);
     }
-    assert.equal(commands.length, 4);
+    assert.equal(commands.length, 2);
     assert.ok(commands.every((command) => command.includes("stream-json")));
   } finally {
     runtime.Zotero = oldZ;
@@ -251,9 +247,6 @@ test("all providers suppress launch when Stop arrives during preparation or fina
   );
   const { startClaudeRunForQuestion } = await import(
     "../src/modules/claude/runner"
-  );
-  const { startGeminiRunForQuestion } = await import(
-    "../src/modules/gemini/runner"
   );
   const runtime = globalThis as any;
   const previous = {
@@ -307,7 +300,6 @@ test("all providers suppress launch when Stop arrives during preparation or fina
     for (const [start, mode] of [
       [startCodexRunForQuestion, "codex_cli"],
       [startClaudeRunForQuestion, "claude_code"],
-      [startGeminiRunForQuestion, "gemini_cli"],
     ] as const)
       for (const stage of ["prepare", "write"] as const) {
         cancelled = false;

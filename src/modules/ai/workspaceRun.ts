@@ -1,6 +1,5 @@
 import { isClaudeRunActiveForItem } from "../claude/runState";
 import { isCodexRunActiveForItem } from "../codex/runState";
-import { isGeminiRunActiveForItem } from "../gemini/runState";
 import { cleanupWorkspaceIfEnabled } from "../workspace/cleanup";
 import type {
   PrebuiltWorkspaceInput,
@@ -84,9 +83,6 @@ export function getWorkspaceEngineLabel(mode: EngineMode) {
   if (mode === "claude_code") {
     return "Claude Code";
   }
-  if (mode === "gemini_cli") {
-    return "Gemini CLI";
-  }
   return "Codex CLI";
 }
 
@@ -106,9 +102,6 @@ export function isWorkspaceRunActiveForItem(mode: EngineMode, itemID: number) {
   }
   if (mode === "claude_code") {
     return isClaudeRunActiveForItem(itemID);
-  }
-  if (mode === "gemini_cli") {
-    return isGeminiRunActiveForItem(itemID);
   }
   return isCodexRunActiveForItem(itemID);
 }
@@ -212,22 +205,6 @@ export async function startWorkspaceTextRun(params: {
     if (params.mode === "claude_code") {
       const { startClaudeRunForQuestion } = await import("../claude/runner");
       result = await startClaudeRunForQuestion({
-        itemID: params.itemID,
-        title: params.title,
-        sessionId: params.sessionId,
-        question: params.question,
-        profile: params.profile,
-        outputSchema: params.outputSchema,
-        workspaceFiles: params.workspaceFiles,
-        prebuiltInput: params.prebuiltInput,
-        requestContext: params.requestContext,
-        onWorkspaceAllocated,
-        shouldContinue,
-        executionSettings: params.executionSettings,
-      });
-    } else if (params.mode === "gemini_cli") {
-      const { startGeminiRunForQuestion } = await import("../gemini/runner");
-      result = await startGeminiRunForQuestion({
         itemID: params.itemID,
         title: params.title,
         sessionId: params.sessionId,
@@ -349,9 +326,6 @@ export async function readWorkspaceRunProgress(
   if (mode === "claude_code") {
     const { readClaudeRunProgress } = await import("../claude/runner");
     progress = await readClaudeRunProgress(paths);
-  } else if (mode === "gemini_cli") {
-    const { readGeminiRunProgress } = await import("../gemini/runner");
-    progress = await readGeminiRunProgress(paths);
   } else {
     const { readCodexRunProgress } = await import("../codex/runner");
     progress = await readCodexRunProgress(paths);

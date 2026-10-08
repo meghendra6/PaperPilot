@@ -140,7 +140,7 @@ function buildSnapshot() {
     updatedAt: "2026-04-14T00:19:00.000Z",
     lastMode: "codex_cli" as const,
     lastCodexSessionID: "codex-thread-id",
-    lastGeminiSessionID: "gemini-thread-id",
+    lastClaudeSessionID: "claude-thread-id",
     lastModel: {
       mode: "codex_cli" as const,
       model: "gpt-5.6-terra",
@@ -356,7 +356,7 @@ test("SessionHistoryRepository recovers valid snapshots when index.json is malfo
         role: "user" as const,
         text: "What if the index is broken?",
         createdAt: "2026-04-14T00:20:00.000Z",
-        sourceMode: "gemini_cli" as const,
+        sourceMode: "claude_code" as const,
         status: "done" as const,
       },
     ],
@@ -384,6 +384,93 @@ test("SessionHistoryRepository recovers valid snapshots when index.json is malfo
     (await repo.listSessions(42)).map((entry) => entry.sessionId),
     [secondSnapshot.sessionId],
   );
+});
+
+test("SessionHistoryRepository migrates conversations saved with the removed Gemini engine", async () => {
+  const fileOps = new MemoryFileOps();
+  const repo = new SessionHistoryRepository({
+    rootDir: "/session-history",
+    fileOps,
+  });
+  const legacyGeminiSettings = {
+    mode: "gemini_cli",
+    model: "gemini-3.1-pro-preview",
+    responseLanguage: "English",
+  };
+  const legacy = {
+    ...buildSnapshot(),
+    lastMode: "gemini_cli",
+    lastGeminiSessionID: "gemini-thread-id",
+    lastModel: { mode: "gemini_cli", model: "gemini-3.1-pro-preview" },
+    providerBindings: {
+      codex_cli: { engine: "codex_cli", status: "verified" },
+      gemini_cli: { engine: "gemini_cli", status: "verified" },
+    },
+    messages: [
+      {
+        id: "message-legacy",
+        role: "assistant",
+        text: "Answered by Gemini.",
+        createdAt: "2026-04-14T00:12:00.000Z",
+        sourceMode: "gemini_cli",
+        status: "done",
+        executionSettings: legacyGeminiSettings,
+        request: { question: "Old", executionSettings: legacyGeminiSettings },
+      },
+    ],
+  };
+  fileOps.files.set(
+    repo.getPaperIndexPath(42),
+    JSON.stringify({
+      storageVersion: SESSION_HISTORY_STORAGE_VERSION,
+      paperItemID: 42,
+      paperTitle: "Paper",
+      sessions: [
+        {
+          storageVersion: SESSION_HISTORY_STORAGE_VERSION,
+          sessionId: legacy.sessionId,
+          title: legacy.title,
+          createdAt: legacy.createdAt,
+          updatedAt: legacy.updatedAt,
+          messageCount: 1,
+          lastMode: "gemini_cli",
+          hasArtifacts: true,
+          hasRecommendations: true,
+          hasMasteryState: true,
+        },
+      ],
+    }),
+  );
+  fileOps.files.set(
+    repo.getSessionSnapshotPath(42, legacy.sessionId),
+    JSON.stringify(legacy),
+  );
+
+  const index = await repo.readPaperIndex(42);
+  assert.deepEqual(
+    index.sessions.map((entry) => entry.sessionId),
+    [legacy.sessionId],
+  );
+  assert.equal(index.sessions[0].lastMode, undefined);
+
+  const snapshot = await repo.readSessionSnapshot(42, legacy.sessionId);
+  assert.ok(snapshot);
+  assert.equal(snapshot.lastMode, undefined);
+  assert.equal("lastGeminiSessionID" in snapshot, false);
+  assert.equal(snapshot.lastModel, undefined);
+  assert.deepEqual(Object.keys(snapshot.providerBindings ?? {}), ["codex_cli"]);
+  const [message] = snapshot.messages ?? [];
+  assert.equal(message.text, "Answered by Gemini.");
+  assert.equal(message.sourceMode, "codex_cli");
+  assert.equal(message.executionSettings, undefined);
+  assert.equal(message.request?.executionSettings, undefined);
+
+  // Saving over the legacy file must not be refused as an unsupported format.
+  await repo.saveSessionSnapshot({
+    paperItemID: 42,
+    paperTitle: "Paper",
+    snapshot,
+  });
 });
 
 test("SessionHistoryRepository reads each indexed snapshot once and caches the index", async () => {
@@ -472,7 +559,7 @@ test("SessionHistoryRepository prunes index rows whose snapshot is missing", asy
             createdAt: "2026-04-14T00:05:00.000Z",
             updatedAt: "2026-04-14T00:06:00.000Z",
             messageCount: 1,
-            lastMode: "gemini_cli",
+            lastMode: "claude_code",
             hasArtifacts: false,
             hasRecommendations: false,
             hasMasteryState: false,
@@ -532,7 +619,7 @@ test("SessionHistoryRepository prunes index rows whose snapshot is corrupt", asy
             createdAt: "2026-04-14T00:05:00.000Z",
             updatedAt: "2026-04-14T00:06:00.000Z",
             messageCount: 1,
-            lastMode: "gemini_cli",
+            lastMode: "claude_code",
             hasArtifacts: false,
             hasRecommendations: false,
             hasMasteryState: false,

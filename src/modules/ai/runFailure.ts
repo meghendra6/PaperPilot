@@ -38,13 +38,6 @@ const LOGIN_PATTERNS: Record<EngineMode, RegExp[]> = {
     /please run \/login/i,
     /oauth.*(?:expired|invalid)/i,
   ],
-  gemini_cli: [
-    /not (?:logged in|authenticated)/i,
-    /login required/i,
-    /authentication required/i,
-    /gemini_api_key/i,
-    /api key.*(?:missing|required|invalid)/i,
-  ],
 };
 
 const EXECUTABLE_PATTERNS = [
@@ -53,12 +46,11 @@ const EXECUTABLE_PATTERNS = [
   /no such file or directory/i,
   /executable.*(?:not found|missing|invalid)/i,
   /could not resolve.*executable/i,
-  /permission denied.*(?:codex|claude|gemini)/i,
+  /permission denied.*(?:codex|claude)/i,
 ];
 
 export function getEngineLabel(engine: EngineMode): string {
   if (engine === "claude_code") return "Claude Code";
-  if (engine === "gemini_cli") return "Gemini CLI";
   return "Codex CLI";
 }
 

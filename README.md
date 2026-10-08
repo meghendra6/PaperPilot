@@ -6,7 +6,7 @@
 
 Paper Pilot is an AI reading workbench for the Zotero 7-10 PDF reader. It adds a paper-scoped chat pane, structured paper tools, agent-led verified research discovery, and local CLI-based AI execution directly inside Zotero.
 
-![Zotero 7-10](https://img.shields.io/badge/Zotero-7--10-cc2936) ![Node 20+](https://img.shields.io/badge/Node-20%2B-339933) ![Java 11+](https://img.shields.io/badge/Java-11%2B-007396) ![License](https://img.shields.io/badge/License-AGPL--3.0--or--later-blue) ![Engines](https://img.shields.io/badge/Engines-Codex%20CLI%20%7C%20Claude%20Code%20%7C%20Gemini%20CLI-6f42c1)
+![Zotero 7-10](https://img.shields.io/badge/Zotero-7--10-cc2936) ![Node 20+](https://img.shields.io/badge/Node-20%2B-339933) ![Java 11+](https://img.shields.io/badge/Java-11%2B-007396) ![License](https://img.shields.io/badge/License-AGPL--3.0--or--later-blue) ![Engines](https://img.shields.io/badge/Engines-Codex%20CLI%20%7C%20Claude%20Code-6f42c1)
 
 ## Chat workflow
 
@@ -21,7 +21,7 @@ Drafts are memory-only. Full/prompts-only/off history rules also apply to new ch
 ## At a glance
 
 - AI chat directly inside the Zotero Reader
-- Three local engine modes: **Codex CLI**, **Claude Code**, and **Gemini CLI**
+- Two local engine modes: **Codex CLI** and **Claude Code**
 - Structured paper workbench for brief, compare, contributions, limitations, and follow-ups
 - Structured PDF workspace extraction via **OpenDataLoader PDF**
 - Zero-configuration verified prior-work discovery with official publication evidence and three evidence lanes
@@ -71,7 +71,7 @@ See [`docs/manual-qa.md`](./docs/manual-qa.md) for the current runtime checklist
 
 - Adds an AI pane to the Zotero reader/item pane
 - Keeps conversations scoped to the active paper
-- Supports per-paper engine switching between Codex CLI, Claude Code, and Gemini CLI
+- Supports per-paper engine switching between Codex CLI and Claude Code
 - Preserves follow-up continuity within the same paper/session
 - Supports **Past sessions** for reopening, renaming, deleting, and clearing saved sessions for the current paper
 - Uses **New session** to preserve the current session and start a blank draft for the same paper
@@ -132,7 +132,7 @@ Mastery prompts enforce strict JSON responses for questions and evaluations (no 
 
 ### 7. Local workspace artifacts for CLI engines
 
-When you ask a question in **Codex CLI**, **Claude Code**, or **Gemini CLI** mode, Paper Pilot writes a per-paper workspace so the CLI can inspect local paper context before answering.
+When you ask a question in **Codex CLI** or **Claude Code** mode, Paper Pilot writes a per-paper workspace so the CLI can inspect local paper context before answering.
 
 Artifacts written for every engine:
 
@@ -156,7 +156,7 @@ When Java 11+ is available, `paper.md` and `paper.json` come from the bundled Op
 | Area              | Current support                                                                                              |
 | ----------------- | ------------------------------------------------------------------------------------------------------------ |
 | Reader chat       | Paper-scoped AI chat inside Zotero Reader                                                                    |
-| Engines           | Codex CLI, Claude Code, and Gemini CLI                                                                       |
+| Engines           | Codex CLI and Claude Code                                                                                    |
 | Paper workbench   | Research brief, compare, contributions, limitations, follow-ups                                              |
 | Discovery         | Agent-inferred fields/venues, official publication verification, three evidence lanes, public review insight |
 | Critical reading  | Seven reader-first steps, dependency invalidation, source-aware final report                                 |
@@ -170,8 +170,9 @@ When Java 11+ is available, `paper.md` and `paper.json` come from the bundled Op
 | Mode          | Best for                       | Current strengths                                                                               |
 | ------------- | ------------------------------ | ----------------------------------------------------------------------------------------------- |
 | `Codex CLI`   | workspace-aware paper analysis | local workspace artifacts, resumable runs, model/sandbox/approval controls, optional web search |
-| `Claude Code` | workspace-aware paper Q&A      | local workspace artifacts, model/permission controls, paper-scoped continuity                   |
-| `Gemini CLI`  | lighter local paper Q&A        | simpler executable/model setup, paper-scoped continuity, local retrieval/context assembly       |
+| `Claude Code` | workspace-aware paper Q&A      | local workspace artifacts, model/effort/permission controls, paper-scoped continuity            |
+
+Gemini CLI support has been removed. Saved conversations from earlier Gemini runs still open, but their Gemini resume state is dropped; follow-ups run through Codex CLI or Claude Code, and a saved `defaultMode` of `gemini_cli` falls back to Codex CLI.
 
 ### Codex CLI mode
 
@@ -190,17 +191,10 @@ Codex mode is the more workspace-oriented path. The current codebase includes su
 Claude Code mode uses the local `claude` CLI in print mode with the same paper workspace artifacts used by the reader chat and workbench flows. The current codebase includes support for:
 
 - configurable executable path
-- configurable default model
+- model selection across the Claude Code CLI family aliases (`sonnet` default, plus `opus`, `haiku`, and `fable`), which the installed CLI resolves to the newest model in each family (currently Sonnet 5.5, Opus 5.5, Haiku 5.5, and Fable 5.1), plus pinned ids `claude-opus-5-5`, `claude-sonnet-5-5`, `claude-haiku-5-5`, `claude-fable-5-1`, `claude-opus-5`, and `claude-sonnet-5`
+- any other model id typed in settings (for example `claude-opus-5-5[1m]` or a Bedrock/Vertex model id) is passed to the CLI unchanged; hand-typed names such as `Opus 5.5` or `claude-opus-5.5` are normalized to `claude-opus-5-5`, keeping a context suffix such as `[1m]`
+- optional effort level (`low`, `medium`, `high`, `xhigh`, or `max`; empty keeps the Claude Code CLI default) in settings and next to the model picker; it is passed as `--effort` only when the installed CLI's `--help` lists that flag
 - configurable permission mode
-- paper-scoped follow-up continuity
-- retrieval/context assembly for the active paper
-
-### Gemini CLI mode
-
-Gemini mode is the lighter local-CLI path. The current codebase includes support for:
-
-- configurable executable path
-- configurable default model
 - paper-scoped follow-up continuity
 - retrieval/context assembly for the active paper
 
@@ -237,8 +231,7 @@ See [`docs/prompt-contracts.md`](./docs/prompt-contracts.md) for the exact outpu
 - **Java 11+** at runtime for OpenDataLoader PDF extraction
 - At least one local AI CLI:
   - **Codex CLI**, or
-  - **Claude Code**, or
-  - **Gemini CLI**
+  - **Claude Code**
 
 ## Development quick start
 
@@ -271,7 +264,7 @@ Local CLI runs require a Unix environment with `/bin/zsh` and standard process t
 Native Windows runs are not supported. Use `bash scripts/doctor.sh .` to check the
 login-shell CLI paths, versions, and available authentication status; pass your
 Zotero profile directory as a second argument to compare its extraction runtime
-with the bundle. Gemini authentication remains unverified until an explicit run.
+with the bundle.
 Research Workspace artifacts record the admitted CLI model, reasoning level, and
 response language. Source changes invalidate results, and resumed units require
 matching source, context projection, and execution settings. Codex's allowed-model
@@ -313,10 +306,10 @@ Typical outputs include:
 
 After installing the `.xpi`, this is the fastest way to validate the plugin:
 
-1. Open Zotero settings and configure a local **Codex CLI**, **Claude Code**, or **Gemini CLI** executable path.
+1. Open Zotero settings and configure a local **Codex CLI** or **Claude Code** executable path.
 2. Open a PDF attachment in Zotero Reader.
 3. Open the **Paper Pilot** pane.
-4. Select **Codex CLI**, **Claude Code**, or **Gemini CLI**.
+4. Select **Codex CLI** or **Claude Code**.
 5. Ask a question about the current paper.
 6. Try one structured workbench action such as **Research brief** or **Compare**.
 
@@ -326,7 +319,6 @@ The preferences UI currently exposes settings across these areas:
 
 - **General**
 - **Claude Code**
-- **Gemini CLI**
 - **Codex CLI**
 - **Retrieval**
 - **Privacy**
@@ -345,7 +337,7 @@ Important current details:
 
 1. Open a PDF in Zotero Reader.
 2. Open the **Paper Pilot** pane.
-3. Choose **Codex CLI**, **Claude Code**, or **Gemini CLI**.
+3. Choose **Codex CLI** or **Claude Code**.
 4. Ask a question about the paper.
 5. Optionally use a selection or annotation action to seed the next prompt.
 6. Use the workbench buttons for structured outputs such as brief, compare, contributions, or follow-ups.
@@ -367,7 +359,6 @@ Key source areas:
 - `src/modules/readerPane.ts` — main reader pane UI and workflow wiring
 - `src/modules/codex/` — Codex CLI execution, status, parsing, and command building
 - `src/modules/claude/` — Claude Code execution flow
-- `src/modules/gemini/` — Gemini CLI execution flow
 - `src/modules/context/` — paper context retrieval and workspace artifact generation
 - `src/modules/autoHighlight/` — highlight extraction workflow
 - `src/modules/paperTools.ts` — structured contribution/limitation/follow-up prompts

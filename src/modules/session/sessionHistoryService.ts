@@ -86,7 +86,6 @@ function applyResumeMetadata<
   T extends {
     lastCodexSessionID?: string;
     lastClaudeSessionID?: string;
-    lastGeminiSessionID?: string;
   },
 >(
   target: T,
@@ -105,7 +104,6 @@ function applyResumeMetadata<
   if (!params.success || !realID) {
     if (params.mode === "codex_cli") delete target.lastCodexSessionID;
     if (params.mode === "claude_code") delete target.lastClaudeSessionID;
-    if (params.mode === "gemini_cli") delete target.lastGeminiSessionID;
     return;
   }
   if (params.mode === "codex_cli" && params.success) {
@@ -113,9 +111,6 @@ function applyResumeMetadata<
   }
   if (params.mode === "claude_code" && params.success) {
     target.lastClaudeSessionID = realID;
-  }
-  if (params.mode === "gemini_cli" && params.success) {
-    target.lastGeminiSessionID = realID;
   }
 }
 
@@ -480,9 +475,7 @@ export class SessionHistoryService {
           const key =
             params.mode === "codex_cli"
               ? "lastCodexSessionID"
-              : params.mode === "claude_code"
-                ? "lastClaudeSessionID"
-                : "lastGeminiSessionID";
+              : "lastClaudeSessionID";
           const id = existing[key];
           existing.providerBindings[params.mode] = {
             engine: params.mode,

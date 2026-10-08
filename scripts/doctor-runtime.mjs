@@ -28,7 +28,7 @@ if (shell.status !== 0)
   error("/bin/zsh is unavailable; local CLI runners cannot launch.");
 else {
   ok(shell.stdout.trim().split("\n")[0]);
-  for (const engine of ["codex", "claude", "gemini"]) {
+  for (const engine of ["codex", "claude"]) {
     const lookup = probe("/bin/zsh", ["-lc", `command -v ${engine}`]);
     const executable = lookup.stdout?.trim().split("\n").at(-1);
     if (lookup.status !== 0 || !executable || !path.isAbsolute(executable)) {
@@ -43,12 +43,6 @@ else {
       continue;
     }
     ok(`${engine}: ${version.stdout.trim().split("\n")[0]}`);
-    if (engine === "gemini") {
-      warn(
-        "Gemini authentication is unverified: its CLI has no read-only auth-status command. Check it with an explicit analysis in Zotero.",
-      );
-      continue;
-    }
     const auth = probe(
       executable,
       engine === "codex" ? ["login", "status"] : ["auth", "status", "--json"],

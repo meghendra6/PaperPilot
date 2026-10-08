@@ -81,9 +81,8 @@ export async function writeWorkspaceSupplementalFiles(
 const WORKSPACE_RUNTIME_FILE_PATHS = [
   "prompt.txt",
   "claude-prompt.txt",
-  "gemini-prompt.txt",
   "output-schema.json",
-  ...["codex", "claude", "gemini"].flatMap((engine) => [
+  ...["codex", "claude"].flatMap((engine) => [
     `${engine}-output.${engine === "codex" ? "jsonl" : "txt"}`,
     `${engine}-stderr.log`,
     `${engine}-exit.txt`,

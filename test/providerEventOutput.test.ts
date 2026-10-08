@@ -1,7 +1,6 @@
 import { test } from "node:test";
 import * as assert from "node:assert/strict";
 import { parseClaudeOutput } from "../src/modules/claude/outputParser";
-import { parseGeminiOutput } from "../src/modules/gemini/outputParser";
 import { parseCodexOutput } from "../src/modules/codex/outputParser";
 
 const jsonl = (events: unknown[]) =>
@@ -65,21 +64,6 @@ test("Claude partial text stays separate from malformed trailing events and erro
   assert.equal(parsed.failed, true);
 });
 
-test("Gemini stream captures UUID and assistant delta only", () => {
-  const parsed = parseGeminiOutput(
-    jsonl([
-      { type: "init", session_id: "12345678-1234-4234-8234-123456789abc" },
-      { type: "message", role: "user", content: "secret request" },
-      { type: "tool_result", output: "secret output" },
-      { type: "message", role: "assistant", content: "Hello", delta: true },
-      { type: "message", role: "assistant", content: " world", delta: true },
-      { type: "result", status: "success" },
-    ]),
-  );
-  assert.equal(parsed.text, "Hello world");
-  assert.equal(parsed.sessionID, "12345678-1234-4234-8234-123456789abc");
-});
-
 test("Codex parses source events rather than treating diagnostics as assistant output", () => {
   const parsed = parseCodexOutput(
     jsonl([
@@ -97,12 +81,10 @@ test("Codex parses source events rather than treating diagnostics as assistant o
 });
 
 test("plain CLI fallback answers remain readable without inventing session identity", () => {
-  for (const parse of [parseClaudeOutput, parseGeminiOutput]) {
-    const result = parse("Plain answer");
-    assert.equal(result.text, "Plain answer");
-    assert.equal(result.sessionID, undefined);
-    assert.equal(result.structuredOutput, false);
-  }
+  const result = parseClaudeOutput("Plain answer");
+  assert.equal(result.text, "Plain answer");
+  assert.equal(result.sessionID, undefined);
+  assert.equal(result.structuredOutput, false);
 });
 
 test("Codex final structured answer replaces commentary and ignores user role snapshots", () => {
@@ -137,9 +119,13 @@ test("native terminal failures remain failures even with partial assistant conte
     true,
   );
   assert.equal(
-    parseGeminiOutput(
+    parseClaudeOutput(
       jsonl([
-        { type: "result", status: "error", error: { message: "failed" } },
+        {
+          type: "assistant",
+          message: { content: [{ type: "text", text: "Partial" }] },
+        },
+        { type: "result", is_error: true, result: "failed" },
       ]),
     ).failed,
     true,

@@ -52,9 +52,50 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 }
 
 function isEngineMode(value: unknown) {
-  return (
-    value === "codex_cli" || value === "claude_code" || value === "gemini_cli"
-  );
+  return value === "codex_cli" || value === "claude_code";
+}
+
+const LEGACY_GEMINI_MODE = "gemini_cli";
+
+function dropLegacyExecutionSettings(record: Record<string, unknown>) {
+  if (
+    isPlainObject(record.executionSettings) &&
+    record.executionSettings.mode === LEGACY_GEMINI_MODE
+  )
+    delete record.executionSettings;
+}
+
+/**
+ * Gemini CLI support was removed. Saved conversations may still name it, so
+ * rewrite those fields on read instead of rejecting the whole file. A legacy
+ * message source only steers native-resume invalidation, which Codex can
+ * safely absorb; Gemini resume ids and bindings are simply dropped.
+ */
+export function migrateLegacyEngineModes(value: unknown): unknown {
+  if (!isPlainObject(value)) return value;
+  if (value.lastMode === LEGACY_GEMINI_MODE) delete value.lastMode;
+  delete value.lastGeminiSessionID;
+  if (isPlainObject(value.providerBindings))
+    delete value.providerBindings[LEGACY_GEMINI_MODE];
+  if (
+    isPlainObject(value.lastModel) &&
+    value.lastModel.mode === LEGACY_GEMINI_MODE
+  )
+    delete value.lastModel;
+  if (Array.isArray(value.sessions))
+    for (const entry of value.sessions)
+      if (isPlainObject(entry) && entry.lastMode === LEGACY_GEMINI_MODE)
+        delete entry.lastMode;
+  if (Array.isArray(value.messages))
+    for (const message of value.messages) {
+      if (!isPlainObject(message)) continue;
+      if (message.sourceMode === LEGACY_GEMINI_MODE)
+        message.sourceMode = "codex_cli";
+      dropLegacyExecutionSettings(message);
+      if (isPlainObject(message.request))
+        dropLegacyExecutionSettings(message.request);
+    }
+  return value;
 }
 
 function isSessionListEntry(value: unknown): value is SessionHistoryListEntry {
@@ -398,7 +439,7 @@ export class SessionHistoryRepository {
     }
 
     try {
-      return JSON.parse(raw);
+      return migrateLegacyEngineModes(JSON.parse(raw));
     } catch {
       await this.quarantineCorruptFile(path, raw);
       return undefined;
@@ -591,8 +632,8 @@ export class SessionHistoryRepository {
     if (await this.fileOps.exists(existingPath)) {
       let existing: unknown;
       try {
-        existing = JSON.parse(
-          (await this.fileOps.readText(existingPath)) || "",
+        existing = migrateLegacyEngineModes(
+          JSON.parse((await this.fileOps.readText(existingPath)) || ""),
         );
       } catch {
         throw new Error(

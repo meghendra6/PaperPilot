@@ -2,7 +2,6 @@ import { sessionHistoryService } from "../session/sessionHistoryService";
 import { sessionStore } from "../session/sessionStore";
 import { stopClaudeRunSilently } from "../claude/stopRun";
 import { stopCodexRunSilently } from "../codex/stopRun";
-import { stopGeminiRunSilently } from "../gemini/stopRun";
 import { cleanupWorkspaceIfEnabled } from "../workspace/cleanup";
 import { finishRunAfterCleanup } from "./runCompletion";
 import {
@@ -28,8 +27,6 @@ export async function cancelActiveEngineRun(itemID: number): Promise<boolean> {
   try {
     if (pending.mode === "claude_code") {
       await stopClaudeRunSilently({ itemID, finishPresentation: false });
-    } else if (pending.mode === "gemini_cli") {
-      await stopGeminiRunSilently({ itemID, finishPresentation: false });
     } else {
       await stopCodexRunSilently({ itemID, finishPresentation: false });
     }
@@ -73,11 +70,7 @@ export async function cancelActiveEngineRun(itemID: number): Promise<boolean> {
     pending.onComplete?.({
       success: false,
       assistantText: `${
-        pending.mode === "claude_code"
-          ? "Claude Code"
-          : pending.mode === "gemini_cli"
-            ? "Gemini CLI"
-            : "Codex CLI"
+        pending.mode === "claude_code" ? "Claude Code" : "Codex CLI"
       } run cancelled.`,
     });
 

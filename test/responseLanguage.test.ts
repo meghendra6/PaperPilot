@@ -17,7 +17,6 @@ import {
   buildContextPayload,
   buildCodexWorkspacePrompt,
   buildClaudeWorkspacePrompt,
-  buildGeminiWorkspacePrompt,
 } from "../src/modules/context/promptPreviewBuilder";
 
 test("the packaged language selector persists changes used by all CLI providers", async () => {
@@ -76,7 +75,7 @@ test("the packaged language selector persists changes used by all CLI providers"
         prefs.get(`${config.prefsPrefix}.responseLanguage`),
         language,
       );
-      for (const mode of ["codex_cli", "claude_code", "gemini_cli"] as const) {
+      for (const mode of ["codex_cli", "claude_code"] as const) {
         assert.equal(captureExecutionSettings(mode).responseLanguage, language);
       }
     }
@@ -136,7 +135,6 @@ for (const language of ["Korean", "Chinese", "English"] as const) {
     for (const build of [
       buildCodexWorkspacePrompt,
       buildClaudeWorkspacePrompt,
-      buildGeminiWorkspacePrompt,
     ]) {
       const finalPrompt = build(preview);
       assert(finalPrompt.includes(instruction));

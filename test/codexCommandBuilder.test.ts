@@ -20,7 +20,6 @@ import {
   buildClaudeWorkspacePrompt,
   buildCodexWorkspacePrompt,
   buildContextPayload,
-  buildGeminiWorkspacePrompt,
 } from "../src/modules/context/promptPreviewBuilder";
 import {
   buildCodexRunState,
@@ -32,16 +31,17 @@ import {
 } from "../src/modules/codex/outputParser";
 import {
   getClaudeBuiltInModels,
+  getClaudeModelLabel,
+  getClaudeReasoningEfforts,
   getCodexBuiltInModelCatalog,
   getCodexBuiltInModels,
-  getGeminiBuiltInModels,
   mergeModelOptions,
   normalizeClaudeModel,
+  normalizeClaudeModelList,
+  normalizeClaudeReasoningEffort,
   normalizeCodexModel,
   normalizeCodexModelList,
   normalizeCodexReasoningEffort,
-  normalizeGeminiModel,
-  normalizeGeminiModelList,
   parseAllowedModels,
 } from "../src/modules/codex/modelOptions";
 import { buildWorkspaceArtifacts } from "../src/modules/context/workspaceArtifacts";
@@ -432,19 +432,19 @@ test("parseCodexOutputText returns only final assistant message text from agent_
 });
 
 test("parseAllowedModels parses a comma-separated model list", () => {
-  assert.deepEqual(
-    parseAllowedModels("gpt-5.6-terra, gemini-3.1-pro-preview ,"),
-    ["gpt-5.6-terra", "gemini-3.1-pro-preview"],
-  );
+  assert.deepEqual(parseAllowedModels("gpt-5.6-terra, claude-opus-5-5 ,"), [
+    "gpt-5.6-terra",
+    "claude-opus-5-5",
+  ]);
 });
 
 test("mergeModelOptions keeps recent-first unique order", () => {
   assert.deepEqual(
     mergeModelOptions(
-      ["gpt-5.6-terra", "gemini-3.1-pro-preview"],
-      ["gemini-3.1-pro-preview", "gemini-3-flash-preview"],
+      ["gpt-5.6-terra", "claude-opus-5-5"],
+      ["claude-opus-5-5", "claude-sonnet-5-5"],
     ),
-    ["gpt-5.6-terra", "gemini-3.1-pro-preview", "gemini-3-flash-preview"],
+    ["gpt-5.6-terra", "claude-opus-5-5", "claude-sonnet-5-5"],
   );
 });
 
@@ -599,64 +599,80 @@ test("normalizeCodexReasoningEffort validates efforts against the selected model
   assert.equal(normalizeCodexReasoningEffort("unsupported"), "medium");
 });
 
-test("getClaudeBuiltInModels exposes the Claude Code CLI aliases", () => {
+test("getClaudeBuiltInModels exposes CLI aliases and pinned Claude ids", () => {
   assert.deepEqual(getClaudeBuiltInModels(), [
     "sonnet",
     "opus",
     "haiku",
     "fable",
+    "claude-opus-5-5",
+    "claude-sonnet-5-5",
+    "claude-haiku-5-5",
+    "claude-fable-5-1",
+    "claude-opus-5",
+    "claude-sonnet-5",
   ]);
-  // Family aliases collapse to the CLI alias; full names pass through so the
-  // CLI can resolve pinned model ids like claude-fable-5 itself.
+});
+
+test("normalizeClaudeModel canonicalizes hand-typed Claude model names", () => {
+  // Family aliases collapse to the CLI alias.
   assert.equal(normalizeClaudeModel("claude-haiku"), "haiku");
   assert.equal(normalizeClaudeModel("claude-fable"), "fable");
-  assert.equal(normalizeClaudeModel("fable"), "fable");
-  assert.equal(normalizeClaudeModel("claude-fable-5"), "claude-fable-5");
+  assert.equal(normalizeClaudeModel(" Opus "), "opus");
   assert.equal(normalizeClaudeModel(""), "sonnet");
-});
-
-test("getGeminiBuiltInModels exposes the supported Gemini CLI model list", () => {
-  assert.deepEqual(getGeminiBuiltInModels(), [
-    "gemini-3.1-pro-preview",
-    "gemini-3-flash-preview",
-  ]);
-});
-
-test("normalizeGeminiModel rewrites legacy Gemini ids to preview ids", () => {
+  // Display-style and dotted versions become CLI ids.
+  assert.equal(normalizeClaudeModel("Opus 5.5"), "claude-opus-5-5");
+  assert.equal(normalizeClaudeModel("claude-opus-5.5"), "claude-opus-5-5");
+  assert.equal(normalizeClaudeModel("Claude Fable 5.1"), "claude-fable-5-1");
+  assert.equal(normalizeClaudeModel("sonnet-5"), "claude-sonnet-5");
+  assert.equal(normalizeClaudeModel("claude-fable-5"), "claude-fable-5");
+  // Dated snapshots and context suffixes survive.
   assert.equal(
-    normalizeGeminiModel("gemini-3.1-pro"),
-    "gemini-3.1-pro-preview",
+    normalizeClaudeModel("claude-opus-4-5-20251101"),
+    "claude-opus-4-5-20251101",
   );
   assert.equal(
-    normalizeGeminiModel("gemini-3-flash"),
-    "gemini-3-flash-preview",
+    normalizeClaudeModel("claude-opus-4-20250514"),
+    "claude-opus-4-20250514",
+  );
+  assert.equal(normalizeClaudeModel("Opus 5.5[1M]"), "claude-opus-5-5[1m]");
+  assert.equal(normalizeClaudeModel("opus[1m]"), "opus[1m]");
+  // Anything else is passed to the CLI unchanged.
+  assert.equal(
+    normalizeClaudeModel("claude-3-5-sonnet-20241022"),
+    "claude-3-5-sonnet-20241022",
   );
   assert.equal(
-    normalizeGeminiModel("gemini-2.5-pro"),
-    "gemini-3.1-pro-preview",
+    normalizeClaudeModel("us.anthropic.claude-opus-5-5-v1:0"),
+    "us.anthropic.claude-opus-5-5-v1:0",
   );
-  assert.equal(
-    normalizeGeminiModel("gemini-2.5-flash"),
-    "gemini-3-flash-preview",
-  );
-  assert.equal(
-    normalizeGeminiModel(" gemini-3.1-pro-preview "),
-    "gemini-3.1-pro-preview",
-  );
-});
-
-test("normalizeGeminiModelList keeps order while deduplicating aliases", () => {
   assert.deepEqual(
-    normalizeGeminiModelList([
-      "gemini-2.5-pro",
-      "gemini-3.1-pro",
-      "gemini-3.1-pro-preview",
-      "gemini-2.5-flash",
-      "gemini-3-flash",
-      "custom-model",
-    ]),
-    ["gemini-3.1-pro-preview", "gemini-3-flash-preview", "custom-model"],
+    normalizeClaudeModelList(["Opus 5.5", "claude-opus-5-5", "sonnet"]),
+    ["claude-opus-5-5", "sonnet"],
   );
+});
+
+test("getClaudeModelLabel names catalog models and context variants", () => {
+  assert.equal(getClaudeModelLabel("claude-opus-5-5"), "Opus 5.5");
+  assert.equal(getClaudeModelLabel("opus"), "Opus (latest)");
+  assert.equal(
+    getClaudeModelLabel("claude-opus-5-5[1m]"),
+    "Opus 5.5 (1M context)",
+  );
+  assert.equal(getClaudeModelLabel("custom-model"), "custom-model");
+});
+
+test("normalizeClaudeReasoningEffort keeps CLI levels and defaults to empty", () => {
+  assert.deepEqual(getClaudeReasoningEfforts(), [
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max",
+  ]);
+  assert.equal(normalizeClaudeReasoningEffort("XHigh "), "xhigh");
+  assert.equal(normalizeClaudeReasoningEffort("ultra"), "");
+  assert.equal(normalizeClaudeReasoningEffort(""), "");
 });
 
 test("buildWorkspaceArtifacts assembles paper and context files", () => {
@@ -764,7 +780,6 @@ test("buildCodexWorkspacePrompt tells Codex to inspect paper workspace files fir
 test("all workspace engine prompts apply the same grounding guardrails", () => {
   const prompts = [
     buildCodexWorkspacePrompt("Question: Summarize the paper"),
-    buildGeminiWorkspacePrompt("Question: Summarize the paper"),
     buildClaudeWorkspacePrompt("Question: Summarize the paper"),
   ];
 

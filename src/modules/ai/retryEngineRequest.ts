@@ -1,7 +1,6 @@
 import { handleClaudeQuestion } from "../claude/controller";
 import { handleCodexQuestion } from "../codex/controller";
 import { addMessage } from "../components/ChatMessage";
-import { handleGeminiQuestion } from "../gemini/controller";
 import { sessionHistoryService } from "../session/sessionHistoryService";
 import { sessionStore } from "../session/sessionStore";
 import { assertRequestContextCurrent } from "../context/requestContext";
@@ -97,13 +96,6 @@ export async function retryLastEngineQuestion(params: {
 
     if (last.mode === "claude_code") {
       await handleClaudeQuestion({
-        ...common,
-        resumeSessionId: undefined,
-      });
-      return;
-    }
-    if (last.mode === "gemini_cli") {
-      await handleGeminiQuestion({
         ...common,
         resumeSessionId: undefined,
       });

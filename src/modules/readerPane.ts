@@ -50,6 +50,7 @@ import { handleCodexQuestion, stopCodexRunSilently } from "./codex/controller";
 import { rememberRecentModel } from "./codex/modelHistory";
 import {
   normalizeClaudeModel,
+  normalizeClaudeReasoningEffort,
   normalizeCodexModel,
   normalizeCodexReasoningEffort,
 } from "./codex/modelOptions";
@@ -128,11 +129,6 @@ import {
   startCriticalRead,
 } from "./criticalRead/workflow";
 import { areLikelySamePaper } from "./discovery/normalize";
-import {
-  handleGeminiQuestion,
-  stopGeminiRunSilently,
-} from "./gemini/controller";
-import { isGeminiRunActiveForItem } from "./gemini/runState";
 import { messageStore } from "./message/messageStore";
 import { saveCriticalReadToNote } from "./note/criticalReadNote";
 import { saveDiscoveryToNote } from "./note/discoveryNote";
@@ -189,6 +185,7 @@ import { renderDiscoverySection } from "./ui/discoverySection";
 import {
   createPaneHeader,
   normalizeModelForMode,
+  renderClaudeEffortInput,
   renderCodexOptionsRow,
   renderModeHeader,
   renderModelHistory,
@@ -668,7 +665,6 @@ export function registerPaperPilotPaneSection() {
       const {
         modeChip,
         modeStatus,
-        modeGeminiButton,
         modeClaudeButton,
         modeCodexButton,
         modeResetButton,
@@ -679,6 +675,7 @@ export function registerPaperPilotPaneSection() {
         codexRecheckButton,
         modelRow,
         modelInput,
+        claudeEffortInput,
         modelSaveButton,
         codexOptionsRow,
         codexWebSearchToggle,
@@ -808,7 +805,6 @@ export function registerPaperPilotPaneSection() {
         streamingIndicator &&
         modeChip &&
         modeStatus &&
-        modeGeminiButton &&
         modeClaudeButton &&
         modeCodexButton &&
         modeResetButton &&
@@ -843,6 +839,7 @@ export function registerPaperPilotPaneSection() {
         codexRecheckButton &&
         modelRow &&
         modelInput &&
+        claudeEffortInput &&
         modelSaveButton &&
         codexOptionsRow &&
         codexWebSearchToggle &&
@@ -880,6 +877,7 @@ export function registerPaperPilotPaneSection() {
           codexActions,
           modelRow,
           modelInput,
+          claudeEffortInput,
           codexOptionsRow,
           codexWebSearchToggle,
           modelHistory,
@@ -941,11 +939,7 @@ export function registerPaperPilotPaneSection() {
             },
             onShowLoginHelp: (engine) => {
               const command =
-                engine === "codex_cli"
-                  ? "codex login"
-                  : engine === "claude_code"
-                    ? "claude /login"
-                    : "configure GEMINI_API_KEY or run gemini auth";
+                engine === "codex_cli" ? "codex login" : "claude /login";
               addMessage(
                 chatMessages,
                 `Authenticate in a terminal with ${command}, then retry the request.`,
@@ -1002,9 +996,6 @@ export function registerPaperPilotPaneSection() {
               itemID: item.id,
             });
             await stopClaudeRunSilently({
-              itemID: item.id,
-            });
-            await stopGeminiRunSilently({
               itemID: item.id,
             });
             clearReaderActionDraft(item.id);
@@ -2178,12 +2169,6 @@ export function registerPaperPilotPaneSection() {
           );
           return false;
         };
-
-        modeGeminiButton.addEventListener("click", async () => {
-          if (!canChangeProvider()) return;
-          setModeOverrideForItem(item.id, "gemini_cli");
-          await refreshPaneState({ renderTranscript: false });
-        });
 
         modeClaudeButton.addEventListener("click", async () => {
           if (!canChangeProvider()) return;
@@ -3618,10 +3603,12 @@ export function registerPaperPilotPaneSection() {
           const [savedModel, savedReasoningEffort] =
             modelInput.value.split("|");
           const activeMode = getCurrentProviderDescriptor(item.id).mode;
-          if (activeMode === "gemini_cli") {
-            setPref("geminiDefaultModel", savedModel);
-          } else if (activeMode === "claude_code") {
+          if (activeMode === "claude_code") {
             setPref("claudeDefaultModel", normalizeClaudeModel(savedModel));
+            setPref(
+              "claudeReasoningEffort",
+              normalizeClaudeReasoningEffort(claudeEffortInput.value),
+            );
           } else {
             const normalizedCodexModel = normalizeCodexModel(savedModel);
             setPref("codexDefaultModel", normalizedCodexModel);
@@ -3819,9 +3806,6 @@ function getCurrentProviderDescriptor(itemID?: number) {
 }
 
 function getModeShortLabel(mode?: EngineMode) {
-  if (mode === "gemini_cli") {
-    return "Gemini";
-  }
   if (mode === "claude_code") {
     return "Claude";
   }
@@ -3829,7 +3813,6 @@ function getModeShortLabel(mode?: EngineMode) {
 }
 
 function getModeLabel(mode: EngineMode) {
-  if (mode === "gemini_cli") return "Gemini CLI";
   if (mode === "claude_code") return "Claude Code";
   return "Codex CLI";
 }
@@ -3855,6 +3838,7 @@ interface PaneElements {
   codexActions: HTMLElement;
   modelRow: HTMLElement;
   modelInput: HTMLSelectElement;
+  claudeEffortInput: HTMLSelectElement;
   codexOptionsRow: HTMLElement;
   codexWebSearchToggle: HTMLInputElement;
   modelHistory: HTMLElement;
@@ -3925,6 +3909,7 @@ async function renderPaneState(options: {
     descriptor.mode,
   );
   renderModelHistory(params.modelHistory, params.modelInput, descriptor.mode);
+  renderClaudeEffortInput(params.claudeEffortInput, descriptor.mode);
   renderModeHeader(
     params.modeChip,
     params.modeStatus,
@@ -4603,10 +4588,6 @@ function getActiveRunMessage(mode: EngineMode, itemID: number) {
     return "A Claude Code run is already active for this paper. Wait for it to finish before starting another request.";
   }
 
-  if (mode === "gemini_cli" && isGeminiRunActiveForItem(itemID)) {
-    return "A Gemini CLI run is already active for this paper. Wait for it to finish before starting another request.";
-  }
-
   return undefined;
 }
 
@@ -5085,13 +5066,8 @@ async function handleUserInput(
         useResume: Boolean(resumeSessionId),
         resumeSessionId,
       });
-    else if (mode === "claude_code")
-      await handleClaudeQuestion({
-        ...common,
-        resumeSessionId,
-      });
     else
-      await handleGeminiQuestion({
+      await handleClaudeQuestion({
         ...common,
         resumeSessionId,
       });

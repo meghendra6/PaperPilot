@@ -1,8 +1,8 @@
 import { getPref } from "../../utils/prefs";
 import {
   normalizeClaudeModel,
+  normalizeClaudeReasoningEffort,
   normalizeCodexReasoningEffort,
-  normalizeGeminiModel,
   resolveCodexModel,
 } from "../codex/modelOptions";
 import {
@@ -24,22 +24,18 @@ export function captureExecutionSettings(
   read: typeof getPref = getPref,
 ): ExecutionSettings {
   const responseLanguage = normalizeResponseLanguage(read("responseLanguage"));
-  if (mode === "claude_code")
+  if (mode === "claude_code") {
+    const reasoningEffort = normalizeClaudeReasoningEffort(
+      String(read("claudeReasoningEffort") || ""),
+    );
     return Object.freeze({
       mode,
       responseLanguage,
-      model: normalizeClaudeModel(
-        String(read("claudeDefaultModel") || "sonnet"),
-      ),
+      model: normalizeClaudeModel(String(read("claudeDefaultModel") || "")),
+      // Empty means "let the Claude Code CLI pick its own default effort".
+      ...(reasoningEffort ? { reasoningEffort } : {}),
     });
-  if (mode === "gemini_cli")
-    return Object.freeze({
-      mode,
-      responseLanguage,
-      model: normalizeGeminiModel(
-        String(read("geminiDefaultModel") || "gemini-3.1-pro-preview"),
-      ),
-    });
+  }
   const model = resolveCodexModel(
     String(read("codexDefaultModel") || ""),
     String(read("codexAllowedModels") || ""),

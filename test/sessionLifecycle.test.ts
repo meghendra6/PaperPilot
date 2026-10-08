@@ -163,7 +163,7 @@ test("SessionHistoryService exposes saved-session list and edit operations for t
         sessionId: "session-newer",
         title: "Newer session",
         updatedAt: "2026-04-14T09:25:00.000Z",
-        lastMode: "gemini_cli",
+        lastMode: "claude_code",
       }),
     });
 
@@ -226,7 +226,7 @@ test("SessionHistoryService preserves the current session on new draft and reope
 
     const nextDraft = await (service as any).startNewSessionDraft({
       itemID: 702,
-      mode: "gemini_cli",
+      mode: "claude_code",
       paperTitle: "Task 3 paper",
     });
     assert.notEqual(nextDraft.sessionId, initialSession.sessionId);
@@ -244,7 +244,7 @@ test("SessionHistoryService preserves the current session on new draft and reope
     messageStore.append(initialSession.sessionId, {
       role: "assistant",
       text: "The reopened session should keep appending here.",
-      sourceMode: "gemini_cli",
+      sourceMode: "claude_code",
       status: "done",
     });
     await service.persistActiveSession({
@@ -302,7 +302,7 @@ test("SessionHistoryService keeps a renamed title after reopening and continuing
 
     await service.persistUserMessage({
       itemID: 7021,
-      mode: "gemini_cli",
+      mode: "claude_code",
       paperTitle: "Task 3 paper",
       text: "Follow-up after reopening",
     });
@@ -352,7 +352,7 @@ test("SessionHistoryService keeps an explicit rename to the paper title after re
 
     await service.persistUserMessage({
       itemID: 7022,
-      mode: "gemini_cli",
+      mode: "claude_code",
       paperTitle: "Task 3 paper",
       text: "Follow-up after reopening",
     });
@@ -388,12 +388,12 @@ test("SessionHistoryService persists a late assistant turn back to the originati
 
     const activeDraft = await service.startNewSessionDraft({
       itemID: 7023,
-      mode: "gemini_cli",
+      mode: "claude_code",
       paperTitle: "Task 3 paper",
     });
     await service.persistUserMessage({
       itemID: 7023,
-      mode: "gemini_cli",
+      mode: "claude_code",
       paperTitle: "Task 3 paper",
       text: "New active session question",
     });
@@ -461,12 +461,12 @@ test("SessionHistoryService does not persist late assistant messages for inactiv
 
     const activeDraft = await service.startNewSessionDraft({
       itemID: 70231,
-      mode: "gemini_cli",
+      mode: "claude_code",
       paperTitle: "Task 3 paper",
     });
     await service.persistUserMessage({
       itemID: 70231,
-      mode: "gemini_cli",
+      mode: "claude_code",
       paperTitle: "Task 3 paper",
       text: "New active session question",
     });
@@ -545,7 +545,7 @@ test("sessionStore.getOrCreate preserves a renamed title during rerender-like ac
 
     const rerenderSession = sessionStore.getOrCreate(
       7024,
-      "gemini_cli",
+      "claude_code",
       "Task 3 paper",
     );
 
@@ -631,11 +631,11 @@ test("Session lifecycle persists completed and error assistant turns without wri
       itemID: 704,
       paperTitle: "Lifecycle paper",
       sessionId: session.sessionId,
-      assistantText: "Gemini completed successfully.",
+      assistantText: "Claude completed successfully.",
       success: true,
       rawEvent: "stdout",
-      mode: "gemini_cli",
-      resumeSessionId: "gemini-thread-704",
+      mode: "claude_code",
+      resumeSessionId: "claude-thread-704",
     });
 
     const saved = await repository.readSessionSnapshot(704, session.sessionId);
@@ -664,13 +664,13 @@ test("Session lifecycle persists completed and error assistant turns without wri
         },
         {
           role: "assistant",
-          text: "Gemini completed successfully.",
-          sourceMode: "gemini_cli",
+          text: "Claude completed successfully.",
+          sourceMode: "claude_code",
           status: "done",
         },
       ],
     );
-    assert.equal(saved.lastGeminiSessionID, "gemini-thread-704");
+    assert.equal(saved.lastClaudeSessionID, "claude-thread-704");
     assert.equal(globals.prefWrites.size, 0);
   } finally {
     globals.restore();
