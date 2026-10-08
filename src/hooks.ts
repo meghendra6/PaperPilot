@@ -1,4 +1,5 @@
 import { config } from "../package.json";
+import { migrateLegacyDefaultMode } from "./modules/ai/modeStore";
 import { listActiveReaderRuns } from "./modules/ai/runPresentation";
 import {
   collectShutdownRuns,
@@ -47,6 +48,7 @@ async function onStartup() {
   ]);
 
   initLocale();
+  migrateLegacyDefaultMode();
   try {
     const recovery = await recoverResearchWorkspaceProjectPersistence();
     for (const warning of recovery.warnings) {

@@ -659,6 +659,7 @@ test("getClaudeModelLabel names catalog models and context variants", () => {
     getClaudeModelLabel("claude-opus-5-5[1m]"),
     "Opus 5.5 (1M context)",
   );
+  assert.equal(getClaudeModelLabel("opus[1m]"), "Opus (latest, 1M context)");
   assert.equal(getClaudeModelLabel("custom-model"), "custom-model");
 });
 

@@ -11,6 +11,7 @@ import {
   clearModeOverrideForItem,
   getDefaultMode,
   getModeForItem,
+  migrateLegacyDefaultMode,
   setModeOverrideForItem,
 } from "../src/modules/ai/modeStore";
 
@@ -111,4 +112,17 @@ test("provider descriptor resolution respects per-item mode overrides", () => {
     (globalThis as { addon?: unknown }).addon = previousAddon;
     (globalThis as { Zotero?: unknown }).Zotero = previousZotero;
   }
+});
+
+test("a saved Gemini default mode is rewritten to Codex once", () => {
+  const prefs: Record<string, string> = { defaultMode: "gemini_cli" };
+  const read = ((key: string) => prefs[key]) as any;
+  const write = ((key: string, value: string) => {
+    prefs[key] = value;
+  }) as any;
+  migrateLegacyDefaultMode(read, write);
+  assert.equal(prefs.defaultMode, "codex_cli");
+  prefs.defaultMode = "claude_code";
+  migrateLegacyDefaultMode(read, write);
+  assert.equal(prefs.defaultMode, "claude_code");
 });

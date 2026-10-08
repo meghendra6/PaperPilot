@@ -157,16 +157,6 @@ export async function startClaudeRunForQuestion(params: {
   const executablePath =
     String(getPref("claudeExecutablePath") || "claude").trim() || "claude";
   const { model } = settings;
-  const reasoningEffort =
-    settings.reasoningEffort &&
-    (await cliSupportsFlag({
-      executablePath,
-      helpArgs: ["--help"],
-      flag: "--effort",
-      environment: buildCliCommandEnvironment(executablePath),
-    }))
-      ? settings.reasoningEffort
-      : undefined;
   const permissionMode =
     profile === "chat"
       ? String(getPref("claudePermissionMode") || "default").trim()
@@ -222,6 +212,16 @@ export async function startClaudeRunForQuestion(params: {
       environment: buildCliCommandEnvironment(executablePath),
     }))
       ? compatibleOutputSchema
+      : undefined;
+  const reasoningEffort =
+    settings.reasoningEffort &&
+    (await cliSupportsFlag({
+      executablePath,
+      helpArgs: ["--help"],
+      flag: "--effort",
+      environment: buildCliCommandEnvironment(executablePath),
+    }))
+      ? settings.reasoningEffort
       : undefined;
 
   const eventOutput = await supportsClaudeEventOutput(executablePath);

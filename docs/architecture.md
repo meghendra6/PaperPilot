@@ -571,9 +571,13 @@ Gemini CLI support has been removed, but saved history can still name
 of rejecting them: Gemini resume ids, provider bindings, last-mode and
 last-model hints, and Gemini-tagged execution settings are dropped, and a legacy
 message `sourceMode` is rewritten to `codex_cli` only so native-resume
-invalidation keeps working. Research Workspace lineage validation still accepts
-`gemini_cli` so historical artifacts load; new runs record only `codex_cli` or
-`claude_code`.
+invalidation keeps working (its unsettled attempts are marked `interrupted`).
+Research Workspace lineage validation still accepts `gemini_cli` so historical
+artifacts load; new runs record only `codex_cli` or `claude_code`. Workspace
+input manifests written before the removal still list `gemini-*` runtime files;
+`supplementalFiles.ts` accepts those entries when reading a reused chat
+workspace (and removes the files) but never writes them, and startup rewrites a
+saved `defaultMode` of `gemini_cli` to `codex_cli`.
 
 The service serializes asynchronous mutations per item, including snapshot
 capture, persistence, pin/summary changes, rename/delete and session replacement.

@@ -68,8 +68,10 @@ function dropLegacyExecutionSettings(record: Record<string, unknown>) {
 /**
  * Gemini CLI support was removed. Saved conversations may still name it, so
  * rewrite those fields on read instead of rejecting the whole file. A legacy
- * message source only steers native-resume invalidation, which Codex can
- * safely absorb; Gemini resume ids and bindings are simply dropped.
+ * message source only steers native-resume invalidation; Gemini attempts that
+ * never settled are marked interrupted so they cannot invalidate the Codex
+ * binding the message is re-attributed to. Gemini resume ids and bindings are
+ * simply dropped.
  */
 export function migrateLegacyEngineModes(value: unknown): unknown {
   if (!isPlainObject(value)) return value;
@@ -89,8 +91,18 @@ export function migrateLegacyEngineModes(value: unknown): unknown {
   if (Array.isArray(value.messages))
     for (const message of value.messages) {
       if (!isPlainObject(message)) continue;
-      if (message.sourceMode === LEGACY_GEMINI_MODE)
+      if (message.sourceMode === LEGACY_GEMINI_MODE) {
         message.sourceMode = "codex_cli";
+        if (Array.isArray(message.attempts))
+          for (const attempt of message.attempts)
+            if (
+              isPlainObject(attempt) &&
+              ["pending", "running", "finishing"].includes(
+                String(attempt.state),
+              )
+            )
+              attempt.state = "interrupted";
+      }
       dropLegacyExecutionSettings(message);
       if (isPlainObject(message.request))
         dropLegacyExecutionSettings(message.request);

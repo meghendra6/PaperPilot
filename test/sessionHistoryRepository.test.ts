@@ -414,6 +414,16 @@ test("SessionHistoryRepository migrates conversations saved with the removed Gem
         createdAt: "2026-04-14T00:12:00.000Z",
         sourceMode: "gemini_cli",
         status: "done",
+        turnId: "turn-legacy",
+        attempts: [
+          {
+            id: "attempt-legacy",
+            turnId: "turn-legacy",
+            ordinal: 1,
+            state: "running",
+            startedAt: "2026-04-14T00:12:00.000Z",
+          },
+        ],
         executionSettings: legacyGeminiSettings,
         request: { question: "Old", executionSettings: legacyGeminiSettings },
       },
@@ -462,6 +472,7 @@ test("SessionHistoryRepository migrates conversations saved with the removed Gem
   const [message] = snapshot.messages ?? [];
   assert.equal(message.text, "Answered by Gemini.");
   assert.equal(message.sourceMode, "codex_cli");
+  assert.equal(message.attempts?.[0].state, "interrupted");
   assert.equal(message.executionSettings, undefined);
   assert.equal(message.request?.executionSettings, undefined);
 

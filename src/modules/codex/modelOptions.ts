@@ -145,7 +145,10 @@ export function getClaudeModelLabel(model: string) {
   );
   if (!entry) return model;
   if (!suffixMatch) return entry.displayName;
-  return `${entry.displayName} (${suffixMatch[1].toUpperCase()} context)`;
+  const context = `${suffixMatch[1].toUpperCase()} context`;
+  return entry.displayName.endsWith(")")
+    ? `${entry.displayName.slice(0, -1)}, ${context})`
+    : `${entry.displayName} (${context})`;
 }
 
 export function getClaudeReasoningEfforts() {
