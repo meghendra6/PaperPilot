@@ -171,8 +171,6 @@ Mastery prompt 会强制问答与评估响应为严格 JSON（禁止前置推理
 | `Codex CLI`   | 面向工作区的论文分析 | 本地工作区工件、可恢复执行、模型/沙箱/批准控制、可选网页搜索 |
 | `Claude Code` | 面向工作区的论文问答 | 本地工作区工件、模型/effort/权限模式控制、论文级上下文连续性 |
 
-Gemini CLI 支持已移除。之前通过 Gemini 运行保存的对话仍可打开，但其 Gemini 恢复状态会被丢弃，后续提问将通过 Codex CLI 或 Claude Code 运行；已保存的 `defaultMode` 若为 `gemini_cli`，会回退为 Codex CLI。
-
 ### Codex CLI 模式
 
 Codex 模式更偏向工作区驱动。当前代码库已经包含：

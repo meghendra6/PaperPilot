@@ -20,11 +20,11 @@ Two further findings from Claude's independent provider review are included:
 - Malformed chat envelopes containing invalid LaTeX backslashes could decode to
   an empty answer while controllers recorded a successful turn. Recovery now
   preserves invalid literal backslashes in complete answer strings, without
-  promoting malformed citations. All three controllers use a shared readable
+  promoting malformed citations. Both controllers use a shared readable
   answer check and fail empty responses with Retry guidance.
-- Claude/Gemini could read partial stdout, then observe an exit marker created
-  after that read and incorrectly complete with the old output. Both now read
-  the completion marker first, matching Codex. Deterministic interleaving tests
+- Claude could read partial stdout, then observe an exit marker created after
+  that read and incorrectly complete with the old output. It now reads the
+  completion marker first, matching Codex. Deterministic interleaving tests
   cover this boundary without relying on timing sleeps.
 
 Workspace collisions require an existing file at a newly claimed path. Most

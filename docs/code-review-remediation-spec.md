@@ -37,10 +37,9 @@ The defects cluster in five places.
 1. **A shipped preference surface that does nothing.** Two preferences are
    declared in all three required locations and read nowhere. One of them is a
    privacy control. Raw CLI stderr reaches disk unredacted.
-2. **The engine launch and shutdown edges.** Gemini chat runs with all
-   approvals disabled. Two of three engines miss a PATH fix that the third
-   already ships. Shutdown clears timers but never unregisters the reader pane
-   section and never signals running CLI processes.
+2. **The engine launch and shutdown edges.** One of the two engines misses a
+   PATH fix that the other already ships. Shutdown clears timers but never
+   unregisters the reader pane section and never signals running CLI processes.
 3. **An untyped island.** 46 files and 6,167 lines under `@ts-nocheck` sit
    inside `src/modules/researchWorkspace/`, including the orchestration hub
    `service.ts`. `docs/architecture.md` calls this layer the "typed core".
@@ -50,22 +49,22 @@ The defects cluster in five places.
 5. **No CI gate.** The only workflow runs on release tags. `main` currently
    carries 6 ESLint errors and 5 Prettier-dirty files.
 
-This document records **147 requirements** across 13 workstreams: 10 at P0,
-47 at P1, 52 at P2, and 38 at P3. Section 22 indexes them. Section 19 lists
+This document records **145 requirements** across 13 workstreams: 9 at P0,
+47 at P1, 52 at P2, and 37 at P3. Section 22 indexes them. Section 19 lists
 what was examined and found correct, so nobody spends effort there.
 
 ### 2.1 Remediation outcome
 
-PR #64 evaluated all 147 requirements. It implements 137 in full and records
-10 scoped exceptions to `SHOULD` requirements. No P0 or P1 requirement is
+PR #64 evaluated all 145 requirements. It implements 136 in full and records
+9 scoped exceptions to `SHOULD` requirements. No P0 or P1 requirement is
 deferred.
 
 | Priority | Implemented | Recorded exceptions |
 | -------- | ----------- | ------------------- |
-| P0       | 10 / 10     | 0                   |
+| P0       | 9 / 9       | 0                   |
 | P1       | 47 / 47     | 0                   |
 | P2       | 44 / 52     | 8                   |
-| P3       | 36 / 38     | 2                   |
+| P3       | 36 / 37     | 1                   |
 
 The exceptions below preserve the normative rule in section 1: each skipped
 `SHOULD` has an explicit reviewer rationale. Partial work is noted so future
@@ -79,7 +78,6 @@ work.
 | WS-10.4     | Partial: shared global-state and shell helpers live in `test/helpers`. Existing domain-specific fixtures remain local because migrating them is broad test-only churn with no additional behavior coverage.                                                                                    |
 | WS-10.7     | Partial: behavior tests now cover the corrected paths, while a small number of source tripwires remain for wiring that cannot execute without Zotero. Replace each only when its seam becomes a pure exported builder.                                                                         |
 | WS-10.9     | Deferred: splitting the largest test files changes organization only and would substantially enlarge this already broad correctness patch. Do it per unit under test in dedicated follow-ups.                                                                                                  |
-| WS-10.12    | Deferred: provider tests remain intentionally explicit and isolated, matching the production engine-module boundary. Table-drive only assertions whose provider contracts are proven identical.                                                                                                |
 | WS-12.3     | Partial: checkpoint writes skip catalog sync, completion syncs once, and the catalog stores the due-review count. A propagation round still takes before/after snapshots to detect concurrent file changes; replacing those reads needs a separately designed atomic batch contract.           |
 | WS-13.3     | Partial: four renderer-local DOM helper copies moved to one shared module. Per-capability renderer extraction is deferred because it is a large structural move across Zotero UI paths and needs dedicated runtime QA.                                                                         |
 | WS-13.4     | Partial: dead facade/service paths were removed and shared contracts were extracted. Capability-family file moves are deferred as non-behavioral churn after the correctness boundary is green.                                                                                                |
@@ -149,10 +147,10 @@ PLAUSIBLE item as a hypothesis with a named test, not as a known defect.
 
 ## 5. Non-goals
 
-- **Do not merge the three engine modules.** `AGENTS.md` states that
-  `codex/`, `claude/`, and `gemini/` are near-duplicates for isolation. This
-  spec asks only for behavior that is already shared to move into
-  `modules/ai/`, and for one missing fix to reach all three.
+- **Do not merge the two engine modules.** `AGENTS.md` states that `codex/`
+  and `claude/` are near-duplicates for isolation. This spec asks only for
+  behavior that is already shared to move into `modules/ai/`, and for one
+  missing fix to reach both.
 - **Do not restructure the Research Workspace feature set.** Every
   requirement below preserves the current capability boundaries.
 - **Do not add a server, a network model client, or a second XPI.**
@@ -162,27 +160,6 @@ PLAUSIBLE item as a hypothesis with a named test, not as a known defect.
 
 The paper workspace holds untrusted text. Every engine reads it. These
 requirements keep the launch, permission, and termination paths honest.
-
-#### WS-1.1 Gemini chat MUST NOT disable approvals (P0, CONFIRMED)
-
-- **Where:** `src/modules/gemini/runner.ts:107-108,116`
-- **Now:** `params.profile === "chat" ? "--yolo" : "--approval-mode plan"`.
-  The command passes no `--sandbox`. `addon/prefs.js` declares no Gemini
-  approval preference. `test/geminiRunner.test.ts:63-83` locks the behavior in.
-- **Impact:** Gemini accepts every action for a run whose prompt and workspace
-  contain paper text. An instruction embedded in a PDF can run shell commands
-  with the user's privileges. Codex chat runs sandboxed and Claude chat runs
-  under a validated permission preference, so Gemini is the outlier.
-  `docs/architecture.md` states "Normal chat uses the configured provider
-  permissions", which is false for Gemini.
-- **Required:** MUST add a `geminiApprovalMode` preference to `addon/prefs.js`,
-  `typings/prefs.d.ts`, and `addon/chrome/content/preferences.xhtml`, with
-  default `default`. MUST normalize the value through an allowlist, in the
-  shape of `normalizeClaudePermissionMode`. MUST emit
-  `--approval-mode <value>`. SHOULD pass `--sandbox` when the installed Gemini
-  CLI supports it.
-- **Verify:** update `test/geminiRunner.test.ts` to assert the default emits no
-  `--yolo`. Add a case per allowlisted mode. Re-run `npm test`.
 
 #### WS-1.2 Codex follow-up turns MUST carry the configured permissions (P1, CONFIRMED)
 
@@ -197,31 +174,27 @@ requirements keep the launch, permission, and termination paths honest.
   before `exec` in the resume command, or pass the equivalent `-c` overrides.
 - **Verify:** extend the resume case in `test/codexCommandBuilder.test.ts`.
 
-#### WS-1.3 All three runners MUST prepend the executable directory to PATH (P1, CONFIRMED)
+#### WS-1.3 Both runners MUST prepend the executable directory to PATH (P1, CONFIRMED)
 
 - **Where:** `src/modules/codex/environment.ts:23-34` has the fix.
-  `src/modules/claude/runner.ts:56-76` and
-  `src/modules/gemini/runner.ts:52-72` do not.
+  `src/modules/claude/runner.ts:56-76` does not.
 - **Now:** Codex computes `executableDir` and puts it first in `PATH`. Claude
-  and Gemini build `PATH` from a fixed list. All three replace the login-shell
-  `PATH`.
+  builds `PATH` from a fixed list. Both replace the login-shell `PATH`.
 - **Impact:** `test/codexExecutable.test.ts:135` records why the fix exists.
   npm shims start with `#!/usr/bin/env node` and need `node` on `PATH`. A user
-  who points `claudeExecutablePath` or `geminiExecutablePath` at an nvm or
-  volta install gets `env: node: No such file or directory`.
+  who points `claudeExecutablePath` at an nvm or volta install gets
+  `env: node: No such file or directory`.
   `ai/runFailure.ts:51` then blames the path the user just set.
 - **Required:** MUST extract one shared helper, for example
   `modules/ai/cliEnvironment.ts`, that takes the executable path and returns
-  the environment. MUST use it in all three runners. This is shared behavior,
+  the environment. MUST use it in both runners. This is shared behavior,
   so it belongs in `modules/ai/` per `AGENTS.md`, not in a cross-engine import.
-- **Verify:** add the Codex PATH assertion to `test/claudeRunner.test.ts` and
-  `test/geminiRunner.test.ts`.
+- **Verify:** add the Codex PATH assertion to `test/claudeRunner.test.ts`.
 
 #### WS-1.4 Runners MUST catch a rejected `exec` (P1, CONFIRMED code shape)
 
 - **Where:** `src/modules/codex/runner.ts:353-364`,
-  `src/modules/claude/runner.ts:377-388`,
-  `src/modules/gemini/runner.ts:337-348`
+  `src/modules/claude/runner.ts:377-388`
 - **Now:** each runner awaits
   `Zotero.Utilities.Internal.exec("/bin/zsh", ["-lc", script])` and then tests
   `result instanceof Error`. Upstream `exec` rejects on a non-zero exit
@@ -248,11 +221,11 @@ requirements keep the launch, permission, and termination paths honest.
   and clears progress state. It never calls `stopDetachedRunProcess` or any
   `stop*RunSilently`.
 - **Impact:** the runs are detached by design. Disabling the add-on leaves
-  `codex`, `claude`, or `gemini` running for up to 30 minutes with no owner,
+  `codex` or `claude` running for up to 30 minutes with no owner,
   no reader, and no workspace cleanup. `docs/architecture.md` claims
   "Pipeline children therefore do not outlive the card", which holds only for
   the Cancel path.
-- **Required:** MUST iterate the three run-state maps in `onShutdown` and stop
+- **Required:** MUST iterate the two run-state maps in `onShutdown` and stop
   each process that still holds a poller, a running state, or an active
   presentation token. MUST keep the call best-effort and non-blocking. MUST
   record the chosen policy in `docs/architecture.md`.
@@ -263,7 +236,7 @@ requirements keep the launch, permission, and termination paths honest.
 
 - **Where:** `src/modules/ai/runControl.ts:23`,
   `src/modules/codex/stopRun.ts:23,28`, and the same order in
-  `claude/stopRun.ts` and `gemini/stopRun.ts`
+  `claude/stopRun.ts`
 - **Now:** each `stop*RunSilently` clears the poller first, then awaits the
   kill. On a kill failure the phase stays `running` and nothing re-arms the
   interval or the watchdog.
@@ -278,8 +251,8 @@ requirements keep the launch, permission, and termination paths honest.
 #### WS-1.7 Failure classification MUST read stderr, not the whole stream (P1, PLAUSIBLE)
 
 - **Where:** `src/modules/codex/controller.ts:417-423,450-452`, the same shape
-  in `claude/controller.ts:369-375` and `gemini/controller.ts:369-375`,
-  patterns in `src/modules/ai/runFailure.ts:24-55`
+  in `claude/controller.ts:369-375`, patterns in
+  `src/modules/ai/runFailure.ts:24-55`
 - **Now:** `rawError` is `progress.rawOutput || rawAssistantText`, which for
   Codex is the full JSONL event stream including tool output.
   `EXECUTABLE_PATTERNS` includes `/no such file or directory/i` and the Codex
@@ -343,17 +316,16 @@ requirements keep the launch, permission, and termination paths honest.
 - **Where:** `src/modules/codex/controller.ts:373-400`,
   `src/modules/codex/runner.ts:385-396`
 - **Now:** each 800 ms tick reads three files, parses the entire JSONL, and
-  rebuilds run state from three preference reads. Claude and Gemini do
-  neither.
+  rebuilds run state from three preference reads. Claude does neither.
 - **Impact:** parse cost grows linearly per tick on the main thread. Long
   agentic runs produce multi-megabyte JSONL.
 - **Required:** SHOULD track a byte offset and parse only appended lines, or
   parse on completion only.
 
-#### WS-1.12 Claude and Gemini SHOULD clear the pid at claim time (P2, CONFIRMED)
+#### WS-1.12 Claude SHOULD clear the pid at claim time (P2, CONFIRMED)
 
-- **Where:** `src/modules/claude/controller.ts:362,399-401`, the same in
-  `gemini/controller.ts`, contrast `src/modules/codex/controller.ts:408-409`
+- **Where:** `src/modules/claude/controller.ts:362,399-401`, contrast
+  `src/modules/codex/controller.ts:408-409`
 - **Now:** between the poller clear and the state clear, the poller is gone,
   the presentation token is active, and `runState.processId` still names the
   exited subshell.
@@ -375,7 +347,6 @@ requirements keep the launch, permission, and termination paths honest.
 #### WS-1.14 Runners MUST NOT write preferences (P3, CONFIRMED)
 
 - **Where:** `src/modules/claude/runner.ts:168-170`,
-  `src/modules/gemini/runner.ts:142-144`,
   `src/modules/codex/executable.ts:186-188`
 - **Now:** a hidden analysis run rewrites the saved model alias. Codex
   rewrites the executable path.
@@ -385,8 +356,7 @@ requirements keep the launch, permission, and termination paths honest.
 #### WS-1.15 Home directory derivation SHOULD have a real fallback (P3, CONFIRMED)
 
 - **Where:** `src/modules/codex/environment.ts:13-15`,
-  `src/modules/claude/runner.ts:58-60`,
-  `src/modules/gemini/runner.ts:54-56`
+  `src/modules/claude/runner.ts:58-60`
 - **Now:** a profile path without `/Library/` yields `userHome = ""`, so
   `~/.local/bin` becomes `/.local/bin` and `HOME` is not exported.
 - **Impact:** `~/.local/bin` is the Claude native install location. A custom
@@ -396,7 +366,7 @@ requirements keep the launch, permission, and termination paths honest.
 
 #### WS-1.16 File reads SHOULD distinguish absent from unreadable (P3, CONFIRMED)
 
-- **Where:** `src/modules/codex/runner.ts:65-74` and the two equivalents
+- **Where:** `src/modules/codex/runner.ts:65-74` and the Claude equivalent
 - **Now:** `catch { return ""; }`. An unreadable exit-code file is
   indistinguishable from a run in progress, so the watchdog reports a timeout.
 - **Required:** SHOULD return `undefined` on error and log once.
@@ -429,9 +399,8 @@ requirements keep the launch, permission, and termination paths honest.
 #### WS-2.2 Workspace `recent-turns.json` MUST honor the privacy preferences (P0, CONFIRMED)
 
 - **Where:** `src/modules/codex/runner.ts:202-206`,
-  `src/modules/claude/runner.ts:259-263`,
-  `src/modules/gemini/runner.ts:233-237`
-- **Now:** all three runners call `messageStore.recentRaw(...)`, which bypasses
+  `src/modules/claude/runner.ts:259-263`
+- **Now:** both runners call `messageStore.recentRaw(...)`, which bypasses
   the preference-aware `list()`. Removal of the file depends on
   `codexAutoCleanWorkspace`, and `cleanupWorkspaceIfEnabled` swallows a
   cleanup failure.
@@ -451,14 +420,14 @@ requirements keep the launch, permission, and termination paths honest.
 
 - **Where:** `src/modules/session/sessionHistoryRepository.ts:227`, and the
   `"/tmp/zotero-paper-ai"` default repeated at `codex/runner.ts:103`,
-  `claude/runner.ts:173`, `gemini/runner.ts:147`, `codex/runState.ts:73`,
+  `claude/runner.ts:173`, `codex/runState.ts:73`,
   `workspace/cleanup.ts:63`, `readerPane.ts:4050`
 - **Now:** the session-history fallback writes chat history to
   `/tmp/paperpilot/session-history`. The workspace default is
   `/tmp/zotero-paper-ai`.
 - **Impact:** `/tmp` is world-readable on macOS and Linux. Paper text,
   selections, and recent turns land there with the default umask. The
-  six-way duplication of the default string is also a drift hazard.
+  five-way duplication of the default string is also a drift hazard.
 - **Required:** MUST centralize the workspace root in
   `workspace/pathBuilder.ts` and default it to a per-user location, for
   example under `Zotero.getTempDirectory()`. MUST make the session-history
@@ -532,8 +501,7 @@ requirements keep the launch, permission, and termination paths honest.
 #### WS-3.1 `splitTextIntoChunks` MUST NOT loop forever (P0, CONFIRMED)
 
 - **Where:** `src/modules/tools/splitTextIntoChunks.ts:12-19`. Callers at
-  `codex/runner.ts:173-178`, `claude/runner.ts:230-235`,
-  `gemini/runner.ts:204-209`. Inputs at
+  `codex/runner.ts:173-178` and `claude/runner.ts:230-235`. Inputs at
   `addon/chrome/content/preferences.xhtml:427-451`.
 - **Now:** the loop advances by `chunkSize - overlapSize`. The runners pass
   the raw `retrievalChunkSize` and `retrievalOverlapSize` values. The two
@@ -650,7 +618,7 @@ dataStartIndex])`, a constant row, instead of the current row. A line that
   `addon/chrome/content/preferences.xhtml`
 - **Now:** each marked input raises `window.alert(PLACEHOLDER_PREF_NOTICE)` on
   `change`. A text field fires `change` on blur, so typing a path and pressing
-  Tab opens a modal. The Claude and Gemini inputs lack the attribute, so the
+  Tab opens a modal. The Claude inputs lack the attribute, so the
   behavior is inconsistent. The `data-placeholder-label` attributes are read
   by no code.
 - **Impact:** this is scaffold code that shipped. It makes the settings pane
@@ -1666,7 +1634,7 @@ invariant.
   configuration also passes options to a rule that is off, which is dead.
 - **Required:** SHOULD enable `no-unused-vars` with an underscore escape after
   a one-time cleanup of 37 sites. SHOULD set `no-non-null-assertion` to warn
-  and reduce the 63 source sites, where the three engine controllers share the
+  and reduce the 63 source sites, where the two engine controllers share the
   same six. MAY leave `no-explicit-any` off. MUST delete the dead options
   object.
 
@@ -1853,15 +1821,6 @@ invariant.
 - **Required:** SHOULD switch the test script to transpile-only once WS-9.3
   provides the type signal.
 
-#### WS-10.12 The duplicated engine tests SHOULD be table driven (P3, CONFIRMED)
-
-- **Where:** `test/claudeRunCancellation.test.ts` and
-  `test/geminiRunCancellation.test.ts` differ only in identifiers, as do the
-  two runner tests.
-- **Note:** the production modules stay separate by design. This applies to the
-  tests only.
-- **Required:** SHOULD iterate one engine descriptor list.
-
 ## 16. WS-11 — Documentation truth
 
 `AGENTS.md` is the declared source of truth, so a wrong sentence there
@@ -1869,10 +1828,10 @@ misdirects both contributors and agents.
 
 #### WS-11.1 `AGENTS.md` MUST NOT call `CONTEXT_INDEX.md` Codex-only (P1, CONFIRMED)
 
-- **Where:** `AGENTS.md:100`, against `codex/runner.ts:219`,
-  `claude/runner.ts:279`, `gemini/runner.ts:253`
+- **Where:** `AGENTS.md:100`, against `codex/runner.ts:219` and
+  `claude/runner.ts:279`
 - **Now:** the sentence reads "note that `CONTEXT_INDEX.md` and `figures/` are
-  Codex-only today". All three runners write the index. Only `figures/` is
+  Codex-only today". Both runners write the index. Only `figures/` is
   Codex-only. The artifact table in `docs/architecture.md` and all four READMEs
   are already correct.
 - **Impact:** the sentence sits inside the rule "Update the runner and the
@@ -2258,11 +2217,10 @@ misdirects both contributors and agents.
 
 These were examined and are correct as they stand. Do not "fix" them.
 
-- **The three engine modules are near-duplicates by design.** `AGENTS.md`
+- **The two engine modules are near-duplicates by design.** `AGENTS.md`
   states isolation over reuse. Measured overlap after normalizing engine names
-  is 73 percent between the Codex and Claude controllers and 100 percent
-  between the Claude and Gemini controllers. Only WS-1.3 and WS-13.1 move code
-  out, because that code is already shared behavior.
+  is 73 percent between the Codex and Claude controllers. Only WS-1.3 and
+  WS-13.1 move code out, because that code is already shared behavior.
 - **Shell quoting is correct.** Every interpolated value that reaches
   `zsh -lc` passes through `shellEscape`, including the executable path, the
   workspace path, the model, the resume id, the permission mode, the inline
@@ -2302,7 +2260,7 @@ previous one is green.
 | Stage | Contents                                                                                 | Rationale                                                                                                                     |
 | ----- | ---------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
 | 0     | WS-9.6, WS-9.7, WS-9.2, WS-9.3, WS-9.8, WS-9.10                                          | Establish the gate before changing behavior. Clearing the eleven existing violations first keeps the first CI run meaningful. |
-| 1     | Every P0: WS-1.1, WS-2.1, WS-2.2, WS-2.3, WS-3.1, WS-3.2, WS-4.1, WS-7.1, WS-7.2, WS-9.1 | Execution safety, privacy controls, data corruption, library writes. Each is small and independently shippable.               |
+| 1     | Every P0: WS-2.1, WS-2.2, WS-2.3, WS-3.1, WS-3.2, WS-4.1, WS-7.1, WS-7.2, WS-9.1         | Execution safety, privacy controls, data corruption, library writes. Each is small and independently shippable.               |
 | 2     | WS-1.2 to WS-1.8, WS-3.3 to WS-3.7, WS-12.1                                              | Correctness at the engine and pane edges, and the unbounded extractor.                                                        |
 | 3     | WS-4.2 to WS-4.7, WS-5.1 to WS-5.5, WS-6.1 to WS-6.3, WS-7.3 to WS-7.6, WS-8.1 to WS-8.3 | Contract fidelity and persistence integrity. WS-5.1 and WS-6.1 each need a decision recorded before the code changes.         |
 | 4     | WS-9.5, WS-10.1, WS-10.5, WS-11.1 to WS-11.6, WS-13.1                                    | Type coverage, the missing tests, and the documents that misdirect contributors.                                              |
@@ -2331,9 +2289,8 @@ Per-stage expectations:
 
 - **Stage 0** ends with zero ESLint errors, zero Prettier-dirty files, and a
   green CI run on a pull request.
-- **Stage 1** adds at least one regression test per requirement. WS-1.1,
-  WS-7.1, and WS-7.2 also need a real-Zotero pass from
-  `docs/manual-qa.md`.
+- **Stage 1** adds at least one regression test per requirement. WS-7.1 and
+  WS-7.2 also need a real-Zotero pass from `docs/manual-qa.md`.
 - **Stage 3** requires an updated `docs/prompt-contracts.md` in the same pull
   request as any contract change, per `AGENTS.md`.
 - **Stage 4** should reduce the `@ts-nocheck` count. Record the new count here.
@@ -2344,19 +2301,19 @@ mocked test that implies coverage.
 
 ## 22. Appendix — requirement index
 
-| Workstream                             | Requirements | P0     | P1     | P2     | P3     |
-| -------------------------------------- | ------------ | ------ | ------ | ------ | ------ |
-| WS-1 Engine execution and lifecycle    | 16           | 1      | 7      | 4      | 4      |
-| WS-2 Privacy and data at rest          | 9            | 3      | 3      | 3      | 0      |
-| WS-3 Reader pane                       | 15           | 2      | 5      | 4      | 4      |
-| WS-4 Persistence integrity             | 13           | 1      | 6      | 2      | 4      |
-| WS-5 Evidence and contracts            | 11           | 0      | 5      | 2      | 4      |
-| WS-6 Discovery boundary                | 10           | 0      | 3      | 4      | 3      |
-| WS-7 Zotero write paths                | 10           | 2      | 4      | 1      | 3      |
-| WS-8 Retrieval, session data, language | 8            | 0      | 3      | 3      | 2      |
-| WS-9 Type safety and gates             | 17           | 1      | 6      | 7      | 3      |
-| WS-10 Test architecture                | 12           | 0      | 1      | 7      | 4      |
-| WS-11 Documentation truth              | 8            | 0      | 2      | 5      | 1      |
-| WS-12 Performance                      | 8            | 0      | 1      | 4      | 3      |
-| WS-13 Structural debt                  | 10           | 0      | 1      | 6      | 3      |
-| **Total**                              | **147**      | **10** | **47** | **52** | **38** |
+| Workstream                             | Requirements | P0    | P1     | P2     | P3     |
+| -------------------------------------- | ------------ | ----- | ------ | ------ | ------ |
+| WS-1 Engine execution and lifecycle    | 15           | 0     | 7      | 4      | 4      |
+| WS-2 Privacy and data at rest          | 9            | 3     | 3      | 3      | 0      |
+| WS-3 Reader pane                       | 15           | 2     | 5      | 4      | 4      |
+| WS-4 Persistence integrity             | 13           | 1     | 6      | 2      | 4      |
+| WS-5 Evidence and contracts            | 11           | 0     | 5      | 2      | 4      |
+| WS-6 Discovery boundary                | 10           | 0     | 3      | 4      | 3      |
+| WS-7 Zotero write paths                | 10           | 2     | 4      | 1      | 3      |
+| WS-8 Retrieval, session data, language | 8            | 0     | 3      | 3      | 2      |
+| WS-9 Type safety and gates             | 17           | 1     | 6      | 7      | 3      |
+| WS-10 Test architecture                | 11           | 0     | 1      | 7      | 3      |
+| WS-11 Documentation truth              | 8            | 0     | 2      | 5      | 1      |
+| WS-12 Performance                      | 8            | 0     | 1      | 4      | 3      |
+| WS-13 Structural debt                  | 10           | 0     | 1      | 6      | 3      |
+| **Total**                              | **145**      | **9** | **47** | **52** | **37** |

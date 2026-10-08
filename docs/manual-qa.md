@@ -367,8 +367,8 @@ inspection confirmed:
 
 The runtime fixture did not invoke an external model. The focused automated
 test covers returning from an older window to the latest range before a live
-append; full Codex, Claude, and Gemini send/complete checks remain in the manual
-matrix above.
+append; full Codex and Claude send/complete checks remain in the manual matrix
+above.
 
 ### Zotero 10 compatibility runtime record — 2026-08-21
 
@@ -420,7 +420,7 @@ Structured Firefox RDP inspection confirmed:
 
 The broad compatibility matrix below remains a release/manual-regression
 checklist. Zotero 7/8, Windows, a logged-out Claude account, and successful live
-discovery through Claude Code and Gemini CLI were not available in this delivery
+discovery through Claude Code were not available in this delivery
 environment; their pure contracts and failure paths are covered by the automated
 suite, but they are not represented here as real-runtime passes.
 
@@ -578,7 +578,7 @@ Observed live, using the real authenticated Codex CLI with web search:
   provenance label.
 
 Not performed in this environment and still owed to release QA: Zotero 7/8,
-Windows/Linux, Claude Code and Gemini CLI engine passes, the two-paper visual
+Windows/Linux, Claude Code engine passes, the two-paper visual
 switch (single supplied PDF), an end-to-end OpenReview-verified primary-lane
 paper with `Review insight` (blocked by OpenReview's Turnstile gating of the
 notes API), and OpenDataLoader-backed extraction (its bundled-asset resolution

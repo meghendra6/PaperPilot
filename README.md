@@ -172,8 +172,6 @@ When Java 11+ is available, `paper.md` and `paper.json` come from the bundled Op
 | `Codex CLI`   | workspace-aware paper analysis | local workspace artifacts, resumable runs, model/sandbox/approval controls, optional web search |
 | `Claude Code` | workspace-aware paper Q&A      | local workspace artifacts, model/effort/permission controls, paper-scoped continuity            |
 
-Gemini CLI support has been removed. Saved conversations from earlier Gemini runs still open, but their Gemini resume state is dropped; follow-ups run through Codex CLI or Claude Code, and a saved `defaultMode` of `gemini_cli` falls back to Codex CLI.
-
 ### Codex CLI mode
 
 Codex mode is the more workspace-oriented path. The current codebase includes support for:

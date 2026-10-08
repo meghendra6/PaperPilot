@@ -173,8 +173,6 @@ Java를 사용할 수 없으면 Paper Pilot는 폴백 사실을 `metadata.json`�
 | `Codex CLI`   | 워크스페이스 기반 논문 분석 | 로컬 워크스페이스 아티팩트, 재개 가능한 실행, 모델/샌드박스/승인 제어, 선택적 웹 검색 |
 | `Claude Code` | 워크스페이스 기반 논문 Q&A  | 로컬 워크스페이스 아티팩트, 모델/effort/권한 모드 제어, 논문 단위 맥락 유지           |
 
-Gemini CLI 지원은 제거되었습니다. 이전 Gemini 실행으로 저장된 대화는 계속 열 수 있지만 Gemini 재개 상태는 삭제되며, 후속 질문은 Codex CLI 또는 Claude Code로 실행됩니다. 저장된 `defaultMode`가 `gemini_cli`이면 Codex CLI로 대체됩니다.
-
 ### Codex CLI 모드
 
 Codex 모드는 더 워크스페이스 지향적인 경로입니다. 현재 코드베이스에는 다음이 포함되어 있습니다.

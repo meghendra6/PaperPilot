@@ -106,7 +106,7 @@ The important current facts are:
 The existing strengths must be preserved:
 
 - one XPI with no hosted Paper Pilot server;
-- local CLI provider selection through Codex CLI, Claude Code, or Gemini CLI;
+- local CLI provider selection through Codex CLI or Claude Code;
 - analysis runs isolated from visible chat sessions;
 - strict structured-output parsers and fail-closed validation;
 - atomic queued state writes;
@@ -322,7 +322,7 @@ flowchart TD
     D --> E["Project and artifact repositories"]
     D --> F["Run coordinator"]
     F --> G["Per-paper artifact packs"]
-    G --> H["Codex, Claude, or Gemini CLI"]
+    G --> H["Codex CLI or Claude Code"]
     H --> I["Strict parser and local evidence verifier"]
     I --> E
     D --> J["Modeless workspace window"]
@@ -842,7 +842,7 @@ interface ResearchProject {
     exclusionCriteria: Criterion[];
   };
   members: ProjectMember[];
-  defaultEngineMode?: "codex_cli" | "claude_code" | "gemini_cli";
+  defaultEngineMode?: "codex_cli" | "claude_code";
   activeArtifactID?: string;
   createdAt: string;
   updatedAt: string;
@@ -953,7 +953,7 @@ interface ArtifactLineage {
   parserVersion: string;
   schemaVersion?: string;
   evidenceVerifierVersion: string;
-  providerMode: "codex_cli" | "claude_code" | "gemini_cli";
+  providerMode: "codex_cli" | "claude_code";
   model?: string;
   runID: string;
 }
@@ -2376,7 +2376,7 @@ supported desktop platform. Release notes identify combinations not exercised.
 ### 33.7 Providers
 
 - Run one single-paper and one project operation with Codex CLI.
-- Repeat with Claude Code and Gemini CLI where installed.
+- Repeat with Claude Code where installed.
 - Confirm analysis never resumes or mutates visible chat provider state.
 - Confirm native schema use where supported and parser fallback otherwise.
 - Confirm safe login, executable, timeout, and raw-log UI.
