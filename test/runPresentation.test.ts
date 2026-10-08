@@ -22,10 +22,10 @@ test("reader run presentation is item-scoped and keeps the newest active run", (
 
   const codex = markReaderRunStarted(9101, "codex_cli");
   const claude = markReaderRunStarted(9101, "claude_code");
-  markReaderRunStarted(9102, "gemini_cli");
+  markReaderRunStarted(9102, "codex_cli");
 
   assert.equal(getActiveReaderRunMode(9101), "claude_code");
-  assert.equal(getActiveReaderRunMode(9102), "gemini_cli");
+  assert.equal(getActiveReaderRunMode(9102), "codex_cli");
   assert.equal(isReaderRunTokenActive(9101, codex), true);
 
   markReaderRunFinished(9101, codex);
@@ -45,17 +45,17 @@ test("reader run presentation is item-scoped and keeps the newest active run", (
 
   unsubscribe();
   unsubscribe();
-  finishReaderRunsForMode(9102, "gemini_cli");
+  finishReaderRunsForMode(9102, "codex_cli");
 });
 
 test("stopping a mode clears all of its activities without clearing another mode", () => {
   markReaderRunStarted(9201, "codex_cli");
   markReaderRunStarted(9201, "codex_cli");
-  const gemini = markReaderRunStarted(9201, "gemini_cli");
+  const claude = markReaderRunStarted(9201, "claude_code");
 
   finishReaderRunsForMode(9201, "codex_cli");
-  assert.equal(getActiveReaderRunMode(9201), "gemini_cli");
+  assert.equal(getActiveReaderRunMode(9201), "claude_code");
 
-  markReaderRunFinished(9201, gemini);
+  markReaderRunFinished(9201, claude);
   assert.equal(getActiveReaderRunMode(9201), undefined);
 });

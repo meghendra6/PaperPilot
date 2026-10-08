@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { classifyRunFailure } from "../src/modules/ai/runFailure";
 
 test("run failure sources override message guessing", () => {
-  for (const engine of ["codex_cli", "claude_code", "gemini_cli"] as const) {
+  for (const engine of ["codex_cli", "claude_code"] as const) {
     assert.equal(
       classifyRunFailure({
         engine,
@@ -24,7 +24,7 @@ test("run failure sources override message guessing", () => {
 });
 
 test("run failure classifies missing executables for every engine", () => {
-  for (const engine of ["codex_cli", "claude_code", "gemini_cli"] as const) {
+  for (const engine of ["codex_cli", "claude_code"] as const) {
     const failure = classifyRunFailure({
       engine,
       rawError: "spawn failed: ENOENT command not found",
@@ -39,7 +39,6 @@ test("run failure recognizes engine authentication guidance", () => {
   const cases = [
     ["codex_cli", "Not logged in. Run `codex login`"],
     ["claude_code", "Authentication required. Please run /login"],
-    ["gemini_cli", "GEMINI_API_KEY is required"],
   ] as const;
   for (const [engine, rawError] of cases) {
     const failure = classifyRunFailure({
@@ -55,7 +54,7 @@ test("run failure recognizes engine authentication guidance", () => {
 
 test("run failure keeps unknown raw diagnostics out of its user message", () => {
   const rawError = "secret-local-stderr-marker";
-  for (const engine of ["codex_cli", "claude_code", "gemini_cli"] as const) {
+  for (const engine of ["codex_cli", "claude_code"] as const) {
     const failure = classifyRunFailure({
       engine,
       rawError,

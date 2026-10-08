@@ -6,7 +6,7 @@
 
 Paper Pilot 是一个面向 Zotero 7-10 PDF 阅读器的 AI 阅读工作台。它直接在 Zotero 中提供按论文作用域组织的聊天面板、结构化论文工具、由代理主导并验证出版状态的先行研究发现，以及基于本地 CLI 的 AI 执行能力。
 
-![Zotero 7-10](https://img.shields.io/badge/Zotero-7--10-cc2936) ![Node 20+](https://img.shields.io/badge/Node-20%2B-339933) ![Java 11+](https://img.shields.io/badge/Java-11%2B-007396) ![License](https://img.shields.io/badge/License-AGPL--3.0--or--later-blue) ![Engines](https://img.shields.io/badge/Engines-Codex%20CLI%20%7C%20Claude%20Code%20%7C%20Gemini%20CLI-6f42c1)
+![Zotero 7-10](https://img.shields.io/badge/Zotero-7--10-cc2936) ![Node 20+](https://img.shields.io/badge/Node-20%2B-339933) ![Java 11+](https://img.shields.io/badge/Java-11%2B-007396) ![License](https://img.shields.io/badge/License-AGPL--3.0--or--later-blue) ![Engines](https://img.shields.io/badge/Engines-Codex%20CLI%20%7C%20Claude%20Code-6f42c1)
 
 ## 聊天工作流
 
@@ -21,7 +21,7 @@ Paper Pilot 是一个面向 Zotero 7-10 PDF 阅读器的 AI 阅读工作台。�
 ## 快速概览
 
 - 直接在 Zotero Reader 中使用 AI 聊天
-- 三种本地引擎模式：**Codex CLI**、**Claude Code** 与 **Gemini CLI**
+- 两种本地引擎模式：**Codex CLI** 与 **Claude Code**
 - 面向 brief、compare、contributions、limitations、follow-ups 的结构化论文工作台
 - 通过 **OpenDataLoader PDF** 提取结构化 PDF 工作区
 - 无需用户配置会议列表，以官方出版证据和三个结果分区发现先行研究
@@ -71,7 +71,7 @@ Paper Pilot 仍在积极开发中。
 
 - 在 Zotero 阅读器/条目面板中添加 AI 面板
 - 将对话限定在当前论文范围内
-- 支持按论文切换 Codex CLI、Claude Code 与 Gemini CLI
+- 支持按论文切换 Codex CLI 与 Claude Code
 - 在同一论文/会话内保留追问上下文
 - 支持通过 **Past sessions** 重新打开、重命名、删除，或清空当前论文的已保存会话
 - **New session** 会保留当前会话，并为同一篇论文开启一个空白新草稿
@@ -132,7 +132,7 @@ Mastery prompt 会强制问答与评估响应为严格 JSON（禁止前置推理
 
 ### 7. 面向 CLI 引擎的本地工作区工件
 
-当你在 **Codex CLI**、**Claude Code** 或 **Gemini CLI** 模式下提问时，Paper Pilot 会为当前论文创建一个工作区，让 CLI 在回答前先读取本地论文上下文。
+当你在 **Codex CLI** 或 **Claude Code** 模式下提问时，Paper Pilot 会为当前论文创建一个工作区，让 CLI 在回答前先读取本地论文上下文。
 
 所有引擎都会写入的工件：
 
@@ -155,7 +155,7 @@ Mastery prompt 会强制问答与评估响应为严格 JSON（禁止前置推理
 | 领域       | 当前支持                                                                                       |
 | ---------- | ---------------------------------------------------------------------------------------------- |
 | 阅读器聊天 | Zotero Reader 内按论文组织的 AI 聊天                                                           |
-| 引擎       | Codex CLI、Claude Code、Gemini CLI                                                             |
+| 引擎       | Codex CLI、Claude Code                                                                         |
 | 论文工作台 | Research brief、compare、contributions、limitations、follow-ups                                |
 | 发现       | 代理推断领域/会议，以官方证据验证并分成三个结果分区                                            |
 | 批判性阅读 | 读者优先的七个步骤、依赖失效处理与区分来源的最终报告                                           |
@@ -166,11 +166,10 @@ Mastery prompt 会强制问答与评估响应为严格 JSON（禁止前置推理
 
 ## 引擎模式
 
-| 模式          | 适用场景             | 当前优势                                                                     |
-| ------------- | -------------------- | ---------------------------------------------------------------------------- |
-| `Codex CLI`   | 面向工作区的论文分析 | 本地工作区工件、可恢复执行、模型/沙箱/批准控制、可选网页搜索                 |
-| `Claude Code` | 面向工作区的论文问答 | 本地工作区工件、模型/权限模式控制、论文级上下文连续性                        |
-| `Gemini CLI`  | 轻量级本地论文问答   | 更简单的可执行文件/模型设置、论文级上下文连续性、本地 retrieval/context 组装 |
+| 模式          | 适用场景             | 当前优势                                                     |
+| ------------- | -------------------- | ------------------------------------------------------------ |
+| `Codex CLI`   | 面向工作区的论文分析 | 本地工作区工件、可恢复执行、模型/沙箱/批准控制、可选网页搜索 |
+| `Claude Code` | 面向工作区的论文问答 | 本地工作区工件、模型/effort/权限模式控制、论文级上下文连续性 |
 
 ### Codex CLI 模式
 
@@ -189,17 +188,10 @@ Codex 模式更偏向工作区驱动。当前代码库已经包含：
 Claude Code 模式使用本地 `claude` CLI 的 print 模式，并基于阅读器聊天和工作台流程使用的同一论文工作区工件来回答。当前代码库已经包含：
 
 - 可配置的可执行文件路径
-- 可配置的默认模型
+- 可选择 Claude Code CLI 的模型系列别名（默认 `sonnet`，另含 `opus`、`haiku`、`fable`），已安装的 CLI 会将其解析为各系列的最新模型（当前为 Sonnet 5.5、Opus 5.5、Haiku 5.5、Fable 5.1）；另提供固定 ID `claude-opus-5-5`、`claude-sonnet-5-5`、`claude-haiku-5-5`、`claude-fable-5-1`、`claude-opus-5`、`claude-sonnet-5`
+- 在设置中手动输入的其他模型 ID（例如 `claude-opus-5-5[1m]` 或 Bedrock/Vertex 模型 ID）会原样传给 CLI；`Opus 5.5`、`claude-opus-5.5` 等手动输入的名称会规范化为 `claude-opus-5-5`，并保留 `[1m]` 等上下文后缀
+- 可选的 effort 级别（`low`、`medium`、`high`、`xhigh`、`max`；留空则使用 Claude Code CLI 默认值），可在设置中或模型选择器旁设置；仅当已安装 CLI 的 `--help` 列出 `--effort` 时才会传入
 - 可配置的 permission mode
-- 论文级追问上下文连续性
-- 面向当前论文的 retrieval/context 组装
-
-### Gemini CLI 模式
-
-Gemini 模式是更轻量的本地 CLI 路径。当前代码库已经包含：
-
-- 可配置的可执行文件路径
-- 可配置的默认模型
 - 论文级追问上下文连续性
 - 面向当前论文的 retrieval/context 组装
 
@@ -235,7 +227,6 @@ Gemini 模式是更轻量的本地 CLI 路径。当前代码库已经包含：
 - 至少安装一个本地 AI CLI：
   - **Codex CLI**
   - **Claude Code**
-  - **Gemini CLI**
 
 ## 开发快速开始
 
@@ -266,9 +257,8 @@ OpenDataLoader 打包说明：
 
 本地 CLI 运行需要带有 `/bin/zsh` 和标准进程工具的 Unix 环境，不支持原生 Windows。
 运行 `bash scripts/doctor.sh .` 可检查登录 shell 中的 CLI 路径、版本和可确认的认证状态。
-第二个参数可指定 Zotero 配置目录，以比较缓存提取运行时与内置版本。Gemini 认证在
-实际运行前保持未验证。Research Workspace 会记录运行时固定的 CLI 模型、推理级别和
-响应语言。源文件变化会使结果过期；恢复任务只复用源指纹、上下文投影和执行设置均
+第二个参数可指定 Zotero 配置目录，以比较缓存提取运行时与内置版本。
+Research Workspace 会记录运行时固定的 CLI 模型、推理级别和响应语言。源文件变化会使结果过期；恢复任务只复用源指纹、上下文投影和执行设置均
 一致的单元。Codex 允许模型设置同时限制选择列表和实际模型；仅含过时模型的列表会
 回退到当前支持列表。
 
@@ -307,10 +297,10 @@ OpenDataLoader 打包说明：
 
 安装 `.xpi` 后，可按以下最短路径验证插件是否正常工作：
 
-1. 在 Zotero 设置中配置本地 **Codex CLI**、**Claude Code** 或 **Gemini CLI** 可执行文件路径。
+1. 在 Zotero 设置中配置本地 **Codex CLI** 或 **Claude Code** 可执行文件路径。
 2. 在 Zotero Reader 中打开一个 PDF 附件。
 3. 打开 **Paper Pilot** 面板。
-4. 选择 **Codex CLI**、**Claude Code** 或 **Gemini CLI**。
+4. 选择 **Codex CLI** 或 **Claude Code**。
 5. 针对当前论文提出一个问题。
 6. 试用一个结构化工作台操作，例如 **Research brief** 或 **Compare**。
 
@@ -320,7 +310,6 @@ OpenDataLoader 打包说明：
 
 - **General**
 - **Claude Code**
-- **Gemini CLI**
 - **Codex CLI**
 - **Retrieval**
 - **Privacy**
@@ -339,7 +328,7 @@ OpenDataLoader 打包说明：
 
 1. 在 Zotero Reader 中打开 PDF。
 2. 打开 **Paper Pilot** 面板。
-3. 选择 **Codex CLI**、**Claude Code** 或 **Gemini CLI**。
+3. 选择 **Codex CLI** 或 **Claude Code**。
 4. 针对论文提问。
 5. 如有需要，可通过选中文本或批注操作生成下一条 prompt。
 6. 使用工作台按钮生成 brief、compare、contributions、follow-ups 等结构化结果。
@@ -361,7 +350,6 @@ build/      生成的插件构建产物
 - `src/modules/readerPane.ts` — 主阅读器面板 UI 与工作流连接
 - `src/modules/codex/` — Codex CLI 执行、状态、解析与命令构建
 - `src/modules/claude/` — Claude Code 执行流程
-- `src/modules/gemini/` — Gemini CLI 执行流程
 - `src/modules/context/` — 论文上下文收集与工作区工件生成
 - `src/modules/autoHighlight/` — 高亮提取工作流
 - `src/modules/paperTools.ts` — 结构化 contribution/limitation/follow-up prompt

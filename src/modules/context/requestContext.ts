@@ -337,7 +337,7 @@ export async function prepareRunInput(params: {
     const names = Object.keys(params.prebuiltInput.files);
     if (
       names.some((name) =>
-        /(^|\/)(?:paperpilot-input-manifest\.json|(?:codex|claude|gemini)-(?:output|stderr|exit|pid)|prompt\.txt)/.test(
+        /(^|\/)(?:paperpilot-input-manifest\.json|(?:codex|claude)-(?:output|stderr|exit|pid)|prompt\.txt)/.test(
           name,
         ),
       )

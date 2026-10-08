@@ -28,11 +28,6 @@ class Addon {
       number,
       import("./modules/ai/runProgress").RunProgressState
     >;
-    geminiRunStates?: Map<
-      number,
-      import("./modules/gemini/runState").GeminiRunState
-    >;
-    geminiRunPollers?: Map<number, ReturnType<typeof setInterval>>;
     claudeRunStates?: Map<
       number,
       import("./modules/claude/runState").ClaudeRunState
@@ -156,8 +151,6 @@ class Addon {
       codexRunPollers: new Map(),
       pendingEngineCompletions: new Map(),
       runProgressStates: new Map(),
-      geminiRunStates: new Map(),
-      geminiRunPollers: new Map(),
       claudeRunStates: new Map(),
       claudeRunPollers: new Map(),
       lastEngineRequests: new Map(),

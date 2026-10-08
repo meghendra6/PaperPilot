@@ -16,7 +16,6 @@ export interface PaperSession {
   updatedAt: string;
   lastCodexSessionID?: string;
   lastClaudeSessionID?: string;
-  lastGeminiSessionID?: string;
   lastModel?: SessionHistoryModelMetadata;
   threadTitle: string;
   branch?: ConversationBranch;

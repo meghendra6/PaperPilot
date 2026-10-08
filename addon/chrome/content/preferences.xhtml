@@ -40,7 +40,7 @@
           type="text"
           id="zotero-prefpane-__addonRef__-input-default-mode"
           preference="extensions.zotero.__addonRef__.defaultMode"
-          placeholder="codex_cli, claude_code, or gemini_cli"
+          placeholder="codex_cli or claude_code"
           style="flex: 1"
         ></html:input>
       </hbox>
@@ -127,7 +127,24 @@
           type="text"
           id="zotero-prefpane-__addonRef__-input-claude-model"
           preference="extensions.zotero.__addonRef__.claudeDefaultModel"
-          placeholder="sonnet"
+          placeholder="sonnet, opus, claude-opus-5-5, claude-opus-5-5[1m]"
+          style="flex: 1"
+        ></html:input>
+      </hbox>
+      <hbox
+        align="center"
+        style="display: flex; align-items: center; margin-bottom: 10px"
+      >
+        <html:label
+          for="zotero-prefpane-__addonRef__-input-claude-reasoning-effort"
+          data-l10n-id="pref-claude-reasoning-effort"
+          style="flex: 0 0 220px; margin-right: 10px"
+        ></html:label>
+        <html:input
+          type="text"
+          id="zotero-prefpane-__addonRef__-input-claude-reasoning-effort"
+          preference="extensions.zotero.__addonRef__.claudeReasoningEffort"
+          placeholder="empty for CLI default, or low, medium, high, xhigh, max"
           style="flex: 1"
         ></html:input>
       </hbox>
@@ -159,84 +176,6 @@
           id="zotero-prefpane-__addonRef__-input-claude-permission-mode"
           preference="extensions.zotero.__addonRef__.claudePermissionMode"
           placeholder="default, acceptEdits, auto, bypassPermissions, dontAsk, or plan"
-          style="flex: 1"
-        ></html:input>
-      </hbox>
-    </groupbox>
-
-    <groupbox>
-      <label
-        ><html:h2
-          data-l10n-id="pref-section-gemini-title"
-          style="margin: 0"
-        ></html:h2
-      ></label>
-      <html:p
-        data-l10n-id="pref-section-gemini-desc"
-        style="margin: 4px 0 10px; color: #555"
-      ></html:p>
-      <hbox
-        align="center"
-        style="display: flex; align-items: center; margin-bottom: 10px"
-      >
-        <html:label
-          for="zotero-prefpane-__addonRef__-input-gemini-path"
-          data-l10n-id="pref-gemini-executable-path"
-          style="flex: 0 0 220px; margin-right: 10px"
-        ></html:label>
-        <html:input
-          type="text"
-          id="zotero-prefpane-__addonRef__-input-gemini-path"
-          preference="extensions.zotero.__addonRef__.geminiExecutablePath"
-          placeholder="/opt/homebrew/bin/gemini"
-          style="flex: 1"
-        ></html:input>
-      </hbox>
-      <hbox
-        align="center"
-        style="display: flex; align-items: center; margin-bottom: 10px"
-      >
-        <html:label
-          for="zotero-prefpane-__addonRef__-input-gemini-model"
-          data-l10n-id="pref-gemini-default-model"
-          style="flex: 0 0 220px; margin-right: 10px"
-        ></html:label>
-        <html:input
-          type="text"
-          id="zotero-prefpane-__addonRef__-input-gemini-model"
-          preference="extensions.zotero.__addonRef__.geminiDefaultModel"
-          placeholder="gemini-3.1-pro-preview"
-          style="flex: 1"
-        ></html:input>
-      </hbox>
-      <hbox
-        align="center"
-        style="display: flex; align-items: center; margin-bottom: 10px"
-      >
-        <html:label
-          for="zotero-prefpane-__addonRef__-input-gemini-allowed-models"
-          data-l10n-id="pref-gemini-allowed-models"
-          style="flex: 0 0 220px; margin-right: 10px"
-        ></html:label>
-        <html:input
-          type="text"
-          id="zotero-prefpane-__addonRef__-input-gemini-allowed-models"
-          preference="extensions.zotero.__addonRef__.geminiAllowedModels"
-          placeholder="comma-separated Gemini model ids"
-          style="flex: 1"
-        ></html:input>
-      </hbox>
-      <hbox align="center" style="display: flex; align-items: center">
-        <html:label
-          for="zotero-prefpane-__addonRef__-input-gemini-approval-mode"
-          data-l10n-id="pref-gemini-approval-mode"
-          style="flex: 0 0 220px; margin-right: 10px"
-        ></html:label>
-        <html:input
-          type="text"
-          id="zotero-prefpane-__addonRef__-input-gemini-approval-mode"
-          preference="extensions.zotero.__addonRef__.geminiApprovalMode"
-          placeholder="default, auto_edit, yolo, or plan"
           style="flex: 1"
         ></html:input>
       </hbox>

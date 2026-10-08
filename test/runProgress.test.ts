@@ -67,7 +67,7 @@ test("run progress records workspace failure and retry availability", () => {
 test("run timeout is absolute and terminal phases do not time out", () => {
   const preparing = createRunProgressState({
     itemID: 14,
-    engine: "gemini_cli",
+    engine: "claude_code",
     token: Symbol("run-14"),
     now: 100,
   });
@@ -104,14 +104,14 @@ test("run progress storage keeps paper items isolated", () => {
     setRunProgressState(
       createRunProgressState({
         itemID: 22,
-        engine: "gemini_cli",
+        engine: "claude_code",
         token: Symbol("run-22"),
         now: 200,
       }),
     );
 
     assert.equal(getRunProgressState(21)?.engine, "codex_cli");
-    assert.equal(getRunProgressState(22)?.engine, "gemini_cli");
+    assert.equal(getRunProgressState(22)?.engine, "claude_code");
     assert.equal(getRunProgressState(23), undefined);
   } finally {
     (globalThis as { addon?: unknown }).addon = previousAddon;

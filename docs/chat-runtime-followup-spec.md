@@ -76,4 +76,4 @@ After the repair:
 
 The screen-control service intermittently returned blank screenshots and timeouts; those captures are excluded from the evidence above. Successful accessibility observations, actual saved records and the valid native screenshots are reported separately from Node checks.
 
-Not exercised in this follow-up: Zotero 7–9, native extraction with all PDF readers closed or another paper visible, the full 320/640 px and dark/200%/IME matrix, 200-message history, two PDFs under one parent, Claude/Gemini GUI, and the full project/privacy matrix. Negative source-change cases are covered by automated logic tests; no user PDF was replaced or deleted for QA. These remain manual-QA gaps, not passed checks.
+Not exercised in this follow-up: Zotero 7–9, native extraction with all PDF readers closed or another paper visible, the full 320/640 px and dark/200%/IME matrix, 200-message history, two PDFs under one parent, Claude GUI, and the full project/privacy matrix. Negative source-change cases are covered by automated logic tests; no user PDF was replaced or deleted for QA. These remain manual-QA gaps, not passed checks.

@@ -6,7 +6,7 @@
 
 Paper Pilot는 Zotero 7-10 PDF 리더를 위한 AI 읽기 워크벤치입니다. Zotero 안에서 논문별 채팅 패널, 구조화된 논문 도구, 에이전트 주도 검증형 선행연구 탐색, 로컬 CLI 기반 AI 실행 기능을 제공합니다.
 
-![Zotero 7-10](https://img.shields.io/badge/Zotero-7--10-cc2936) ![Node 20+](https://img.shields.io/badge/Node-20%2B-339933) ![Java 11+](https://img.shields.io/badge/Java-11%2B-007396) ![License](https://img.shields.io/badge/License-AGPL--3.0--or--later-blue) ![Engines](https://img.shields.io/badge/Engines-Codex%20CLI%20%7C%20Claude%20Code%20%7C%20Gemini%20CLI-6f42c1)
+![Zotero 7-10](https://img.shields.io/badge/Zotero-7--10-cc2936) ![Node 20+](https://img.shields.io/badge/Node-20%2B-339933) ![Java 11+](https://img.shields.io/badge/Java-11%2B-007396) ![License](https://img.shields.io/badge/License-AGPL--3.0--or--later-blue) ![Engines](https://img.shields.io/badge/Engines-Codex%20CLI%20%7C%20Claude%20Code-6f42c1)
 
 ## Chat 사용 흐름
 
@@ -21,7 +21,7 @@ Paper Pilot는 Zotero 7-10 PDF 리더를 위한 AI 읽기 워크벤치입니다.
 ## 한눈에 보기
 
 - Zotero Reader 안에서 바로 사용하는 AI 채팅
-- 세 가지 로컬 엔진 모드: **Codex CLI**, **Claude Code**, **Gemini CLI**
+- 두 가지 로컬 엔진 모드: **Codex CLI**, **Claude Code**
 - brief, compare, contributions, limitations, follow-ups를 위한 구조화된 논문 워크벤치
 - **OpenDataLoader PDF** 기반 구조화 PDF 워크스페이스 추출
 - 사용자 설정 없이 공식 출판 근거와 세 결과 레인으로 선행연구 탐색
@@ -71,7 +71,7 @@ Paper Pilot는 현재 활발히 개발 중입니다.
 
 - Zotero 리더/아이템 패널에 AI 패널 추가
 - 대화를 현재 논문 단위로 유지
-- 논문별로 Codex CLI, Claude Code, Gemini CLI 전환 지원
+- 논문별로 Codex CLI, Claude Code 전환 지원
 - 같은 논문/세션 안에서 후속 질문 맥락 유지
 - 현재 논문의 저장된 세션을 다시 열고, 이름 변경하고, 삭제하고, 한 번에 모두 지울 수 있는 **Past sessions** 지원
 - **New session**은 현재 세션을 보존한 채 같은 논문에서 비어 있는 새 초안을 시작
@@ -132,7 +132,7 @@ Mastery 프롬프트는 질문/평가 응답을 엄격한 JSON으로 강제하�
 
 ### 7. CLI 엔진용 로컬 워크스페이스 아티팩트
 
-**Codex CLI**, **Claude Code**, **Gemini CLI** 모드에서 질문하면, Paper Pilot는 CLI가 답변 전에 로컬 논문 맥락을 확인할 수 있도록 논문별 워크스페이스를 생성합니다.
+**Codex CLI** 또는 **Claude Code** 모드에서 질문하면, Paper Pilot는 CLI가 답변 전에 로컬 논문 맥락을 확인할 수 있도록 논문별 워크스페이스를 생성합니다.
 
 모든 엔진에서 생성되는 아티팩트:
 
@@ -157,7 +157,7 @@ Java를 사용할 수 없으면 Paper Pilot는 폴백 사실을 `metadata.json`�
 | 영역           | 현재 지원                                                       |
 | -------------- | --------------------------------------------------------------- |
 | 리더 채팅      | Zotero Reader 내부의 논문 단위 AI 채팅                          |
-| 엔진           | Codex CLI, Claude Code, Gemini CLI                              |
+| 엔진           | Codex CLI, Claude Code                                          |
 | 논문 워크벤치  | Research brief, compare, contributions, limitations, follow-ups |
 | 탐색           | 에이전트가 분야/학회를 판단하고 공식 근거로 검증한 세 레인 결과 |
 | 비판적 읽기    | 독자 우선 7단계, 의존 단계 무효화, 출처 구분 최종 리포트        |
@@ -171,8 +171,7 @@ Java를 사용할 수 없으면 Paper Pilot는 폴백 사실을 `metadata.json`�
 | 모드          | 적합한 용도                 | 현재 강점                                                                             |
 | ------------- | --------------------------- | ------------------------------------------------------------------------------------- |
 | `Codex CLI`   | 워크스페이스 기반 논문 분석 | 로컬 워크스페이스 아티팩트, 재개 가능한 실행, 모델/샌드박스/승인 제어, 선택적 웹 검색 |
-| `Claude Code` | 워크스페이스 기반 논문 Q&A  | 로컬 워크스페이스 아티팩트, 모델/권한 모드 제어, 논문 단위 맥락 유지                  |
-| `Gemini CLI`  | 가벼운 로컬 논문 Q&A        | 단순한 실행 파일/모델 설정, 논문 단위 맥락 유지, 로컬 retrieval/context 구성          |
+| `Claude Code` | 워크스페이스 기반 논문 Q&A  | 로컬 워크스페이스 아티팩트, 모델/effort/권한 모드 제어, 논문 단위 맥락 유지           |
 
 ### Codex CLI 모드
 
@@ -191,17 +190,10 @@ Codex 모드는 더 워크스페이스 지향적인 경로입니다. 현재 코�
 Claude Code 모드는 로컬 `claude` CLI의 print 모드를 사용하며, 리더 채팅과 워크벤치 흐름에서 쓰는 동일한 논문 워크스페이스 아티팩트에 근거해 답변합니다. 현재 코드베이스에는 다음이 포함되어 있습니다.
 
 - 설정 가능한 실행 파일 경로
-- 설정 가능한 기본 모델
+- Claude Code CLI 계열 별칭 모델 선택(`sonnet` 기본, `opus`, `haiku`, `fable`). 설치된 CLI가 각 계열의 최신 모델(현재 Sonnet 5.5, Opus 5.5, Haiku 5.5, Fable 5.1)로 해석하며, 고정 ID `claude-opus-5-5`, `claude-sonnet-5-5`, `claude-haiku-5-5`, `claude-fable-5-1`, `claude-opus-5`, `claude-sonnet-5`도 제공
+- 설정에 직접 입력한 그 밖의 모델 ID(예: `claude-opus-5-5[1m]`, Bedrock/Vertex 모델 ID)는 그대로 CLI에 전달. `Opus 5.5`, `claude-opus-5.5`처럼 직접 입력한 이름은 `claude-opus-5-5`로 정규화되며 `[1m]` 같은 컨텍스트 접미사는 유지
+- 선택적 effort 수준(`low`, `medium`, `high`, `xhigh`, `max`, 비워 두면 Claude Code CLI 기본값)을 설정과 모델 선택기 옆에서 지정. 설치된 CLI의 `--help`에 `--effort`가 있을 때만 전달
 - 설정 가능한 permission mode
-- 논문 단위 후속 대화 맥락 유지
-- 현재 논문용 retrieval/context 조합
-
-### Gemini CLI 모드
-
-Gemini 모드는 더 가벼운 로컬 CLI 경로입니다. 현재 코드베이스에는 다음이 포함되어 있습니다.
-
-- 설정 가능한 실행 파일 경로
-- 설정 가능한 기본 모델
 - 논문 단위 후속 대화 맥락 유지
 - 현재 논문용 retrieval/context 조합
 
@@ -239,7 +231,6 @@ Gemini 모드는 더 가벼운 로컬 CLI 경로입니다. 현재 코드베이�
 - 다음 중 하나 이상의 로컬 AI CLI:
   - **Codex CLI**
   - **Claude Code**
-  - **Gemini CLI**
 
 ## 개발 빠른 시작
 
@@ -271,9 +262,8 @@ OpenDataLoader 패키징 메모:
 로컬 CLI 실행에는 `/bin/zsh`와 표준 프로세스 도구가 있는 Unix 환경이 필요하며,
 네이티브 Windows 실행은 지원하지 않습니다. `bash scripts/doctor.sh .`로 로그인 셸의
 CLI 경로·버전과 확인 가능한 인증 상태를 점검할 수 있습니다. 두 번째 인자로 Zotero
-프로필 경로를 넘기면 추출 런타임 캐시를 번들과 비교합니다. Gemini 인증은 직접
-실행하기 전까지 미확인으로 표시합니다. Research Workspace 결과에는 실행 시 고정한
-CLI 모델·추론 강도·응답 언어가 기록됩니다. 소스가 바뀌면 결과를 무효화하며,
+프로필 경로를 넘기면 추출 런타임 캐시를 번들과 비교합니다. Research Workspace
+결과에는 실행 시 고정한 CLI 모델·추론 강도·응답 언어가 기록됩니다. 소스가 바뀌면 결과를 무효화하며,
 재개 시에는 소스·문맥 지문·실행 설정이 모두 일치하는 단위만 재사용합니다.
 Codex 허용 모델 설정은 선택 목록과 실제 사용 모델에 적용됩니다. 지원이 끝난
 모델만 저장되어 있다면 현재 지원 목록으로 복구합니다.
@@ -313,10 +303,10 @@ Codex 허용 모델 설정은 선택 목록과 실제 사용 모델에 적용됩
 
 `.xpi` 설치 후 가장 빠르게 플러그인을 확인하는 방법은 다음과 같습니다.
 
-1. Zotero 설정에서 로컬 **Codex CLI**, **Claude Code**, **Gemini CLI** 실행 파일 경로를 설정합니다.
+1. Zotero 설정에서 로컬 **Codex CLI** 또는 **Claude Code** 실행 파일 경로를 설정합니다.
 2. Zotero Reader에서 PDF 첨부파일을 엽니다.
 3. **Paper Pilot** 패널을 엽니다.
-4. **Codex CLI**, **Claude Code**, **Gemini CLI**를 선택합니다.
+4. **Codex CLI** 또는 **Claude Code**를 선택합니다.
 5. 현재 논문에 대해 질문합니다.
 6. **Research brief** 또는 **Compare** 같은 구조화된 workbench 액션을 실행해 봅니다.
 
@@ -326,7 +316,6 @@ Codex 허용 모델 설정은 선택 목록과 실제 사용 모델에 적용됩
 
 - **General**
 - **Claude Code**
-- **Gemini CLI**
 - **Codex CLI**
 - **Retrieval**
 - **Privacy**
@@ -345,7 +334,7 @@ Codex 허용 모델 설정은 선택 목록과 실제 사용 모델에 적용됩
 
 1. Zotero Reader에서 PDF를 엽니다.
 2. **Paper Pilot** 패널을 엽니다.
-3. **Codex CLI**, **Claude Code**, **Gemini CLI**를 선택합니다.
+3. **Codex CLI** 또는 **Claude Code**를 선택합니다.
 4. 논문에 대해 질문합니다.
 5. 필요하면 선택 영역 또는 주석 액션으로 다음 프롬프트를 시작합니다.
 6. brief, compare, contributions, follow-ups 같은 구조화된 결과를 위해 workbench 버튼을 사용합니다.
@@ -367,7 +356,6 @@ build/      생성된 애드온 아티팩트
 - `src/modules/readerPane.ts` — 메인 리더 패널 UI 및 워크플로우 연결
 - `src/modules/codex/` — Codex CLI 실행, 상태, 파싱, 명령 빌드
 - `src/modules/claude/` — Claude Code 실행 흐름
-- `src/modules/gemini/` — Gemini CLI 실행 흐름
 - `src/modules/context/` — 논문 컨텍스트 수집 및 워크스페이스 아티팩트 생성
 - `src/modules/autoHighlight/` — 하이라이트 추출 워크플로우
 - `src/modules/paperTools.ts` — 구조화된 contribution/limitation/follow-up 프롬프트

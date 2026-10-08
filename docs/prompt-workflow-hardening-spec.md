@@ -19,8 +19,8 @@ issues found in the 2026-08-23 audit.
   code
 - preserve the current fail-closed discovery verifier and exact PDF highlight
   matching
-- keep Codex CLI, Claude Code, and Gemini CLI behavior equivalent where their
-  command surfaces permit it
+- keep Codex CLI and Claude Code behavior equivalent where their command
+  surfaces permit it
 
 ## Non-goals
 
@@ -51,8 +51,8 @@ Every model run has one explicit profile.
 - never resumes or updates the visible chat's provider conversation
 - uses an analysis-specific workspace path so provider-side `latest` session
   lookup cannot select a hidden run when visible chat resumes
-- is read-only: Codex uses a read-only sandbox, Claude uses plan permission mode,
-  and Gemini uses plan approval mode rather than YOLO
+- is read-only: Codex uses a read-only sandbox and Claude uses plan permission
+  mode
 - does not enable web search
 
 ### `discovery`
@@ -119,8 +119,7 @@ duplicating the selection.
 - Codex receives the schema through `--output-schema` when its installed command
   surface supports it
 - Claude receives the schema through `--json-schema` when supported
-- Gemini and older CLIs use the same prompt plus the existing validating parser
-  fallback
+- older CLIs use the same prompt plus the existing validating parser fallback
 - native schema support is an additional reliability layer; local parsers remain
   authoritative and required
 - Critical Read uses a step-specific schema instead of requesting every field in
@@ -165,8 +164,6 @@ Automated acceptance requires:
 - invalid Mastery difficulty values and non-finite/out-of-range confidence do
   not enter workflow state
 - every silent workflow uses `analysis` or `discovery`, never `chat`
-- Gemini command tests preserve the existing chat approval policy while
-  rejecting `--yolo` and requiring plan mode for analysis and discovery
 - hidden workflows use a workspace path distinct from visible chat
 - selected text, nearby context, retrieved chunks, and recent turns each have one
   workspace owner
@@ -179,5 +176,4 @@ Automated acceptance requires:
   `npm run build` pass
 
 Manual Zotero QA must cover one visible chat follow-up and one hidden workflow
-for each engine, confirm that the visible chat resumes its own context, and
-confirm that Gemini analysis does not request or execute write actions.
+for each engine and confirm that the visible chat resumes its own context.

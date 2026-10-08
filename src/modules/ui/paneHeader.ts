@@ -6,17 +6,17 @@ import {
   CODEX_DEFAULT_MODEL,
   getAllowedCodexModels,
   getClaudeBuiltInModels,
+  getClaudeModelLabel,
+  getClaudeReasoningEfforts,
   getCodexBuiltInModelCatalog,
   getCodexBuiltInModels,
-  getGeminiBuiltInModels,
   mergeModelOptions,
   normalizeClaudeModel,
   normalizeClaudeModelList,
+  normalizeClaudeReasoningEffort,
   normalizeCodexModel,
   normalizeCodexModelList,
   normalizeCodexReasoningEffort,
-  normalizeGeminiModel,
-  normalizeGeminiModelList,
   parseAllowedModels,
   resolveCodexModel,
 } from "../codex/modelOptions";
@@ -30,7 +30,6 @@ export interface PaneHeaderHandle {
   trigger: HTMLButtonElement;
   modeChip: HTMLElement;
   modeStatus: HTMLElement;
-  modeGeminiButton: HTMLButtonElement;
   modeClaudeButton: HTMLButtonElement;
   modeCodexButton: HTMLButtonElement;
   modeResetButton: HTMLButtonElement;
@@ -41,6 +40,7 @@ export interface PaneHeaderHandle {
   codexRecheckButton: HTMLButtonElement;
   modelRow: HTMLElement;
   modelInput: HTMLSelectElement;
+  claudeEffortInput: HTMLSelectElement;
   modelSaveButton: HTMLButtonElement;
   codexOptionsRow: HTMLElement;
   codexWebSearchToggle: HTMLInputElement;
@@ -109,16 +109,10 @@ export function createPaneHeader(params: {
 
   const modeActions = doc.createElement("div");
   modeActions.className = "pp-pane-header__mode-actions";
-  const modeGeminiButton = makeButton(doc, "chat-mode-gemini", "Gemini CLI");
   const modeClaudeButton = makeButton(doc, "chat-mode-claude", "Claude Code");
   const modeCodexButton = makeButton(doc, "chat-mode-codex", "Codex CLI");
   const modeResetButton = makeButton(doc, "chat-mode-reset", "Use Default");
-  modeActions.append(
-    modeGeminiButton,
-    modeClaudeButton,
-    modeCodexButton,
-    modeResetButton,
-  );
+  modeActions.append(modeClaudeButton, modeCodexButton, modeResetButton);
 
   const modelRow = doc.createElement("div");
   modelRow.id = "paper-pilot-model-row";
@@ -134,7 +128,11 @@ export function createPaneHeader(params: {
     "Save",
     "pp-btn pp-btn--primary",
   );
-  modelRow.append(modelLabel, modelInput, modelSaveButton);
+  const claudeEffortInput = doc.createElement("select");
+  claudeEffortInput.id = "chat-claude-effort";
+  claudeEffortInput.setAttribute("aria-label", "Claude effort");
+  claudeEffortInput.hidden = true;
+  modelRow.append(modelLabel, modelInput, claudeEffortInput, modelSaveButton);
 
   const codexOptionsRow = doc.createElement("div");
   codexOptionsRow.id = "paper-pilot-codex-options";
@@ -238,7 +236,6 @@ export function createPaneHeader(params: {
     trigger,
     modeChip,
     modeStatus,
-    modeGeminiButton,
     modeClaudeButton,
     modeCodexButton,
     modeResetButton,
@@ -249,6 +246,7 @@ export function createPaneHeader(params: {
     codexRecheckButton,
     modelRow,
     modelInput,
+    claudeEffortInput,
     modelSaveButton,
     codexOptionsRow,
     codexWebSearchToggle,
@@ -266,7 +264,6 @@ export function createPaneHeader(params: {
 }
 
 function getModeShortLabel(label: string) {
-  if (label.includes("Gemini")) return "Gemini";
   if (label.includes("Claude")) return "Claude";
   return "Codex";
 }
@@ -282,7 +279,14 @@ export function renderModeHeader(
     "#chat-codex-model",
   ) as HTMLSelectElement | null;
   const modelLabel = modelInput?.selectedOptions[0]?.textContent?.trim();
-  chip.textContent = [getModeShortLabel(label), modelLabel]
+  const effortInput = root?.querySelector(
+    "#chat-claude-effort",
+  ) as HTMLSelectElement | null;
+  const effortLabel =
+    effortInput && !effortInput.hidden && effortInput.value
+      ? effortInput.value
+      : undefined;
+  chip.textContent = [getModeShortLabel(label), modelLabel, effortLabel]
     .filter(Boolean)
     .join(" · ");
   status.textContent = `Status: ${getStatusLabel(providerStatus)}`;
@@ -320,37 +324,31 @@ export function renderCodexOptionsRow(
 }
 
 function getDefaultModelPrefForMode(mode: EngineMode) {
-  if (mode === "gemini_cli") return "geminiDefaultModel";
   if (mode === "claude_code") return "claudeDefaultModel";
   return "codexDefaultModel";
 }
 
 function getAllowedModelsPrefForMode(mode: EngineMode) {
-  if (mode === "gemini_cli") return "geminiAllowedModels";
   if (mode === "claude_code") return "claudeAllowedModels";
   return "codexAllowedModels";
 }
 
 function getFallbackModelForMode(mode: EngineMode) {
-  if (mode === "gemini_cli") return "gemini-3.1-pro-preview";
-  if (mode === "claude_code") return "sonnet";
+  if (mode === "claude_code") return getClaudeBuiltInModels()[0];
   return CODEX_DEFAULT_MODEL;
 }
 
 function getBuiltInModelsForMode(mode: EngineMode) {
-  if (mode === "gemini_cli") return getGeminiBuiltInModels();
   if (mode === "claude_code") return getClaudeBuiltInModels();
   return getCodexBuiltInModels();
 }
 
 export function normalizeModelForMode(mode: EngineMode, model: string) {
-  if (mode === "gemini_cli") return normalizeGeminiModel(model);
   if (mode === "claude_code") return normalizeClaudeModel(model);
   return normalizeCodexModel(model);
 }
 
 function normalizeModelListForMode(mode: EngineMode, models: string[]) {
-  if (mode === "gemini_cli") return normalizeGeminiModelList(models);
   if (mode === "claude_code") return normalizeClaudeModelList(models);
   return normalizeCodexModelList(models);
 }
@@ -409,7 +407,7 @@ export function renderModelHistory(
     }
   } else {
     for (const model of options) {
-      optionMap.set(`${model}|`, model);
+      optionMap.set(`${model}|`, getClaudeModelLabel(model));
     }
   }
 
@@ -433,10 +431,35 @@ export function renderModelHistory(
     fallback.textContent =
       mode === "codex_cli" && currentReasoningEffort
         ? `${selectedValue} (${currentReasoningEffort})`
-        : selectedValue;
+        : getClaudeModelLabel(selectedValue);
     fallback.selected = true;
     modelInput.appendChild(fallback);
   }
   modelHistory.style.display = "none";
   modelHistory.replaceChildren();
+}
+
+export function renderClaudeEffortInput(
+  effortInput: HTMLSelectElement,
+  mode: EngineMode,
+) {
+  if (mode !== "claude_code") {
+    effortInput.hidden = true;
+    effortInput.replaceChildren();
+    return;
+  }
+  const current = normalizeClaudeReasoningEffort(
+    String(getPref("claudeReasoningEffort") || ""),
+  );
+  const doc = effortInput.ownerDocument;
+  effortInput.replaceChildren(
+    ...["", ...getClaudeReasoningEfforts()].map((effort) => {
+      const option = doc.createElement("option");
+      option.value = effort;
+      option.textContent = effort || "default effort";
+      option.selected = effort === current;
+      return option;
+    }),
+  );
+  effortInput.hidden = false;
 }

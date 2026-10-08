@@ -4,7 +4,7 @@ Thanks for contributing to Paper Pilot.
 
 ## Scope
 
-This repository contains a Zotero 7-10 plugin that adds an AI reader workbench with local CLI integrations: Codex CLI, Claude Code, and Gemini CLI.
+This repository contains a Zotero 7-10 plugin that adds an AI reader workbench with local CLI integrations: Codex CLI and Claude Code.
 
 ## Development environment
 
@@ -38,7 +38,6 @@ Important areas to understand before making changes:
 - `src/modules/ai/` — engine mode union, per-paper mode override, provider registry, shared run helpers
 - `src/modules/codex/` — Codex CLI execution, status, shell, parsing, and command building
 - `src/modules/claude/` — Claude Code execution flow
-- `src/modules/gemini/` — Gemini CLI execution flow
 - `src/modules/context/` — paper context retrieval and workspace artifact generation
 - `src/modules/workspace/` — workspace paths, writability probe, cleanup, collection artifact bundles
 - `src/modules/researchWorkspace/` — project persistence, verified evidence, multi-paper capabilities, and project-window UI

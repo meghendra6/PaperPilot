@@ -37,16 +37,6 @@ const fixtures: {
     },
     success: { type: "result", is_error: false },
   },
-  {
-    mode: "gemini_cli",
-    answer: { type: "message", role: "assistant", content: '{"claims":[]}' },
-    failure: {
-      type: "result",
-      status: "error",
-      error: { message: "fixture-native-failure" },
-    },
-    success: { type: "result", status: "success" },
-  },
 ];
 
 for (const fixture of fixtures) {

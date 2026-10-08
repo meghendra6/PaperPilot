@@ -114,7 +114,7 @@ Paper Pilot already includes:
 - Contributions, Limitations, and Follow-ups cards;
 - Paper Mastery, a multi-round comprehension check;
 - paper-scoped session persistence; and
-- local CLI execution through Codex CLI, Claude Code, or Gemini CLI.
+- local CLI execution through Codex CLI or Claude Code.
 
 The existing Related papers contract accepts a model-generated `venue` string
 and `relevanceScore`. It does not distinguish a main conference paper from a
@@ -950,7 +950,7 @@ src/modules/ui/
 state transitions.
 
 Shared engine behavior belongs in `modules/ai/workspaceRun.ts`. Engine-specific
-search flags and command construction remain in the three engine modules.
+search flags and command construction remain in the two engine modules.
 
 ### 15.3 Workspace artifacts
 
@@ -1345,8 +1345,8 @@ The real-Zotero checklist must cover:
 - user input preceding agent reveal in Steps 1, 2, 4, 5, and 7;
 - degraded caption-only behavior in Steps 1 and 5;
 - saved Zotero notes preserving evidence and lane separation; and
-- Codex CLI, Claude Code, and Gemini CLI behavior under their actual available
-  discovery capabilities.
+- Codex CLI and Claude Code behavior under their actual available discovery
+  capabilities.
 
 ## 24. Delivery phases
 

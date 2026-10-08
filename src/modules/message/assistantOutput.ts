@@ -8,7 +8,6 @@ const WORKSPACE_FILE_LABELS: Array<[RegExp, string]> = [
   [/\bannotations\.json\b/gi, "the annotations"],
   [/\bmetadata\.json\b/gi, "the paper metadata"],
   [/\bprompt\.txt\b/gi, "the prompt"],
-  [/\bgemini-prompt\.txt\b/gi, "the prompt"],
 ];
 
 function stripPrivateLinks(text: string) {

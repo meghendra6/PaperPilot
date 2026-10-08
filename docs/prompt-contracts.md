@@ -8,7 +8,7 @@ This note documents the purpose, target answer shape, and guardrails for the mai
 - make paper-grounded vs inferred content explicit
 - improve strict-schema compliance for downstream parsers
 - reduce made-up details by preferring omission over guessing
-- apply the same full-paper grounding rules across Codex CLI, Claude Code, and Gemini CLI modes
+- apply the same full-paper grounding rules across Codex CLI and Claude Code modes
 
 ## Response language
 
@@ -203,7 +203,7 @@ language; existing Zotero notes and verbatim source material remain unchanged.
 - Visible chat uses the `chat` profile and may resume only the provider session recorded for that Paper Pilot session.
 - Workbench, Compare, Paper Mastery, Critical Read, and Auto Highlight use `analysis`; verified discovery and public-review inspection use `discovery`.
 - Analysis and discovery have distinct workspace paths, do not read or update visible-chat resume metadata, and use read-only provider modes. Only discovery admits the verified web-search path.
-- Structured workflows export a JSON Schema beside their prompt/parser. Codex and Claude receive it only when their installed help surface reports `--output-schema` or `--json-schema`; older CLIs and Gemini continue through the same prompt plus authoritative local parser.
+- Structured workflows export a JSON Schema beside their prompt/parser. Codex and Claude receive it only when their installed help surface reports `--output-schema` or `--json-schema`; older CLIs continue through the same prompt plus authoritative local parser.
 - Before a native schema flag is used, Paper Pilot verifies that the root is an object, every schema node has an explicit type or composition, every object is closed with `additionalProperties: false`, and every declared property is required. An incompatible schema is omitted from the native CLI invocation so the existing prompt plus authoritative local parser remains available instead of failing the entire run.
 - Native schema output never replaces local parsing, normalization, live publication verification, or exact PDF quote matching.
 

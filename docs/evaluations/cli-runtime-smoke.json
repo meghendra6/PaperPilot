@@ -47,12 +47,6 @@
     "rememberedSyntheticToken": true,
     "settingsIsolation": "--setting-sources project,local"
   },
-  "gemini": {
-    "version": "0.40.1",
-    "exitCode": 55,
-    "category": "external CLI/account incompatibility",
-    "observedError": "IneligibleTierError / UNSUPPORTED_CLIENT; installed Gemini CLI reports this client is no longer supported and requests migration to Antigravity"
-  },
   "zoteroUI": {
     "status": "not yet executed for new build",
     "reason": "CUA returns cgWindowNotFound for Zotero and Finder; separate baseline screenshot is not new-build proof"

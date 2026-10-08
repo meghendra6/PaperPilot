@@ -13,12 +13,9 @@ declare namespace _ZoteroTypes {
       "paneSectionState": string;
       "claudeExecutablePath": string;
       "claudeDefaultModel": string;
+      "claudeReasoningEffort": string;
       "claudeAllowedModels": string;
       "claudePermissionMode": string;
-      "geminiExecutablePath": string;
-      "geminiDefaultModel": string;
-      "geminiAllowedModels": string;
-      "geminiApprovalMode": string;
       "codexExecutablePath": string;
       "codexDefaultModel": string;
       "codexReasoningEffort": string;

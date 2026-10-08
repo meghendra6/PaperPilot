@@ -6,10 +6,8 @@ type ShutdownRunData = {
   readerLifecycleClaims?: Map<number, ReaderLifecycleClaim>;
   codexRunStates?: Map<number, { processId?: string; runStatus?: string }>;
   claudeRunStates?: Map<number, { processId?: string }>;
-  geminiRunStates?: Map<number, { processId?: string }>;
   codexRunPollers?: Map<number, unknown>;
   claudeRunPollers?: Map<number, unknown>;
-  geminiRunPollers?: Map<number, unknown>;
   pendingEngineCompletions?: Map<number, { mode: EngineMode }>;
 };
 
@@ -42,25 +40,17 @@ export function collectShutdownRuns(
   data.claudeRunStates?.forEach((state, itemID) =>
     add(itemID, "claude_code", state.processId),
   );
-  data.geminiRunStates?.forEach((state, itemID) =>
-    add(itemID, "gemini_cli", state.processId),
-  );
   data.codexRunPollers?.forEach((_poller, itemID) =>
     add(itemID, "codex_cli", data.codexRunStates?.get(itemID)?.processId),
   );
   data.claudeRunPollers?.forEach((_poller, itemID) =>
     add(itemID, "claude_code", data.claudeRunStates?.get(itemID)?.processId),
   );
-  data.geminiRunPollers?.forEach((_poller, itemID) =>
-    add(itemID, "gemini_cli", data.geminiRunStates?.get(itemID)?.processId),
-  );
   data.pendingEngineCompletions?.forEach((pending, itemID) => {
     const processId =
       pending.mode === "codex_cli"
         ? data.codexRunStates?.get(itemID)?.processId
-        : pending.mode === "claude_code"
-          ? data.claudeRunStates?.get(itemID)?.processId
-          : data.geminiRunStates?.get(itemID)?.processId;
+        : data.claudeRunStates?.get(itemID)?.processId;
     add(itemID, pending.mode, processId);
   });
   data.readerLifecycleClaims?.forEach((claim, itemID) => {

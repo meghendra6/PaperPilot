@@ -9,17 +9,9 @@ pref("__prefsPrefix__.paneSectionState", "{}");
 // Claude Code
 pref("__prefsPrefix__.claudeExecutablePath", "");
 pref("__prefsPrefix__.claudeDefaultModel", "sonnet");
+pref("__prefsPrefix__.claudeReasoningEffort", "");
 pref("__prefsPrefix__.claudeAllowedModels", "sonnet, opus, haiku, fable");
 pref("__prefsPrefix__.claudePermissionMode", "default");
-
-// Gemini CLI
-pref("__prefsPrefix__.geminiExecutablePath", "");
-pref("__prefsPrefix__.geminiDefaultModel", "gemini-3.1-pro-preview");
-pref(
-  "__prefsPrefix__.geminiAllowedModels",
-  "gemini-3.1-pro-preview, gemini-3-flash-preview",
-);
-pref("__prefsPrefix__.geminiApprovalMode", "default");
 
 // Codex CLI
 pref("__prefsPrefix__.codexExecutablePath", "");

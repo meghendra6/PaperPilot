@@ -127,13 +127,13 @@ test("timeout keeps ownership when process death cannot be confirmed", async () 
       lastEngineRequests: new Map(),
     },
   };
-  const token = markReaderRunStarted(83, "gemini_cli");
+  const token = markReaderRunStarted(83, "codex_cli");
   let timeoutRearmed = 0;
 
   try {
-    startRunProgress(83, "gemini_cli", token);
+    startRunProgress(83, "codex_cli", token);
     registerPendingEngineCompletion(83, {
-      mode: "gemini_cli",
+      mode: "codex_cli",
       token,
       retryable: true,
       rearmTimeout: () => {
@@ -145,8 +145,8 @@ test("timeout keeps ownership when process death cannot be confirmed", async () 
       itemID: 83,
       sessionId: "session-83",
       sessionTitle: "Timeout paper",
-      engine: "gemini_cli",
-      engineLabel: "Gemini CLI",
+      engine: "codex_cli",
+      engineLabel: "Codex CLI",
       token,
       stop: () => {
         throw new Error("termination executor failed");

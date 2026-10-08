@@ -12,9 +12,7 @@ export function getVerifiedProviderResume(
   const storedID =
     mode === "codex_cli"
       ? session.lastCodexSessionID
-      : mode === "claude_code"
-        ? session.lastClaudeSessionID
-        : session.lastGeminiSessionID;
+      : session.lastClaudeSessionID;
   return binding?.status === "verified" &&
     binding.engine === mode &&
     binding.paperpilotSessionId === session.sessionId &&

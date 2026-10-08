@@ -12,15 +12,13 @@ test("shutdown collects states, pollers, pending completions, and presentations"
         [1, { processId: "101", runStatus: "running" }],
       ]),
       claudeRunStates: new Map([[2, { processId: "202" }]]),
-      geminiRunStates: new Map(),
       codexRunPollers: new Map([[1, {}]]),
-      claudeRunPollers: new Map(),
-      geminiRunPollers: new Map([[3, {}]]),
+      claudeRunPollers: new Map([[3, {}]]),
       pendingEngineCompletions: new Map([
         [2, { mode: "claude_code" as const }],
       ]),
     },
-    [{ itemID: 4, mode: "gemini_cli" }],
+    [{ itemID: 4, mode: "claude_code" }],
   );
 
   assert.deepEqual(
@@ -28,8 +26,8 @@ test("shutdown collects states, pollers, pending completions, and presentations"
     [
       [1, "codex_cli", "101"],
       [2, "claude_code", "202"],
-      [3, "gemini_cli", undefined],
-      [4, "gemini_cli", undefined],
+      [3, "claude_code", undefined],
+      [4, "claude_code", undefined],
     ],
   );
 });
@@ -41,7 +39,7 @@ test("shutdown starts best-effort process termination without blocking", async (
     runs: [
       { itemID: 1, mode: "codex_cli", processId: "101" },
       { itemID: 2, mode: "claude_code", processId: "202" },
-      { itemID: 3, mode: "gemini_cli" },
+      { itemID: 3, mode: "claude_code" },
     ],
     stop: async (processId) => {
       stopped.push(String(processId));

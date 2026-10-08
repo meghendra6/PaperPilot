@@ -629,6 +629,10 @@
   min-width: 0;
 }
 
+.pp-model-row #chat-claude-effort {
+  flex: 0 0 auto;
+}
+
 .pp-codex-options {
   display: flex;
   gap: 8px;

@@ -569,9 +569,6 @@ export function captureSessionSnapshot(params: {
     ...(params.session.lastClaudeSessionID
       ? { lastClaudeSessionID: params.session.lastClaudeSessionID }
       : {}),
-    ...(params.session.lastGeminiSessionID
-      ? { lastGeminiSessionID: params.session.lastGeminiSessionID }
-      : {}),
     ...(params.session.lastModel
       ? { lastModel: cloneValue(params.session.lastModel) }
       : {}),
@@ -619,7 +616,7 @@ export function applySessionSnapshot(
     const mode = message.request?.executionSettings?.mode ?? message.sourceMode;
     if (mode) interruptedEngines.add(mode);
     else
-      for (const engine of ["codex_cli", "claude_code", "gemini_cli"] as const)
+      for (const engine of ["codex_cli", "claude_code"] as const)
         interruptedEngines.add(engine);
   }
 
@@ -698,10 +695,6 @@ export function applySessionSnapshot(
       snapshot.lastClaudeSessionID === "latest"
         ? undefined
         : snapshot.lastClaudeSessionID,
-    lastGeminiSessionID:
-      snapshot.lastGeminiSessionID === "latest"
-        ? undefined
-        : snapshot.lastGeminiSessionID,
     lastModel: cloneValue(snapshot.lastModel),
     threadTitle: snapshot.title,
     ...(snapshot.branch ? { branch: cloneValue(snapshot.branch) } : {}),
@@ -729,7 +722,6 @@ export function applySessionSnapshot(
   const sessionIDKey = {
     codex_cli: "lastCodexSessionID",
     claude_code: "lastClaudeSessionID",
-    gemini_cli: "lastGeminiSessionID",
   } as const;
   for (const engine of interruptedEngines) {
     delete session[sessionIDKey[engine]];

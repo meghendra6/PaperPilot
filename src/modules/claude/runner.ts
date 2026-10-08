@@ -87,6 +87,7 @@ export function buildClaudeCommand(params: {
   pidPath: string;
   workspacePath: string;
   model: string;
+  reasoningEffort?: string;
   resumeSessionId?: string;
   executablePath: string;
   permissionMode: string;
@@ -104,6 +105,9 @@ export function buildClaudeCommand(params: {
       ? `--resume ${shellEscape(params.resumeSessionId)}`
       : "";
   const permissionMode = normalizeClaudePermissionMode(params.permissionMode);
+  const effortPart = params.reasoningEffort
+    ? `--effort ${shellEscape(params.reasoningEffort)}`
+    : "";
   const outputSchemaPart = params.outputSchema
     ? `--json-schema ${shellEscape(JSON.stringify(params.outputSchema))}`
     : "";
@@ -114,7 +118,7 @@ export function buildClaudeCommand(params: {
     ...environmentLines,
     `(` +
       `cd ${shellEscape(params.workspacePath)} && ` +
-      `cat ${shellEscape(params.promptPath)} | ${shellEscape(params.executablePath)} -p --output-format ${params.eventOutput ? "stream-json --verbose --include-partial-messages" : "text"} --model ${shellEscape(params.model)} ${resumePart} ${outputSchemaPart} --permission-mode ${shellEscape(permissionMode)} --setting-sources project,local > ${shellEscape(params.outputPath)} 2> ${shellEscape(params.stderrPath)}; ` +
+      `cat ${shellEscape(params.promptPath)} | ${shellEscape(params.executablePath)} -p --output-format ${params.eventOutput ? "stream-json --verbose --include-partial-messages" : "text"} --model ${shellEscape(params.model)} ${effortPart} ${resumePart} ${outputSchemaPart} --permission-mode ${shellEscape(permissionMode)} --setting-sources project,local > ${shellEscape(params.outputPath)} 2> ${shellEscape(params.stderrPath)}; ` +
       `printf '%s' $? > ${shellEscape(params.exitCodePath)}` +
       `) & echo $! > ${shellEscape(params.pidPath)}`,
   ].join(" && ");
@@ -209,6 +213,16 @@ export async function startClaudeRunForQuestion(params: {
     }))
       ? compatibleOutputSchema
       : undefined;
+  const reasoningEffort =
+    settings.reasoningEffort &&
+    (await cliSupportsFlag({
+      executablePath,
+      helpArgs: ["--help"],
+      flag: "--effort",
+      environment: buildCliCommandEnvironment(executablePath),
+    }))
+      ? settings.reasoningEffort
+      : undefined;
 
   const eventOutput = await supportsClaudeEventOutput(executablePath);
   const script = buildClaudeCommand({
@@ -220,6 +234,7 @@ export async function startClaudeRunForQuestion(params: {
     pidPath,
     workspacePath,
     model,
+    reasoningEffort,
     resumeSessionId:
       canResumeProviderSession(profile) &&
       params.resumeSessionId &&

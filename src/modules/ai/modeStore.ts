@@ -1,15 +1,21 @@
-import { getPref } from "../../utils/prefs";
+import { getPref, setPref } from "../../utils/prefs";
 import type { EngineMode } from "./types";
 
 declare const addon: any;
 
 export function getDefaultMode(): EngineMode {
   const prefMode = getPref("defaultMode");
-  return prefMode === "gemini_cli" ||
-    prefMode === "claude_code" ||
-    prefMode === "codex_cli"
+  return prefMode === "claude_code" || prefMode === "codex_cli"
     ? prefMode
     : "codex_cli";
+}
+
+/** Rewrites a default saved before Gemini CLI was removed so settings stop showing it. */
+export function migrateLegacyDefaultMode(
+  read: typeof getPref = getPref,
+  write: typeof setPref = setPref,
+) {
+  if (read("defaultMode") === "gemini_cli") write("defaultMode", "codex_cli");
 }
 
 export function getModeForItem(itemID: number): EngineMode {

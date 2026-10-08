@@ -148,12 +148,72 @@ test("owned manifest removes prior B and runtime output but preserves unknown us
   }
 });
 
+test("manifests written before Gemini removal still replace cleanly in reused chat workspaces", async () => {
+  const runtime = globalThis as any;
+  const oldZ = runtime.Zotero;
+  const oldIO = runtime.IOUtils;
+  const workspace = "/tmp/work/9-chat-legacy";
+  const files = new Map<string, string>();
+  runtime.Zotero = {
+    File: {
+      getContentsAsync: async (path: string) => files.get(path),
+      putContentsAsync: async (path: string, text: string) => {
+        files.set(path, text);
+      },
+      createDirectoryIfMissingAsync: async () => {},
+    },
+  };
+  runtime.IOUtils = {
+    exists: async (path: string) => files.has(path),
+    remove: async (path: string) => {
+      files.delete(path);
+    },
+  };
+  try {
+    const legacyRuntimeFiles = [
+      "gemini-prompt.txt",
+      "gemini-output.txt",
+      "gemini-stderr.log",
+      "gemini-exit.txt",
+      "gemini-pid.txt",
+    ];
+    files.set(
+      `${workspace}/paperpilot-input-manifest.json`,
+      JSON.stringify({
+        version: 1,
+        runID: "released",
+        scopeFingerprint: "a",
+        sourceIDs: ["A"],
+        artifactIDs: [],
+        files: ["prompt.txt", "codex-output.jsonl", ...legacyRuntimeFiles].map(
+          (path) => ({ path, contentFingerprint: "runtime-owned" }),
+        ),
+      }),
+    );
+    files.set(`${workspace}/gemini-output.txt`, "old answer");
+
+    const manifest = await writeOwnedWorkspaceInputs({
+      workspacePath: workspace,
+      files: { "papers/A.md": "A" },
+      runID: "upgraded",
+      scopeFingerprint: "a",
+      sourceIDs: ["A"],
+    });
+
+    assert.equal(files.has(`${workspace}/gemini-output.txt`), false);
+    assert.equal(
+      manifest.files.some((entry) => entry.path.startsWith("gemini-")),
+      false,
+    );
+  } finally {
+    runtime.Zotero = oldZ;
+    runtime.IOUtils = oldIO;
+  }
+});
+
 test("project-only engine preparation never reads Zotero parent data and creates fresh directories", async () => {
   const { startClaudeRunForQuestion } = await import(
     "../src/modules/claude/runner"
-  );
-  const { startGeminiRunForQuestion } = await import(
-    "../src/modules/gemini/runner"
   );
   const runtime = globalThis as any;
   const oldZ = runtime.Zotero;
@@ -201,7 +261,6 @@ test("project-only engine preparation never reads Zotero parent data and creates
   try {
     for (const [start, mode] of [
       [startClaudeRunForQuestion, "claude_code"],
-      [startGeminiRunForQuestion, "gemini_cli"],
     ] as const) {
       const previousPaths: string[] = [];
       for (const names of [["A", "B"], ["A"]]) {
@@ -213,7 +272,9 @@ test("project-only engine preparation never reads Zotero parent data and creates
           profile: "analysis",
           executionSettings: {
             mode,
-            model: mode === "claude_code" ? "sonnet" : "gemini-3.1-pro-preview",
+            model: "sonnet",
+            // The mocked CLI help below does not list --effort.
+            reasoningEffort: "high",
             responseLanguage: "English",
           },
           prebuiltInput: {
@@ -237,8 +298,9 @@ test("project-only engine preparation never reads Zotero parent data and creates
       }
       assert.notEqual(previousPaths[0], previousPaths[1]);
     }
-    assert.equal(commands.length, 4);
+    assert.equal(commands.length, 2);
     assert.ok(commands.every((command) => command.includes("stream-json")));
+    assert.ok(commands.every((command) => !command.includes("--effort")));
   } finally {
     runtime.Zotero = oldZ;
     runtime.IOUtils = oldIO;
@@ -251,9 +313,6 @@ test("all providers suppress launch when Stop arrives during preparation or fina
   );
   const { startClaudeRunForQuestion } = await import(
     "../src/modules/claude/runner"
-  );
-  const { startGeminiRunForQuestion } = await import(
-    "../src/modules/gemini/runner"
   );
   const runtime = globalThis as any;
   const previous = {
@@ -307,7 +366,6 @@ test("all providers suppress launch when Stop arrives during preparation or fina
     for (const [start, mode] of [
       [startCodexRunForQuestion, "codex_cli"],
       [startClaudeRunForQuestion, "claude_code"],
-      [startGeminiRunForQuestion, "gemini_cli"],
     ] as const)
       for (const stage of ["prepare", "write"] as const) {
         cancelled = false;

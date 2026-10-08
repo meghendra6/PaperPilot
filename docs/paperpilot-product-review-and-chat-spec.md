@@ -98,14 +98,14 @@ pathsDiffer: true
 181–217; [claude/controller.ts](../src/modules/claude/controller.ts) 175–184;
 [claude/runner.ts](../src/modules/claude/runner.ts) 155–162, 231–236;
 [pathBuilder.ts](../src/modules/workspace/pathBuilder.ts) 32–39.
-Codex/Gemini에도 같은 title 전달 패턴이 있다.
+Codex에도 같은 title 전달 패턴이 있다.
 
-### D02. Claude/Gemini의 저장 대화와 provider 대화가 고유하게 연결되지 않는다
+### D02. Claude의 저장 대화와 provider 대화가 고유하게 연결되지 않는다
 
 **P1 · M/L · E2**
 
 첫 성공에 실제 provider session ID를 수집하지 않고 `latest`를 저장한다.
-Claude는 이를 `--continue`, Gemini는 `--resume latest`로 실행한다. 특정 PaperPilot
+Claude는 이를 `--continue`로 실행한다. 특정 PaperPilot
 대화를 다시 여는 동작이 provider의 특정 대화를 가리킨다는 보장이 없다.
 D01의 CWD 변경 및 동일 slug를 갖는 대화와 결합하면 연속성 위험이 커진다.
 
@@ -117,9 +117,7 @@ A→B→A로 열어도 질문과 답변이 섞이지 않는다. 한국어 제목
 
 근거: [sessionHistoryService.ts](../src/modules/session/sessionHistoryService.ts)
 83–94; [claude/controller.ts](../src/modules/claude/controller.ts) 397–407;
-[gemini/controller.ts](../src/modules/gemini/controller.ts) 397–407;
-[claude/runner.ts](../src/modules/claude/runner.ts) 107–110;
-[gemini/runner.ts](../src/modules/gemini/runner.ts) 110–112.
+[claude/runner.ts](../src/modules/claude/runner.ts) 107–110.
 
 ### D03. 정확한 attachment를 확보해도 runner에서 다른 PDF를 다시 읽을 수 있다
 
@@ -321,7 +319,7 @@ D11의 불균형 예시: 총 180,000자 예산에서 100자 source와 250,000자
 | S01 | 한 문장이 이해되지 않아 Explain 후 계속 질문        | 구절·page·논문 고정, 짧은 답변, 후속 대화 유지            | D01–D04, R01–R02      |
 | S02 | 긴 논문을 30분 이상 읽으며 예전 답변을 다시 찾기    | 스크롤 유지, 대화 검색, 고정한 정의·전제 확인             | D08, G02, R06/R09     |
 | S03 | 답변 생성 중 다음 질문 작성                         | 초안 작성 가능, 현재 run만 실행, 완료해도 초안 유지       | D09, G01, R04         |
-| S04 | Claude↔Codex↔Gemini 전환 또는 며칠 뒤 재개        | 정확한 session 또는 명시적 새 실행, 이어받는 context 설명 | D01/D02, G02, R02/R06 |
+| S04 | Claude↔Codex 전환 또는 며칠 뒤 재개                | 정확한 session 또는 명시적 새 실행, 이어받는 context 설명 | D01/D02, G02, R02/R06 |
 | S05 | 잘못 질문했거나 답변을 다른 방향으로 발전           | 질문 수정 또는 선택 답변에서 독립 session 분기            | D10, R03/R08          |
 | S06 | 본문 PDF와 supplementary PDF를 함께 보유            | 이번 질문에서 실제 선택한 attachment만 분석               | D03, R01              |
 | S07 | 내 하이라이트 여러 개와 comment로 질문              | 선택한 annotation 내용과 출처를 확인 후 포함              | D04, R01              |
@@ -378,7 +376,7 @@ annotation 삭제, 이미지 주석, extraction fallback을 포함한다. 생성
 - path 변경의 migration은 기존 session metadata로 식별한 inactive 경로만
   다룬다. 사용자 설정 workspace root·cleanup·history 정책을 유지한다.
 
-**검증:** 세 provider에서 A/B/A 재개, 동일 첫 질문, 한글 이름, 재시작,
+**검증:** 두 provider에서 A/B/A 재개, 동일 첫 질문, 한글 이름, 재시작,
 legacy session, provider ID 없음. metadata.title의 서지 제목 일치를 검사한다.
 
 ### R03. 문답과 실행 시도 분리
@@ -609,7 +607,7 @@ legacy `latest` binding은 확인되지 않은 재개 상태, locator 없는 답
 | 미사용 `defaultEngineMode` 계약                   | P3 정리 후보                     | 현재 쓰기·검증 필드는 있지만 실행은 anchor mode를 사용. migration/외부 import 용도를 확인한 뒤 deprecate 또는 실제 의미 부여 |
 | 거대한 `readerPane.ts`에 신규 책임 누적           | 점진적 분리                      | 현재 4,546줄. 크기만으로 결함은 아니며 이번에 바꾸는 chat 경계부터 추출                                                      |
 | stale “current facts”와 중복 roadmap              | 문서 정리                        | 과거 baseline 표시, 현재 구현·제안·검증 상태 분리                                                                            |
-| 세 provider 전체를 하나의 거대한 runner로 통합    | 보류                             | 격리를 위해 의도된 중복도 있다. 공통 보장만 추출                                                                             |
+| 두 provider 전체를 하나의 거대한 runner로 통합    | 보류                             | 격리를 위해 의도된 중복도 있다. 공통 보장만 추출                                                                             |
 | 범용 agent marketplace·voice·video·자동 외부 sync | 현재 범위 제외                   | 핵심 논문 chat 개선과 직접 관련이 약하고 운영 범위를 넓힘                                                                    |
 
 미사용 필드 근거: [persistence/contracts.ts](../src/modules/researchWorkspace/persistence/contracts.ts)
@@ -667,7 +665,7 @@ Phase별로 독립적인 리뷰와 runtime 증거를 남기고 **A–D 모두를
 
 현재 [manual-qa.md](./manual-qa.md)를 기반으로 다음을 해당 phase의 증거로 추가한다.
 
-1. 세 engine 각각 첫 질문→두 후속 질문→Stop→Retry→재시작→같은 session 열기.
+1. 두 engine 각각 첫 질문→두 후속 질문→Stop→Retry→재시작→같은 session 열기.
 2. 동일 논문 A/B 대화 전환, provider 전환, 한글 제목과 대화 이름 변경.
 3. 두 attachment 및 두 library에서 정확한 source 유지, 탭 전환 중 준비·완료.
 4. annotation text/comment/image, 없는 PDF, extraction fallback.
@@ -897,7 +895,7 @@ source fingerprint 없는 native resume도 회귀 검사와 함께 수정했다.
 
 | 요구 | 구현 경로                                                                                                | 주요 검증 / 남은 실환경 범위                                                                                            |
 | ---- | -------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| R01  | `context/requestContext.ts`, 세 engine runner, `researchWorkspace/analysisRunner.ts`                     | exact attachment/library, 동기 선택 캡처, 주석 내용, 없는 파일·교체 파일, prebuilt source 회귀                          |
+| R01  | `context/requestContext.ts`, 두 engine runner, `researchWorkspace/analysisRunner.ts`                     | exact attachment/library, 동기 선택 캡처, 주석 내용, 없는 파일·교체 파일, prebuilt source 회귀                          |
 | R02  | `workspace/pathBuilder.ts`, provider output parsers, `session/providerBinding.ts`                        | 제목과 실행 경로 분리, source/session/fingerprint 일치, 실제 Codex A/B/A 및 Claude native resume                        |
 | R03  | `message/messageStore.ts`, `ui/chatAdmission.ts`, `sessionHistoryService.ts`, `ai/retryEngineRequest.ts` | 저장 실패 뒤 같은 제출 재전송, 다중 attempt, terminal guard, migration·분기·privacy                                     |
 | R04  | `ui/chatDraft.ts`, `ui/chatComposer.ts`, `readerActions.ts`, `readerPane.ts`                             | 초안 revision·편집된 제출 분리, 작성 중 새 초안 보존, 독립 quick/structured 질문                                        |
@@ -906,7 +904,7 @@ source fingerprint 없는 native resume도 회귀 검사와 함께 수정했다.
 | R07  | `ui/chatTranscriptWindow.ts`, `ChatMessage.ts`, pane CSS                                                 | bounded window, 과거 메시지 이동·읽기 anchor·선택 보존, 단일 새 응답 제어; 실제 Zotero 폭/테마/IME matrix는 별도        |
 | R08  | `sessionHistoryService.ts`, `note/chatNote.ts`, 메시지 메뉴                                              | 분기점 prefix·원본 provenance·provider 분리, 질문/답변/소스/인용 상태 note preview                                      |
 | R09  | `ui/chatTools.ts`, session 검색, `readerActionPrompt.ts`                                                 | 전체 저장 기록 검색, paper scope, 편집 가능한 네 slash 동작, 요청별 응답 길이                                           |
-| R10  | `requestContext.ts` timing, 세 controller/runner, `runControl.ts`                                        | admission/capture/persistence/spawn/first-answer/finish/display 구분, cancellation-before-spawn, JSONL assistant만 표시 |
+| R10  | `requestContext.ts` timing, 두 controller/runner, `runControl.ts`                                        | admission/capture/persistence/spawn/first-answer/finish/display 구분, cancellation-before-spawn, JSONL assistant만 표시 |
 | R11  | RW coordinator/project controller/context planner/operation inputs                                       | 제외·stale source/upstream 차단, 질문/columns/protocol fingerprint, 쓰기 전 전체 batch 검사, quota 재분배               |
 | R12  | RW candidate persistence/panel/facade, member state, discovery row                                       | PDF 없는 후보→명시적 binding→screening·reading·understanding, recovery/export/delete, chat 비교 질문 전달               |
 | R13  | `scripts/evaluate-chat-context.mjs`, 30개 CC0 fixture, [평가 보고서](./chat-context-evaluation.md)       | 30문항×4 입력 방식, 실제 모델 9회 및 caption/image 2회; 빠른 경로·reranking 기본 채택 기각                              |
@@ -921,9 +919,6 @@ source fingerprint 없는 native resume도 회귀 검사와 함께 수정했다.
   실제 Codex/Claude 실행이다. Codex는 서로 다른 A/B 대화 생성 후 A를 두 번
   재개해 A의 token만 복원했다. Claude는 실제 UUID를 지정한 재개에서 token을
   복원했다. 이것은 Zotero pane 자체의 runtime 검증과는 다르다.
-- Gemini 0.40.1은 `UNSUPPORTED_CLIENT` / `IneligibleTierError`와 exit 55를
-  반환했다. 설치된 CLI·계정의 외부 실행 제한으로 분류하며, parser/runner
-  회귀 통과를 실제 Gemini 답변 성공으로 표현하지 않는다.
 - 실제 컴포넌트를 사용한 브라우저 fixture에서 320/420px 폭, 작성 중 busy 전환,
   200개 메시지의 48개 window, 범위 밖 검색 이동, 과거 읽기 anchor 유지,
   단일 새 응답 버튼을 확인했다. [420px 화면](./assets/product-review/chat-components-420.png)은

@@ -76,7 +76,7 @@ Use this checklist inside real Zotero 7, 8, 9, and 10 runtimes before claiming r
 
 - [ ] Run each engine and confirm the compact card advances through `Preparing workspace`, `Running`, and `Finishing`, with elapsed time updating once per second
 - [ ] Start a run on paper A, open paper B, and confirm B never shows A's progress, cancel, failure, or Retry state; return to A and confirm its state remains connected
-- [ ] Cancel a running Codex, Claude, and Gemini request from the same card; confirm the process stops, silent workflows unlock, and no later poll overwrites `Cancelled`
+- [ ] Cancel a running Codex and Claude request from the same card; confirm the process stops, silent workflows unlock, and no later poll overwrites `Cancelled`
 - [ ] Cancel each engine while it still says `Preparing workspace`, immediately try to start or Retry another request, and confirm the replacement is blocked until the old preparation/cleanup settles; confirm the replacement workspace is not deleted
 - [ ] While a chat run is preparing or a cancelled preparation is settling, try Auto Highlight and verified discovery; then reverse the order and try chat while either direct workflow is running. Confirm every overlapping request is blocked per paper
 - [ ] For a CLI wrapper that starts child processes and ignores `TERM`, cancel the run and confirm the recorded process and its descendants are no longer alive after the bounded `KILL` escalation
@@ -92,7 +92,7 @@ Use this checklist inside real Zotero 7, 8, 9, and 10 runtimes before claiming r
 - [ ] Double-click Retry and confirm only one user turn/run is created; switch to another saved session and confirm the old failure card does not replay its request into the new session
 - [ ] While Retry persistence is delayed, start Auto Highlight/verified discovery and reverse the order; confirm the second claim is rejected before another user turn or direct workflow side effect is stored
 - [ ] Click Find verified prior work while Retry or a session transition owns the item; confirm rejection does not clear existing lanes or persist a failure into either session
-- [ ] Set the Claude/Gemini executable path to a missing binary and confirm the card says the executable was not found, offers `Open settings`, and opens the fixed Paper Pilot preference pane
+- [ ] Set the Claude executable path to a missing binary and confirm the card says the executable was not found, offers `Open settings`, and opens the fixed Paper Pilot preference pane
 - [ ] Set the Codex path to a missing binary: when another healthy Codex candidate exists, confirm the existing resolver recovers to it; in an environment/test seam with no healthy candidate, confirm the same executable-missing card and settings action
 - [ ] Test logged-out Codex and Claude states; confirm the card classifies authentication, offers `Login help`, and keeps raw CLI output under the collapsed `Raw logs` disclosure
 - [ ] Use a successful CLI wrapper that prints `answer` to stdout and a unique local-path marker to stderr; confirm only `answer` reaches live/restored chat and the marker remains diagnostic-only
@@ -104,10 +104,10 @@ Use this checklist inside real Zotero 7, 8, 9, and 10 runtimes before claiming r
 
 ## 2. Mode behavior
 
-- [ ] Switch to `Gemini CLI`
-- [ ] Confirm Gemini session controls and mode messaging update correctly
+- [ ] Confirm the mode actions offer only `Claude Code`, `Codex CLI`, and `Use Default`; there is no `Gemini CLI` button
+- [ ] Set `defaultMode` to `gemini_cli` (or any other unknown value) in settings and confirm a paper without an override opens in Codex CLI mode
 - [ ] Switch to `Claude Code`
-- [ ] Confirm Claude Code model controls and mode messaging update correctly
+- [ ] Confirm Claude Code model controls and mode messaging update correctly, and that the effort select appears next to the model picker only in Claude mode
 - [ ] Switch to `Codex CLI`
 - [ ] Confirm the unified run-progress card and Codex model controls offer GPT-6 Astra, Sol, and Luna plus GPT-5.6 Sol, Terra, and Luna; a fresh install, empty preference, or unknown/retired saved model defaults to Astra; with no saved reasoning effort, it uses `medium`
 - [ ] Confirm an explicitly saved GPT-5.6 model/effort remains selected after upgrading; selecting each GPT-6 model persists across a pane refresh and starts/resumes a run with its exact model ID (`gpt-6-astra`, `gpt-6-sol`, or `gpt-6-luna`)
@@ -180,13 +180,14 @@ and phonetics in native Zotero 10.0.3.
 - [ ] Render a table with a repeated separator, headings, blockquotes, nested lists, fenced code, and prose beginning with `$$`; confirm no content is dropped or misclassified as a block
 - [ ] Switch to another paper and back; confirm brief/paper-tool state does not leak across papers
 
-## 5. Gemini CLI flow
+## 5. Claude Code model and effort
 
-- [ ] Enter a question in Gemini CLI mode
-- [ ] Confirm a local Gemini run starts successfully
-- [ ] Confirm output updates in pane and session metadata persists
-- [ ] Send a follow-up question and confirm resume/session continuity works
-- [ ] Verify invalid executable path or missing CLI state surfaces a clear error
+- [ ] Open the Claude model picker and confirm that, after any recently used models, it lists the family aliases `sonnet`, `opus`, `haiku`, and `fable` (labelled `(latest)`), followed by pinned `claude-opus-5-5`, `claude-sonnet-5-5`, `claude-haiku-5-5`, `claude-fable-5-1`, `claude-opus-5`, and `claude-sonnet-5`; a fresh profile selects `sonnet`
+- [ ] Save `Opus 5.5` or `claude-opus-5.5` as the Claude default model in settings; confirm the picker selects `claude-opus-5-5` and the launched `claude -p` command uses `--model claude-opus-5-5`
+- [ ] Set the Claude default model to `claude-opus-5-5[1m]`; confirm the picker shows it with a 1M-context label, a chat run completes, and the launched command passes `claude-opus-5-5[1m]` unchanged. Record an account or CLI rejection of that id as an external limitation
+- [ ] In the reader pane, choose an effort such as `high` next to the model picker and click Save; confirm the header chip shows it, the settings `Claude effort` field shows `high`, the choice survives a pane refresh, and the launched command includes `--effort high`
+- [ ] Return the effort to `default effort` and confirm the launched command has no `--effort`; enter an unsupported value such as `turbo` in settings and confirm it is treated as the CLI default
+- [ ] With a Claude CLI or wrapper whose `--help` does not list `--effort`, save an effort and confirm the run still succeeds without the flag
 
 ## 6. Claude Code flow
 
@@ -224,14 +225,15 @@ and phonetics in native Zotero 10.0.3.
 - [ ] Confirm `New session` preserves the prior session in `Past sessions` and starts a blank draft instead of discarding it
 - [ ] Confirm messages/draft/run-state reset for the new blank draft
 - [ ] Confirm research-brief and paper-tool cards reset with the blank draft
-- [ ] Switch between Gemini CLI, Claude Code, and Codex CLI and confirm previous threads do not mix
+- [ ] Switch between Claude Code and Codex CLI and confirm previous threads do not mix
+- [ ] With session history saved by an earlier build that used Gemini CLI (Gemini turns, last mode, and resume id), open it from `Past sessions`; confirm the transcript loads without a corrupt-file quarantine, only Codex CLI and Claude Code are offered, and a follow-up runs through the selected engine without attempting a Gemini resume
+- [ ] Open a Research Workspace project whose saved artifacts record Gemini CLI lineage and confirm those artifacts still load and validate
 - [ ] Open a second paper and confirm context/session state does not leak from the first
 - [ ] For each engine, send two visible chat turns, run one Workbench action, then send another chat turn; confirm the final turn resumes the visible chat context and never the hidden workflow
 - [ ] Confirm the chat, analysis, and discovery runs use distinct workspace folders and hidden completion does not change the saved provider resume id
-- [ ] Inspect an analysis run for each engine: Codex uses a read-only sandbox without search, Claude uses plan permission mode, and Gemini uses plan approval mode without `--yolo`
+- [ ] Inspect an analysis run for each engine: Codex uses a read-only sandbox without search, and Claude uses plan permission mode
 - [ ] On a fresh profile with no custom workspace root, confirm workspaces are created below `Zotero.getTempDirectory()/paperpilot-workspaces`, not shared `/tmp/zotero-paper-ai`
-- [ ] Run Gemini chat with the default approval mode and confirm actions require approval; when `gemini --help` advertises `--sandbox`, confirm the launched command includes it
-- [ ] Set each CLI path to an npm/nvm shim outside the fixed system PATH and confirm Codex, Claude, and Gemini can resolve the shim's `node`
+- [ ] Set each CLI path to an npm/nvm shim outside the fixed system PATH and confirm Codex and Claude can resolve the shim's `node`
 - [ ] Configure non-default Codex sandbox and approval modes, send a follow-up turn, and confirm the resumed command retains both modes
 - [ ] Edit and tab through every preferences field; confirm no modal alert appears on change
 - [ ] Turn off local history while workspace auto-clean is off; complete a run and confirm its workspace is still removed
@@ -365,8 +367,8 @@ inspection confirmed:
 
 The runtime fixture did not invoke an external model. The focused automated
 test covers returning from an older window to the latest range before a live
-append; full Codex, Claude, and Gemini send/complete checks remain in the manual
-matrix above.
+append; full Codex and Claude send/complete checks remain in the manual matrix
+above.
 
 ### Zotero 10 compatibility runtime record — 2026-08-21
 
@@ -418,7 +420,7 @@ Structured Firefox RDP inspection confirmed:
 
 The broad compatibility matrix below remains a release/manual-regression
 checklist. Zotero 7/8, Windows, a logged-out Claude account, and successful live
-discovery through Claude Code and Gemini CLI were not available in this delivery
+discovery through Claude Code were not available in this delivery
 environment; their pure contracts and failure paths are covered by the automated
 suite, but they are not represented here as real-runtime passes.
 
@@ -576,7 +578,7 @@ Observed live, using the real authenticated Codex CLI with web search:
   provenance label.
 
 Not performed in this environment and still owed to release QA: Zotero 7/8,
-Windows/Linux, Claude Code and Gemini CLI engine passes, the two-paper visual
+Windows/Linux, Claude Code engine passes, the two-paper visual
 switch (single supplied PDF), an end-to-end OpenReview-verified primary-lane
 paper with `Review insight` (blocked by OpenReview's Turnstile gating of the
 notes API), and OpenDataLoader-backed extraction (its bundled-asset resolution
@@ -677,7 +679,7 @@ and the same fail-closed outcome.
 
 ## 11. Cross-engine discovery checks
 
-- [ ] Repeat discovery and Critical Read smoke checks with Codex CLI, Claude Code, and Gemini CLI
+- [ ] Repeat discovery and Critical Read smoke checks with Codex CLI and Claude Code
 - [ ] Inspect each generated workspace and confirm `CONTEXT_INDEX.md` plus all four `discovery-*.json` files exist for discovery runs
 - [ ] Disable agent web search where the engine supports it; confirm discovery stops before recommendations because candidate providers alone cannot locate official evidence for an unseen venue
 - [ ] Confirm no engine downloads an official PDF body merely to verify publication status
@@ -763,7 +765,7 @@ After running mastery and one or more workbench tools (research brief, contribut
 - Delete and Delete all show a confirmation dialog. Cancel keeps the data.
 - Reopening a session that previously ran mastery / workbench tools shows the natural chat transcript in the message list (prose markdown), with NO raw JSON lines.
 - Mastery cards, workbench cards, and recommendation groups still rehydrate when the session is reopened (existing behavior).
-- After opening a saved session, sending a fresh chat message continues to work end-to-end with Codex CLI, Claude Code, and Gemini CLI.
+- After opening a saved session, sending a fresh chat message continues to work end-to-end with Codex CLI and Claude Code.
 
 ## Analysis consistency and model provenance
 
@@ -771,8 +773,8 @@ After running mastery and one or more workbench tools (research brief, contribut
   model, and reopen the picker. Only Luna and its supported reasoning levels should
   appear; a new run should use Luna. An obsolete-only list should fall back to the
   current catalog. Restore the original preference afterward.
-- Switch Codex → Claude → Gemini after saving each model. Recent models must remain
-  scoped to their provider.
+- Switch Codex → Claude after saving each model. Recent models must remain scoped
+  to their provider.
 - Start a multi-paper analysis, then change the preferred model, effort, and response
   language during preparation. All units and saved lineage must retain the admitted
   settings. On a later resumed run, changed settings or projections must cause rows
@@ -825,7 +827,7 @@ Record Zotero/OS/CLI versions and the installed XPI hash; a successful Node test
 - [ ] With one parent and two PDFs, select the second PDF, Ask AI, rename the chat, and ask two follow-ups. Inspect metadata and citations: the same second attachment and paper title remain fixed.
 - [ ] Select text or multiple annotations, inspect/remove context, and use Ask AI without losing an existing draft. Try deleted annotations, comments, image annotations and a replaced PDF.
 - [ ] During preparation, output, Stop and cleanup, type draft B while request A runs. A's failure/cancellation never deletes B. Quick actions and Mastery/Critical Read never replace the composer text.
-- [ ] In Codex, Claude and Gemini, capture the actual provider session ID for a first request and resume it for two follow-ups. If no ID is emitted, show fresh-session fallback and include eligible continuity. An external CLI authentication failure is recorded separately.
+- [ ] In Codex and Claude, capture the actual provider session ID for a first request and resume it for two follow-ups. If no ID is emitted, show fresh-session fallback and include eligible continuity. An external CLI authentication failure is recorded separately.
 - [ ] Retry the same failed turn repeatedly; one user question has numbered attempts. Edit branches before the selected question, fork branches through a completed answer, and the original session/provider binding remains isolated.
 - [ ] Search a 200-message current conversation and saved conversations for this paper. Jump outside the visible window and return to the original reading anchor. Scroll up/select/copy while a response updates; only an explicit jump resumes following.
 - [ ] Exercise Focus chat, slash actions, response length, keyboard/IME, Escape and visible focus at 320/420/640 px, 200% zoom, light/dark, long Korean, math, tables and code.

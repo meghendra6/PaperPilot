@@ -81,14 +81,23 @@ export async function writeWorkspaceSupplementalFiles(
 const WORKSPACE_RUNTIME_FILE_PATHS = [
   "prompt.txt",
   "claude-prompt.txt",
-  "gemini-prompt.txt",
   "output-schema.json",
-  ...["codex", "claude", "gemini"].flatMap((engine) => [
+  ...["codex", "claude"].flatMap((engine) => [
     `${engine}-output.${engine === "codex" ? "jsonl" : "txt"}`,
     `${engine}-stderr.log`,
     `${engine}-exit.txt`,
     `${engine}-pid.txt`,
   ]),
+];
+// Manifests written before Gemini CLI support was removed still list these as
+// runtime-owned. Accept them when reading (so reused chat workspaces keep
+// working and get cleaned up) but never write them into new manifests.
+const LEGACY_WORKSPACE_RUNTIME_FILE_PATHS = [
+  "gemini-prompt.txt",
+  "gemini-output.txt",
+  "gemini-stderr.log",
+  "gemini-exit.txt",
+  "gemini-pid.txt",
 ];
 
 export interface WorkspaceInputManifest {
@@ -133,7 +142,8 @@ export function parseWorkspaceInputManifest(
     paths.add(entry.path);
     if (
       entry.contentFingerprint === "runtime-owned" &&
-      !WORKSPACE_RUNTIME_FILE_PATHS.includes(entry.path)
+      !WORKSPACE_RUNTIME_FILE_PATHS.includes(entry.path) &&
+      !LEGACY_WORKSPACE_RUNTIME_FILE_PATHS.includes(entry.path)
     )
       throw new Error(
         "Only generated runtime files may use runtime ownership.",
