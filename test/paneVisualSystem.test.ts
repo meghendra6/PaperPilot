@@ -413,6 +413,7 @@ test("chat and workspace selects keep Zotero's arrow image", () => {
     assert.doesNotMatch(rule(selector), /(^|\n)\s*background:/);
   }
   assert.match(rule("select.pprw-input"), /padding-inline-end: 32px;/);
+  assert.match(rule(".pprw-claim-type"), /padding-inline: 7px 28px;/);
   const length = rule(".pp-chat-tools__bar .pp-chat-length");
   assert.match(length, /padding-inline-end: 30px;/);
   assert.doesNotMatch(

@@ -3572,9 +3572,10 @@ button.pprw-render-evidence-link {
   outline-offset: var(--pp-focus-offset);
 }
 
+/* The end padding leaves room for Zotero's select arrow. */
 .pprw-claim-type {
   max-width: 190px;
-  padding-inline: 7px;
+  padding-inline: 7px 28px;
   font: inherit;
   font-size: var(--pp-font-size-xs);
 }
