@@ -56,17 +56,6 @@ export function pruneCriticalReadDrafts(
   for (const stepID of completedStepIDs) current.drafts.delete(stepID);
 }
 
-/** True when the reader typed text that is not saved in any completed step. */
-export function hasUnsentCriticalReadDraft(
-  itemID: number,
-  sessionID: string | undefined,
-): boolean {
-  const current = views.get(viewKey(itemID, sessionID));
-  return Boolean(
-    current && [...current.drafts.values()].some((text) => text.trim()),
-  );
-}
-
 export function getExpandedCriticalReadSteps(
   itemID: number,
   sessionID: string | undefined,

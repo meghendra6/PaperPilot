@@ -113,6 +113,14 @@ async function renderProject(
   _parentGeneration: symbol,
 ) {
   const generation = Symbol("project-render");
+  // Refreshing the same project keeps the analysis area, its running
+  // operation, and its last result in place. Panels around it are rebuilt.
+  // Ask before this render takes over the window, so "Keep running" leaves
+  // the current project fully working.
+  const previousOperations = activeOperationRoots.get(root);
+  const keepOperations = previousOperations?.dataset.projectId === projectID;
+  if (!keepOperations && !releaseOperations(root, "Opening another project"))
+    return;
   generations.set(root, generation);
   const [details, changeInbox, syncReceiptResult] = await Promise.all([
     loadResearchWorkspaceProject(projectID),
@@ -130,12 +138,6 @@ async function renderProject(
   ]);
   if (!isCurrent(root, generation)) return;
   const doc = root.ownerDocument;
-  // Refreshing the same project keeps the analysis area, its running
-  // operation, and its last result in place. Panels around it are rebuilt.
-  const previousOperations = activeOperationRoots.get(root);
-  const keepOperations = previousOperations?.dataset.projectId === projectID;
-  if (!keepOperations && !releaseOperations(root, "Opening another project"))
-    return;
   projectContexts.set(root, {
     projectID,
     projectName: details.project.name,

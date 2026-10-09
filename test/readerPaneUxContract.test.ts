@@ -83,7 +83,7 @@ test("chat composer keeps the Send control inset without covering text", () => {
   );
   assert.match(
     paneStyleSource,
-    /#chat-input\[data-send-action="stopping"\] \{\s*padding-inline-end: 124px;/,
+    /#chat-input\[data-send-action="stopping"\] \{\s*padding-right: 124px;/,
   );
   assert.match(
     paneStyleSource,
@@ -173,7 +173,10 @@ test("highlighting can be cancelled and announces its status", () => {
     /id="chat-auto-highlight-status"[^>]*role="status"[^>]*aria-live="polite"/,
   );
   assert.match(readerPaneSource, /signal: abortController\.signal,/);
-  assert.match(readerPaneSource, /AUTO_HIGHLIGHT_CANCELLED_STATUS/);
+  assert.match(
+    readerPaneSource,
+    /formatAutoHighlightCancelledStatus\(\s*error instanceof AutoHighlightCancelledError/,
+  );
 });
 
 test("composer guards Stop after Send and explains swallowed submits", () => {
@@ -234,4 +237,30 @@ test("Clear cards confirms and persists, and Focus chat keeps its name", () => {
 test("the draft card does not expose internal attachment IDs", () => {
   assert.doesNotMatch(readerPaneSource, /PDF \$\{context\.attachmentID/);
   assert.match(readerPaneSource, /formatDraftSourceLabel\(\{/);
+});
+
+test("a rerender keeps an unread new-response prompt and an empty transcript drops it", () => {
+  assert.match(
+    readerPaneSource,
+    /const hadNewResponse = hasChatNewResponse\(chatMessages\);/,
+  );
+  assert.match(
+    readerPaneSource,
+    /disposeChatTranscriptWindow\(chatMessages\);\s*clearChatNewResponse\(chatMessages\);/,
+  );
+  assert.match(
+    readerPaneSource,
+    /messages\.length > previous\.count \|\| hadNewResponse/,
+  );
+});
+
+test("discovery availability follows engine settings changed outside the pane", () => {
+  assert.match(
+    readerPaneSource,
+    /\["defaultMode", "codexEnableWebSearch"\] as const[\s\S]*?Zotero\.Prefs\.registerObserver\([\s\S]*?\(\) => void refreshAfterEngineChange\(\),\s*true,/,
+  );
+  assert.match(
+    readerPaneSource,
+    /for \(const observer of engineSettingObservers\)\s*Zotero\.Prefs\.unregisterObserver\(observer\);/,
+  );
 });

@@ -233,6 +233,7 @@ async function initializeResearchWorkspaceDialog(
     skipped: snapshot.skipped,
   });
   const initialBody = renderWindowFrame(root, snapshot, snapshot.skipped);
+  flushPendingSelectionOffer(dialog);
   try {
     // Saved projects and results are available before any PDF extraction.
     await renderResearchWorkspaceProjectSurface(initialBody);
@@ -340,6 +341,12 @@ async function addSnapshotToOpenProject(
   if (!body || !project) {
     throw new Error("Open a project first, then add the selection to it.");
   }
+  // New members would change the scope under the running analysis.
+  if (hasRunningOperation(body)) {
+    throw new Error(
+      "An analysis is running in this project. Add the selection after it finishes.",
+    );
+  }
   setMessage(body, `Loading ${snapshot.candidates.length} selected PDF(s)…`);
   const state = await loadResearchWorkspaceState();
   const loaded = await loadResearchWorkspaceSnapshotPapers(
@@ -359,6 +366,19 @@ async function addSnapshotToOpenProject(
   );
 }
 
+/** A selection captured before the window drew its header. */
+let pendingSelectionOffer:
+  | { dialog: DialogHelper; snapshot: ResearchWorkspaceSelectionSnapshot }
+  | undefined;
+
+/** Shows a selection that arrived while the window was still opening. */
+function flushPendingSelectionOffer(dialog: DialogHelper) {
+  const pending = pendingSelectionOffer;
+  if (!pending) return;
+  pendingSelectionOffer = undefined;
+  if (pending.dialog === dialog) showSelectionOffer(dialog, pending.snapshot);
+}
+
 /**
  * Offers a selection captured while the window is already open. The current
  * view is never replaced silently (spec §12.1).
@@ -370,7 +390,12 @@ function showSelectionOffer(
   const doc = dialog.window.document;
   const root = doc.getElementById(WINDOW_ROOT_ID);
   const body = windowBody(doc);
-  if (!root) return;
+  // The banner sits under the header. Until the header exists, keep the
+  // newest selection and show it once the window has drawn its frame.
+  if (!root?.querySelector(".pprw-window-header")) {
+    pendingSelectionOffer = { dialog, snapshot };
+    return;
+  }
   const offer = planResearchWorkspaceSelectionOffer({
     current: addon.data.researchWorkspaceWindowState?.snapshot,
     next: snapshot,

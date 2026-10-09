@@ -1,9 +1,16 @@
 import { test } from "node:test";
 import * as assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { setImmediate } from "node:timers/promises";
 
 import { parseHighlightCandidatesWithRepair } from "../src/modules/autoHighlight/response";
-import { runAutoHighlightWorkflow } from "../src/modules/autoHighlight/workflow";
+import { formatAutoHighlightCancelledStatus } from "../src/modules/autoHighlight/status";
+import {
+  AutoHighlightCancelledError,
+  rollBackCancelledHighlights,
+  runAutoHighlightWorkflow,
+} from "../src/modules/autoHighlight/workflow";
 import * as workspaceRun from "../src/modules/ai/workspaceRun";
 import * as runCompletion from "../src/modules/ai/runCompletion";
 import * as cleanup from "../src/modules/workspace/cleanup";
@@ -258,3 +265,47 @@ for (const scenario of [
     }
   });
 }
+
+test("a cancelled run erases the highlights it already saved", async () => {
+  const erased: number[] = [];
+  const saved = [1, 2, 3].map((id) => ({
+    eraseTx: async () => {
+      if (id === 3) throw new Error("locked");
+      erased.push(id);
+      return true;
+    },
+  }));
+
+  const error = await rollBackCancelledHighlights(saved);
+  assert.deepEqual(erased, [1, 2]);
+  assert.ok(error instanceof AutoHighlightCancelledError);
+  assert.equal(error.keptHighlights, 1);
+  assert.match(error.message, /highlighting cancelled\. 1 highlight could not/);
+  assert.equal(
+    formatAutoHighlightCancelledStatus(error.keptHighlights),
+    "Highlighting cancelled. 1 highlight could not be removed.",
+  );
+  assert.equal(formatAutoHighlightCancelledStatus(0), "Highlighting cancelled");
+
+  const clean = await rollBackCancelledHighlights([]);
+  assert.equal(clean.keptHighlights, 0);
+  assert.equal(clean.message, "Automatic highlighting cancelled.");
+});
+
+test("the save loop rolls back on cancel before and after the last save", () => {
+  const source = readFileSync(
+    join(process.cwd(), "src", "modules", "autoHighlight", "workflow.ts"),
+    "utf8",
+  );
+  const loop = source.slice(
+    source.indexOf("for (const candidate of candidates)"),
+  );
+  assert.match(
+    loop,
+    /for \(const candidate of candidates\) \{\s*if \(params\.signal\?\.aborted\) \{\s*throw await rollBackCancelledHighlights\(createdItems\);/,
+  );
+  assert.match(
+    loop,
+    /createdItems\.push\(saved\);\s*\}\s*if \(params\.signal\?\.aborted\) \{\s*throw await rollBackCancelledHighlights\(createdItems\);/,
+  );
+});

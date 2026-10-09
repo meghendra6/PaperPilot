@@ -9,7 +9,11 @@ import {
   resolveCodexModel,
 } from "../src/modules/codex/modelOptions";
 import { rememberRecentModel } from "../src/modules/codex/modelHistory";
-import { renderModelHistory } from "../src/modules/ui/paneHeader";
+import {
+  captureUnsavedSelection,
+  renderModelHistory,
+  restoreUnsavedSelection,
+} from "../src/modules/ui/paneHeader";
 import { summarizeCitationStances } from "../src/modules/researchWorkspace/core/citationStance/engine";
 
 test("Codex allowed models determine both effective selection and picker options", () => {
@@ -140,4 +144,44 @@ test("missing citation confidence cannot turn the summary into NaN", () => {
     { stance: "contrasting", confidence: 0.8 },
   ]);
   assert.equal(summary.weightedBalance, -0.4);
+});
+
+test("a re-render keeps the reader's unsaved model choice", () => {
+  const globals = globalThis as any;
+  const previous = { Zotero: globals.Zotero, addon: globals.addon };
+  globals.addon = { data: {} };
+  globals.Zotero = {
+    Prefs: {
+      get: (key: string) =>
+        key.endsWith(".claudeDefaultModel") ? "sonnet" : undefined,
+    },
+  };
+  const select = {
+    value: "",
+    options: [] as { value: string; selected?: boolean }[],
+    ownerDocument: { createElement: () => ({}) },
+    replaceChildren(...entries: { value: string; selected?: boolean }[]) {
+      select.options = entries;
+      select.value = entries.find((entry) => entry.selected)?.value ?? "";
+    },
+    appendChild(entry: { value: string }) {
+      select.options.push(entry);
+    },
+  };
+  const container = { style: {}, replaceChildren() {} };
+  try {
+    renderModelHistory(container as any, select as any, "claude_code");
+    assert.equal(select.value, "sonnet|");
+    select.value = "opus|";
+    assert.equal(captureUnsavedSelection(select as any), "opus|");
+    renderModelHistory(container as any, select as any, "claude_code");
+    assert.equal(select.value, "opus|");
+
+    select.value = "sonnet|";
+    assert.equal(captureUnsavedSelection(select as any), undefined);
+    restoreUnsavedSelection(select as any, "not-an-option|");
+    assert.equal(select.value, "sonnet|");
+  } finally {
+    Object.assign(globals, previous);
+  }
 });

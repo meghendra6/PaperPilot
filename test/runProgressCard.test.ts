@@ -244,3 +244,55 @@ test("terminal run cards can be dismissed and completed cards close themselves",
     globalThis.clearTimeout = originalClearTimeout;
   }
 });
+
+test("re-rendering the same state keeps the buttons and the dismiss timer", () => {
+  const originalSetTimeout = globalThis.setTimeout;
+  const originalClearTimeout = globalThis.clearTimeout;
+  const timeouts = new Map<number, () => void>();
+  let nextTimeout = 1;
+  globalThis.setTimeout = ((callback: () => void) => {
+    const timeout = nextTimeout++;
+    timeouts.set(timeout, callback);
+    return timeout;
+  }) as unknown as typeof setTimeout;
+  globalThis.clearTimeout = ((timeout: number) => {
+    timeouts.delete(timeout);
+  }) as unknown as typeof clearTimeout;
+
+  try {
+    const container = new FakeElement(new FakeDocument());
+    const card = createRunProgressCard({
+      container: container as unknown as HTMLElement,
+      actions: {
+        onRetry() {},
+        onOpenSettings() {},
+        onShowLoginHelp() {},
+        onDismiss() {},
+      },
+    });
+    const failed = {
+      ...createRunProgressState({
+        itemID: 75,
+        engine: "codex_cli",
+        token: Symbol("run-75"),
+        now: 100,
+      }),
+      phase: "failed" as const,
+      canRetry: true,
+    };
+    card.render(failed);
+    const retry = container.children[2].children[0];
+    card.render(failed);
+    assert.equal(container.children[2].children[0], retry);
+
+    const completed = { ...failed, phase: "completed" as const };
+    card.render(completed);
+    const [armed] = [...timeouts.keys()];
+    card.render(completed);
+    assert.deepEqual([...timeouts.keys()], [armed]);
+    card.dispose();
+  } finally {
+    globalThis.setTimeout = originalSetTimeout;
+    globalThis.clearTimeout = originalClearTimeout;
+  }
+});

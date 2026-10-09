@@ -4,7 +4,6 @@ import {
   clearCriticalReadViewState,
   getCriticalReadDraft,
   getExpandedCriticalReadSteps,
-  hasUnsentCriticalReadDraft,
   pruneCriticalReadDrafts,
   setCriticalReadDraft,
   setCriticalReadStepExpanded,
@@ -29,7 +28,6 @@ test("an emptied draft is kept so it does not fall back to saved input", () => {
   setCriticalReadDraft(1, "s", 1, "typed");
   setCriticalReadDraft(1, "s", 1, "");
   assert.equal(getCriticalReadDraft(1, "s", 1), "");
-  assert.equal(hasUnsentCriticalReadDraft(1, "s"), false);
 });
 
 test("completed steps drop their drafts while unsent steps keep them", () => {
@@ -39,7 +37,6 @@ test("completed steps drop their drafts while unsent steps keep them", () => {
   pruneCriticalReadDrafts(1, "s", [1]);
   assert.equal(getCriticalReadDraft(1, "s", 1), undefined);
   assert.equal(getCriticalReadDraft(1, "s", 2), "still unsent");
-  assert.equal(hasUnsentCriticalReadDraft(1, "s"), true);
 });
 
 test("expanded completed steps survive rebuilds and clear per paper", () => {
@@ -53,4 +50,13 @@ test("expanded completed steps survive rebuilds and clear per paper", () => {
   clearCriticalReadViewState(1);
   assert.deepEqual(getExpandedCriticalReadSteps(1, "s"), []);
   assert.deepEqual(getExpandedCriticalReadSteps(2, "s"), [5]);
+});
+
+test("clearing one session keeps the paper's other sessions", () => {
+  clearCriticalReadViewState();
+  setCriticalReadDraft(1, "deleted", 2, "gone");
+  setCriticalReadDraft(1, "kept", 2, "stays");
+  clearCriticalReadViewState(1, "deleted");
+  assert.equal(getCriticalReadDraft(1, "deleted", 2), undefined);
+  assert.equal(getCriticalReadDraft(1, "kept", 2), "stays");
 });

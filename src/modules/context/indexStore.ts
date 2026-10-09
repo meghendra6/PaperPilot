@@ -1,4 +1,8 @@
 import { splitTextIntoChunks } from "../tools/splitTextIntoChunks";
+import {
+  RETRIEVAL_CHUNK_SIZE_DEFAULT,
+  RETRIEVAL_OVERLAP_SIZE_DEFAULT,
+} from "./retrievalSettings";
 
 const MAX_INDEXED_PAPERS = 12;
 
@@ -36,8 +40,8 @@ export function getIndexedChunks(params: {
 }) {
   const store = getStore();
   const key = buildPaperIndexKey(params.libraryID, params.itemKey);
-  const chunkSize = params.chunkSize ?? 1100;
-  const overlapSize = params.overlapSize ?? 200;
+  const chunkSize = params.chunkSize ?? RETRIEVAL_CHUNK_SIZE_DEFAULT;
+  const overlapSize = params.overlapSize ?? RETRIEVAL_OVERLAP_SIZE_DEFAULT;
   // Changed chunking settings must rebuild the index, not reuse old chunks.
   const hash = `${chunkSize}:${overlapSize}:${hashText(params.text)}`;
   const existing = store?.get(key);

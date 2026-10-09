@@ -883,7 +883,7 @@
 /* "Stopping…" is the widest label. The input reserves room for it only
    while it shows, so typed text never runs under the button. */
 #chat-input[data-send-action="stopping"] {
-  padding-inline-end: 124px;
+  padding-right: 124px;
 }
 
 #chat-send {

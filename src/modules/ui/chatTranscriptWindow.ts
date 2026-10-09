@@ -123,6 +123,19 @@ export function showChatLatest(container: HTMLElement): void {
   else container.scrollTop = container.scrollHeight;
   container.parentElement?.querySelector("[data-pp-new-response]")?.remove();
 }
+function findNewResponseButton(container: Element): Element | null {
+  return (container.parentElement ?? container).querySelector(
+    "[data-pp-new-response]",
+  );
+}
+/** True while "New response · Jump to latest" is showing for `container`. */
+export function hasChatNewResponse(container: Element): boolean {
+  return Boolean(findNewResponseButton(container));
+}
+/** Removes the prompt, for example when the transcript becomes empty. */
+export function clearChatNewResponse(container: Element): void {
+  findNewResponseButton(container)?.remove();
+}
 function showNewResponseButton(container: HTMLElement): void {
   const host = container.parentElement ?? container;
   if (host.querySelector("[data-pp-new-response]")) return;

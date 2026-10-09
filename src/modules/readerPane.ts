@@ -49,10 +49,13 @@ import { getStatusLabel } from "./ai/statusLabels";
 import type { StructuredOutputSchema } from "./ai/structuredOutput";
 import type { EngineMode } from "./ai/types";
 import {
-  AUTO_HIGHLIGHT_CANCELLED_STATUS,
+  formatAutoHighlightCancelledStatus,
   getAutoHighlightButtonPresentation,
 } from "./autoHighlight/status";
-import { runAutoHighlightWorkflow } from "./autoHighlight/workflow";
+import {
+  AutoHighlightCancelledError,
+  runAutoHighlightWorkflow,
+} from "./autoHighlight/workflow";
 import {
   handleClaudeQuestion,
   stopClaudeRunSilently,
@@ -196,6 +199,8 @@ import {
 } from "./ui/chatComposerSizing";
 import {
   captureChatPosition,
+  clearChatNewResponse,
+  hasChatNewResponse,
   jumpToChatMessage,
   isChatFollowingLatest,
   disposeChatTranscriptWindow,
@@ -204,6 +209,7 @@ import {
 } from "./ui/chatTranscriptWindow";
 import { createCollapsibleSection } from "./ui/collapsibleSection";
 import {
+  clearCriticalReadViewState,
   getCriticalReadDraft,
   getExpandedCriticalReadSteps,
   pruneCriticalReadDrafts,
@@ -1689,6 +1695,7 @@ export function registerPaperPilotPaneSection() {
                 await sessionHistoryService.deleteAllSavedSessions({
                   itemID: item.id,
                 });
+                clearCriticalReadViewState(item.id);
                 sessionHistoryOpen = false;
                 sessionsSection.setExpanded(false);
                 await rerenderPane();
@@ -1921,6 +1928,7 @@ export function registerPaperPilotPaneSection() {
                       itemID: item.id,
                       sessionId: entry.sessionId,
                     });
+                    clearCriticalReadViewState(item.id, entry.sessionId);
                     resetBlankSessionState();
                     renamingSessionId = undefined;
                     await rerenderPane();
@@ -1931,6 +1939,7 @@ export function registerPaperPilotPaneSection() {
                   itemID: item.id,
                   sessionId: entry.sessionId,
                 });
+                clearCriticalReadViewState(item.id, entry.sessionId);
                 renamingSessionId = undefined;
                 await rerenderPane();
               });
@@ -2407,6 +2416,21 @@ export function registerPaperPilotPaneSection() {
           if (!isCurrentRender()) return;
           renderRelatedState();
         };
+        // Zotero Settings can change these outside the pane. Discovery
+        // availability and the engine popover follow them without a reload.
+        const engineSettingObservers = (
+          ["defaultMode", "codexEnableWebSearch"] as const
+        ).map((key) =>
+          Zotero.Prefs.registerObserver(
+            `${config.prefsPrefix}.${key}`,
+            () => void refreshAfterEngineChange(),
+            true,
+          ),
+        );
+        cleanupTasks.push(() => {
+          for (const observer of engineSettingObservers)
+            Zotero.Prefs.unregisterObserver(observer);
+        });
 
         modeClaudeButton.addEventListener("click", async () => {
           if (!canChangeProvider()) return;
@@ -2491,7 +2515,11 @@ export function registerPaperPilotPaneSection() {
             if (abortController.signal.aborted) {
               setAutoHighlightState(item.id, {
                 running: false,
-                status: AUTO_HIGHLIGHT_CANCELLED_STATUS,
+                status: formatAutoHighlightCancelledStatus(
+                  error instanceof AutoHighlightCancelledError
+                    ? error.keptHighlights
+                    : 0,
+                ),
               });
             } else {
               logReaderPaneError("auto-highlight workflow failed", error);
@@ -5019,9 +5047,12 @@ function renderMessageHistory(
     sessionId,
     count: messages.length,
   });
+  // The rebuilt window clears the prompt, so remember whether it was unread.
+  const hadNewResponse = hasChatNewResponse(chatMessages);
 
   if (!messages.length) {
     disposeChatTranscriptWindow(chatMessages);
+    clearChatNewResponse(chatMessages);
     chatMessages.replaceChildren();
     renderHelpState(chatMessages, placeholderResponse);
     return;
@@ -5060,7 +5091,10 @@ function renderMessageHistory(
   });
   if (!position) return;
   window.showMessage(position.key, position.offset, { focus: false });
-  if (previous?.sessionId === sessionId && messages.length > previous.count)
+  if (
+    previous?.sessionId === sessionId &&
+    (messages.length > previous.count || hadNewResponse)
+  )
     notifyChatTranscriptUpdate(chatMessages, false);
 }
 

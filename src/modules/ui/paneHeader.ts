@@ -74,6 +74,34 @@ function setSavedSelectValue(select: HTMLSelectElement, value?: string) {
   else savedSelectValues.set(select, value);
 }
 
+/**
+ * A re-render rebuilds the options from the saved prefs. The reader's unsaved
+ * choice survives it, so ticking web search or Re-check does not undo a pick.
+ * Closing the popover still reverts it on purpose.
+ */
+export function captureUnsavedSelection(
+  select: HTMLSelectElement,
+): string | undefined {
+  const saved = getSavedSelectValue(select);
+  const value = select.value;
+  return saved !== undefined && typeof value === "string" && value !== saved
+    ? value
+    : undefined;
+}
+
+export function restoreUnsavedSelection(
+  select: HTMLSelectElement,
+  pending: string | undefined,
+): void {
+  if (pending === undefined) return;
+  // Zotero's DOM typings list options as plain Elements.
+  const values = Array.from(
+    select.options ?? [],
+    (option) => (option as HTMLOptionElement).value,
+  );
+  if (values.includes(pending)) select.value = pending;
+}
+
 function makeButton(
   doc: Document,
   id: string,
@@ -544,6 +572,7 @@ export function renderModelHistory(
   modelInput: HTMLSelectElement,
   mode: EngineMode,
 ) {
+  const pending = captureUnsavedSelection(modelInput);
   const recentModels = normalizeModelListForMode(mode, getRecentModels(mode));
   const allowedModels = normalizeModelListForMode(
     mode,
@@ -622,6 +651,7 @@ export function renderModelHistory(
     modelInput.appendChild(fallback);
   }
   setSavedSelectValue(modelInput, currentKey);
+  restoreUnsavedSelection(modelInput, pending);
   syncModelSaveState(modelInput);
   modelHistory.style.display = "none";
   modelHistory.replaceChildren();
@@ -638,6 +668,7 @@ export function renderClaudeEffortInput(
     syncModelSaveState(effortInput);
     return;
   }
+  const pending = captureUnsavedSelection(effortInput);
   const current = normalizeClaudeReasoningEffort(
     String(getPref("claudeReasoningEffort") || ""),
   );
@@ -653,5 +684,6 @@ export function renderClaudeEffortInput(
   );
   effortInput.hidden = false;
   setSavedSelectValue(effortInput, current);
+  restoreUnsavedSelection(effortInput, pending);
   syncModelSaveState(effortInput);
 }

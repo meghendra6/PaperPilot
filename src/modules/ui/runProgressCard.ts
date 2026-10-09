@@ -42,6 +42,7 @@ export function createRunProgressCard(params: {
   let timer: ReturnType<typeof setInterval> | undefined;
   let dismissTimer: ReturnType<typeof setTimeout> | undefined;
   let elapsedElement: HTMLElement | undefined;
+  let painted = false;
 
   const stopTimer = () => {
     if (dismissTimer) {
@@ -178,6 +179,11 @@ export function createRunProgressCard(params: {
   return {
     render(nextState) {
       if (disposed) return;
+      // States are replaced on every change, never mutated. The same object
+      // means nothing changed, so a repaint would only drop the focus on
+      // Retry or Dismiss and restart the auto-dismiss delay.
+      if (painted && nextState === state) return;
+      painted = true;
       state = nextState;
       stopTimer();
       paint();

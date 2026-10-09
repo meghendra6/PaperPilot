@@ -3,7 +3,9 @@ import { test } from "node:test";
 import {
   CHAT_TRANSCRIPT_WINDOW_SIZE,
   CHAT_TRANSCRIPT_WINDOW_STEP,
+  clearChatNewResponse,
   getLatestChatTranscriptWindow,
+  hasChatNewResponse,
   notifyChatTranscriptAppend,
   notifyChatTranscriptUpdate,
   prepareChatTranscriptAppend,
@@ -159,6 +161,11 @@ class FakeElement {
         this.find(
           (element) => element.dataset.ppChatWindowControl === "earlier",
         ) || null
+      );
+    }
+    if (selector === "[data-pp-new-response]") {
+      return (
+        this.find((element) => element.dataset.ppNewResponse === "true") || null
       );
     }
     return null;
@@ -438,5 +445,30 @@ test("new response button sits directly below the transcript", () => {
   assert.equal(host.children[0], container);
   assert.equal(host.children[1]?.dataset.ppNewResponse, "true");
   assert.equal(host.children[2], composer);
+  handle.dispose();
+});
+
+test("the new response prompt can be detected and cleared", () => {
+  const doc = new FakeDocument();
+  const host = new FakeElement("div", doc);
+  const container = new FakeElement("div", doc);
+  host.append(container);
+  const handle = renderChatTranscriptWindow({
+    container: container as unknown as HTMLElement,
+    getItems: () => ["question"],
+    getKey: (item) => item,
+    renderItem: () => {
+      const wrapper = new FakeElement("div", doc);
+      wrapper.className = "pp-message-wrapper";
+      container.append(wrapper);
+      return wrapper as unknown as HTMLElement;
+    },
+  });
+
+  assert.equal(hasChatNewResponse(container as unknown as Element), false);
+  notifyChatTranscriptUpdate(container as unknown as HTMLElement, false);
+  assert.equal(hasChatNewResponse(container as unknown as Element), true);
+  clearChatNewResponse(container as unknown as Element);
+  assert.equal(hasChatNewResponse(container as unknown as Element), false);
   handle.dispose();
 });
