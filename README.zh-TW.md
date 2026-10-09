@@ -32,7 +32,7 @@ Paper Pilot 是一個面向 Zotero 7-10 PDF 閱讀器的 AI 閱讀工作台。�
 
 ## 整合式 Research Workspace
 
-Research Workspace 已內建於 Paper Pilot，並共用同一套本機引擎選擇、論文擷取與執行生命週期。無論選取零篇、一篇或多篇項目，持久的非模態專案視窗都可繼續使用，並提供篩選、claim–evidence ledger、比較、稽核、mastery、引用工作流程、引用/參考文獻健康檢查、矛盾/缺口審閱、專案級匯出、本機 Living Review 變更收件匣，以及五種可編輯的專案範本。專案範本 preset 只會強調建議的 capability，不會自動執行分析或隱藏其他 capability；匯出會保留不可變的範本快照與目前 assumptions。Citation & Reference Health 會根據目前儲存的引用、方法學與可重現性 artifact、本機 Zotero 更正/撤稿中繼資料訊號，以及可選的有界草稿摘錄建立本機檢查清單，且不會產生彙總 truth score。Living Review 僅檢查 Zotero 附件與註解中繼資料，不讀取正文，也不呼叫模型或網路服務。安全的 Zotero collection/tag 同步只會在完整 preview 與綁定該 preview 的 approval token 之後，向既有 collection 和既有 tag 執行單向新增；它會在 transaction 前寫入獨立的 revisioned receipt，並在 Zotero transaction 不可用時 fail closed。Undo 只移除 receipt 所擁有的新增，不會建立或刪除 Zotero item、collection 或 tag，也不會寫入 bibliographic field、PDF、note、attachment 或 annotation。只需安裝一個 Paper Pilot XPI；不再提供 companion 外掛或 Research Monitor。
+Research Workspace 已內建於 Paper Pilot，並共用同一套本機引擎選擇、論文擷取與執行生命週期。無論選取零篇、一篇或多篇項目，持久的非模態專案視窗都可繼續使用，並提供篩選、claim–evidence ledger、比較、稽核、mastery、引用工作流程、引用/參考文獻健康檢查、矛盾/缺口審閱、專案級匯出、本機 Living Review 變更收件匣，以及五種可編輯的專案範本。專案範本 preset 只會強調建議的 capability，不會自動執行分析或隱藏其他 capability；匯出會保留不可變的範本快照與目前 assumptions。Citation & Reference Health 會根據目前儲存的引用、方法學與可重現性 artifact、本機 Zotero 更正/撤稿中繼資料訊號，以及可選的有界草稿摘錄建立本機檢查清單，且不會產生彙總 truth score。Living Review 僅檢查 Zotero 附件與註解中繼資料，不讀取正文，也不呼叫模型或網路服務。安全的 Zotero collection/tag 同步只會在完整 preview 與綁定該 preview 的 approval token 之後，向既有 collection 和既有 tag 執行單向新增；它會在 transaction 前寫入獨立的 revisioned receipt，並在 Zotero transaction 不可用時 fail closed。Undo 只移除 receipt 所擁有的新增，不會建立或刪除 Zotero item、collection 或 tag，也不會寫入 bibliographic field、PDF、note、attachment 或 annotation。可從 **Tools → Open Research Workspace…**、資料庫項目右鍵選單或 Workbench 中的 **Research Workspace** 按鈕開啟。分析執行期間離開專案或關閉視窗時，會在取消前先確認。部分失敗的執行會列出失敗的論文並提供 **Resume**，已封存的專案可以開啟與還原。只需安裝一個 Paper Pilot XPI；不再提供 companion 外掛或 Research Monitor。
 
 ## 截圖與示範
 
@@ -74,7 +74,7 @@ Paper Pilot 仍在積極開發中。
 - 支援依論文切換 Codex CLI 與 Claude Code
 - 在同一篇論文／會話內保留追問脈絡
 - 支援透過 **Past sessions** 重新開啟、重新命名、刪除，或清空目前論文的已儲存會話
-- **New session** 會保留目前會話，並為同一篇論文開啟一個空白新草稿
+- **New session** 會保留目前會話，並為同一篇論文開啟一個空白新草稿；若目前的歷史設定不會保留 Critical Read 或 Paper Mastery 的進度，會先請求確認
 
 ### 2. 閱讀器中的論文脈絡操作
 
@@ -104,7 +104,7 @@ Paper Pilot 仍在積極開發中。
 
 ### 4. 代理主導的驗證型先行研究探索
 
-點選 **Find verified prior work**，只在需要時填寫研究問題。當前代理會自行推斷主要領域、相鄰領域、頂級會議和查詢組合，使用者無需選擇會議。結果分為三個分區：
+點選 **Find verified prior work**，只在需要時填寫研究問題。探索功能需要開啟 **Allow web search when needed** 的 Codex CLI；其他設定下入口會保持停用並顯示原因。當前代理會自行推斷主要領域、相鄰領域、頂級會議和查詢組合，使用者無需選擇會議。結果分為三個分區：
 
 - **Verified main-conference papers** — 以論文級官方來源高信心確認屬於領先會議 main track 的論文
 - **Other peer-reviewed work** — 期刊、workshop、Findings、其他 track，或 main-track 狀態未確定的已發表工作
@@ -190,8 +190,8 @@ Claude Code 模式使用本地 `claude` CLI 的 print 模式，並基於閱讀�
 - 可設定的可執行檔路徑
 - 可選擇 Claude Code CLI 的模型系列別名（預設 `sonnet`，另含 `opus`、`haiku`、`fable`），已安裝的 CLI 會將其解析為各系列的最新模型（目前為 Sonnet 5.5、Opus 5.5、Haiku 5.5、Fable 5.1）；另提供固定 ID `claude-opus-5-5`、`claude-sonnet-5-5`、`claude-haiku-5-5`、`claude-fable-5-1`、`claude-opus-5`、`claude-sonnet-5`
 - 在設定中手動輸入的其他模型 ID（例如 `claude-opus-5-5[1m]` 或 Bedrock/Vertex 模型 ID）會原樣傳給 CLI；`Opus 5.5`、`claude-opus-5.5` 等手動輸入的名稱會正規化為 `claude-opus-5-5`，並保留 `[1m]` 等脈絡後綴
-- 可選的 effort 等級（`low`、`medium`、`high`、`xhigh`、`max`；留空則使用 Claude Code CLI 預設值），可在設定中或模型選擇器旁設定；僅當已安裝 CLI 的 `--help` 列出 `--effort` 時才會傳入
-- 可設定的 permission mode
+- 可選的 effort 等級（`low`、`medium`、`high`、`xhigh`、`max`；**Claude Code default** 選項沿用 Claude Code CLI 預設值），可在設定中或模型選擇器旁設定；僅當已安裝 CLI 的 `--help` 列出 `--effort` 時才會傳入
+- 可設定的 permission mode（僅用於聊天執行）
 - 論文級追問脈絡連續性
 - 面向目前論文的 retrieval/context 組裝
 
@@ -311,8 +311,9 @@ Research Workspace 會記錄執行時固定的 CLI 模型、推理等級與回�
 - **General**
 - **Claude Code**
 - **Codex CLI**
-- **Retrieval**
-- **Privacy**
+- **Workspace**（兩種引擎共用的 workspace root 與 auto-clean）
+- **Retrieval**（chunk size、overlap 與 top-k 位於預設摺疊的 **Advanced retrieval** 群組）
+- **Privacy**（單一 **Session history** 選項：**Save prompts and responses**、**Save prompts only** 或 **Do not save session history**）
 
 目前需要注意：
 

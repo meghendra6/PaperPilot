@@ -53,6 +53,13 @@ record when needed. The full transcript remains available to session
 persistence and engine resume logic; only expensive rendered Markdown nodes are
 detached.
 
+Run events refresh pane state on every lifecycle change. While a run is
+active they skip the transcript rebuild, because the live answer bubble is
+not stored until the run finishes. A rebuild restores a scrolled-up reading
+position without moving keyboard focus. Past sessions keep an in-progress
+rename across rebuilds. Each run records the chat session that started it,
+and a finished run card shows only in that session.
+
 `ui/paneAutoSize.ts` derives the default pane height from its actual top position
 and remaining viewport space. Resize observers track preceding sections; sidebar
 scrolling does not continually resize content. An explicit manual height takes
@@ -241,6 +248,7 @@ is shown as unresolved and is not eligible for undo or reapplication.
 | `types.ts`              | `EngineMode = "codex_cli" \| "claude_code"`                              |
 | `modeStore.ts`          | default mode from prefs, per-item override in `addon.data.modeOverrides` |
 | `providerRegistry.ts`   | mode → provider descriptor (label, status)                               |
+| `readerBusy.ts`         | shared check for whether a paper's engine slot is taken                  |
 | `runCompletion.ts`      | cleanup-before-callback ordering for terminal controller transitions     |
 | `runControl.ts`         | engine-neutral cancellation and silent-workflow release                  |
 | `runFailure.ts`         | source-first failure classification and safe user messages               |
@@ -745,9 +753,10 @@ and report labels follow the response language.
 `ui/criticalReadSection.ts` resolves labels at render time; report previews
 and new notes rebuild headings from structured state in the selected response
 language. Preference changes notify open reader panes through
-`translation/responseLanguage.ts`, with subscriptions disposed with the pane and
-unsent Critical Read input preserved during the language refresh. This does not
-regenerate saved AI prose or translate verbatim paper evidence.
+`translation/responseLanguage.ts`, with subscriptions disposed with the pane.
+This does not regenerate saved AI prose or translate verbatim paper evidence.
+`ui/criticalReadDraft.ts` keeps unsent Critical Read input and expanded steps in
+memory per paper, session, and step, so every rebuild restores them.
 
 ## Chat request identity and continuity
 

@@ -105,7 +105,7 @@ Use this checklist inside real Zotero 7, 8, 9, and 10 runtimes before claiming r
 ## 2. Mode behavior
 
 - [ ] Confirm the mode actions offer only `Claude Code`, `Codex CLI`, and `Use Default`; there is no `Gemini CLI` button
-- [ ] Set `defaultMode` to `gemini_cli` (or any other unknown value) in settings and confirm a paper without an override opens in Codex CLI mode
+- [ ] Set `defaultMode` to `gemini_cli` (or any other unknown value) through the Config Editor; confirm a paper without an override opens in Codex CLI mode and the settings select shows a "not recognized" option that names the fallback
 - [ ] Switch to `Claude Code`
 - [ ] Confirm Claude Code model controls and mode messaging update correctly, and that the effort select appears next to the model picker only in Claude mode
 - [ ] Switch to `Codex CLI`
@@ -186,7 +186,7 @@ and phonetics in native Zotero 10.0.3.
 - [ ] Save `Opus 5.5` or `claude-opus-5.5` as the Claude default model in settings; confirm the picker selects `claude-opus-5-5` and the launched `claude -p` command uses `--model claude-opus-5-5`
 - [ ] Set the Claude default model to `claude-opus-5-5[1m]`; confirm the picker shows it with a 1M-context label, a chat run completes, and the launched command passes `claude-opus-5-5[1m]` unchanged. Record an account or CLI rejection of that id as an external limitation
 - [ ] In the reader pane, choose an effort such as `high` next to the model picker and click Save; confirm the header chip shows it, the settings `Claude effort` field shows `high`, the choice survives a pane refresh, and the launched command includes `--effort high`
-- [ ] Return the effort to `default effort` and confirm the launched command has no `--effort`; enter an unsupported value such as `turbo` in settings and confirm it is treated as the CLI default
+- [ ] Return the effort to `default effort` and confirm the launched command has no `--effort`; set an unsupported value such as `turbo` through the Config Editor and confirm the settings select shows it as not recognized and the run uses the CLI default
 - [ ] With a Claude CLI or wrapper whose `--help` does not list `--effort`, save an effort and confirm the run still succeeds without the flag
 
 ## 6. Claude Code flow
@@ -196,7 +196,7 @@ and phonetics in native Zotero 10.0.3.
 - [ ] Confirm output updates in pane and session metadata persists
 - [ ] Send a follow-up question and confirm resume/session continuity works
 - [ ] Verify invalid executable path or missing CLI state surfaces a clear error
-- [ ] Verify permission mode behaves as configured in preferences
+- [ ] Verify the permission mode chosen in the settings select applies to chat runs
 
 ## 7. Codex CLI flow
 
@@ -235,7 +235,7 @@ and phonetics in native Zotero 10.0.3.
 - [ ] On a fresh profile with no custom workspace root, confirm workspaces are created below `Zotero.getTempDirectory()/paperpilot-workspaces`, not shared `/tmp/zotero-paper-ai`
 - [ ] Set each CLI path to an npm/nvm shim outside the fixed system PATH and confirm Codex and Claude can resolve the shim's `node`
 - [ ] Configure non-default Codex sandbox and approval modes, send a follow-up turn, and confirm the resumed command retains both modes
-- [ ] Edit and tab through every preferences field; confirm no modal alert appears on change
+- [ ] Edit and tab through every preferences field, including selects, the Session history radio group, and the Advanced retrieval disclosure; confirm no modal alert appears on change
 - [ ] Turn off local history while workspace auto-clean is off; complete a run and confirm its workspace is still removed
 - [ ] With current Codex/Claude CLIs, run one structured Workbench action and confirm native schema output succeeds; with a wrapper whose help omits the schema flag, confirm the same action succeeds through parser-only fallback
 
@@ -701,7 +701,7 @@ and the same fail-closed outcome.
 - [ ] In Claim Ledger, confirm claims start as a compact review list; status and type filters work; expanding a claim exposes quote, locator, and verifier detail; only locally verified evidence offers `Open in PDF`; model confidence is not presented as truth confidence; and `Copy readable Markdown` produces headings, prose, quotes, and review status without internal IDs
 - [ ] Force all Claim Ledger evidence to `unverified`, `not-found`, or `source-unavailable`; confirm the overview reports zero ready-to-cite claims even when the model returned `verificationStatus: verified`
 - [ ] Start and resume Mastery 2.0, submit an answer with confidence, and confirm criterion scores, misconceptions, calibration, and the next review survive a Zotero restart
-- [ ] Select at least two library papers and build an Evidence Matrix and Literature Graph; confirm persisted coverage and graph integrity, then create and grade a cross-paper mastery question
+- [ ] Select at least two library papers and build an Evidence Matrix and Relationship Graph; confirm persisted coverage and graph integrity, then create and grade a cross-paper mastery question
 - [ ] Classify citation contexts and confirm unknown attachment evidence is discarded rather than made navigable
 - [ ] Open the modeless project window, select several items in the Zotero library, then change the live selection; confirm the captured project papers and screening rows do not drift
 - [ ] Add inclusion and exclusion criteria, record abstract and full-text include/maybe/exclude decisions, and confirm an exclusion cannot be saved without a visible reason
@@ -754,6 +754,67 @@ and the same fail-closed outcome.
 - [ ] Build artifacts install and load in Zotero
 - [ ] Built `.xpi` contains `chrome/content/vendor/opendataloader/opendataloader-pdf-cli.jar`
 - [ ] No console/runtime errors during pane render and action triggers
+
+## 14. UX review fixes (2026-10-09)
+
+Run these in Zotero 7 and 10, in light and dark themes, with the pane about
+380px wide.
+
+### Chat and run feedback
+
+- [ ] Send a question; confirm the "Starting…"/"Running…" answer bubble stays visible with partial text until the final answer replaces it
+- [ ] Scroll the transcript up during a run; confirm the composer keeps focus and "New response · Jump to latest" appears over the bottom of the transcript when the answer lands
+- [ ] Rename a past session while a run is active; confirm the typed text and caret survive, Enter saves, and Escape cancels
+- [ ] Type a research concern during a run; confirm the text stays after the run settles
+- [ ] Confirm a Completed run card closes after about six seconds, a Failed card offers Dismiss, and switching to another session hides the Failed card until you return
+- [ ] Type a draft taller than 180px; confirm the caret stays visible while typing at the end
+- [ ] Double-click Send; confirm the request is not cancelled. Press Enter during a run and confirm the composer hint appears
+- [ ] Type `/su`, `/`, and `/foo`, then press Enter; confirm filtering, command selection, and the "Unknown command" notice. Confirm Korean and Japanese input-method composition still works
+
+### Controls
+
+- [ ] Send a chat; confirm Workbench actions and Compare are disabled with a reason and return afterwards
+- [ ] On Claude Code, or Codex with web search off, confirm all three "Find prior work" entry points are disabled with the reason and the Compare helper text changes
+- [ ] Click a card's "Find prior work" while discovery runs; confirm "already running" appears and the search continues
+- [ ] Cancel highlighting part-way; confirm no annotations remain from the cancelled run
+- [ ] Confirm the engine buttons show the pressed engine, the reset reads "Use default (…)", and it is disabled without an override
+- [ ] Change the model and close the popover without saving; confirm the selection reverts. Confirm Save shows "Saved" and a Claude effort change enables Save
+- [ ] With Codex ready, confirm the auth buttons are hidden; with login required, confirm the instructions appear inside the popover
+- [ ] Clear cards, confirm the prompt, then reopen the session and confirm the cards stay cleared
+- [ ] With a screen reader, confirm "Focus chat" is announced with its pressed state
+- [ ] Confirm the draft card shows the attachment title instead of an internal ID
+
+### Visual system and accessibility
+
+- [ ] Confirm every status color, primary-button state, and focus ring is readable in both themes, and the focus ring shows in Windows High Contrast mode
+- [ ] With reduced motion on, confirm the streaming dots and the current mastery dot do not move
+- [ ] Collapse all sections after a manual resize; confirm no gap remains and expanding a section restores its size
+- [ ] Confirm Retry stays visible while the run card scrolls
+- [ ] Confirm inline citation chips keep the line height, an unverified chip is reachable by Tab, and Enter shows its notice
+- [ ] Confirm wide inline math and wide tables scroll sideways, including in Mastery cards
+- [ ] Confirm Mastery dots have 24px targets with visible selected and focus rings
+- [ ] Open chat search and a save preview together; confirm the transcript keeps at least 96px
+- [ ] Confirm an annotation warning shows first in the context status, and the one-line details show the full text in a tooltip
+
+### Settings
+
+- [ ] Confirm help text is readable in dark mode and `preferences.css` loads on Zotero 7 and 10
+- [ ] Toggle Advanced retrieval from the keyboard; set overlap above half the chunk size through the Config Editor and confirm the group opens with a warning
+- [ ] Confirm each Session history choice survives a restart and maps to the same saved-history behavior as before
+- [ ] Set legacy spellings such as `acceptedits` or `workspace write` through the Config Editor; confirm settings rewrite them to the canonical value
+- [ ] Confirm the Workspace group shows the configured root and that both engines use it
+
+### Research Workspace and Critical Read
+
+- [ ] Confirm an unsent Critical Read answer survives a status update and a step-3 search
+- [ ] Close the project window during a run; confirm the prompt appears and Cancel keeps the window open. Confirm Check now during an Evidence Matrix run keeps the run going
+- [ ] Relaunch the window with a new library selection; confirm the banner's Use and Add paths
+- [ ] Archive a project, then restore it from Archived projects
+- [ ] Force a partial Evidence Matrix; confirm Failed cells, paper titles in progress text, and Resume
+- [ ] Open Critical Read from the window while the pane is in Focus chat mode; confirm the Workbench expands and the panel scrolls into view
+- [ ] Click New session with Critical Read progress in each history mode; confirm the prompt says whether the work moves to Past sessions or is lost
+- [ ] Add a discovery result to a collection; confirm the lanes keep their open state
+- [ ] With a screen reader, confirm the window announces only the short status, not the whole matrix
 
 ## Session history and silent-turn QA (2026-04-16)
 
