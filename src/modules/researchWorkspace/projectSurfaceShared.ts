@@ -1,8 +1,12 @@
 import { button as createButton, metric as createMetric, element } from "./dom";
 import type { ResearchWorkspacePaper } from "./paperSource";
 import type { ResearchWorkspaceProjectDetails } from "./projectController";
+import { confirmCancelRunningAnalysis } from "./runGuard";
 import { runResearchWorkspaceSurfaceAction } from "./surfaceAction";
-import { disposeResearchWorkspaceView } from "./view";
+import {
+  disposeResearchWorkspaceView,
+  isResearchWorkspaceViewRunning,
+} from "./view";
 export const generations = new WeakMap<HTMLElement, symbol>();
 
 export const activeOperationRoots = new WeakMap<HTMLElement, HTMLElement>();
@@ -11,6 +15,35 @@ export function disposeOperations(root: HTMLElement) {
   const operations = activeOperationRoots.get(root);
   if (operations) disposeResearchWorkspaceView(operations);
   activeOperationRoots.delete(root);
+}
+
+/** True while the project surface hosts an analysis that is still running. */
+export function hasRunningOperation(root: HTMLElement): boolean {
+  const operations = activeOperationRoots.get(root);
+  return Boolean(operations && isResearchWorkspaceViewRunning(operations));
+}
+
+/**
+ * Disposes the analysis area before an action that replaces it. A running
+ * analysis is cancelled only after an explicit choice (spec §12.3). Returns
+ * false when the reader keeps the run; the caller must then stop.
+ */
+export function releaseOperations(root: HTMLElement, action: string): boolean {
+  if (
+    hasRunningOperation(root) &&
+    !confirmCancelRunningAnalysis(
+      { action },
+      { win: root.ownerDocument.defaultView },
+    )
+  ) {
+    setMessage(
+      root,
+      "The analysis is still running. Wait for it to finish, or use Cancel in the analysis panel first.",
+    );
+    return false;
+  }
+  disposeOperations(root);
+  return true;
 }
 
 export function button(

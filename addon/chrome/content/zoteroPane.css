@@ -2814,6 +2814,71 @@
   white-space: pre-wrap;
 }
 
+.pprw-status[data-kind="warning"] {
+  border-color: var(--pp-warning, #9a6700);
+  background: color-mix(
+    in srgb,
+    var(--pp-warning, #9a6700) 8%,
+    var(--pp-bg-primary)
+  );
+  color: var(--pp-warning, #9a6700);
+}
+
+/* The project status line stays visible at the top of the scrolling
+   window body, so messages from panels far below are never missed. */
+.pprw-window-body > [data-project-message] {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  margin: 8px 20px 0;
+  box-shadow: var(--pp-shadow-sm);
+}
+
+.pprw-window [hidden] {
+  display: none !important;
+}
+
+.pprw-project-operations:focus,
+.pprw-window-body > .paperpilot-research-workspace:focus {
+  outline: 2px solid var(--pp-accent);
+  outline-offset: 2px;
+}
+
+.pprw-selection-offer {
+  display: grid;
+  flex: 0 0 auto;
+  gap: 6px;
+  margin: 8px 20px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--pp-border-accent);
+  border-radius: var(--pp-radius-md);
+  background: var(--pp-bg-evidence);
+  color: var(--pp-text-primary);
+  font-size: var(--pp-font-size-sm);
+}
+
+.pprw-selection-offer p {
+  margin: 0;
+  font-weight: 600;
+}
+
+.pprw-archived-project {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.pprw-archived-project span {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+.pprw-render-badge--error {
+  border-color: var(--pp-error, #c62828);
+  color: var(--pp-error, #c62828);
+}
+
 .pprw-paper-summary {
   display: grid;
   gap: 2px;
