@@ -21,7 +21,7 @@ import {
   resolveCodexModel,
 } from "../codex/modelOptions";
 import {
-  isNativeSelectInteraction,
+  createNativeSelectClickGuard,
   shouldDismissPopover,
 } from "./popoverDismissal";
 
@@ -200,21 +200,19 @@ export function createPaneHeader(params: {
     }
   };
   const onTrigger = () => setOpen(popover.hidden);
-  // Zotero's native select popup retargets its final click to `main-window`.
-  // Preserve only that next click when the interaction began in the picker.
-  let preserveNextNativeSelectClick = false;
+  const nativeSelectClickGuard = createNativeSelectClickGuard([
+    modelInput,
+    claudeEffortInput,
+  ]);
   const onDocumentPointerDown = (event: PointerEvent) => {
     if (popover.hidden) return;
-    preserveNextNativeSelectClick = isNativeSelectInteraction(
-      modelInput,
-      event,
-    );
+    nativeSelectClickGuard.notePointerDown(event);
   };
   const onDocumentClick = (event: MouseEvent) => {
     if (popover.hidden) return;
-    const preservePopover =
-      preserveNextNativeSelectClick && doc.activeElement === modelInput;
-    preserveNextNativeSelectClick = false;
+    const preservePopover = nativeSelectClickGuard.consumeClick(
+      doc.activeElement,
+    );
     if (!preservePopover && shouldDismissPopover(root, event)) {
       setOpen(false);
     }

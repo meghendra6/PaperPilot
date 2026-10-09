@@ -20,6 +20,28 @@ export function isNativeSelectInteraction(
   });
 }
 
+// Zotero's native select popup retargets its final click to `main-window`.
+// Preserve only that next click when the interaction began in one of the
+// pickers and that picker still holds focus.
+export function createNativeSelectClickGuard(
+  selects: readonly HTMLSelectElement[],
+) {
+  let preserveNextClick = false;
+  return {
+    notePointerDown(event: Event) {
+      preserveNextClick = selects.some((select) =>
+        isNativeSelectInteraction(select, event),
+      );
+    },
+    consumeClick(activeElement: Element | null): boolean {
+      const preserve =
+        preserveNextClick && selects.some((select) => select === activeElement);
+      preserveNextClick = false;
+      return preserve;
+    },
+  };
+}
+
 export function installPopoverDismissal(params: {
   doc: Document;
   getRoot: () => HTMLElement | undefined;
