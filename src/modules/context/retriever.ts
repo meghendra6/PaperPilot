@@ -1,4 +1,8 @@
 import { splitTextIntoChunks } from "../tools/splitTextIntoChunks";
+import {
+  RETRIEVAL_CHUNK_SIZE_DEFAULT,
+  RETRIEVAL_OVERLAP_SIZE_DEFAULT,
+} from "./retrievalSettings";
 
 const STOPWORDS = new Set([
   "a",
@@ -72,8 +76,8 @@ export function selectRelevantChunks(params: {
 }) {
   const chunks = splitTextIntoChunks(
     params.text,
-    params.chunkSize ?? 1100,
-    params.overlapSize ?? 200,
+    params.chunkSize ?? RETRIEVAL_CHUNK_SIZE_DEFAULT,
+    params.overlapSize ?? RETRIEVAL_OVERLAP_SIZE_DEFAULT,
   );
   return selectRelevantChunksFromChunks(chunks, params.query, params.topK ?? 5);
 }
