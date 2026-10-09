@@ -796,6 +796,17 @@ Run these in Zotero 7 and 10, in light and dark themes, with the pane about
 - [ ] Open chat search and a save preview together; confirm the transcript keeps at least 96px
 - [ ] Confirm an annotation warning shows first in the context status, and the one-line details show the full text in a tooltip
 
+### Chat controls
+
+- [ ] Hover each ghost button on the light pane; confirm a visible tint appears. Before this fix, the hover color matched the pane
+- [ ] Confirm the toolbar chips and the response-length select share one pill shape, and the select still shows its arrow and opens its list
+- [ ] Open "/ Actions"; confirm it turns accent, the commands open as a card, and the Enter target is the accent chip
+- [ ] Start a run; confirm Send turns into a neutral "Stop" with a square mark, and that typed text never runs under Send, Stop, or "Stopping…"
+- [ ] Confirm "More" shows a chevron instead of the default triangle, the open menu is a card, and its rows tint on hover
+- [ ] Click Copy; confirm "Copied!" turns green and resets after about 1.5 seconds
+- [ ] Confirm "New response · Jump to latest" floats as a pill over the transcript without moving the composer
+- [ ] At a 320px pane width, confirm no pill label wraps onto two lines
+
 ### Settings
 
 - [ ] Confirm help text is readable in dark mode and `preferences.css` loads on Zotero 7 and 10
