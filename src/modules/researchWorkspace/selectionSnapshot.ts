@@ -13,6 +13,7 @@ export type ResearchWorkspaceLaunchOrigin =
   | "tools-menu"
   | "item-context-menu"
   | "item-pane"
+  | "reader-pane"
   | "workspace-new-selection"
   | "api";
 

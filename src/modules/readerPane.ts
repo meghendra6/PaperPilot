@@ -182,6 +182,7 @@ import {
   type RecommendedPaper,
 } from "./relatedRecommendations";
 import { resolveSessionHistoryPrefs } from "./session/historyPrefs";
+import { describeNewSessionImpact } from "./session/newSessionImpact";
 import { sessionHistoryService } from "./session/sessionHistoryService";
 import { sessionStore } from "./session/sessionStore";
 import { isLikelySilentToolMessage } from "./session/silentTurnFilter";
@@ -210,6 +211,11 @@ import {
   setCriticalReadStepExpanded,
 } from "./ui/criticalReadDraft";
 import { renderCriticalReadSection } from "./ui/criticalReadSection";
+import {
+  appendOpenResearchWorkspaceAction,
+  createOpenResearchWorkspaceButton,
+  showResearchWorkspaceRequiredPanel,
+} from "./ui/researchWorkspaceLauncher";
 import { buildDiscoveryRow } from "./ui/discoveryRow";
 import {
   getDiscoveryButtonPresentation,
@@ -1557,7 +1563,33 @@ export function registerPaperPilotPaneSection() {
           criticalReadRoot.style.display = visible ? "none" : "block";
           if (!visible) renderCriticalRead();
         };
+        // Requests from the Research Workspace window only open a panel. They
+        // expand the Workbench, leave Focus chat through its own button, and
+        // scroll the panel into view so the window's "opened" is true.
+        const revealWorkbenchPanel = (panel?: HTMLElement | null) => {
+          workbenchSection.setExpanded(true);
+          if (focusButton.getAttribute("aria-pressed") === "true") {
+            focusButton.click();
+          }
+          if (panel && panel.style.display !== "none") {
+            panel.scrollIntoView?.({ block: "nearest" });
+          }
+        };
+        const showCriticalRead = () => {
+          criticalReadRoot.style.display = "block";
+          renderCriticalRead();
+          revealWorkbenchPanel(criticalReadRoot);
+        };
         criticalReadButton.addEventListener("click", openCriticalRead);
+        criticalReadButton.after(
+          createOpenResearchWorkspaceButton(body.ownerDocument, {
+            items: [item],
+            label: "Research Workspace",
+            className: "pp-btn pp-btn--ghost",
+            onError: (error) =>
+              logReaderPaneError("Research Workspace launch failed", error),
+          }),
+        );
         if (addon.data.criticalReadStates?.has(item.id)) {
           criticalReadRoot.style.display = "block";
         }
@@ -2226,10 +2258,15 @@ export function registerPaperPilotPaneSection() {
             },
             onSendToProject: async () => {
               const home = await loadResearchWorkspaceHome();
-              if (!home.projects.length)
-                throw new Error(
-                  "Create a Research Workspace project first, then send this question.",
-                );
+              if (!home.projects.length) {
+                showResearchWorkspaceRequiredPanel({
+                  mount: chatTools.root,
+                  title: "Send comparison question to project",
+                  body: "Create a Research Workspace project first, then send this question.",
+                  items: [item],
+                });
+                return;
+              }
               const doc = body.ownerDocument;
               const select = doc.createElement("select");
               select.setAttribute("aria-label", "Destination project");
@@ -3625,11 +3662,19 @@ export function registerPaperPilotPaneSection() {
           capability: import("./readerCapabilityBridge").ReaderCapabilityAction,
         ) => {
           if (capability === "critical-read") {
-            openCriticalRead();
+            showCriticalRead();
+            return true;
+          }
+          if (!masterySection) return false;
+          revealWorkbenchPanel();
+          if (getMasteryState(item.id)?.phase === "complete") {
+            // Opening a finished session shows its report. Restarting stays
+            // an explicit choice behind the pane's Restart button.
+            hydrateMasteryState();
           } else {
-            if (!masterySection) return false;
             await startPaperMastery();
           }
+          revealWorkbenchPanel(masterySection);
           return true;
         };
         addon.data.activateReaderCapability?.set(item.id, activateCapability);
@@ -3850,6 +3895,21 @@ export function registerPaperPilotPaneSection() {
 
         newSessionButton.addEventListener("click", async () => {
           const mode = getModeForItem(item.id);
+          const impact = describeNewSessionImpact({
+            criticalRead: getCriticalReadStateForItem(),
+            mastery: getMasteryState(item.id),
+            historyMode: resolveSessionHistoryPrefs().mode,
+          });
+          if (
+            impact &&
+            !confirmDestructive(
+              body.ownerDocument,
+              impact.title,
+              impact.message,
+            )
+          ) {
+            return;
+          }
           await runSessionRuntimeTransition(async () => {
             await sessionHistoryService.startNewSessionDraft({
               itemID: item.id,
@@ -4601,10 +4661,15 @@ function renderRelatedRecommendationState(
         actions: {
           onSaveCandidate: async (target) => {
             const home = await loadResearchWorkspaceHome();
-            if (!home.projects.length)
-              throw new Error(
-                "Create a Research Workspace project before saving a candidate.",
-              );
+            if (!home.projects.length) {
+              showResearchWorkspaceRequiredPanel({
+                mount: groupsContainer,
+                title: "Save candidate to project inbox",
+                body: "Create a Research Workspace project before saving a candidate.",
+                items: [Zotero.Items.get(itemID)].filter(Boolean),
+              });
+              return;
+            }
             const select = doc.createElement("select");
             select.setAttribute("aria-label", "Candidate destination project");
             for (const project of home.projects) {
@@ -4613,7 +4678,7 @@ function renderRelatedRecommendationState(
               option.textContent = project.name;
               select.append(option);
             }
-            showChatReviewPanel({
+            const candidatePanel = showChatReviewPanel({
               mount: groupsContainer,
               title: "Save candidate to project inbox",
               body: `${target.title}\n${target.reason || ""}\nPDF linking and screening remain separate steps.`,
@@ -4637,7 +4702,8 @@ function renderRelatedRecommendationState(
                   },
                   userNote: target.reason,
                 });
-                return "Candidate saved. Open the project inbox to link an exact PDF.";
+                appendOpenResearchWorkspaceAction(candidatePanel);
+                return "Candidate saved. Open the project inbox in the Research Workspace to link an exact PDF.";
               },
             });
           },
