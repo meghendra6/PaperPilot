@@ -1,0 +1,60 @@
+/*
+ * Paper Pilot settings pane.
+ * Text colors use Zotero theme tokens so they stay readable in light and
+ * dark mode. The fallbacks are system colors for themes without the tokens.
+ */
+
+#zotero-prefpane-__addonRef__ .paperpilot-pref-description {
+  margin: 4px 0 10px;
+  color: var(--fill-secondary, GrayText);
+}
+
+/* Help and warnings sit under the control column (220px label + 10px gap). */
+#zotero-prefpane-__addonRef__ .paperpilot-pref-help,
+#zotero-prefpane-__addonRef__ .paperpilot-pref-warning {
+  margin-block: -4px 10px;
+  margin-inline: 230px 0;
+}
+
+#zotero-prefpane-__addonRef__ .paperpilot-pref-help {
+  color: var(--fill-secondary, GrayText);
+}
+
+/* The text explains the problem. The bar marks it without relying on color. */
+#zotero-prefpane-__addonRef__ .paperpilot-pref-warning {
+  padding-inline-start: 8px;
+  border-inline-start: 3px solid var(--accent-orange, #ff794c);
+  color: var(--fill-primary, CanvasText);
+}
+
+#zotero-prefpane-__addonRef__ .paperpilot-pref-warning[hidden] {
+  display: none;
+}
+
+#zotero-prefpane-__addonRef__ .paperpilot-pref-disclosure > summary {
+  margin-block: 2px 10px;
+  font-weight: 600;
+}
+
+#zotero-prefpane-__addonRef__
+  .paperpilot-pref-disclosure
+  > summary:focus-visible {
+  outline: 2px solid var(--color-focus-border, Highlight);
+  outline-offset: 2px;
+}
+
+#zotero-prefpane-__addonRef__ .paperpilot-pref-radio-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+#zotero-prefpane-__addonRef__ .paperpilot-pref-radio {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+#zotero-prefpane-__addonRef__ .paperpilot-pref-radio > input {
+  margin: 0;
+}

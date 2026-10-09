@@ -1,6 +1,7 @@
 import * as assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  createNativeSelectClickGuard,
   installPopoverDismissal,
   isNativeSelectInteraction,
   shouldDismissPopover,
@@ -72,6 +73,36 @@ test("native model select interactions include Zotero's dropdown popup", () => {
     ),
     false,
   );
+});
+
+test("native select guard keeps the popover open for every picker it owns", () => {
+  const modelSelect = {} as HTMLSelectElement;
+  const effortSelect = {} as HTMLSelectElement;
+  const dropdownPopup = { id: "ContentSelectDropdownPopup" };
+  const guard = createNativeSelectClickGuard([modelSelect, effortSelect]);
+
+  for (const select of [modelSelect, effortSelect]) {
+    guard.notePointerDown(makeEvent(dropdownPopup, [dropdownPopup]));
+    assert.equal(guard.consumeClick(select), true);
+  }
+});
+
+test("native select guard preserves only the click that follows a picker interaction", () => {
+  const modelSelect = {} as HTMLSelectElement;
+  const effortSelect = {} as HTMLSelectElement;
+  const dropdownPopup = { id: "ContentSelectDropdownPopup" };
+  const outside = {};
+  const guard = createNativeSelectClickGuard([modelSelect, effortSelect]);
+
+  guard.notePointerDown(makeEvent(dropdownPopup, [dropdownPopup]));
+  assert.equal(guard.consumeClick(effortSelect), true);
+  assert.equal(guard.consumeClick(effortSelect), false);
+
+  guard.notePointerDown(makeEvent(outside, [outside]));
+  assert.equal(guard.consumeClick(effortSelect), false);
+
+  guard.notePointerDown(makeEvent(dropdownPopup, [dropdownPopup]));
+  assert.equal(guard.consumeClick(outside as Element), false);
 });
 
 test("shared popover dismissal removes its outside-click and Escape listeners", () => {

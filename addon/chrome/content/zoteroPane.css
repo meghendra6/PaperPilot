@@ -39,17 +39,24 @@
   --pp-text-run-state: #423960;
   --pp-text-session-doc: #444;
   --pp-text-streaming: #5b6b82;
-  --pp-text-artifact-time: #64748b;
+  --pp-text-artifact-time: #54657d;
   --pp-text-artifact-source: #54657d;
   --pp-bg-artifact-source: #eef4fb;
   --pp-border-recommendation: #eef1f4;
-  --pp-text-recommendation-meta: #64748b;
+  --pp-text-recommendation-meta: #54657d;
   --pp-text-recommendation-reason: #475569;
 
   --pp-text-status-info: #5b6472;
   --pp-text-status-warning: #7a4d14;
   --pp-text-status-success: #2f5b3c;
   --pp-text-status-embed: #29456a;
+
+  /* Status colors used as text, borders, and dots. Each reaches 4.5:1 on the
+     pane, the message background, and the error status background. */
+  --pp-error: var(--color-invalid, #b81d29);
+  --pp-warning: var(--pp-text-status-warning);
+  --pp-success: var(--pp-text-status-success);
+  --pp-bg-status-error: var(--color-invalid-background, #fce8ea);
 
   --pp-bg-evidence: #e6eef9;
   --pp-text-evidence: #35527a;
@@ -65,10 +72,16 @@
   --pp-border-hr: #d1d5db;
   --pp-text-link: #2563eb;
   --pp-accent: var(--accent-blue, #2563eb);
-  --pp-focus-color: var(--color-focus-border, #2563eb);
-  --pp-focus-width: var(--width-focus-border, 2px);
-  --pp-focus-outer-color: var(--color-focus-outer-border, #2563eb);
-  --pp-focus-outer-width: var(--width-focus-outer-border, 2px);
+  /* Filled accent controls darken the accent so white text keeps 4.5:1. */
+  --pp-accent-fill: color-mix(in srgb, var(--pp-accent) 90%, #000);
+  --pp-accent-fill-hover: color-mix(in srgb, var(--pp-accent) 80%, #000);
+  --pp-accent-fill-active: color-mix(in srgb, var(--pp-accent) 70%, #000);
+  --pp-on-accent: #fff;
+  /* Zotero's focus width is 1px on Windows. Paper Pilot draws a fixed 2px
+     ring with an offset so it stays visible next to filled buttons. */
+  --pp-focus-color: var(--pp-accent);
+  --pp-focus-width: 2px;
+  --pp-focus-offset: 2px;
 
   color-scheme: light dark;
 
@@ -79,6 +92,21 @@
 
   --pp-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
   --pp-shadow-md: 0 2px 6px rgba(0, 0, 0, 0.06);
+  --pp-shadow-float: 0 4px 14px rgba(0, 0, 0, 0.12),
+    0 1px 3px rgba(0, 0, 0, 0.08);
+
+  /* Hover and press tints follow the text color over a transparent base.
+     They show on the pane, an answer, and the draft card alike. */
+  --pp-fill-quiet: color-mix(in srgb, var(--pp-text-primary) 5%, transparent);
+  --pp-fill-hover: color-mix(in srgb, var(--pp-text-primary) 9%, transparent);
+  --pp-fill-press: color-mix(in srgb, var(--pp-text-primary) 15%, transparent);
+  /* Zotero's own button surface, used by chat chips and Stop. */
+  --pp-bg-button: var(--material-button, #fff);
+  --pp-border-accent-soft: color-mix(
+    in srgb,
+    var(--pp-accent) 45%,
+    transparent
+  );
 
   --pp-font-size-xs: 11px;
   --pp-font-size-sm: 12px;
@@ -123,6 +151,9 @@
 
     --pp-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.2);
     --pp-shadow-md: 0 2px 6px rgba(0, 0, 0, 0.3);
+    --pp-shadow-float: 0 4px 14px rgba(0, 0, 0, 0.45),
+      0 1px 3px rgba(0, 0, 0, 0.35);
+    --pp-bg-button: var(--material-button, #404040);
 
     --pp-text-run-state: #c4b5e0;
     --pp-text-session-doc: #b0b0b0;
@@ -139,6 +170,11 @@
     --pp-text-status-success: #7ec09a;
     --pp-text-status-embed: #7faad4;
 
+    --pp-error: var(--color-invalid, #ff7078);
+    --pp-warning: var(--pp-text-status-warning);
+    --pp-success: var(--pp-text-status-success);
+    --pp-bg-status-error: var(--color-invalid-background, #40191c);
+
     --pp-bg-evidence: #2a3444;
     --pp-text-evidence: #7faad4;
 
@@ -153,10 +189,8 @@
     --pp-border-hr: #4a4f58;
     --pp-text-link: #60a5fa;
     --pp-accent: var(--accent-blue, #2563eb);
-    --pp-focus-color: var(--color-focus-border, #60a5fa);
-    --pp-focus-width: var(--width-focus-border, 2px);
-    --pp-focus-outer-color: var(--color-focus-outer-border, #60a5fa);
-    --pp-focus-outer-width: var(--width-focus-outer-border, 2px);
+    /* Lighten the ring so it keeps 3:1 against the dark pane. */
+    --pp-focus-color: color-mix(in srgb, var(--pp-accent) 65%, #fff);
   }
 }
 
@@ -246,7 +280,7 @@
 .pp-pane-header[data-status="error"] .pp-pane-header__dot,
 .pp-pane-header[data-status="login_required"] .pp-pane-header__dot,
 .pp-pane-header[data-status="unsupported"] .pp-pane-header__dot {
-  background: var(--pp-error, #c62828);
+  background: var(--pp-error);
 }
 
 .pp-pane-header__label {
@@ -299,6 +333,21 @@
   margin-bottom: 10px;
 }
 
+.pp-pane-header__row-label {
+  margin-bottom: 4px;
+  font-size: var(--pp-font-size-xs);
+  color: var(--pp-text-secondary);
+}
+
+/* Pressed toggles: the active engine and Focus chat. */
+.pp-pane-header__mode-actions .pp-btn[aria-pressed="true"],
+.pp-chat-focus[aria-pressed="true"] {
+  background: var(--pp-bg-accent);
+  color: var(--pp-text-accent);
+  border-color: var(--pp-accent);
+  font-weight: 600;
+}
+
 /* ============================================================
    2. Mode bar
    ============================================================ */
@@ -327,9 +376,10 @@
 /* ============================================================
    3. Run state card
    ============================================================ */
+/* The card never shrinks, so Retry stays reachable. Long progress output
+   scrolls inside the card instead. */
 .pp-run-state {
-  flex: 0 1 auto;
-  min-height: 0;
+  flex: 0 0 auto;
   max-height: 132px;
   margin: 6px 0;
   padding: 6px 8px;
@@ -611,6 +661,14 @@
   margin-bottom: 10px;
 }
 
+.pp-codex-actions__status {
+  flex-basis: 100%;
+  font-size: var(--pp-font-size-sm);
+  color: var(--pp-text-secondary);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
 .pp-model-row {
   display: flex;
   gap: 8px;
@@ -717,8 +775,9 @@
 .pp-chat-window-control {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   justify-content: center;
-  gap: 8px;
+  gap: 4px 8px;
   min-height: 30px;
   padding: 2px 4px;
   color: var(--pp-text-muted);
@@ -728,7 +787,12 @@
 
 .pp-chat-window-control .pp-btn {
   min-height: 26px;
-  padding: 3px 8px;
+  padding: 3px 12px;
+  border-radius: var(--pp-radius-pill);
+  background-color: var(--pp-fill-quiet);
+  color: var(--pp-text-accent);
+  font-weight: 500;
+  white-space: nowrap;
 }
 
 .pp-message-wrapper--user {
@@ -798,7 +862,7 @@
   min-width: 0;
   min-height: 72px;
   max-height: 180px;
-  padding: 10px 78px 10px 12px;
+  padding: 10px 84px 10px 12px;
   border: 1px solid var(--pp-border-medium);
   border-radius: var(--pp-radius-md);
   font-family: inherit;
@@ -813,13 +877,59 @@
   color: var(--pp-text-primary);
 }
 
+/* Send is the only filled control in chat. Stop switches to the neutral
+   button surface with a square mark, so a running answer reads as
+   "press to halt" and never as a second Send. */
+/* "Stopping…" is the widest label. The input reserves room for it only
+   while it shows, so typed text never runs under the button. */
+#chat-input[data-send-action="stopping"] {
+  padding-right: 124px;
+}
+
 #chat-send {
   position: absolute;
   right: 12px;
   bottom: 12px;
   z-index: 1;
-  min-width: 52px;
-  min-height: 32px;
+  min-width: 60px;
+  height: 30px;
+  min-height: 30px;
+  padding: 0 14px;
+  border-radius: var(--pp-radius-pill);
+  font-weight: 600;
+  box-shadow: 0 1px 2px
+    color-mix(in srgb, var(--pp-accent-fill) 40%, transparent);
+}
+
+#chat-send:disabled {
+  box-shadow: none;
+}
+
+#chat-send[data-action="stop"] {
+  gap: 6px;
+  border-color: var(--pp-border-medium);
+  background: var(--pp-bg-button);
+  color: var(--pp-text-primary);
+  box-shadow: var(--pp-shadow-sm);
+}
+
+#chat-send[data-action="stop"]::before {
+  content: "";
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: currentColor;
+}
+
+#chat-send[data-action="stop"]:hover:not(:disabled) {
+  border-color: var(--pp-border-medium);
+  background-color: var(--pp-bg-button);
+  background-image: linear-gradient(var(--pp-fill-hover), var(--pp-fill-hover));
+}
+
+#chat-send[data-action="stop"]:active:not(:disabled) {
+  background-image: linear-gradient(var(--pp-fill-press), var(--pp-fill-press));
 }
 
 #chat-input::-webkit-scrollbar {
@@ -896,7 +1006,7 @@
   border-radius: var(--pp-radius-pill);
   background: var(--pp-bg-evidence);
   color: var(--pp-text-evidence);
-  font-size: 10px;
+  font-size: var(--pp-font-size-xs);
   font-weight: 700;
   text-transform: uppercase;
 }
@@ -949,6 +1059,13 @@
 .pp-related-disclosure {
   margin: 8px 0;
   color: var(--pp-text-recommendation-meta);
+  font-size: var(--pp-font-size-xs);
+  line-height: 1.45;
+}
+
+.pp-related-availability {
+  margin-top: 6px;
+  color: var(--pp-text-secondary);
   font-size: var(--pp-font-size-xs);
   line-height: 1.45;
 }
@@ -1063,13 +1180,96 @@
   font-weight: 600;
 }
 
-.pp-critical-read__report {
-  max-height: 320px;
-  overflow: auto;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  font-family: var(--pp-font-mono);
+.pp-critical-read__status:empty {
+  display: none;
+}
+
+/* Reader judgment, paper claims, Paper Pilot inference, and external
+   discovery evidence stay visibly separate inside each completed step. */
+.pp-critical-read__block {
+  margin: 8px 0;
+  padding: 6px 8px;
+  border-left: 3px solid var(--pp-border-medium);
+  border-radius: var(--pp-radius-sm, 4px);
+  background: var(--pp-bg-secondary);
+  font-size: var(--pp-font-size-sm);
+  line-height: 1.45;
+}
+
+.pp-critical-read__block p,
+.pp-critical-read__block ul {
+  margin: 4px 0 0;
+}
+
+.pp-critical-read__block ul {
+  padding-left: 18px;
+}
+
+.pp-critical-read__label {
+  display: block;
   font-size: var(--pp-font-size-xs);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--pp-text-secondary, var(--pp-text-primary));
+}
+
+.pp-critical-read__block--reader {
+  border-left-color: var(--pp-accent, #1976d2);
+}
+
+.pp-critical-read__block--paper {
+  border-left-color: var(--pp-text-artifact-source, #6a737d);
+  background: var(--pp-bg-artifact-source, var(--pp-bg-secondary));
+}
+
+.pp-critical-read__block--agent {
+  border-left-color: var(--pp-border-recommendation, #b08800);
+  border-left-style: dashed;
+}
+
+.pp-critical-read__block--external {
+  border-left-color: var(--pp-border-light);
+  border-left-style: dotted;
+}
+
+.pp-critical-read__report {
+  max-height: 480px;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  padding: 8px 10px;
+  border-radius: var(--pp-radius-md);
+  background: var(--pp-bg-primary);
+  font-size: var(--pp-font-size-sm);
+  line-height: 1.5;
+}
+
+.pp-critical-read__report h1 {
+  margin: 0 0 8px;
+  font-size: var(--pp-font-size-md, 1em);
+}
+
+.pp-critical-read__report h2 {
+  margin: 12px 0 6px;
+  font-size: var(--pp-font-size-sm);
+}
+
+.pp-critical-read__report h3 {
+  margin: 8px 0 4px;
+  font-size: var(--pp-font-size-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.pp-critical-read__report p,
+.pp-critical-read__report ul,
+.pp-critical-read__report ol {
+  margin: 0 0 6px;
+}
+
+.pp-critical-read__report ul,
+.pp-critical-read__report ol {
+  padding-left: 18px;
 }
 
 .pp-critical-read__orientation {
@@ -1131,6 +1331,8 @@
   transition:
     background-color 0.15s,
     border-color 0.15s,
+    color 0.15s,
+    box-shadow 0.15s,
     opacity 0.15s,
     transform 0.08s;
   line-height: 1.4;
@@ -1148,19 +1350,21 @@
   cursor: default;
 }
 
-@media (-moz-platform: windows) {
-  #paper-pilot-container :is(button, input, select, textarea):focus-visible {
-    outline: var(--pp-focus-outer-width) solid var(--pp-focus-outer-color);
-    outline-offset: var(--pp-focus-width);
-    box-shadow: 0 0 0 var(--pp-focus-width) var(--pp-focus-color);
-  }
+/* One fixed 2px ring on every platform. The offset leaves a strip of pane
+   background between the ring and a filled button. */
+#paper-pilot-container
+  :is(button, input, select, textarea, summary):focus-visible {
+  outline: var(--pp-focus-width) solid var(--pp-focus-color);
+  outline-offset: var(--pp-focus-offset);
 }
 
-@media not (-moz-platform: windows) {
-  #paper-pilot-container :is(button, input, select, textarea):focus-visible {
-    outline: none;
-    box-shadow: 0 0 0 var(--pp-focus-width) var(--pp-focus-color);
-  }
+/* Full-width triggers touch clipping edges, so their ring sits inside. */
+#paper-pilot-container
+  :is(
+    .pp-pane-header__trigger,
+    .pp-collapsible-section__trigger
+  ):focus-visible {
+  outline-offset: calc(-1 * var(--pp-focus-width));
 }
 
 .pp-btn:active:not(:disabled) {
@@ -1168,19 +1372,19 @@
 }
 
 .pp-btn--primary {
-  background: #2563eb;
-  color: #fff;
-  border: 1px solid #2563eb;
+  background: var(--pp-accent-fill);
+  color: var(--pp-on-accent);
+  border: 1px solid var(--pp-accent-fill);
 }
 
 .pp-btn--primary:hover:not(:disabled) {
-  background: #1d4ed8;
-  border-color: #1d4ed8;
+  background: var(--pp-accent-fill-hover);
+  border-color: var(--pp-accent-fill-hover);
 }
 
 .pp-btn--primary:active:not(:disabled) {
-  background: #1e40af;
-  border-color: #1e40af;
+  background: var(--pp-accent-fill-active);
+  border-color: var(--pp-accent-fill-active);
 }
 
 .pp-btn--secondary {
@@ -1203,12 +1407,14 @@
   border: 1px solid transparent;
 }
 
+/* The tint is an image layer, so hover keeps a chip's own background color.
+   On the light pane --pp-bg-tertiary equals the pane color and hid hover. */
 .pp-btn--ghost:hover:not(:disabled) {
-  background: var(--pp-bg-tertiary);
+  background-image: linear-gradient(var(--pp-fill-hover), var(--pp-fill-hover));
 }
 
 .pp-btn--ghost:active:not(:disabled) {
-  background: var(--pp-bg-secondary);
+  background-image: linear-gradient(var(--pp-fill-press), var(--pp-fill-press));
 }
 
 /* ============================================================
@@ -1310,6 +1516,56 @@
   text-decoration: underline;
 }
 
+/* Inline citation chips sit inside answer sentences. They keep the line
+   height, and ::after extends the pointer target to 24px. */
+.pp-btn.pp-citation {
+  position: relative;
+  display: inline-block;
+  min-width: 0;
+  min-height: 0;
+  margin: 0 1px;
+  padding: 0 4px;
+  border: 1px solid var(--pp-border-accent);
+  border-radius: var(--pp-radius-sm);
+  background: var(--pp-bg-evidence);
+  color: var(--pp-text-evidence);
+  font-size: var(--pp-font-size-xs);
+  font-weight: 600;
+  line-height: 18px;
+  white-space: nowrap;
+  vertical-align: baseline;
+}
+
+.pp-btn.pp-citation::after {
+  content: "";
+  position: absolute;
+  inset: -2px 0;
+}
+
+.pp-btn.pp-citation:hover {
+  border-color: var(--pp-accent);
+}
+
+.pp-btn.pp-citation:active:not(:disabled) {
+  transform: none;
+}
+
+/* Unverified chips stay focusable (aria-disabled) and explain on activation. */
+.pp-btn.pp-citation.pp-citation--unavailable {
+  border-style: dashed;
+  border-color: var(--pp-border-medium);
+  background: transparent;
+  color: var(--pp-text-muted);
+  cursor: help;
+}
+
+.pp-citation-notice {
+  flex: 1 0 100%;
+  color: var(--pp-warning);
+  font-size: var(--pp-font-size-xs);
+  line-height: 1.4;
+}
+
 /* ============================================================
    18. Math blocks (KaTeX MathML)
    ============================================================ */
@@ -1325,17 +1581,32 @@
   font-size: 1.1em;
 }
 
+/* Inline KaTeX scrolls inside its own box instead of being clipped by the
+   message. Display math already scrolls in .pp-math-block. */
+.pp-message--ai :not(.pp-math-block) > .katex {
+  display: inline-block;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  vertical-align: middle;
+}
+
 /* ============================================================
    19. Tables
    ============================================================ */
+/* The table box scrolls horizontally. Columns keep whole words instead of
+   squeezing to one character per line. */
 .pp-table {
+  display: block;
   width: 100%;
   max-width: 100%;
+  overflow-x: auto;
   border-collapse: collapse;
   margin: 0 0 12px;
   font-size: var(--pp-font-size-sm);
-  table-layout: fixed;
-  overflow-wrap: anywhere;
+  table-layout: auto;
+  overflow-wrap: normal;
+  word-break: normal;
 }
 
 .pp-table th,
@@ -1356,28 +1627,109 @@
   background: var(--pp-bg-secondary);
 }
 
-/* Message footer (copy button) */
+/* Message footer: Copy and More sit right-aligned under the answer as quiet
+   pills. They stay visible without hover, so keyboard and touch users see
+   them too. */
 .pp-message-footer {
   display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
   justify-content: flex-end;
-  margin-top: 6px;
-  padding-top: 4px;
-  border-top: 1px solid var(--pp-border-light);
-  opacity: 1;
-  transition: opacity 0.15s;
+  gap: 4px;
+  margin-top: 8px;
 }
 
-.pp-message:hover .pp-message-footer {
-  opacity: 1;
+.pp-message-footer .pp-btn,
+.pp-message-actions > summary {
+  min-height: 24px;
+  padding: 2px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--pp-radius-pill);
+  background-color: var(--pp-fill-quiet);
+  color: var(--pp-text-secondary);
+  font-size: var(--pp-font-size-sm);
+  font-weight: 500;
+  line-height: 18px;
+  white-space: nowrap;
+  box-sizing: border-box;
 }
 
-.pp-message:focus-within .pp-message-footer {
-  opacity: 1;
+.pp-message-copy[data-state="copied"] {
+  color: var(--pp-success);
 }
 
-.pp-message-copy {
-  font-size: var(--pp-font-size-xs);
-  padding: 2px 6px;
+.pp-message-copy[data-state="failed"] {
+  color: var(--pp-error);
+}
+
+/* More is a disclosure. A drawn chevron replaces the default triangle and
+   turns over when the menu opens. */
+.pp-message-actions > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+  transition:
+    background-color 0.15s,
+    color 0.15s;
+}
+
+.pp-message-actions > summary::-webkit-details-marker {
+  display: none;
+}
+
+.pp-message-actions > summary::after {
+  content: "";
+  width: 5px;
+  height: 5px;
+  margin-top: -3px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg);
+  transition: transform 0.15s;
+}
+
+.pp-message-actions[open] > summary::after {
+  margin-top: 3px;
+  transform: rotate(-135deg);
+}
+
+.pp-message-actions > summary:hover {
+  background-image: linear-gradient(var(--pp-fill-hover), var(--pp-fill-hover));
+}
+
+/* The open menu is a small card. Its items are full-width rows. */
+.pp-message-actions[open] {
+  min-width: 180px;
+  max-width: 100%;
+  padding: 4px;
+  border: 1px solid var(--pp-border-light);
+  border-radius: var(--pp-radius-md);
+  background: var(--pp-bg-primary);
+  box-shadow: var(--pp-shadow-md);
+  box-sizing: border-box;
+}
+
+.pp-message-actions[open] > summary {
+  display: flex;
+  width: fit-content;
+  margin: 0 0 4px auto;
+}
+
+.pp-message-footer .pp-message-actions[open] .pp-btn {
+  display: flex;
+  justify-content: flex-start;
+  width: 100%;
+  min-height: 28px;
+  padding: 4px 8px;
+  border-radius: var(--pp-radius-sm);
+  background-color: transparent;
+  color: var(--pp-text-primary);
+  font-weight: 400;
+  text-align: start;
+  white-space: normal;
 }
 
 /* Streaming indicator animation */
@@ -1441,6 +1793,20 @@
   overflow-x: hidden;
   overflow-y: auto;
   padding: 4px 0;
+}
+
+/* Every section is collapsed: size the stack to its triggers. The !important
+   rules outrank a pinned manual height without discarding it, so expanding a
+   section restores the previous size. */
+#paper-pilot-section-stack.pp-section-stack--all-collapsed {
+  flex: 0 0 auto !important;
+  height: auto !important;
+  min-height: 0;
+}
+
+#paper-pilot-section-stack.pp-section-stack--all-collapsed
+  + .pp-resize-handle--workspace {
+  display: none;
 }
 
 .pp-collapsible-section {
@@ -1536,21 +1902,24 @@
   box-sizing: border-box;
 }
 
+/* The grip grows with a transform (36px at rest, 52px active) so the
+   transition stays on the compositor. */
 .pp-resize-handle::before {
   content: "";
-  width: 36px;
+  width: 52px;
   height: 3px;
   border-radius: var(--pp-radius-pill);
   background: var(--pp-border-medium);
+  transform: scaleX(0.6923);
   transition:
-    width 0.15s ease,
+    transform 0.15s ease,
     background-color 0.15s ease;
 }
 
 .pp-resize-handle:hover::before,
 .pp-resize-handle:focus-visible::before,
 .pp-resize-handle--active::before {
-  width: 52px;
+  transform: scaleX(1);
   background: var(--pp-accent);
 }
 
@@ -1683,10 +2052,11 @@
 
 .pp-mastery-progress {
   display: flex;
-  gap: 6px;
+  gap: 0;
   flex-wrap: wrap;
   align-items: center;
-  margin: 0;
+  /* Align the first 10px mark with the card text and keep the row compact. */
+  margin: -4px 0 -4px -7px;
 }
 
 .pp-mastery-progress:empty {
@@ -1694,24 +2064,42 @@
 }
 
 /* --- Progress dots --- */
+/* Each dot is a 24px target. ::before draws the 10px mark. */
 .pp-mastery-progress-dot {
+  --pp-mastery-dot-color: var(--pp-text-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+}
+
+.pp-mastery-progress-dot::before {
+  content: "";
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  display: inline-block;
-  flex-shrink: 0;
+  background: var(--pp-mastery-dot-color);
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease;
 }
 
 .pp-mastery-progress-dot--correct {
-  background: var(--pp-success, #4caf50);
+  --pp-mastery-dot-color: var(--pp-success);
 }
 
 .pp-mastery-progress-dot--incorrect {
-  background: var(--pp-error, #e53935);
+  --pp-mastery-dot-color: var(--pp-error);
 }
 
 .pp-mastery-progress-dot--current {
-  background: var(--pp-accent, #1976d2);
+  --pp-mastery-dot-color: var(--pp-accent);
+}
+
+.pp-mastery-progress-dot--current::before {
   animation: pp-mastery-pulse 1.2s infinite;
 }
 
@@ -1810,15 +2198,15 @@
 }
 
 .pp-mastery-feedback--correct {
-  background: color-mix(in srgb, var(--pp-success, #4caf50) 12%, transparent);
+  background: color-mix(in srgb, var(--pp-success) 12%, transparent);
   color: var(--pp-text-primary);
-  border-left: 3px solid var(--pp-success, #4caf50);
+  border-left: 3px solid var(--pp-success);
 }
 
 .pp-mastery-feedback--incorrect {
-  background: color-mix(in srgb, var(--pp-error, #e53935) 12%, transparent);
+  background: color-mix(in srgb, var(--pp-error) 12%, transparent);
   color: var(--pp-text-primary);
-  border-left: 3px solid var(--pp-error, #e53935);
+  border-left: 3px solid var(--pp-error);
 }
 
 /* Override label colors on tinted backgrounds for adequate contrast */
@@ -1890,29 +2278,24 @@
 .pp-mastery-progress-dot--incorrect,
 .pp-mastery-progress-dot--current {
   cursor: pointer;
-  transition:
-    transform 0.15s ease,
-    box-shadow 0.15s ease;
 }
 
-.pp-mastery-progress-dot--correct:hover,
-.pp-mastery-progress-dot--incorrect:hover,
-.pp-mastery-progress-dot--current:hover {
+.pp-mastery-progress-dot--correct:hover::before,
+.pp-mastery-progress-dot--incorrect:hover::before,
+.pp-mastery-progress-dot--current:hover::before {
   transform: scale(1.3);
 }
 
-.pp-mastery-progress-dot--active {
+.pp-mastery-progress-dot--active::before {
   box-shadow:
     0 0 0 2px var(--pp-bg-primary),
-    0 0 0 4px var(--pp-accent, #1976d2);
+    0 0 0 4px var(--pp-accent);
   transform: scale(1.3);
 }
 
-.pp-mastery-progress-dot--correct:focus-visible,
-.pp-mastery-progress-dot--incorrect:focus-visible,
-.pp-mastery-progress-dot--current:focus-visible {
-  outline: 2px solid var(--pp-accent, #1976d2);
-  outline-offset: 2px;
+.pp-mastery-progress-dot:focus-visible {
+  outline: var(--pp-focus-width) solid var(--pp-focus-color);
+  outline-offset: calc(-1 * var(--pp-focus-width));
 }
 
 /* History view in feedback — vertical card layout */
@@ -1963,11 +2346,11 @@
 }
 
 .pp-mastery-history-section--feedback .pp-mastery-history-label {
-  color: var(--pp-success, #4caf50);
+  color: var(--pp-success);
 }
 
 .pp-mastery-history-section--explanation .pp-mastery-history-label {
-  color: var(--pp-warning, #ff9800);
+  color: var(--pp-warning);
 }
 
 /* Section body — markdown content */
@@ -2217,9 +2600,9 @@
 .pprw-capture-skipped {
   flex: 0 0 auto;
   margin: 8px 20px 0;
-  border: 1px solid var(--pp-error, #c62828);
+  border: 1px solid var(--pp-error);
   border-radius: var(--pp-radius-md);
-  color: var(--pp-error, #c62828);
+  color: var(--pp-error);
 }
 
 .pprw-capture-skipped-title {
@@ -2260,8 +2643,8 @@
 }
 
 .pprw-window-error {
-  border-color: var(--pp-error, #c62828);
-  color: var(--pp-error, #c62828);
+  border-color: var(--pp-error);
+  color: var(--pp-error);
 }
 
 .pprw-home h2 {
@@ -2424,17 +2807,17 @@
 }
 
 .pprw-artifact-status--complete {
-  color: var(--pp-success, #2e7d32);
+  color: var(--pp-success);
 }
 
 .pprw-artifact-status--stale,
 .pprw-artifact-status--partial,
 .pprw-project-warning {
-  color: var(--pp-warning, #9a6700);
+  color: var(--pp-warning);
 }
 
 .pprw-artifact-status--failed {
-  color: var(--pp-error, #c62828);
+  color: var(--pp-error);
 }
 
 .pprw-project-warning {
@@ -2580,14 +2963,71 @@
 }
 
 .pprw-status[data-kind="error"] {
-  border-color: var(--pp-error, #c62828);
-  background: color-mix(
-    in srgb,
-    var(--pp-error, #c62828) 8%,
-    var(--pp-bg-primary)
-  );
-  color: var(--pp-error, #c62828);
+  border-color: var(--pp-error);
+  background: var(--pp-bg-status-error);
+  color: var(--pp-error);
   white-space: pre-wrap;
+}
+
+.pprw-status[data-kind="warning"] {
+  border-color: var(--pp-border-status-warning);
+  background: var(--pp-bg-status-warning);
+  color: var(--pp-warning);
+}
+
+/* The project status line stays visible at the top of the scrolling
+   window body, so messages from panels far below are never missed. */
+.pprw-window-body > [data-project-message] {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  margin: 8px 20px 0;
+  box-shadow: var(--pp-shadow-sm);
+}
+
+.pprw-window [hidden] {
+  display: none !important;
+}
+
+.pprw-project-operations:focus,
+.pprw-window-body > .paperpilot-research-workspace:focus {
+  outline: 2px solid var(--pp-accent);
+  outline-offset: 2px;
+}
+
+.pprw-selection-offer {
+  display: grid;
+  flex: 0 0 auto;
+  gap: 6px;
+  margin: 8px 20px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--pp-border-accent);
+  border-radius: var(--pp-radius-md);
+  background: var(--pp-bg-evidence);
+  color: var(--pp-text-primary);
+  font-size: var(--pp-font-size-sm);
+}
+
+.pprw-selection-offer p {
+  margin: 0;
+  font-weight: 600;
+}
+
+.pprw-archived-project {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.pprw-archived-project span {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+.pprw-render-badge--error {
+  border-color: var(--pp-error);
+  color: var(--pp-error);
 }
 
 .pprw-paper-summary {
@@ -2707,8 +3147,8 @@
 
 .paperpilot-research-workspace
   :is(button, input, select, textarea):focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 var(--pp-focus-width) var(--pp-focus-color);
+  outline: var(--pp-focus-width) solid var(--pp-focus-color);
+  outline-offset: var(--pp-focus-offset);
 }
 
 .pprw-question {
@@ -2841,7 +3281,7 @@
 }
 
 .pprw-render-badge--warning {
-  color: var(--pp-warning, #9a6700);
+  color: var(--pp-warning);
 }
 
 .pprw-render-badge--accent {
@@ -3041,7 +3481,7 @@ button.pprw-render-evidence-link {
 
 .pprw-claim-metric[data-status="needs-review"] strong,
 .pprw-claim-metric[data-status="conflicting"] strong {
-  color: var(--pp-warning, #9a6700);
+  color: var(--pp-warning);
 }
 
 .pprw-claim-guidance {
@@ -3115,8 +3555,8 @@ button.pprw-render-evidence-link {
 .pprw-claim-filter:focus-visible,
 .pprw-claim-summary:focus-visible,
 .pprw-claim-type:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 var(--pp-focus-width) var(--pp-focus-color);
+  outline: var(--pp-focus-width) solid var(--pp-focus-color);
+  outline-offset: var(--pp-focus-offset);
 }
 
 .pprw-claim-type {
@@ -3202,7 +3642,7 @@ button.pprw-render-evidence-link {
 
 .pprw-claim-meta--needs-review,
 .pprw-claim-meta--conflicting {
-  color: var(--pp-warning, #9a6700);
+  color: var(--pp-warning);
 }
 
 .pprw-claim-disclosure {
@@ -3267,7 +3707,7 @@ button.pprw-render-evidence-link {
 .pprw-claim-evidence-item[data-status="unverified"],
 .pprw-claim-evidence-item[data-status="not-found"],
 .pprw-claim-evidence-item[data-status="source-unavailable"] {
-  border-inline-start-color: var(--pp-warning, #9a6700);
+  border-inline-start-color: var(--pp-warning);
 }
 
 .pprw-claim-evidence-header {
@@ -3286,7 +3726,7 @@ button.pprw-render-evidence-link {
 
 .pprw-claim-evidence-item:not([data-status="verified"])
   .pprw-claim-evidence-status {
-  color: var(--pp-warning, #9a6700);
+  color: var(--pp-warning);
 }
 
 .pprw-claim-evidence-locator {
@@ -3367,7 +3807,7 @@ button.pprw-render-evidence-link {
 
 .pprw-render-note--warning,
 .pprw-render-section--warning {
-  color: var(--pp-warning, #9a6700);
+  color: var(--pp-warning);
 }
 
 .pprw-graph-relationship {
@@ -3447,10 +3887,28 @@ button.pprw-render-evidence-link {
 #paper-pilot-container [hidden] {
   display: none !important;
 }
+/* Search results and the save or send previews share one capped area, so
+   #chat-messages keeps its own minimum height. The bar and status never
+   shrink. The extras shrink and scroll first. The padding keeps edge focus
+   rings inside the scroll box. */
 .pp-chat-tools {
   flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
   min-width: 0;
-  margin-block: 4px;
+  max-height: min(260px, 36vh);
+  overflow-y: auto;
+  padding: 4px;
+  box-sizing: border-box;
+}
+.pp-chat-tools > * {
+  flex: 0 0 auto;
+}
+.pp-chat-tools > .pp-chat-search,
+.pp-chat-tools > .pp-chat-review {
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow-y: auto;
 }
 .pp-chat-tools__bar,
 .pp-chat-commands {
@@ -3459,12 +3917,64 @@ button.pprw-render-evidence-link {
   align-items: center;
   gap: 4px;
 }
-.pp-chat-tools .pp-btn,
-.pp-message-footer .pp-btn,
-.pp-chat-focus,
-.pp-chat-length {
+.pp-chat-tools .pp-btn {
   min-height: 26px;
   padding: 3px 7px;
+}
+/* Toolbar chips wear Zotero's button surface with a hairline border. Hover
+   and press add a tint layer. Accent marks the control that is on. */
+.pp-chat-tools__bar .pp-btn,
+.pp-chat-tools__bar .pp-chat-length {
+  min-height: 26px;
+  padding: 3px 11px;
+  border: 1px solid var(--pp-border-medium);
+  border-radius: var(--pp-radius-pill);
+  background-color: var(--pp-bg-button);
+  color: var(--pp-text-primary);
+  box-shadow: var(--pp-shadow-sm);
+  font-size: var(--pp-font-size-sm);
+  font-weight: 500;
+  line-height: 18px;
+  white-space: nowrap;
+}
+.pp-chat-tools__bar .pp-chat-length {
+  padding-inline-end: 6px;
+  cursor: pointer;
+}
+.pp-chat-tools__bar .pp-chat-length:hover {
+  background-image: linear-gradient(var(--pp-fill-hover), var(--pp-fill-hover));
+}
+.pp-chat-tools__bar .pp-btn[aria-expanded="true"],
+.pp-chat-commands .pp-btn[data-active="true"] {
+  border-color: var(--pp-border-accent-soft);
+  background-color: var(--pp-bg-accent);
+  color: var(--pp-text-accent);
+}
+/* Slash commands open as a small menu card under the toolbar. */
+.pp-chat-commands {
+  margin-top: 4px;
+  padding: 4px;
+  border: 1px solid var(--pp-border-light);
+  border-radius: var(--pp-radius-md);
+  background: var(--pp-bg-button);
+  box-shadow: var(--pp-shadow-md);
+}
+.pp-chat-commands .pp-btn {
+  min-height: 26px;
+  padding: 3px 11px;
+  border-radius: var(--pp-radius-pill);
+  color: var(--pp-text-primary);
+  font-size: var(--pp-font-size-sm);
+  font-weight: 500;
+  line-height: 18px;
+  white-space: nowrap;
+}
+/* Focus chat sits in the pane header next to the borderless "+". */
+.pp-chat-focus {
+  min-height: 26px;
+  padding: 3px 11px;
+  border-radius: var(--pp-radius-pill);
+  font-weight: 500;
 }
 .pp-chat-tools select,
 .pp-chat-tools input,
@@ -3482,6 +3992,28 @@ button.pprw-render-evidence-link {
   color: var(--pp-text-secondary);
   line-height: 1.4;
   overflow-wrap: anywhere;
+  margin-block: 4px;
+}
+/* Warnings come first and wrap in full. Routine diagnostics stay on one line,
+   and the element title carries the full text. */
+.pp-chat-context-status__warning {
+  display: block;
+  color: var(--pp-warning);
+  font-weight: 600;
+}
+.pp-chat-context-status__details {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pp-composer-hint {
+  font-size: var(--pp-font-size-xs);
+  color: var(--pp-text-secondary);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.pp-composer-hint:not(:empty) {
   margin-block: 4px;
 }
 .pp-chat-search,
@@ -3545,13 +4077,52 @@ button.pprw-render-evidence-link {
   overflow: auto;
   white-space: pre-wrap;
 }
+/* Sits right after #chat-messages and overlaps its bottom edge as a floating
+   pill. The 28px height and the margins cancel out, so the layout does not
+   shift. */
 .pp-chat-new-response {
-  position: sticky;
-  bottom: 4px;
+  position: relative;
+  flex: 0 0 auto;
   align-self: center;
   z-index: 2;
-  background: var(--pp-bg-primary);
+  gap: 7px;
+  height: 28px;
+  min-height: 28px;
+  margin: -42px auto 14px;
+  padding: 0 14px 0 12px;
   border: 1px solid var(--pp-border-medium);
+  border-radius: var(--pp-radius-pill);
+  background: var(--pp-bg-button);
+  color: var(--pp-text-accent);
+  box-shadow: var(--pp-shadow-float);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.pp-chat-new-response::before {
+  content: "";
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  margin-top: -4px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg);
+}
+.pp-chat-new-response:hover {
+  background-image: linear-gradient(var(--pp-fill-hover), var(--pp-fill-hover));
+}
+.pp-chat-new-response:active {
+  background-image: linear-gradient(var(--pp-fill-press), var(--pp-fill-press));
+}
+/* Remove context is a quiet pill inside the draft card. */
+#paper-pilot-draft .pp-btn {
+  min-height: 24px;
+  margin-top: 6px;
+  padding: 2px 10px;
+  border-radius: var(--pp-radius-pill);
+  background-color: var(--pp-fill-quiet);
+  color: var(--pp-text-primary);
+  font-weight: 500;
 }
 .pp-message--ai {
   line-height: 1.55;
@@ -3572,29 +4143,37 @@ button.pprw-render-evidence-link {
   padding: 5px 8px;
   border: 1px solid var(--pp-border-light);
 }
-.pp-message-footer {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 3px;
-  margin-top: 7px;
-}
 .pp-message-wrapper:focus-visible,
 .pp-chat-tools :focus-visible,
 #paper-pilot-draft :focus-visible {
-  outline: 2px solid var(--pp-accent, Highlight);
-  outline-offset: 2px;
+  outline: var(--pp-focus-width) solid var(--pp-focus-color);
+  outline-offset: var(--pp-focus-offset);
 }
 
-.pp-message-actions > summary {
-  cursor: pointer;
-  min-height: 26px;
-  padding: 3px 7px;
-  box-sizing: border-box;
-}
-.pp-message-actions[open] {
-  max-width: 100%;
-}
-.pp-message-actions[open] .pp-btn {
-  display: block;
-  text-align: start;
+/* Reduced motion: stop every animation and transition Paper Pilot renders in
+   the reader pane and the Research Workspace. State changes still apply. */
+@media (prefers-reduced-motion: reduce) {
+  #paper-pilot-container *,
+  #paper-pilot-container *::before,
+  #paper-pilot-container *::after,
+  .paperpilot-research-workspace *,
+  .paperpilot-research-workspace *::before,
+  .paperpilot-research-workspace *::after,
+  .paperpilot-research-workspace-document *,
+  .paperpilot-research-workspace-document *::before,
+  .paperpilot-research-workspace-document *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+
+  .pp-btn:active:not(:disabled) {
+    transform: none;
+  }
+
+  .pp-mastery-progress-dot--correct:hover::before,
+  .pp-mastery-progress-dot--incorrect:hover::before,
+  .pp-mastery-progress-dot--current:hover::before {
+    transform: none;
+  }
 }

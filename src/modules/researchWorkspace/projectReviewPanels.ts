@@ -26,8 +26,12 @@ import {
   updateResearchWorkspaceScreeningProtocol,
 } from "./facade";
 import { readResearchWorkspaceArtifact } from "./legacyCapabilityAdapters";
+import { canRerunResearchWorkspaceArtifact } from "./artifactRerun";
 import type { ResearchWorkspacePaper } from "./paperSource";
-import type { ResearchWorkspaceChangeInboxFile } from "./persistence/contracts";
+import type {
+  ResearchWorkspaceArtifact,
+  ResearchWorkspaceChangeInboxFile,
+} from "./persistence/contracts";
 import type { ResearchWorkspaceProjectDetails } from "./projectController";
 import {
   button,
@@ -1124,6 +1128,9 @@ export function renderArtifactHistory(
   doc: Document,
   root: HTMLElement,
   details: ResearchWorkspaceProjectDetails,
+  actions: {
+    onRerun?: (artifact: ResearchWorkspaceArtifact) => Promise<void>;
+  } = {},
 ) {
   const section = element(doc, "section", "pprw-project-panel");
   section.append(
@@ -1174,6 +1181,23 @@ export function renderArtifactHistory(
           `Stale: ${artifact.staleReasons.join(", ")}`,
         ),
       );
+    }
+    const onRerun = actions.onRerun;
+    if (
+      onRerun &&
+      !readable.legacy &&
+      canRerunResearchWorkspaceArtifact(artifact)
+    ) {
+      const label = artifact.status === "partial" ? "Resume" : "Rerun";
+      const rerun = button(doc, label, () => onRerun(artifact), true);
+      rerun.setAttribute("aria-label", `${label} ${artifact.title}`);
+      rerun.title =
+        artifact.status === "partial"
+          ? "Run again with the same sources and retry the papers that did not finish."
+          : "Run again with the same sources to replace this stale result.";
+      const row = element(doc, "div", "pprw-row");
+      row.append(rerun);
+      item.append(row);
     }
     item.append(
       renderResearchWorkspaceArtifactEnvelope(doc, artifact, {

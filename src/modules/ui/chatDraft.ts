@@ -103,3 +103,21 @@ export function restoreChatDraft(
 export function clearChatDrafts(): void {
   drafts.clear();
 }
+
+/** Names the draft source by title. Internal item IDs stay hidden. */
+export function formatDraftSourceLabel(params: {
+  paperTitle?: string;
+  attachmentTitle?: string;
+}): string {
+  const paper = params.paperTitle?.trim() || "Current paper";
+  const attachment = params.attachmentTitle?.trim();
+  return attachment && attachment !== paper
+    ? `Paper: ${paper} · ${attachment}`
+    : `Paper: ${paper}`;
+}
+
+export function formatDraftAnnotationNotice(attachmentTitle?: string): string {
+  const title = attachmentTitle?.trim();
+  const source = title ? `“${title}”` : "the PDF";
+  return `Annotation text, comments and location will be read from ${source} at send time. Missing annotations are excluded with an explanation.`;
+}

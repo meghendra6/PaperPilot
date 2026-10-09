@@ -18,6 +18,8 @@ export interface RunProgressState {
   itemID: number;
   engine: EngineMode;
   token: ReaderRunToken;
+  // The chat session that started the run. Terminal cards stay in that session.
+  sessionId?: string;
   phase: RunProgressPhase;
   startedAt: number;
   updatedAt: number;
@@ -37,6 +39,7 @@ export function createRunProgressState(params: {
   itemID: number;
   engine: EngineMode;
   token: ReaderRunToken;
+  sessionId?: string;
   now?: number;
 }): RunProgressState {
   const now = params.now ?? Date.now();
@@ -44,6 +47,7 @@ export function createRunProgressState(params: {
     itemID: params.itemID,
     engine: params.engine,
     token: params.token,
+    ...(params.sessionId ? { sessionId: params.sessionId } : {}),
     phase: "preparing",
     startedAt: now,
     updatedAt: now,
@@ -95,6 +99,15 @@ export function isRunProgressActive(state: RunProgressState): boolean {
   return ["preparing", "running", "finishing"].includes(state.phase);
 }
 
+export function isRunProgressVisibleInSession(
+  state: RunProgressState | undefined,
+  sessionId: string | undefined,
+): state is RunProgressState {
+  if (!state) return false;
+  if (isRunProgressActive(state) || !state.sessionId) return true;
+  return state.sessionId === sessionId;
+}
+
 export function isRunTimedOut(
   state: RunProgressState,
   now = Date.now(),
@@ -121,4 +134,16 @@ export function updateRunProgressState(
   const next = transitionRunProgress(current, event);
   setRunProgressState(next);
   return next;
+}
+
+export function clearTerminalRunProgressState(
+  itemID: number,
+  token: ReaderRunToken,
+): boolean {
+  const current = getRunProgressState(itemID);
+  if (!current || current.token !== token || isRunProgressActive(current)) {
+    return false;
+  }
+  addon.data.runProgressStates?.delete(itemID);
+  return true;
 }

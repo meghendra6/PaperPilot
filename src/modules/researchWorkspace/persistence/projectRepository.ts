@@ -842,6 +842,14 @@ export class ResearchWorkspaceProjectRepository {
     }));
   }
 
+  /** Returns an archived project to the active list without other changes. */
+  async unarchiveProject(projectID: string, expectedRevision: number) {
+    return this.updateProject(projectID, expectedRevision, (project) => {
+      const { archivedAt: _archivedAt, ...active } = project;
+      return active;
+    });
+  }
+
   async deleteProject(projectID: string) {
     await this.getProject(projectID);
     await this.files.remove(this.getProjectRoot(projectID), {

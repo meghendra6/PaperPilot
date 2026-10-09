@@ -17,6 +17,7 @@ const messageCopyText = new WeakMap<HTMLElement, string>();
 const messageRecords = new WeakMap<HTMLElement, MessageRecord>();
 const messageMenus = new WeakMap<HTMLElement, HTMLElement>();
 const messageActions = new WeakMap<HTMLElement, ChatMessageActions>();
+const citationNotices = new WeakMap<HTMLElement, HTMLElement>();
 
 export interface ChatMessageActions {
   onEdit?: (message: MessageRecord) => unknown | Promise<unknown>;
@@ -110,6 +111,135 @@ export async function copyTextToClipboard(text: string, doc: Document) {
   if (!copied) throw new Error("Clipboard copy was rejected.");
 }
 
+export interface CitationChipState {
+  /** The passage cannot be opened. The chip stays focusable and explains. */
+  unavailable: boolean;
+  /** Accessible name. */
+  label: string;
+  /** Tooltip text, which is also the accessible description. */
+  description: string;
+}
+
+const UNAVAILABLE_CITATION_REASONS: Record<
+  Exclude<ChatCitation["status"], "verified">,
+  string
+> = {
+  unverified:
+    "The quote was not matched in the current PDF, so it cannot be opened.",
+  "not-found":
+    "The quote was not matched in the current PDF, so it cannot be opened.",
+  stale: "The PDF changed after this answer, so the passage cannot be opened.",
+  "source-unavailable":
+    "The PDF could not be read, so the passage cannot be opened.",
+};
+
+export function describeCitationChip(
+  id: string,
+  citation: ChatCitation | undefined,
+  options: { checking?: boolean; failure?: string } = {},
+): CitationChipState {
+  if (options.checking)
+    return {
+      unavailable: true,
+      label: `Citation ${id}: Checking source`,
+      description: "Checking the original PDF source…",
+    };
+  if (!citation)
+    return {
+      unavailable: true,
+      label: `Citation ${id}: Location unverified`,
+      description:
+        "Location unverified: no source passage was recorded, so it cannot be opened.",
+    };
+  const quote = citation.quote ? ` Quote: ${citation.quote}` : "";
+  if (options.failure)
+    return {
+      unavailable: true,
+      label: `Citation ${id}: Location unverified`,
+      description: `Location unverified: ${options.failure}${quote}`,
+    };
+  const status = chatCitationLabel(citation);
+  if (citation.status === "verified")
+    return {
+      unavailable: false,
+      label: `Citation ${id}: Open the matched PDF passage`,
+      description: `${status}: ${citation.quote}`,
+    };
+  return {
+    unavailable: true,
+    label: `Citation ${id}: ${status}`,
+    description: `${status}: ${UNAVAILABLE_CITATION_REASONS[citation.status]}${quote}`,
+  };
+}
+
+function applyCitationChipState(button: HTMLElement, state: CitationChipState) {
+  button.classList.toggle("pp-citation--unavailable", state.unavailable);
+  if (state.unavailable) button.setAttribute("aria-disabled", "true");
+  else button.removeAttribute("aria-disabled");
+  button.title = state.description;
+  button.setAttribute("aria-label", state.label);
+}
+
+/**
+ * Inline citation chip. The `[id]` text never changes mid-sentence. An
+ * unavailable chip keeps keyboard focus and explains instead of opening.
+ */
+export function createCitationChip(params: {
+  doc: Document;
+  id: string;
+  citation?: ChatCitation;
+  open(citation: ChatCitation): unknown;
+  explain(text: string): void;
+}): HTMLButtonElement {
+  const button = params.doc.createElement("button");
+  button.type = "button";
+  button.className = "pp-btn pp-citation";
+  button.setAttribute("data-pp-citation-id", params.id);
+  button.textContent = `[${params.id}]`;
+  applyCitationChipState(
+    button,
+    describeCitationChip(params.id, params.citation),
+  );
+  button.addEventListener("click", async () => {
+    const citation = params.citation;
+    if (!citation || button.getAttribute("aria-disabled") === "true") {
+      params.explain(button.title);
+      return;
+    }
+    try {
+      await params.open(citation);
+    } catch (error) {
+      const failure = redactAbsolutePaths(
+        error instanceof Error
+          ? error.message
+          : "The PDF source could not be opened.",
+      );
+      applyCitationChipState(
+        button,
+        describeCitationChip(params.id, citation, { failure }),
+      );
+      params.explain(button.title);
+    }
+  });
+  return button;
+}
+
+/** Shows why a citation cannot open in a status line below the answer. */
+function showCitationNotice(messageDiv: HTMLElement, text: string) {
+  let notice = citationNotices.get(messageDiv);
+  if (!notice) {
+    notice = messageDiv.ownerDocument.createElement("div");
+    notice.className = "pp-citation-notice";
+    notice.setAttribute("role", "status");
+    citationNotices.set(messageDiv, notice);
+  }
+  const footer = messageFooters.get(messageDiv);
+  if (footer && notice.parentElement !== footer) footer.prepend(notice);
+  else if (!footer && notice.parentElement !== messageDiv)
+    messageDiv.appendChild(notice);
+  notice.textContent = text;
+}
+
 function decorateCitations(messageDiv: HTMLElement) {
   const message = messageRecords.get(messageDiv);
   const doc = messageDiv.ownerDocument;
@@ -134,34 +264,20 @@ function decorateCitations(messageDiv: HTMLElement) {
         fragment.appendChild(doc.createTextNode(part));
         continue;
       }
-      const citation = citations.get(id);
-      const button = doc.createElement("button");
-      button.type = "button";
-      button.className = "pp-btn pp-citation";
-      button.setAttribute("data-pp-citation-id", id);
-      button.textContent = `[${id}]`;
-      button.disabled = citation?.status !== "verified";
-      button.title = citation
-        ? `${chatCitationLabel(citation)}: ${citation.quote}`
-        : "Location unverified";
-      button.setAttribute("aria-label", button.title);
-      if (citation)
-        button.addEventListener("click", async () => {
-          try {
+      fragment.appendChild(
+        createCitationChip({
+          doc,
+          id,
+          citation: citations.get(id),
+          open: async (citation) => {
             const action = messageActions.get(messageDiv)?.onCitation;
             if (action) await action(citation, message);
             else if (message.requestContext)
               await openChatCitation(citation, message.requestContext);
-          } catch (error) {
-            button.title =
-              error instanceof Error
-                ? error.message
-                : "The PDF source could not be opened.";
-            button.textContent = "Location unverified";
-            button.disabled = true;
-          }
-        });
-      fragment.appendChild(button);
+          },
+          explain: (text) => showCitationNotice(messageDiv, text),
+        }),
+      );
     }
     node.replaceWith(fragment);
   }
@@ -319,12 +435,15 @@ export function addMessage(
           doc,
         );
         copyBtn.textContent = "Copied!";
+        copyBtn.dataset.state = "copied";
       } catch {
         copyBtn.textContent = "Copy failed";
+        copyBtn.dataset.state = "failed";
       }
       copyBtn.disabled = false;
       copyResetTimer = setTimeout(() => {
         copyBtn.textContent = "Copy";
+        delete copyBtn.dataset.state;
         copyResetTimer = undefined;
       }, 1500);
     });
@@ -351,22 +470,19 @@ export function addMessage(
     const buttons = Array.from(
       messageDiv.querySelectorAll("[data-pp-citation-id]"),
     ) as HTMLButtonElement[];
-    for (const button of buttons) {
-      button.disabled = true;
-      button.title = "Checking the original PDF source…";
-      button.setAttribute("aria-label", button.title);
-    }
+    const describe = (button: HTMLElement, checking = false) => {
+      const id = button.getAttribute("data-pp-citation-id") ?? "";
+      const citation = options.message?.citations?.find(
+        (entry) => entry.id === id,
+      );
+      applyCitationChipState(
+        button,
+        describeCitationChip(id, citation, { checking }),
+      );
+    };
+    for (const button of buttons) describe(button, true);
     const update = () => {
-      for (const button of buttons) {
-        const citation = options.message?.citations?.find(
-          (entry) => entry.id === button.getAttribute("data-pp-citation-id"),
-        );
-        button.disabled = citation?.status !== "verified";
-        if (citation) {
-          button.title = `${chatCitationLabel(citation)}: ${citation.quote}`;
-          button.setAttribute("aria-label", button.title);
-        }
-      }
+      for (const button of buttons) describe(button);
     };
     void options.sourceCheck.then(update, (error) => {
       for (const citation of options.message?.citations ?? []) {

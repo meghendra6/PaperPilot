@@ -30,6 +30,11 @@ import type { CitationContextExtractionResult } from "./citationContextExtractio
 import type { CitationStanceValue } from "./core/citationStance/corrections";
 import type { ResearchWorkspaceArtifactType } from "./persistence/contracts";
 import {
+  summarizeRunOutcome,
+  type ResearchWorkspaceRunOutcome,
+  type ResearchWorkspaceRunSummary,
+} from "./runOutcome";
+import {
   loadResearchWorkspacePaper,
   type ResearchWorkspacePaper,
 } from "./paperSource";
@@ -52,6 +57,7 @@ interface ViewRuntime {
   citationCorrectionSubmissionID?: string;
   projectID?: string;
   abortController?: AbortController;
+  resume?: () => void;
 }
 
 export interface ResearchWorkspaceViewOptions {
@@ -77,7 +83,7 @@ const CAPABILITY_BUTTON_LABELS = new Map<string, string>([
   ["Open Paper Mastery", "paper-mastery"],
   ["Quick Compare", "quick-compare"],
   ["Evidence Matrix", "evidence-matrix"],
-  ["Literature Graph", "relationship-graph"],
+  ["Relationship Graph", "relationship-graph"],
   ["Project synthesis", "project-synthesis"],
   ["Cross-paper question", "cross-paper-mastery"],
   ["Grade cross-paper answer", "cross-paper-mastery"],
@@ -166,10 +172,12 @@ function isCurrent(root: HTMLElement, generation?: symbol) {
   return !generation || runtime.get(root)?.generation === generation;
 }
 
+type StatusKind = "info" | "success" | "warning" | "error";
+
 function setStatus(
   root: HTMLElement,
   message: string,
-  kind: "info" | "success" | "error" = "info",
+  kind: StatusKind = "info",
   generation?: symbol,
 ) {
   if (!isCurrent(root, generation)) return;
@@ -199,6 +207,20 @@ function setBusy(root: HTMLElement, busy: boolean, generation?: symbol) {
   root.classList.toggle("is-busy", busy);
 }
 
+/** Sets the Resume control for a partial run, or hides it. */
+function setResume(
+  root: HTMLElement,
+  resume: (() => void) | undefined,
+  generation?: symbol,
+) {
+  if (!isCurrent(root, generation)) return;
+  const current = runtime.get(root);
+  const node = root.querySelector<HTMLButtonElement>(".pprw-resume");
+  if (!current || !node) return;
+  current.resume = resume;
+  node.hidden = !resume;
+}
+
 async function guarded(
   root: HTMLElement,
   label: string,
@@ -206,7 +228,8 @@ async function guarded(
     generation: symbol;
     signal: AbortSignal;
     onStatus: (message: string) => void;
-  }) => Promise<void>,
+  }) => Promise<void | ResearchWorkspaceRunSummary>,
+  resume?: () => void,
 ) {
   const current = runtime.get(root);
   if (!current || current.busy) return;
@@ -227,14 +250,22 @@ async function guarded(
   activeAbortControllers.add(abortController);
   current.abortController = abortController;
   setBusy(root, true, generation);
+  setResume(root, undefined, generation);
   setStatus(root, `${label}…`, "info", generation);
   try {
-    await action({
+    const summary = await action({
       generation,
       signal: abortController.signal,
       onStatus: (message) => setStatus(root, message, "info", generation),
     });
-    setStatus(root, `${label} completed.`, "success", generation);
+    // A partial run is never reported as a plain success.
+    setStatus(
+      root,
+      summary?.message ?? `${label} completed.`,
+      summary?.kind ?? "success",
+      generation,
+    );
+    if (summary?.resumable && resume) setResume(root, resume, generation);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     setStatus(root, message, "error", generation);
@@ -256,6 +287,7 @@ function renderOutput(
   _fallbackAttachmentID: number,
   generation: symbol,
   artifactType?: ResearchWorkspaceArtifactType,
+  failedSourceIDs?: readonly string[],
 ) {
   if (!isCurrent(root, generation)) return;
   const panel = root.querySelector<HTMLElement>(".pprw-result");
@@ -266,6 +298,7 @@ function renderOutput(
   panel.append(
     renderResearchWorkspaceArtifactValue(root.ownerDocument, value, {
       artifactType,
+      failedSourceIDs,
       responseLanguage: String(getPref("responseLanguage") || "English"),
       onCopyText: (text) => copyTextToClipboard(text, root.ownerDocument),
       onOpenEvidence: (reference) =>
@@ -275,6 +308,22 @@ function renderOutput(
           );
         }),
     }),
+  );
+}
+
+/** Renders a short plain message without exposing internal fields. */
+function renderNotice(
+  root: HTMLElement,
+  title: string,
+  message: string,
+  generation: symbol,
+) {
+  if (!isCurrent(root, generation)) return;
+  const panel = root.querySelector<HTMLElement>(".pprw-result");
+  if (!panel) return;
+  panel.replaceChildren(
+    element(root.ownerDocument, "h3", "pprw-result-title", title),
+    element(root.ownerDocument, "p", "pprw-muted", message),
   );
 }
 
@@ -349,10 +398,22 @@ export async function renderResearchWorkspaceView(
     "pprw-button pprw-cancel pp-btn pp-btn--ghost",
   );
   cancelButton.disabled = true;
-  statusRow.append(statusNode, cancelButton);
+  const resumeButton = button(
+    doc,
+    "Resume",
+    () => runtime.get(root)?.resume?.(),
+    "pprw-button pprw-resume pp-btn pp-btn--secondary",
+  );
+  resumeButton.hidden = true;
+  resumeButton.title =
+    "Run again and retry only the papers that did not finish.";
+  statusRow.append(statusNode, resumeButton, cancelButton);
   root.append(statusRow);
+  // Only the short status line is a live region. Announcing the whole result
+  // would read an entire matrix aloud.
   const result = element(doc, "div", "pprw-result");
-  result.setAttribute("aria-live", "polite");
+  result.setAttribute("role", "region");
+  result.setAttribute("aria-label", "Analysis result");
   root.append(result);
 
   let paper: ResearchWorkspacePaper;
@@ -470,21 +531,11 @@ export async function renderResearchWorkspaceView(
   ) =>
     guarded(root, `Opening ${title}`, async ({ generation }) => {
       const opened = await openCanonicalReaderCapability({ paper, capability });
-      renderOutput(
-        root,
-        title,
-        opened.activated
-          ? {
-              status: `${title} opened in the canonical Reader workflow.`,
-              sourceID: opened.sourceID,
-            }
-          : {
-              status: `The exact PDF opened. Open Paper Pilot in the Reader and choose ${title}.`,
-              sourceID: opened.sourceID,
-            },
-        paper.attachmentID,
-        generation,
-      );
+      const message = opened.activated
+        ? `${title} is open in the Paper Pilot pane of the Reader tab for “${paper.title}”.`
+        : `The PDF for “${paper.title}” is open. Show the Paper Pilot pane in the Reader and choose ${title}.`;
+      renderNotice(root, title, message, generation);
+      return { kind: "success", message, resumable: false };
     });
   actionRow.append(
     button(doc, "Extract claims", () =>
@@ -578,48 +629,68 @@ export async function renderResearchWorkspaceView(
   const runMulti = (
     operation: ResearchWorkspaceMultiOperation,
     label: string,
-  ) =>
-    guarded(root, label, async ({ generation, signal, onStatus }) => {
-      if (!options.capturedPapers) {
-        throw new Error(
-          "Open the full Research Workspace to capture a multi-paper selection.",
-        );
-      }
-      const papers = [...options.capturedPapers];
-      const value = await runResearchWorkspaceMultiOperation({
-        papers,
-        operation,
-        projectID: options.projectID,
-        signal,
-        onStatus,
-      });
-      if (operation === "cross-paper-mastery") {
-        const current = runtime.get(root);
-        if (!current || current.generation !== generation) return;
-        current.crossSessionID = value.session.id;
-        current.crossSessionRevision = value.session.revision;
-        current.crossSubmissionID = undefined;
-        current.selectedPapers = papers;
-        crossQuestion.textContent = value.question.prompt;
+  ): Promise<void> =>
+    guarded(
+      root,
+      label,
+      async ({ generation, signal, onStatus }) => {
+        if (!options.capturedPapers) {
+          throw new Error(
+            "Open the full Research Workspace to capture a multi-paper selection.",
+          );
+        }
+        const papers = [...options.capturedPapers];
+        let outcome: ResearchWorkspaceRunOutcome | undefined;
+        const value = await runResearchWorkspaceMultiOperation({
+          papers,
+          operation,
+          projectID: options.projectID,
+          signal,
+          onStatus,
+          onOutcome: (reported) => {
+            outcome = reported;
+          },
+        });
+        if (operation === "cross-paper-mastery") {
+          const current = runtime.get(root);
+          if (!current || current.generation !== generation) return;
+          current.crossSessionID = value.session.id;
+          current.crossSessionRevision = value.session.revision;
+          current.crossSubmissionID = undefined;
+          current.selectedPapers = papers;
+          crossQuestion.textContent = value.question.prompt;
+          renderOutput(
+            root,
+            "Cross-paper question",
+            {
+              mode: value.question.mode,
+              difficulty: value.question.difficulty,
+              paperKeys: value.question.paperKeys,
+            },
+            paper.attachmentID,
+            generation,
+          );
+          return;
+        }
+        const matrixTitle =
+          operation === "quick-compare" ? "Quick Compare" : "Evidence Matrix";
+        const resultTitle =
+          operation === "evidence-matrix" || operation === "quick-compare"
+            ? `${matrixTitle} · coverage ${formatPercent(value.coverage.extractionCoverage)}`
+            : `Relationship Graph · ${validateLiteratureGraph(value).valid ? "valid" : "needs review"}`;
         renderOutput(
           root,
-          "Cross-paper question",
-          {
-            mode: value.question.mode,
-            difficulty: value.question.difficulty,
-            paperKeys: value.question.paperKeys,
-          },
+          resultTitle,
+          value,
           paper.attachmentID,
           generation,
+          undefined,
+          outcome?.failedUnits.map((unit) => unit.unitID),
         );
-        return;
-      }
-      const resultTitle =
-        operation === "evidence-matrix" || operation === "quick-compare"
-          ? `${operation === "quick-compare" ? "Quick Compare" : "Evidence Matrix"} · coverage ${formatPercent(value.coverage.extractionCoverage)}`
-          : `Literature Graph · ${validateLiteratureGraph(value).valid ? "valid" : "needs review"}`;
-      renderOutput(root, resultTitle, value, paper.attachmentID, generation);
-    });
+        return outcome ? summarizeRunOutcome(matrixTitle, outcome) : undefined;
+      },
+      () => void runMulti(operation, label),
+    );
   const collectionRow = row(doc);
   collectionRow.append(
     button(doc, "Quick Compare", () =>
@@ -628,8 +699,8 @@ export async function renderResearchWorkspaceView(
     button(doc, "Evidence Matrix", () =>
       runMulti("evidence-matrix", "Building Evidence Matrix"),
     ),
-    button(doc, "Literature Graph", () =>
-      runMulti("literature-graph", "Building Literature Graph"),
+    button(doc, "Relationship Graph", () =>
+      runMulti("literature-graph", "Building Relationship Graph"),
     ),
     button(doc, "Project synthesis", () =>
       guarded(
@@ -1029,6 +1100,29 @@ export function unregisterResearchWorkspacePaneSection() {
     Zotero.logError?.(error);
   }
   registered = false;
+}
+
+/** True while an operation in this view can still be cancelled. */
+export function isResearchWorkspaceViewRunning(root: HTMLElement): boolean {
+  return Boolean(runtime.get(root)?.abortController);
+}
+
+/**
+ * Starts the view action with this exact button label, as if the reader
+ * clicked it. Returns false when the action is missing or unavailable.
+ */
+export function triggerResearchWorkspaceViewAction(
+  root: HTMLElement,
+  label: string,
+): boolean {
+  const target = (
+    Array.from(root.querySelectorAll("button")) as HTMLButtonElement[]
+  ).find((node) => node.textContent?.trim() === label);
+  if (!target || target.disabled) return false;
+  target.closest("details")?.setAttribute("open", "");
+  target.scrollIntoView?.({ block: "nearest" });
+  target.click();
+  return true;
 }
 
 export function disposeResearchWorkspaceView(root: HTMLElement) {

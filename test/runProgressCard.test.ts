@@ -175,3 +175,124 @@ test("run progress actions ignore a second click while the first is pending", as
   assert.equal(retry.disabled, false);
   card.dispose();
 });
+
+test("terminal run cards can be dismissed and completed cards close themselves", () => {
+  const originalSetTimeout = globalThis.setTimeout;
+  const originalClearTimeout = globalThis.clearTimeout;
+  const timeouts = new Map<number, { callback: () => void; delay: number }>();
+  let nextTimeout = 1;
+  globalThis.setTimeout = ((callback: () => void, delay: number) => {
+    const timeout = nextTimeout++;
+    timeouts.set(timeout, { callback, delay });
+    return timeout;
+  }) as unknown as typeof setTimeout;
+  globalThis.clearTimeout = ((timeout: number) => {
+    timeouts.delete(timeout);
+  }) as unknown as typeof clearTimeout;
+
+  try {
+    const doc = new FakeDocument();
+    const container = new FakeElement(doc);
+    const dismissed: string[] = [];
+    const card = createRunProgressCard({
+      container: container as unknown as HTMLElement,
+      actions: {
+        onRetry() {},
+        onOpenSettings() {},
+        onShowLoginHelp() {},
+        onDismiss(state) {
+          dismissed.push(state.phase);
+        },
+      },
+    });
+    const base = createRunProgressState({
+      itemID: 74,
+      engine: "claude_code",
+      token: Symbol("run-74"),
+      now: 100,
+    });
+
+    card.render({ ...base, phase: "failed", canRetry: true });
+    const actions = container.children[2];
+    assert.deepEqual(
+      actions.children.map((button) => button.textContent),
+      ["Retry", "Dismiss"],
+    );
+    assert.equal(timeouts.size, 0);
+    actions.children[1].click();
+    assert.deepEqual(dismissed, ["failed"]);
+
+    card.render(base);
+    assert.deepEqual(
+      container.children[2].children.map((button) => button.textContent),
+      [],
+    );
+
+    card.render({ ...base, phase: "completed" });
+    assert.equal(timeouts.size, 1);
+    const [[timeoutId, timeout]] = [...timeouts.entries()];
+    assert.ok(timeout.delay >= 3000);
+    timeouts.delete(timeoutId);
+    timeout.callback();
+    assert.deepEqual(dismissed, ["failed", "completed"]);
+
+    card.render({ ...base, phase: "completed" });
+    card.dispose();
+    assert.equal(timeouts.size, 0);
+  } finally {
+    globalThis.setTimeout = originalSetTimeout;
+    globalThis.clearTimeout = originalClearTimeout;
+  }
+});
+
+test("re-rendering the same state keeps the buttons and the dismiss timer", () => {
+  const originalSetTimeout = globalThis.setTimeout;
+  const originalClearTimeout = globalThis.clearTimeout;
+  const timeouts = new Map<number, () => void>();
+  let nextTimeout = 1;
+  globalThis.setTimeout = ((callback: () => void) => {
+    const timeout = nextTimeout++;
+    timeouts.set(timeout, callback);
+    return timeout;
+  }) as unknown as typeof setTimeout;
+  globalThis.clearTimeout = ((timeout: number) => {
+    timeouts.delete(timeout);
+  }) as unknown as typeof clearTimeout;
+
+  try {
+    const container = new FakeElement(new FakeDocument());
+    const card = createRunProgressCard({
+      container: container as unknown as HTMLElement,
+      actions: {
+        onRetry() {},
+        onOpenSettings() {},
+        onShowLoginHelp() {},
+        onDismiss() {},
+      },
+    });
+    const failed = {
+      ...createRunProgressState({
+        itemID: 75,
+        engine: "codex_cli",
+        token: Symbol("run-75"),
+        now: 100,
+      }),
+      phase: "failed" as const,
+      canRetry: true,
+    };
+    card.render(failed);
+    const retry = container.children[2].children[0];
+    card.render(failed);
+    assert.equal(container.children[2].children[0], retry);
+
+    const completed = { ...failed, phase: "completed" as const };
+    card.render(completed);
+    const [armed] = [...timeouts.keys()];
+    card.render(completed);
+    assert.deepEqual([...timeouts.keys()], [armed]);
+    card.dispose();
+  } finally {
+    globalThis.setTimeout = originalSetTimeout;
+    globalThis.clearTimeout = originalClearTimeout;
+  }
+});

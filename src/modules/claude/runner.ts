@@ -1,4 +1,5 @@
 import { parseClaudeOutput } from "./outputParser";
+import { resolveClaudePermissionMode } from "./permissionMode";
 import {
   prepareRunInput,
   type RequestContextSnapshot,
@@ -65,17 +66,7 @@ export function launchClaudeRunScript(
 }
 
 function normalizeClaudePermissionMode(permissionMode: string) {
-  const normalized = permissionMode.trim();
-  return [
-    "default",
-    "acceptEdits",
-    "auto",
-    "bypassPermissions",
-    "dontAsk",
-    "plan",
-  ].includes(normalized)
-    ? normalized
-    : "default";
+  return resolveClaudePermissionMode(permissionMode) ?? "default";
 }
 
 export function buildClaudeCommand(params: {

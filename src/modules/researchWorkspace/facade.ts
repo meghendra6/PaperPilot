@@ -79,6 +79,10 @@ import {
 } from "./projectTemplates";
 import { buildResearchWorkspaceProjectWorkspace } from "./projectWorkspaceBuilder";
 import {
+  buildRunOutcome,
+  type ResearchWorkspaceRunOutcome,
+} from "./runOutcome";
+import {
   serializeResearchWorkspaceScreeningLogCsv,
   type RecordResearchWorkspaceScreeningDecisionInput,
   type ResearchWorkspaceScreeningLog,
@@ -682,6 +686,8 @@ export async function runResearchWorkspaceMultiOperation(params: {
   projectID?: string;
   signal?: AbortSignal;
   onStatus?: (status: string) => void;
+  /** Reports complete or partial terminal state for incremental operations. */
+  onOutcome?: (outcome: ResearchWorkspaceRunOutcome) => void;
 }) {
   if (params.papers.length < 2) {
     throw new Error("Select at least two papers in the Zotero item list.");
@@ -871,6 +877,14 @@ export async function runResearchWorkspaceMultiOperation(params: {
       validateReusableUnit: (unit, row) =>
         row?.paperKey === unit.paper.paperKey && Array.isArray(row?.cells),
     });
+    params.onOutcome?.(
+      buildRunOutcome({
+        checkpoint: coordinated.artifact?.artifact.checkpoint,
+        total: units.length,
+        labelFor: (unitID) =>
+          units.find((unit) => unit.unitID === unitID)?.paper.title,
+      }),
+    );
     return coordinated.result;
   }
   const coordinated = await operationCoordinator().run<any>({
@@ -1780,6 +1794,10 @@ export function updateResearchWorkspaceMember(params: {
 
 export function archiveResearchWorkspaceProject(projectID: string) {
   return projectController().archiveProject(projectID);
+}
+
+export function restoreResearchWorkspaceProject(projectID: string) {
+  return projectController().restoreProject(projectID);
 }
 
 export function deleteResearchWorkspaceProject(projectID: string) {

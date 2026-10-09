@@ -7,6 +7,8 @@ import {
   restoreChatDraft,
   updateChatDraft,
   createChatDraftSubmission,
+  formatDraftAnnotationNotice,
+  formatDraftSourceLabel,
 } from "../src/modules/ui/chatDraft";
 
 test("draft revisions preserve the next question while the previous request settles", () => {
@@ -58,4 +60,22 @@ test("preparation failures restore a consumed draft without crossing sessions or
   const stale = getChatDraft(1, "a");
   updateChatDraft(1, "a", { context: { attachmentID: 33 } });
   assert.equal(consumeChatDraft(1, "a", stale.revision), false);
+});
+
+test("the draft card names its source by title, not by internal item ID", () => {
+  assert.equal(
+    formatDraftSourceLabel({
+      paperTitle: "Attention Is All You Need",
+      attachmentTitle: "Full Text PDF",
+    }),
+    "Paper: Attention Is All You Need · Full Text PDF",
+  );
+  assert.equal(
+    formatDraftSourceLabel({ paperTitle: "Same", attachmentTitle: "Same" }),
+    "Paper: Same",
+  );
+  assert.equal(formatDraftSourceLabel({}), "Paper: Current paper");
+  assert.doesNotMatch(formatDraftAnnotationNotice(), /\d/);
+  assert.match(formatDraftAnnotationNotice("Full Text PDF"), /“Full Text PDF”/);
+  assert.match(formatDraftAnnotationNotice(), /from the PDF at send time/);
 });

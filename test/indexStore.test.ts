@@ -34,3 +34,24 @@ test("paper chunk indexes are library scoped, bounded, and clearable", () => {
     (globalThis as { addon?: unknown }).addon = previousAddon;
   }
 });
+
+test("paper chunk indexes rebuild when the chunking settings change", () => {
+  const previousAddon = (globalThis as { addon?: unknown }).addon;
+  const store = new Map<string, { hash: string; chunks: string[] }>();
+  (globalThis as { addon?: unknown }).addon = {
+    data: { paperIndexStore: store },
+  };
+  try {
+    const params = { libraryID: 1, itemKey: "KEY", text: "abcdefghij" };
+    assert.deepEqual(
+      getIndexedChunks({ ...params, chunkSize: 5, overlapSize: 0 }),
+      ["abcde", "fghij"],
+    );
+    assert.deepEqual(
+      getIndexedChunks({ ...params, chunkSize: 4, overlapSize: 1 }),
+      ["abcd", "defg", "ghij"],
+    );
+  } finally {
+    (globalThis as { addon?: unknown }).addon = previousAddon;
+  }
+});

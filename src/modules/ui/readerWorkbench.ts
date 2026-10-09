@@ -1,9 +1,12 @@
 import { getModeForItem } from "../ai/modeStore";
+import { isReaderChatBusy } from "../ai/readerBusy";
+import { getDiscoveryAvailability } from "../discovery/capabilities";
 import {
   type PaperArtifactCard,
   type PaperArtifactKind,
 } from "../paperArtifacts";
 import { sessionStore } from "../session/sessionStore";
+import { getWorkbenchActionBlock } from "./workbenchAvailability";
 export function getPaperArtifactState(itemID: number) {
   return (
     addon.data.paperArtifactStates?.get(itemID) || {
@@ -56,6 +59,57 @@ export function setPaperArtifactState(
   addon.data.paperArtifactStates?.set(itemID, state);
 }
 
+/** Why Workbench requests cannot start right now, if they cannot. */
+export function getWorkbenchBlockForItem(itemID: number) {
+  return getWorkbenchActionBlock({
+    ownRunActive: getPaperArtifactState(itemID).running,
+    readerBusy: isReaderChatBusy(itemID),
+    discoveryRunning: Boolean(
+      addon.data.relatedRecommendationStates?.get(itemID)?.running,
+    ),
+    highlightRunning: Boolean(
+      addon.data.autoHighlightStates?.get(itemID)?.running,
+    ),
+  });
+}
+
+function applyWorkbenchRequestAvailability(
+  buttons: HTMLButtonElement[],
+  statusElement: HTMLElement,
+  itemID: number,
+) {
+  const state = getPaperArtifactState(itemID);
+  const block = getWorkbenchBlockForItem(itemID);
+  const reason = block.blocked ? block.reason : undefined;
+  for (const button of buttons) {
+    button.disabled = block.blocked;
+    button.title = reason ?? "";
+  }
+  const status = reason ?? state.status;
+  statusElement.style.display = status ? "block" : "none";
+  statusElement.textContent = status;
+}
+
+/**
+ * Refreshes only the request buttons and status. The pane calls this on every
+ * run event, so the buttons never look usable while the paper is busy.
+ */
+export function renderWorkbenchBusyState(
+  elements: WorkbenchElements,
+  itemID: number,
+) {
+  applyWorkbenchRequestAvailability(
+    [
+      elements.researchBriefButton,
+      elements.contributionsButton,
+      elements.limitationsButton,
+      elements.followUpsButton,
+    ],
+    elements.statusElement,
+    itemID,
+  );
+}
+
 export function renderPaperArtifactState(
   researchBriefButton: HTMLButtonElement,
   contributionsButton: HTMLButtonElement,
@@ -69,16 +123,19 @@ export function renderPaperArtifactState(
   itemID: number,
 ) {
   const state = getPaperArtifactState(itemID);
-  researchBriefButton.disabled = state.running;
-  contributionsButton.disabled = state.running;
-  limitationsButton.disabled = state.running;
-  followUpsButton.disabled = state.running;
+  applyWorkbenchRequestAvailability(
+    [
+      researchBriefButton,
+      contributionsButton,
+      limitationsButton,
+      followUpsButton,
+    ],
+    statusElement,
+    itemID,
+  );
   saveWorkbenchNoteButton.disabled = state.running || !state.cards.length;
   saveWorkbenchCollectionButton.disabled = state.running || !state.cards.length;
   clearWorkbenchButton.disabled = state.running || !state.cards.length;
-
-  statusElement.style.display = state.status ? "block" : "none";
-  statusElement.textContent = state.status;
 
   cardsElement.replaceChildren();
   if (!state.cards.length) {
@@ -88,8 +145,16 @@ export function renderPaperArtifactState(
 
   cardsElement.style.display = "flex";
   const doc = cardsElement.ownerDocument;
+  const discovery = getDiscoveryAvailability(getModeForItem(itemID));
+  const discoveryUnavailableReason = discovery.available
+    ? undefined
+    : discovery.reason;
   for (const card of state.cards) {
-    cardsElement.appendChild(buildPaperArtifactCardElement(doc, card, itemID));
+    cardsElement.appendChild(
+      buildPaperArtifactCardElement(doc, card, itemID, {
+        discoveryUnavailableReason,
+      }),
+    );
   }
 }
 
@@ -97,7 +162,10 @@ export function buildPaperArtifactCardElement(
   doc: Document,
   card: PaperArtifactCard,
   itemID: number,
+  options: { discoveryUnavailableReason?: string } = {},
 ) {
+  const offersPriorWork =
+    card.kind === "extract-limitations" || card.kind === "suggest-follow-ups";
   const root = doc.createElement("section");
   root.className = "pp-artifact-card";
 
@@ -148,13 +216,14 @@ export function buildPaperArtifactCardElement(
       const itemText = doc.createElement("span");
       itemText.textContent = item;
       bullet.appendChild(itemText);
-      if (
-        card.kind === "extract-limitations" ||
-        card.kind === "suggest-follow-ups"
-      ) {
+      if (offersPriorWork) {
         const findPriorWork = doc.createElement("button");
         findPriorWork.className = "pp-btn pp-btn--ghost";
         findPriorWork.textContent = "Find prior work";
+        if (options.discoveryUnavailableReason) {
+          findPriorWork.disabled = true;
+          findPriorWork.title = options.discoveryUnavailableReason;
+        }
         findPriorWork.addEventListener("click", () => {
           addon.data.pendingDiscoveryConcerns?.set(itemID, {
             sessionId: sessionStore.getOrCreate(itemID, getModeForItem(itemID))
@@ -173,6 +242,14 @@ export function buildPaperArtifactCardElement(
 
     sectionRoot.append(headingRow, list);
     root.appendChild(sectionRoot);
+  }
+
+  if (offersPriorWork && options.discoveryUnavailableReason) {
+    const note = doc.createElement("div");
+    note.className = "pp-artifact-card__source";
+    note.setAttribute("role", "note");
+    note.textContent = `Find prior work: ${options.discoveryUnavailableReason}`;
+    root.appendChild(note);
   }
 
   if (card.searchQueries?.length) {

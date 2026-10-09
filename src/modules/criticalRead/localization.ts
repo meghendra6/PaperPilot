@@ -85,6 +85,7 @@ const translations: Record<string, readonly [string, string]> = {
   ],
   "Paper claim": ["논문의 주장", "论文主张"],
   "Agent inference": ["AI의 추론", "AI 推断"],
+  "Paper Pilot inference": ["Paper Pilot의 추론", "Paper Pilot 推断"],
   "Strongest supported claim": [
     "근거가 가장 탄탄한 주장",
     "证据支持最充分的主张",

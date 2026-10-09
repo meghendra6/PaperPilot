@@ -509,7 +509,7 @@ class ResearchWorkspaceService {
         (0, parser_5.parseLiteratureGraphResponse)({
           response,
           id: graphID,
-          title: `Literature Graph · ${new Date().toLocaleDateString()}`,
+          title: `Relationship Graph · ${new Date().toLocaleDateString()}`,
           allowedPaperKeys: new Set(papers.map((paper) => paper.paperKey)),
           allowedAttachmentKeys: new Set(
             papers.map((paper) => paper.attachmentKey),

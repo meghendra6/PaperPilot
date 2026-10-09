@@ -4,6 +4,47 @@ import type {
   RecommendedPaper,
 } from "../relatedRecommendations";
 
+const MAIN_LANE = "Verified main-conference papers";
+
+/**
+ * Reader-chosen lane layout. Row actions such as Add to collection re-render
+ * the section, so open lanes and revealed rows are kept per container until
+ * a different result set arrives.
+ */
+interface LaneViewState {
+  signature: string;
+  open: Map<string, boolean>;
+  revealed: Set<string>;
+  scopeOpen: boolean;
+}
+
+const laneViews = new WeakMap<HTMLElement, LaneViewState>();
+
+/** Identifies a result set by lane and paper identity, not by row patches. */
+export function discoveryLaneSignature(
+  groups: readonly RecommendationGroup[],
+): string {
+  return JSON.stringify(
+    groups.map((group) => [
+      group.category,
+      group.papers.map((paper) => paper.candidateID || paper.title),
+    ]),
+  );
+}
+
+function laneViewState(container: HTMLElement, signature: string) {
+  const previous = laneViews.get(container);
+  if (previous?.signature === signature) return previous;
+  const next: LaneViewState = {
+    signature,
+    open: new Map(),
+    revealed: new Set(),
+    scopeOpen: false,
+  };
+  laneViews.set(container, next);
+  return next;
+}
+
 export function renderDiscoverySection(params: {
   container: HTMLElement;
   groups: RecommendationGroup[];
@@ -18,10 +59,15 @@ export function renderDiscoverySection(params: {
     return;
   }
   container.style.display = "block";
+  const view = laneViewState(container, discoveryLaneSignature(params.groups));
 
   if (params.discovery) {
     const scope = doc.createElement("details");
     scope.className = "pp-discovery-scope";
+    scope.open = view.scopeOpen;
+    scope.addEventListener("toggle", () => {
+      view.scopeOpen = scope.open;
+    });
     const summary = doc.createElement("summary");
     summary.textContent = "Search scope and limitations";
     const plan = doc.createElement("p");
@@ -72,7 +118,11 @@ export function renderDiscoverySection(params: {
 
   for (const group of params.groups) {
     const section = doc.createElement("details");
-    section.open = group.category === "Verified main-conference papers";
+    section.open =
+      view.open.get(group.category) ?? group.category === MAIN_LANE;
+    section.addEventListener("toggle", () => {
+      view.open.set(group.category, section.open);
+    });
     section.style.borderTop = "1px solid var(--pp-border-recommendation)";
     const header = doc.createElement("summary");
     header.textContent = `${group.category} · ${group.papers.length}`;
@@ -82,15 +132,18 @@ export function renderDiscoverySection(params: {
       const empty = doc.createElement("div");
       empty.className = "pp-related-empty";
       empty.textContent =
-        group.category === "Verified main-conference papers"
+        group.category === MAIN_LANE
           ? "No papers met the verified main-conference evidence criteria. Other lanes were not promoted to fill this list."
           : "No papers were returned for this lane.";
       section.appendChild(empty);
     } else {
-      const visible =
-        group.category === "Verified main-conference papers" ? 8 : 6;
-      for (const [index, paper] of group.papers.entries()) {
-        const row = params.buildRow(paper);
+      const visible = view.revealed.has(group.category)
+        ? group.papers.length
+        : group.category === MAIN_LANE
+          ? 8
+          : 6;
+      const rows = group.papers.map((paper) => params.buildRow(paper));
+      for (const [index, row] of rows.entries()) {
         if (index >= visible) row.style.display = "none";
         section.appendChild(row);
       }
@@ -99,11 +152,8 @@ export function renderDiscoverySection(params: {
         showMore.className = "pp-btn pp-btn--ghost";
         showMore.textContent = `Show ${group.papers.length - visible} more`;
         showMore.addEventListener("click", () => {
-          for (const row of Array.from(
-            section.querySelectorAll(".pp-recommendation-row"),
-          )) {
-            (row as HTMLElement).style.display = "";
-          }
+          view.revealed.add(group.category);
+          for (const row of rows) row.style.display = "";
           showMore.remove();
         });
         section.appendChild(showMore);

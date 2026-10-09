@@ -2,6 +2,7 @@ import { renderProjectCandidateInbox } from "./projectCandidatePanel";
 import { isResearchWorkspaceMemberExcluded } from "./memberState";
 import { isResearchWorkspaceOwnerActive } from "./projectRunAdmission";
 import { element } from "./dom";
+import { planResearchWorkspaceArtifactRerun } from "./artifactRerun";
 import {
   addPapersToResearchWorkspaceProject,
   archiveResearchWorkspaceProject,
@@ -13,10 +14,15 @@ import {
   loadResearchWorkspaceHome,
   loadResearchWorkspaceProject,
   loadResearchWorkspaceProjectPapers,
+  restoreResearchWorkspaceProject,
   updateResearchWorkspaceProject,
 } from "./facade";
 import type { ResearchWorkspacePaper } from "./paperSource";
-import type { ResearchWorkspaceProjectHome } from "./projectController";
+import type { ResearchWorkspaceArtifact } from "./persistence/contracts";
+import type {
+  ResearchWorkspaceProjectDetails,
+  ResearchWorkspaceProjectHome,
+} from "./projectController";
 import {
   renderArtifactHistory,
   renderCitationHealthPanel,
@@ -33,6 +39,7 @@ import {
   isCurrent,
   logProjectError,
   metric,
+  releaseOperations,
   setMessage,
   textInput,
 } from "./projectSurfaceShared";
@@ -42,12 +49,63 @@ import {
   renderProjectTemplateSettings,
   renderSelectionReview,
 } from "./projectTemplatePanels";
-import { renderResearchWorkspaceView } from "./view";
+import {
+  renderResearchWorkspaceView,
+  triggerResearchWorkspaceViewAction,
+} from "./view";
 import type { ResearchWorkspaceZoteroSyncReceiptFile } from "./zoteroSync";
+
+interface ProjectSurfaceContext {
+  projectID: string;
+  projectName: string;
+  capturedPapers: readonly ResearchWorkspacePaper[];
+}
+
+/** The project currently shown on each surface root, for window actions. */
+const projectContexts = new WeakMap<HTMLElement, ProjectSurfaceContext>();
+
 const navigation = {
   renderProject,
   renderHome: renderResearchWorkspaceProjectSurface,
 };
+
+function archiveNotice(
+  doc: Document,
+  root: HTMLElement,
+  details: ResearchWorkspaceProjectDetails,
+  capturedPapers: readonly ResearchWorkspacePaper[],
+  generation: symbol,
+) {
+  const archivedAt = details.project.archivedAt;
+  if (!archivedAt) return undefined;
+  const notice = element(doc, "div", "pprw-project-warning pprw-row");
+  notice.append(
+    element(
+      doc,
+      "span",
+      "",
+      `Archived ${new Date(archivedAt).toLocaleDateString()}. Living Review does not check archived projects.`,
+    ),
+    button(
+      doc,
+      "Restore",
+      async () => {
+        setMessage(root, "Restoring project…");
+        await restoreResearchWorkspaceProject(details.project.projectID);
+        await renderProject(
+          root,
+          details.project.projectID,
+          capturedPapers,
+          generation,
+        );
+        setMessage(root, "Project restored to Recent projects.", "success");
+      },
+      true,
+    ),
+  );
+  return notice;
+}
+
 async function renderProject(
   root: HTMLElement,
   projectID: string,
@@ -55,6 +113,14 @@ async function renderProject(
   _parentGeneration: symbol,
 ) {
   const generation = Symbol("project-render");
+  // Refreshing the same project keeps the analysis area, its running
+  // operation, and its last result in place. Panels around it are rebuilt.
+  // Ask before this render takes over the window, so "Keep running" leaves
+  // the current project fully working.
+  const previousOperations = activeOperationRoots.get(root);
+  const keepOperations = previousOperations?.dataset.projectId === projectID;
+  if (!keepOperations && !releaseOperations(root, "Opening another project"))
+    return;
   generations.set(root, generation);
   const [details, changeInbox, syncReceiptResult] = await Promise.all([
     loadResearchWorkspaceProject(projectID),
@@ -72,8 +138,12 @@ async function renderProject(
   ]);
   if (!isCurrent(root, generation)) return;
   const doc = root.ownerDocument;
-  disposeOperations(root);
-  root.replaceChildren();
+  projectContexts.set(root, {
+    projectID,
+    projectName: details.project.name,
+    capturedPapers,
+  });
+  const content = doc.createDocumentFragment();
 
   const toolbar = element(doc, "div", "pprw-project-toolbar");
   toolbar.append(
@@ -82,14 +152,22 @@ async function renderProject(
     ),
     element(doc, "h2", "", details.project.name),
   );
-  root.append(toolbar);
+  content.append(toolbar);
 
   const message = element(doc, "div", "pprw-status", "Project ready.");
   message.dataset.projectMessage = "true";
   message.dataset.kind = "success";
   message.setAttribute("role", "status");
   message.setAttribute("aria-live", "polite");
-  root.append(message);
+  content.append(message);
+  const archived = archiveNotice(
+    doc,
+    root,
+    details,
+    capturedPapers,
+    generation,
+  );
+  if (archived) content.append(archived);
 
   const settings = element(doc, "section", "pprw-project-panel");
   settings.append(element(doc, "h3", "", "Project settings"));
@@ -139,22 +217,40 @@ async function renderProject(
         );
       }
     }),
-    button(doc, "Archive", async () => {
-      await archiveResearchWorkspaceProject(projectID);
-      await renderResearchWorkspaceProjectSurface(root, { capturedPapers });
-    }),
+  );
+  if (!details.project.archivedAt) {
+    settingsActions.append(
+      button(doc, "Archive", async () => {
+        const confirmed =
+          doc.defaultView?.confirm(
+            `Archive “${details.project.name}”? It moves to Archived projects and Living Review stops checking it. You can open or restore it later.`,
+          ) ?? false;
+        if (!confirmed) return;
+        if (!releaseOperations(root, "Archiving this project")) return;
+        await archiveResearchWorkspaceProject(projectID);
+        await renderResearchWorkspaceProjectSurface(root, { capturedPapers });
+        setMessage(
+          root,
+          `Archived “${details.project.name}”. Restore it from Archived projects.`,
+          "success",
+        );
+      }),
+    );
+  }
+  settingsActions.append(
     button(doc, "Delete", async () => {
       const confirmed =
         doc.defaultView?.confirm(
           `Delete “${details.project.name}” and its Paper Pilot artifacts? Zotero items and PDFs will not be deleted.`,
         ) ?? false;
       if (!confirmed) return;
+      if (!releaseOperations(root, "Deleting this project")) return;
       await deleteResearchWorkspaceProject(projectID);
       await renderResearchWorkspaceProjectSurface(root, { capturedPapers });
     }),
   );
   settings.append(name, question, settingsActions);
-  root.append(settings);
+  content.append(settings);
   const templateSettings = renderProjectTemplateSettings(
     doc,
     root,
@@ -163,9 +259,9 @@ async function renderProject(
     generation,
     navigation,
   );
-  if (templateSettings) root.append(templateSettings);
+  if (templateSettings) content.append(templateSettings);
 
-  root.append(
+  content.append(
     renderProjectCandidateInbox(doc, root, details, () =>
       renderProject(root, projectID, capturedPapers, generation),
     ),
@@ -192,10 +288,10 @@ async function renderProject(
         true,
       ),
     );
-    root.append(captured);
+    content.append(captured);
   }
 
-  root.append(
+  content.append(
     renderScreeningLog(
       doc,
       root,
@@ -213,7 +309,7 @@ async function renderProject(
       navigation,
     ),
   );
-  root.append(
+  content.append(
     renderLivingReviewPanel(
       doc,
       root,
@@ -224,7 +320,7 @@ async function renderProject(
       navigation,
     ),
   );
-  root.append(
+  content.append(
     renderCitationHealthPanel(
       doc,
       root,
@@ -234,7 +330,7 @@ async function renderProject(
       navigation,
     ),
   );
-  root.append(
+  content.append(
     renderSafeZoteroSyncPanel(
       doc,
       root,
@@ -246,7 +342,7 @@ async function renderProject(
       navigation,
     ),
   );
-  root.append(
+  content.append(
     renderContradictionGapPanel(
       doc,
       root,
@@ -256,7 +352,6 @@ async function renderProject(
       navigation,
     ),
   );
-  root.append(renderArtifactHistory(doc, root, details));
 
   const scope = element(doc, "section", "pprw-project-panel");
   scope.append(
@@ -295,17 +390,24 @@ async function renderProject(
     scope.append(label);
     checks.push({ sourceID: member.sourceID, input });
   }
-  const operations = element(doc, "section", "pprw-project-operations");
+  const operations =
+    keepOperations && previousOperations
+      ? previousOperations
+      : element(doc, "section", "pprw-project-operations");
+  operations.dataset.projectId = projectID;
+  operations.tabIndex = -1;
+  operations.setAttribute("aria-label", "Analysis");
   const activate = async (
     papers: readonly ResearchWorkspacePaper[],
     scopeLabel: string,
   ) => {
-    if (!isCurrent(root, generation)) return;
+    if (!isCurrent(root, generation)) return false;
     if (!papers.length)
       throw new Error(
         "No readable non-excluded PDF is available in this scope.",
       );
-    disposeOperations(root);
+    if (!releaseOperations(root, "Preparing a new analysis scope"))
+      return false;
     activeOperationRoots.set(root, operations);
     await renderResearchWorkspaceView(operations, undefined, {
       preloadedPaper: papers[0],
@@ -316,7 +418,67 @@ async function renderProject(
       scopeLabel,
       recommendedCapabilityIDs: details.project.capabilityPresetIDs,
     });
+    // The analysis panel sits below the project panels. Bring it into view
+    // and move focus there so keyboard and screen-reader users follow.
+    operations.scrollIntoView?.({ block: "start" });
+    operations.focus?.({ preventScroll: true });
+    return true;
   };
+  const rerunArtifact = async (artifact: ResearchWorkspaceArtifact) => {
+    const plan = planResearchWorkspaceArtifactRerun(artifact);
+    if (plan.kind === "reader") {
+      setMessage(root, plan.message);
+      return;
+    }
+    if (plan.kind === "panel") {
+      const panel = root.querySelector<HTMLElement>(`.${plan.panelClass}`);
+      const target = (
+        Array.from(
+          panel?.querySelectorAll("button") ?? [],
+        ) as HTMLButtonElement[]
+      ).find((node) => node.textContent?.trim() === plan.buttonLabel);
+      panel?.scrollIntoView?.({ block: "start" });
+      if (!target || target.disabled) {
+        setMessage(
+          root,
+          `${plan.buttonLabel} is unavailable until its saved inputs are current.`,
+          "warning",
+        );
+        return;
+      }
+      target.focus();
+      // Start after this action releases the shared surface lock.
+      doc.defaultView?.setTimeout(() => target.click(), 0);
+      return;
+    }
+    if (isResearchWorkspaceOwnerActive({ kind: "project", projectID }))
+      throw new Error(
+        "Finish or cancel the active project analysis before rerunning an artifact.",
+      );
+    setMessage(root, `Preparing the sources of “${artifact.title}”…`);
+    const loaded = await loadResearchWorkspaceProjectPapers(projectID, [
+      ...plan.sourceIDs,
+    ]);
+    if (loaded.papers.length < plan.minSources)
+      throw new Error(
+        `Rerunning “${artifact.title}” needs ${plan.minSources} readable source${plan.minSources === 1 ? "" : "s"}; ${loaded.papers.length} loaded.${loaded.skipped.length ? ` Omitted: ${loaded.skipped.join("; ")}` : ""}`,
+      );
+    if (!(await activate(loaded.papers, `Rerun · ${artifact.title}`))) return;
+    const started = triggerResearchWorkspaceViewAction(
+      operations,
+      plan.buttonLabel,
+    );
+    setMessage(
+      root,
+      started
+        ? `Rerunning “${artifact.title}” with ${loaded.papers.length} source${loaded.papers.length === 1 ? "" : "s"}.${plan.note ? ` ${plan.note}` : ""}`
+        : `Sources are ready. Choose ${plan.buttonLabel} in the analysis panel.`,
+      started ? "info" : "warning",
+    );
+  };
+  content.append(
+    renderArtifactHistory(doc, root, details, { onRerun: rerunArtifact }),
+  );
   scope.append(
     button(
       doc,
@@ -336,10 +498,10 @@ async function renderProject(
           projectID,
           sourceIDs,
         );
-        await activate(loaded.papers, "Selected project papers");
+        if (!(await activate(loaded.papers, "Selected project papers"))) return;
         setMessage(
           root,
-          `${loaded.papers.length} exact PDFs ready.${loaded.skipped.length ? ` Omitted: ${loaded.skipped.join("; ")}` : ""}`,
+          `${loaded.papers.length} exact PDFs ready in the analysis panel below.${loaded.skipped.length ? ` Omitted: ${loaded.skipped.join("; ")}` : ""}`,
           loaded.skipped.length ? "warning" : "success",
         );
       },
@@ -377,7 +539,15 @@ async function renderProject(
         ),
       );
   }
-  root.append(scope, operations);
+  content.append(scope);
+  if (keepOperations) {
+    for (const child of Array.from(root.children)) {
+      if (child !== operations) child.remove();
+    }
+    root.insertBefore(content, operations);
+  } else {
+    root.replaceChildren(content, operations);
+  }
 }
 
 function renderHomeCards(
@@ -441,11 +611,57 @@ function renderHomeCards(
   return section;
 }
 
+function renderArchivedProjects(
+  doc: Document,
+  root: HTMLElement,
+  home: ResearchWorkspaceProjectHome,
+  capturedPapers: readonly ResearchWorkspacePaper[],
+  generation: symbol,
+) {
+  const archived = element(doc, "details", "pprw-project-panel");
+  archived.append(
+    element(
+      doc,
+      "summary",
+      "pprw-section-title",
+      `Archived projects · ${home.archivedProjects.length}`,
+    ),
+  );
+  const list = element(doc, "ul", "pprw-capture-list pprw-archived-list");
+  for (const project of home.archivedProjects) {
+    const item = element(doc, "li", "pprw-archived-project");
+    item.append(
+      element(
+        doc,
+        "span",
+        "",
+        `${project.name}${project.archivedAt ? ` · archived ${new Date(project.archivedAt).toLocaleDateString()}` : ""}`,
+      ),
+      button(doc, "Open", () =>
+        renderProject(root, project.projectID, capturedPapers, generation),
+      ),
+      button(doc, "Restore", async () => {
+        await restoreResearchWorkspaceProject(project.projectID);
+        await renderResearchWorkspaceProjectSurface(root, { capturedPapers });
+        setMessage(
+          root,
+          `Restored “${project.name}” to Recent projects.`,
+          "success",
+        );
+      }),
+    );
+    list.append(item);
+  }
+  archived.append(list);
+  return archived;
+}
+
 export async function renderResearchWorkspaceProjectSurface(
   root: HTMLElement,
   options: { capturedPapers?: readonly ResearchWorkspacePaper[] } = {},
 ) {
-  disposeOperations(root);
+  if (!releaseOperations(root, "Opening all projects")) return;
+  projectContexts.delete(root);
   root.dataset.researchWorkspaceProjectSurface = "true";
   const generation = Symbol("project-surface");
   generations.set(root, generation);
@@ -537,21 +753,9 @@ export async function renderResearchWorkspaceProjectSurface(
     root.append(create);
     root.append(renderHomeCards(doc, root, home, capturedPapers, generation));
     if (home.archivedProjects.length) {
-      const archived = element(doc, "details", "pprw-project-panel");
-      archived.append(
-        element(
-          doc,
-          "summary",
-          "pprw-section-title",
-          `Archived projects · ${home.archivedProjects.length}`,
-        ),
+      root.append(
+        renderArchivedProjects(doc, root, home, capturedPapers, generation),
       );
-      const list = element(doc, "ul", "pprw-capture-list");
-      for (const project of home.archivedProjects) {
-        list.append(element(doc, "li", "", project.name));
-      }
-      archived.append(list);
-      root.append(archived);
     }
   } catch (error) {
     if (!isCurrent(root, generation)) return;
@@ -567,7 +771,30 @@ export async function renderResearchWorkspaceProjectSurface(
   }
 }
 
+/** Names the project open on this surface, if any. */
+export function getResearchWorkspaceSurfaceProject(
+  root: HTMLElement,
+): { projectID: string; projectName: string } | undefined {
+  const context = projectContexts.get(root);
+  return context
+    ? { projectID: context.projectID, projectName: context.projectName }
+    : undefined;
+}
+
+/** Re-renders the open project in place, keeping the analysis area. */
+export async function refreshResearchWorkspaceProject(root: HTMLElement) {
+  const context = projectContexts.get(root);
+  if (!context) return;
+  await renderProject(
+    root,
+    context.projectID,
+    context.capturedPapers,
+    generations.get(root) ?? Symbol("project-refresh"),
+  );
+}
+
 export function disposeResearchWorkspaceProjectSurface(root: HTMLElement) {
   disposeOperations(root);
   generations.delete(root);
+  projectContexts.delete(root);
 }

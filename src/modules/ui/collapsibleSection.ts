@@ -7,6 +7,30 @@ import {
 } from "./paneSectionState";
 import { createVerticalResizeHandle } from "./paneResize";
 
+export const SECTION_STACK_ALL_COLLAPSED_CLASS =
+  "pp-section-stack--all-collapsed";
+
+/**
+ * Marks a stack whose sections are all collapsed. CSS then sizes the stack to
+ * its triggers. Any pinned manual height stays inline for the next expand.
+ */
+export function syncSectionStackCollapsedState(
+  stack: Element | null | undefined,
+) {
+  if (!stack) return;
+  const sections = Array.from(stack.children).filter((child) =>
+    child.classList.contains("pp-collapsible-section"),
+  );
+  stack.classList.toggle(
+    SECTION_STACK_ALL_COLLAPSED_CLASS,
+    sections.length > 0 &&
+      sections.every(
+        (section) =>
+          !section.classList.contains("pp-collapsible-section--expanded"),
+      ),
+  );
+}
+
 export interface CollapsibleSectionHandle {
   root: HTMLElement;
   body: HTMLElement;
@@ -85,6 +109,7 @@ export function createCollapsibleSection(params: {
     if (expanded) {
       updated.hidden = true;
     }
+    syncSectionStackCollapsedState(root.parentElement);
   };
 
   const setExpanded = (next: boolean, persist = true) => {
@@ -101,6 +126,11 @@ export function createCollapsibleSection(params: {
   trigger.addEventListener("click", onToggle);
   render();
   let disposed = false;
+  // The caller mounts the section right after creation. Sync the stack once
+  // that synchronous mount has finished.
+  void Promise.resolve().then(() => {
+    if (!disposed) syncSectionStackCollapsedState(root.parentElement);
+  });
 
   return {
     root,

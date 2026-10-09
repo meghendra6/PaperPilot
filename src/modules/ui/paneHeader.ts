@@ -20,8 +20,14 @@ import {
   parseAllowedModels,
   resolveCodexModel,
 } from "../codex/modelOptions";
+import { WEB_SEARCH_SETTING_LABEL } from "../discovery/capabilities";
 import {
-  isNativeSelectInteraction,
+  getEngineSelectionPresentation,
+  isModelSelectionDirty,
+  shouldShowCodexAuthActions,
+} from "./engineSettingsState";
+import {
+  createNativeSelectClickGuard,
   shouldDismissPopover,
 } from "./popoverDismissal";
 
@@ -46,7 +52,54 @@ export interface PaneHeaderHandle {
   codexWebSearchToggle: HTMLInputElement;
   modelHistory: HTMLElement;
   setOpen(open: boolean, restoreFocus?: boolean): void;
+  /** Confirms a saved default model until the selection changes again. */
+  markModelSaved(): void;
+  /** Shows Codex authentication guidance inside the popover. */
+  setCodexAuthStatus(text: string): void;
   dispose(): void;
+}
+
+const MODEL_SAVE_LABEL = "Save";
+const MODEL_SAVED_LABEL = "Saved";
+
+/** The saved default each picker shows when no unsaved choice is pending. */
+const savedSelectValues = new WeakMap<HTMLSelectElement, string>();
+
+function getSavedSelectValue(select: HTMLSelectElement) {
+  return savedSelectValues.get(select);
+}
+
+function setSavedSelectValue(select: HTMLSelectElement, value?: string) {
+  if (value === undefined) savedSelectValues.delete(select);
+  else savedSelectValues.set(select, value);
+}
+
+/**
+ * A re-render rebuilds the options from the saved prefs. The reader's unsaved
+ * choice survives it, so ticking web search or Re-check does not undo a pick.
+ * Closing the popover still reverts it on purpose.
+ */
+export function captureUnsavedSelection(
+  select: HTMLSelectElement,
+): string | undefined {
+  const saved = getSavedSelectValue(select);
+  const value = select.value;
+  return saved !== undefined && typeof value === "string" && value !== saved
+    ? value
+    : undefined;
+}
+
+export function restoreUnsavedSelection(
+  select: HTMLSelectElement,
+  pending: string | undefined,
+): void {
+  if (pending === undefined) return;
+  // Zotero's DOM typings list options as plain Elements.
+  const values = Array.from(
+    select.options ?? [],
+    (option) => (option as HTMLOptionElement).value,
+  );
+  if (values.includes(pending)) select.value = pending;
 }
 
 function makeButton(
@@ -107,11 +160,19 @@ export function createPaneHeader(params: {
   modeStatus.id = "paper-pilot-mode-status";
   modeStatus.className = "pp-pane-header__status";
 
+  const engineLabel = doc.createElement("div");
+  engineLabel.id = "paper-pilot-engine-label";
+  engineLabel.className = "pp-pane-header__row-label";
+  engineLabel.textContent = "Engine for this paper";
   const modeActions = doc.createElement("div");
   modeActions.className = "pp-pane-header__mode-actions";
+  modeActions.setAttribute("role", "group");
+  modeActions.setAttribute("aria-labelledby", engineLabel.id);
   const modeClaudeButton = makeButton(doc, "chat-mode-claude", "Claude Code");
   const modeCodexButton = makeButton(doc, "chat-mode-codex", "Codex CLI");
-  const modeResetButton = makeButton(doc, "chat-mode-reset", "Use Default");
+  modeClaudeButton.setAttribute("aria-pressed", "false");
+  modeCodexButton.setAttribute("aria-pressed", "false");
+  const modeResetButton = makeButton(doc, "chat-mode-reset", "Use default");
   modeActions.append(modeClaudeButton, modeCodexButton, modeResetButton);
 
   const modelRow = doc.createElement("div");
@@ -119,20 +180,33 @@ export function createPaneHeader(params: {
   modelRow.className = "pp-model-row";
   const modelLabel = doc.createElement("label");
   modelLabel.htmlFor = "chat-codex-model";
-  modelLabel.textContent = "Model";
+  modelLabel.textContent = "Default model (all papers)";
   const modelInput = doc.createElement("select");
   modelInput.id = "chat-codex-model";
   const modelSaveButton = makeButton(
     doc,
     "chat-codex-model-save",
-    "Save",
+    MODEL_SAVE_LABEL,
     "pp-btn pp-btn--primary",
   );
+  modelSaveButton.title = "Save as the default model for all papers";
+  modelSaveButton.disabled = true;
+  const modelSaveStatus = doc.createElement("span");
+  modelSaveStatus.id = "chat-codex-model-save-status";
+  modelSaveStatus.className = "pp-visually-hidden";
+  modelSaveStatus.setAttribute("role", "status");
+  modelSaveStatus.setAttribute("aria-live", "polite");
   const claudeEffortInput = doc.createElement("select");
   claudeEffortInput.id = "chat-claude-effort";
   claudeEffortInput.setAttribute("aria-label", "Claude effort");
   claudeEffortInput.hidden = true;
-  modelRow.append(modelLabel, modelInput, claudeEffortInput, modelSaveButton);
+  modelRow.append(
+    modelLabel,
+    modelInput,
+    claudeEffortInput,
+    modelSaveButton,
+    modelSaveStatus,
+  );
 
   const codexOptionsRow = doc.createElement("div");
   codexOptionsRow.id = "paper-pilot-codex-options";
@@ -142,7 +216,7 @@ export function createPaneHeader(params: {
   codexWebSearchToggle.type = "checkbox";
   codexWebSearchToggle.id = "chat-codex-web-search";
   const webSearchText = doc.createElement("span");
-  webSearchText.textContent = "Allow web search when needed";
+  webSearchText.textContent = WEB_SEARCH_SETTING_LABEL;
   webSearchLabel.append(codexWebSearchToggle, webSearchText);
   codexOptionsRow.append(webSearchLabel);
 
@@ -167,10 +241,17 @@ export function createPaneHeader(params: {
     "Re-check status",
     "pp-btn pp-btn--secondary",
   );
+  const codexAuthStatus = doc.createElement("div");
+  codexAuthStatus.id = "paper-pilot-codex-auth-status";
+  codexAuthStatus.className = "pp-codex-actions__status";
+  codexAuthStatus.setAttribute("role", "status");
+  codexAuthStatus.setAttribute("aria-live", "polite");
+  codexActions.style.display = "none";
   codexActions.append(
     codexAuthButton,
     codexDeviceAuthButton,
     codexRecheckButton,
+    codexAuthStatus,
   );
 
   const modelHistory = doc.createElement("div");
@@ -180,6 +261,7 @@ export function createPaneHeader(params: {
 
   popover.append(
     modeStatus,
+    engineLabel,
     modeActions,
     modelRow,
     codexOptionsRow,
@@ -189,7 +271,27 @@ export function createPaneHeader(params: {
   root.append(trigger, newSessionButton, popover);
   params.mount.replaceWith(root);
 
+  const clearModelSavedConfirmation = () => {
+    modelSaveButton.removeAttribute("data-saved");
+    modelSaveButton.textContent = MODEL_SAVE_LABEL;
+    modelSaveStatus.textContent = "";
+  };
+  const onModelSelectionChange = () => {
+    clearModelSavedConfirmation();
+    syncModelSaveState(modelInput);
+  };
+  // Closing the popover discards a selection that was never saved, so the
+  // picker and the header chip always show the saved default.
+  const resetUnsavedModelSelection = () => {
+    const savedModel = getSavedSelectValue(modelInput);
+    if (savedModel !== undefined) modelInput.value = savedModel;
+    const savedEffort = getSavedSelectValue(claudeEffortInput);
+    if (savedEffort !== undefined) claudeEffortInput.value = savedEffort;
+    clearModelSavedConfirmation();
+    syncModelSaveState(modelInput);
+  };
   const setOpen = (open: boolean, restoreFocus = false) => {
+    if (!open && !popover.hidden) resetUnsavedModelSelection();
     popover.hidden = !open;
     trigger.setAttribute("aria-expanded", String(open));
     root.classList.toggle("pp-pane-header--open", open);
@@ -200,21 +302,19 @@ export function createPaneHeader(params: {
     }
   };
   const onTrigger = () => setOpen(popover.hidden);
-  // Zotero's native select popup retargets its final click to `main-window`.
-  // Preserve only that next click when the interaction began in the picker.
-  let preserveNextNativeSelectClick = false;
+  const nativeSelectClickGuard = createNativeSelectClickGuard([
+    modelInput,
+    claudeEffortInput,
+  ]);
   const onDocumentPointerDown = (event: PointerEvent) => {
     if (popover.hidden) return;
-    preserveNextNativeSelectClick = isNativeSelectInteraction(
-      modelInput,
-      event,
-    );
+    nativeSelectClickGuard.notePointerDown(event);
   };
   const onDocumentClick = (event: MouseEvent) => {
     if (popover.hidden) return;
-    const preservePopover =
-      preserveNextNativeSelectClick && doc.activeElement === modelInput;
-    preserveNextNativeSelectClick = false;
+    const preservePopover = nativeSelectClickGuard.consumeClick(
+      doc.activeElement,
+    );
     if (!preservePopover && shouldDismissPopover(root, event)) {
       setOpen(false);
     }
@@ -226,6 +326,8 @@ export function createPaneHeader(params: {
     }
   };
   trigger.addEventListener("click", onTrigger);
+  modelInput.addEventListener("change", onModelSelectionChange);
+  claudeEffortInput.addEventListener("change", onModelSelectionChange);
   doc.addEventListener("pointerdown", onDocumentPointerDown, true);
   doc.addEventListener("click", onDocumentClick);
   doc.addEventListener("keydown", onDocumentKeyDown, true);
@@ -252,10 +354,25 @@ export function createPaneHeader(params: {
     codexWebSearchToggle,
     modelHistory,
     setOpen,
+    markModelSaved() {
+      setSavedSelectValue(modelInput, modelInput.value);
+      if (!claudeEffortInput.hidden) {
+        setSavedSelectValue(claudeEffortInput, claudeEffortInput.value);
+      }
+      syncModelSaveState(modelInput);
+      modelSaveButton.setAttribute("data-saved", "true");
+      modelSaveButton.textContent = MODEL_SAVED_LABEL;
+      modelSaveStatus.textContent = "Default model saved for all papers.";
+    },
+    setCodexAuthStatus(text: string) {
+      setTextWithInlineCode(codexAuthStatus, text);
+    },
     dispose() {
       if (disposed) return;
       disposed = true;
       trigger.removeEventListener("click", onTrigger);
+      modelInput.removeEventListener("change", onModelSelectionChange);
+      claudeEffortInput.removeEventListener("change", onModelSelectionChange);
       doc.removeEventListener("pointerdown", onDocumentPointerDown, true);
       doc.removeEventListener("click", onDocumentClick);
       doc.removeEventListener("keydown", onDocumentKeyDown, true);
@@ -263,9 +380,100 @@ export function createPaneHeader(params: {
   };
 }
 
+/** Renders `code` spans from a short instruction without parsing HTML. */
+function setTextWithInlineCode(element: HTMLElement, text: string) {
+  const doc = element.ownerDocument;
+  element.replaceChildren(
+    ...text.split("`").map((part, index) => {
+      if (index % 2 === 0) return doc.createTextNode(part);
+      const code = doc.createElement("code");
+      code.textContent = part;
+      return code;
+    }),
+  );
+}
+
+/** Enables Save only for an unsaved selection and keeps a Saved confirmation. */
+function syncModelSaveState(rowElement: HTMLElement) {
+  const row = rowElement.closest?.(".pp-model-row");
+  const modelInput = row?.querySelector(
+    "#chat-codex-model",
+  ) as HTMLSelectElement | null;
+  const effortInput = row?.querySelector(
+    "#chat-claude-effort",
+  ) as HTMLSelectElement | null;
+  const saveButton = row?.querySelector(
+    "#chat-codex-model-save",
+  ) as HTMLButtonElement | null;
+  if (!modelInput || !saveButton) return;
+  const dirty = isModelSelectionDirty({
+    selectedModel: modelInput.value,
+    savedModel: getSavedSelectValue(modelInput),
+    effortVisible: Boolean(effortInput && !effortInput.hidden),
+    selectedEffort: effortInput?.value,
+    savedEffort: effortInput ? getSavedSelectValue(effortInput) : undefined,
+  });
+  saveButton.disabled = !dirty;
+  if (dirty && saveButton.getAttribute("data-saved") === "true") {
+    saveButton.removeAttribute("data-saved");
+    saveButton.textContent = MODEL_SAVE_LABEL;
+  }
+}
+
+/** Marks the active engine and labels the reset with the real default. */
+export function renderEngineSelection(
+  anchor: HTMLElement,
+  state: {
+    mode: EngineMode;
+    defaultMode: EngineMode;
+    hasOverride: boolean;
+  },
+) {
+  const root = anchor.closest(".pp-pane-header");
+  if (!root) return;
+  const presentation = getEngineSelectionPresentation(state);
+  root
+    .querySelector("#chat-mode-claude")
+    ?.setAttribute("aria-pressed", String(presentation.claudePressed));
+  root
+    .querySelector("#chat-mode-codex")
+    ?.setAttribute("aria-pressed", String(presentation.codexPressed));
+  const reset = root.querySelector(
+    "#chat-mode-reset",
+  ) as HTMLButtonElement | null;
+  if (reset) {
+    reset.textContent = presentation.resetLabel;
+    reset.disabled = presentation.resetDisabled;
+    reset.title = presentation.resetTitle;
+  }
+}
+
+/** Authentication controls appear only when Codex needs them. */
+export function renderCodexAuthActions(
+  codexActions: HTMLElement,
+  mode: EngineMode,
+  loginState?: string,
+) {
+  const visible = shouldShowCodexAuthActions(mode, loginState);
+  codexActions.style.display = visible ? "flex" : "none";
+  if (!visible) {
+    codexActions
+      .querySelector("#paper-pilot-codex-auth-status")
+      ?.replaceChildren();
+  }
+}
+
 function getModeShortLabel(label: string) {
   if (label.includes("Claude")) return "Claude";
   return "Codex";
+}
+
+function findOptionByValue(select: HTMLSelectElement, value?: string) {
+  if (value === undefined) return undefined;
+  const options = Array.from(
+    select.querySelectorAll("option"),
+  ) as unknown as HTMLOptionElement[];
+  return options.find((option) => option.value === value);
 }
 
 export function renderModeHeader(
@@ -278,14 +486,20 @@ export function renderModeHeader(
   const modelInput = root?.querySelector(
     "#chat-codex-model",
   ) as HTMLSelectElement | null;
-  const modelLabel = modelInput?.selectedOptions[0]?.textContent?.trim();
+  // The chip shows the saved default, not an unsaved choice in the picker.
+  const modelOption = modelInput
+    ? (findOptionByValue(modelInput, getSavedSelectValue(modelInput)) ??
+      modelInput.selectedOptions[0])
+    : undefined;
+  const modelLabel = modelOption?.textContent?.trim();
   const effortInput = root?.querySelector(
     "#chat-claude-effort",
   ) as HTMLSelectElement | null;
-  const effortLabel =
-    effortInput && !effortInput.hidden && effortInput.value
-      ? effortInput.value
+  const effortValue =
+    effortInput && !effortInput.hidden
+      ? (getSavedSelectValue(effortInput) ?? effortInput.value)
       : undefined;
+  const effortLabel = effortValue || undefined;
   chip.textContent = [getModeShortLabel(label), modelLabel, effortLabel]
     .filter(Boolean)
     .join(" · ");
@@ -358,6 +572,7 @@ export function renderModelHistory(
   modelInput: HTMLSelectElement,
   mode: EngineMode,
 ) {
+  const pending = captureUnsavedSelection(modelInput);
   const recentModels = normalizeModelListForMode(mode, getRecentModels(mode));
   const allowedModels = normalizeModelListForMode(
     mode,
@@ -435,6 +650,9 @@ export function renderModelHistory(
     fallback.selected = true;
     modelInput.appendChild(fallback);
   }
+  setSavedSelectValue(modelInput, currentKey);
+  restoreUnsavedSelection(modelInput, pending);
+  syncModelSaveState(modelInput);
   modelHistory.style.display = "none";
   modelHistory.replaceChildren();
 }
@@ -446,8 +664,11 @@ export function renderClaudeEffortInput(
   if (mode !== "claude_code") {
     effortInput.hidden = true;
     effortInput.replaceChildren();
+    setSavedSelectValue(effortInput, undefined);
+    syncModelSaveState(effortInput);
     return;
   }
+  const pending = captureUnsavedSelection(effortInput);
   const current = normalizeClaudeReasoningEffort(
     String(getPref("claudeReasoningEffort") || ""),
   );
@@ -462,4 +683,7 @@ export function renderClaudeEffortInput(
     }),
   );
   effortInput.hidden = false;
+  setSavedSelectValue(effortInput, current);
+  restoreUnsavedSelection(effortInput, pending);
+  syncModelSaveState(effortInput);
 }

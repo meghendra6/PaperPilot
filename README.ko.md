@@ -32,7 +32,7 @@ Paper Pilot는 Zotero 7-10 PDF 리더를 위한 AI 읽기 워크벤치입니다.
 
 ## 통합 Research Workspace
 
-Research Workspace는 Paper Pilot 본체에 포함되며 동일한 로컬 엔진 선택·논문 추출·실행 생명주기를 사용합니다. 선택 항목이 0개·1개·여러 개여도 유지되는 모델리스 프로젝트 창에서 screening, claim–evidence ledger, 비교·감사·mastery·citation workflow, citation/reference health, contradiction/gap 검토, 프로젝트별 export, 로컬 Living Review 변경 인박스와 편집 가능한 다섯 가지 프로젝트 템플릿을 제공합니다. 프로젝트 템플릿 preset은 추천 capability만 강조하며 분석을 자동 실행하거나 다른 capability를 숨기지 않습니다. export에는 변경 불가능한 템플릿 snapshot과 현재 assumptions가 함께 포함됩니다. Citation & Reference Health는 현재 저장된 citation·methodology·reproducibility artifact, 로컬 Zotero correction/retraction 메타데이터 신호, 선택적인 제한된 초안 excerpt를 이용해 로컬 체크리스트를 만들며 종합 truth score는 만들지 않습니다. Living Review는 Zotero 첨부파일과 annotation의 메타데이터만 확인하며 본문을 읽거나 모델·네트워크를 호출하지 않습니다. 안전한 Zotero collection/tag 동기화는 기존 collection과 기존 tag에 대한 단방향 추가만 전체 preview와 preview-bound approval token 뒤에 수행하고, transaction 전에 별도의 revisioned receipt를 기록하며, Zotero transaction 지원이 없으면 fail closed합니다. undo는 receipt가 소유한 추가만 제거하며 Zotero item·collection·tag를 생성·삭제하거나 bibliographic field, PDF, note, attachment, annotation을 쓰지 않습니다. Paper Pilot XPI 하나만 설치하면 되며 companion add-on과 Research Monitor는 없습니다.
+Research Workspace는 Paper Pilot 본체에 포함되며 동일한 로컬 엔진 선택·논문 추출·실행 생명주기를 사용합니다. 선택 항목이 0개·1개·여러 개여도 유지되는 모델리스 프로젝트 창에서 screening, claim–evidence ledger, 비교·감사·mastery·citation workflow, citation/reference health, contradiction/gap 검토, 프로젝트별 export, 로컬 Living Review 변경 인박스와 편집 가능한 다섯 가지 프로젝트 템플릿을 제공합니다. 프로젝트 템플릿 preset은 추천 capability만 강조하며 분석을 자동 실행하거나 다른 capability를 숨기지 않습니다. export에는 변경 불가능한 템플릿 snapshot과 현재 assumptions가 함께 포함됩니다. Citation & Reference Health는 현재 저장된 citation·methodology·reproducibility artifact, 로컬 Zotero correction/retraction 메타데이터 신호, 선택적인 제한된 초안 excerpt를 이용해 로컬 체크리스트를 만들며 종합 truth score는 만들지 않습니다. Living Review는 Zotero 첨부파일과 annotation의 메타데이터만 확인하며 본문을 읽거나 모델·네트워크를 호출하지 않습니다. 안전한 Zotero collection/tag 동기화는 기존 collection과 기존 tag에 대한 단방향 추가만 전체 preview와 preview-bound approval token 뒤에 수행하고, transaction 전에 별도의 revisioned receipt를 기록하며, Zotero transaction 지원이 없으면 fail closed합니다. undo는 receipt가 소유한 추가만 제거하며 Zotero item·collection·tag를 생성·삭제하거나 bibliographic field, PDF, note, attachment, annotation을 쓰지 않습니다. **Tools → Open Research Workspace…**, 라이브러리 항목 context menu, Workbench의 **Research Workspace** 버튼에서 열 수 있습니다. 분석이 실행 중일 때 프로젝트를 떠나거나 창을 닫으면 취소하기 전에 확인합니다. 일부만 성공한 실행은 실패한 논문을 알려 주고 **Resume**을 제공합니다. 보관한 프로젝트는 다시 열거나 복원할 수 있습니다. Paper Pilot XPI 하나만 설치하면 되며 companion add-on과 Research Monitor는 없습니다.
 
 ## 스크린샷과 데모
 
@@ -74,7 +74,7 @@ Paper Pilot는 현재 활발히 개발 중입니다.
 - 논문별로 Codex CLI, Claude Code 전환 지원
 - 같은 논문/세션 안에서 후속 질문 맥락 유지
 - 현재 논문의 저장된 세션을 다시 열고, 이름 변경하고, 삭제하고, 한 번에 모두 지울 수 있는 **Past sessions** 지원
-- **New session**은 현재 세션을 보존한 채 같은 논문에서 비어 있는 새 초안을 시작
+- **New session**은 현재 세션을 보존한 채 같은 논문에서 비어 있는 새 초안을 시작. 현재 history 설정이 보존하지 않는 Critical Read 또는 Paper Mastery 진행 내용이 있으면 먼저 확인을 요청
 
 ### 2. 리더 내 논문 맥락 액션
 
@@ -104,7 +104,7 @@ PDF에서 단어나 짧은 구절을 선택하고 **네이버 사전**을 누르
 
 ### 4. 에이전트 주도 검증형 선행연구 탐색
 
-**Find verified prior work**를 누르고 필요할 때만 연구 문제의식을 적습니다. 활성 에이전트가 관련 분야, 인접 분야, 1티어 학회, 검색 쿼리를 스스로 판단하므로 사용자가 학회 목록을 고를 필요가 없습니다. 결과는 다음 세 레인으로 구분됩니다.
+**Find verified prior work**를 누르고 필요할 때만 연구 문제의식을 적습니다. 탐색에는 **Allow web search when needed**를 켠 Codex CLI가 필요합니다. 다른 설정에서는 진입 버튼이 비활성화되고 이유를 표시합니다. 활성 에이전트가 관련 분야, 인접 분야, 1티어 학회, 검색 쿼리를 스스로 판단하므로 사용자가 학회 목록을 고를 필요가 없습니다. 결과는 다음 세 레인으로 구분됩니다.
 
 - **Verified main-conference papers** — 1티어 학회 main track임을 논문 단위 공식 출처로 높은 신뢰도로 확인한 논문
 - **Other peer-reviewed work** — 저널, workshop, Findings, 기타 track 또는 main 여부가 확정되지 않은 출판 논문
@@ -192,8 +192,8 @@ Claude Code 모드는 로컬 `claude` CLI의 print 모드를 사용하며, 리�
 - 설정 가능한 실행 파일 경로
 - Claude Code CLI 계열 별칭 모델 선택(`sonnet` 기본, `opus`, `haiku`, `fable`). 설치된 CLI가 각 계열의 최신 모델(현재 Sonnet 5.5, Opus 5.5, Haiku 5.5, Fable 5.1)로 해석하며, 고정 ID `claude-opus-5-5`, `claude-sonnet-5-5`, `claude-haiku-5-5`, `claude-fable-5-1`, `claude-opus-5`, `claude-sonnet-5`도 제공
 - 설정에 직접 입력한 그 밖의 모델 ID(예: `claude-opus-5-5[1m]`, Bedrock/Vertex 모델 ID)는 그대로 CLI에 전달. `Opus 5.5`, `claude-opus-5.5`처럼 직접 입력한 이름은 `claude-opus-5-5`로 정규화되며 `[1m]` 같은 컨텍스트 접미사는 유지
-- 선택적 effort 수준(`low`, `medium`, `high`, `xhigh`, `max`, 비워 두면 Claude Code CLI 기본값)을 설정과 모델 선택기 옆에서 지정. 설치된 CLI의 `--help`에 `--effort`가 있을 때만 전달
-- 설정 가능한 permission mode
+- 선택적 effort 수준(`low`, `medium`, `high`, `xhigh`, `max`, 설정의 **Claude Code default**와 모델 선택기 옆의 **default effort**는 Claude Code CLI 기본값 사용)을 설정과 모델 선택기 옆에서 지정. 설치된 CLI의 `--help`에 `--effort`가 있을 때만 전달
+- chat 실행에 적용되는 permission mode 설정
 - 논문 단위 후속 대화 맥락 유지
 - 현재 논문용 retrieval/context 조합
 
@@ -317,8 +317,9 @@ Codex 허용 모델 설정은 선택 목록과 실제 사용 모델에 적용됩
 - **General**
 - **Claude Code**
 - **Codex CLI**
-- **Retrieval**
-- **Privacy**
+- **Workspace** (두 엔진이 함께 쓰는 workspace root와 auto-clean)
+- **Retrieval** (chunk size, overlap, top-k는 접힌 **Advanced retrieval** 그룹에 있음)
+- **Privacy** (**Session history** 하나로 선택: **Save prompts and responses**, **Save prompts only**, **Do not save session history**)
 
 중요한 현재 사항:
 

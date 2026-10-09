@@ -465,6 +465,8 @@ export function getPaperCompareWorkflowState(params: {
   groups: RecommendationGroup[];
   recommendationsRunning?: boolean;
   maxComparePapers?: number;
+  /** Set when this engine cannot run Find verified prior work. */
+  discoveryUnavailableReason?: string;
 }): PaperCompareWorkflowState {
   if (params.recommendationsRunning) {
     return {
@@ -478,13 +480,17 @@ export function getPaperCompareWorkflowState(params: {
 
   const entryState = getPaperCompareEntryState(params);
   if (!entryState.enabled) {
+    const needsPeers =
+      entryState.reason ===
+      "Need at least one recommended peer before compare can run.";
+    const unavailable = params.discoveryUnavailableReason?.trim();
     return {
       enabled: false,
-      helperText:
-        entryState.reason ===
-        "Need at least one recommended peer before compare can run."
-          ? "Step 1: Open Related papers, then Find verified prior work. Step 2: Compare when a peer is ready."
-          : entryState.reason,
+      helperText: !needsPeers
+        ? entryState.reason
+        : unavailable
+          ? `Compare needs related papers first. Finding them ${unavailable.charAt(0).toLowerCase()}${unavailable.slice(1)}`
+          : "Step 1: Open Related papers, then Find verified prior work. Step 2: Compare when a peer is ready.",
       tone: "muted",
       candidateCount: entryState.candidateCount,
     };

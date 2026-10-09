@@ -13,7 +13,7 @@ import {
   extractPdfTextPagesFromReader,
   matchQuoteInPages,
 } from "./pdfMatch";
-import { formatAutoHighlightSummary } from "./status";
+import { describeKeptHighlights, formatAutoHighlightSummary } from "./status";
 import type { AutoHighlightResult } from "./types";
 import {
   extractWorkspaceRunText,
@@ -191,6 +191,36 @@ async function resolveOpenPDFAttachment(itemID: number) {
   };
 }
 
+/** A cancel that arrived while highlights were being saved. */
+export class AutoHighlightCancelledError extends Error {
+  constructor(readonly keptHighlights: number) {
+    super(
+      keptHighlights
+        ? `Automatic highlighting cancelled. ${describeKeptHighlights(keptHighlights)}`
+        : "Automatic highlighting cancelled.",
+    );
+    this.name = "AutoHighlightCancelledError";
+  }
+}
+
+/**
+ * Erases the highlights a cancelled run already saved, so Cancel leaves the
+ * PDF as it was. Highlights that fail to erase are counted in the error.
+ */
+export async function rollBackCancelledHighlights(
+  createdItems: readonly Pick<Zotero.Item, "eraseTx">[],
+): Promise<AutoHighlightCancelledError> {
+  let kept = 0;
+  for (const item of createdItems) {
+    try {
+      await item.eraseTx();
+    } catch {
+      kept += 1;
+    }
+  }
+  return new AutoHighlightCancelledError(kept);
+}
+
 export async function runAutoHighlightWorkflow(params: {
   itemID: number;
   itemTitle: string;
@@ -288,7 +318,7 @@ export async function runAutoHighlightWorkflow(params: {
 
     for (const candidate of candidates) {
       if (params.signal?.aborted) {
-        throw new Error("Automatic highlighting cancelled.");
+        throw await rollBackCancelledHighlights(createdItems);
       }
       if (Date.now() >= deadline) {
         throw new Error("Automatic highlighting timed out.");
@@ -313,6 +343,9 @@ export async function runAutoHighlightWorkflow(params: {
       );
       existingAnnotations.push(saved);
       createdItems.push(saved);
+    }
+    if (params.signal?.aborted) {
+      throw await rollBackCancelledHighlights(createdItems);
     }
 
     if (

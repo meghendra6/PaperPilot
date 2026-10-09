@@ -11,7 +11,10 @@ import {
   clearModeOverrideForItem,
   getDefaultMode,
   getModeForItem,
+  hasModeOverrideForItem,
   migrateLegacyDefaultMode,
+  resolveModeSelection,
+  selectModeForItem,
   setModeOverrideForItem,
 } from "../src/modules/ai/modeStore";
 
@@ -125,4 +128,42 @@ test("a saved Gemini default mode is rewritten to Codex once", () => {
   prefs.defaultMode = "claude_code";
   migrateLegacyDefaultMode(read, write);
   assert.equal(prefs.defaultMode, "claude_code");
+});
+
+test("choosing the default engine clears the per-paper override", () => {
+  assert.equal(
+    resolveModeSelection("codex_cli", "codex_cli"),
+    "clear_override",
+  );
+  assert.equal(
+    resolveModeSelection("claude_code", "codex_cli"),
+    "set_override",
+  );
+
+  const previousAddon = (globalThis as { addon?: unknown }).addon;
+  const previousZotero = (globalThis as { Zotero?: unknown }).Zotero;
+  (globalThis as { addon?: unknown }).addon = {
+    data: {
+      modeOverrides: new Map<number, "codex_cli" | "claude_code">(),
+    },
+  };
+  (globalThis as { Zotero?: unknown }).Zotero = {
+    Prefs: {
+      get: (_key: string) => "codex_cli",
+    },
+  };
+
+  try {
+    selectModeForItem(9, "codex_cli");
+    assert.equal(hasModeOverrideForItem(9), false);
+    selectModeForItem(9, "claude_code");
+    assert.equal(hasModeOverrideForItem(9), true);
+    assert.equal(getModeForItem(9), "claude_code");
+    selectModeForItem(9, "codex_cli");
+    assert.equal(hasModeOverrideForItem(9), false);
+    assert.equal(getModeForItem(9), "codex_cli");
+  } finally {
+    (globalThis as { addon?: unknown }).addon = previousAddon;
+    (globalThis as { Zotero?: unknown }).Zotero = previousZotero;
+  }
 });

@@ -12,7 +12,7 @@
       ></label>
       <html:p
         data-l10n-id="pref-surface-intro"
-        style="margin: 4px 0 0; color: #555"
+        class="paperpilot-pref-description"
       ></html:p>
     </groupbox>
 
@@ -25,7 +25,7 @@
       ></label>
       <html:p
         data-l10n-id="pref-section-general-desc"
-        style="margin: 4px 0 10px; color: #555"
+        class="paperpilot-pref-description"
       ></html:p>
       <hbox
         align="center"
@@ -36,28 +36,20 @@
           data-l10n-id="pref-general-default-mode"
           style="flex: 0 0 220px; margin-right: 10px"
         ></html:label>
-        <html:input
-          type="text"
+        <html:select
           id="zotero-prefpane-__addonRef__-input-default-mode"
           preference="extensions.zotero.__addonRef__.defaultMode"
-          placeholder="codex_cli or claude_code"
           style="flex: 1"
-        ></html:input>
-      </hbox>
-      <hbox
-        align="center"
-        style="display: flex; align-items: center; margin-bottom: 10px"
-      >
-        <html:label
-          for="zotero-prefpane-__addonRef__-input-save-sessions"
-          data-l10n-id="pref-general-save-sessions"
-          style="flex: 0 0 220px; margin-right: 10px"
-        ></html:label>
-        <html:input
-          type="checkbox"
-          id="zotero-prefpane-__addonRef__-input-save-sessions"
-          preference="extensions.zotero.__addonRef__.saveDocumentSessions"
-        ></html:input>
+        >
+          <html:option
+            value="codex_cli"
+            data-l10n-id="pref-general-default-mode-codex"
+          ></html:option>
+          <html:option
+            value="claude_code"
+            data-l10n-id="pref-general-default-mode-claude"
+          ></html:option>
+        </html:select>
       </hbox>
       <hbox align="center" style="display: flex; align-items: center">
         <html:label
@@ -89,13 +81,70 @@
     <groupbox>
       <label
         ><html:h2
+          data-l10n-id="pref-section-workspace-title"
+          style="margin: 0"
+        ></html:h2
+      ></label>
+      <html:p
+        data-l10n-id="pref-section-workspace-desc"
+        class="paperpilot-pref-description"
+      ></html:p>
+      <hbox
+        align="center"
+        style="display: flex; align-items: center; margin-bottom: 10px"
+      >
+        <html:label
+          for="zotero-prefpane-__addonRef__-input-workspace-root"
+          data-l10n-id="pref-workspace-root"
+          style="flex: 0 0 220px; margin-right: 10px"
+        ></html:label>
+        <html:input
+          type="text"
+          id="zotero-prefpane-__addonRef__-input-workspace-root"
+          preference="extensions.zotero.__addonRef__.codexWorkspaceRoot"
+          data-l10n-id="pref-workspace-root-input"
+          aria-describedby="zotero-prefpane-__addonRef__-workspace-root-help"
+          style="flex: 1"
+        ></html:input>
+      </hbox>
+      <html:p
+        id="zotero-prefpane-__addonRef__-workspace-root-help"
+        data-l10n-id="pref-workspace-root-help"
+        class="paperpilot-pref-help"
+      ></html:p>
+      <hbox
+        align="center"
+        style="display: flex; align-items: center; margin-bottom: 10px"
+      >
+        <html:label
+          for="zotero-prefpane-__addonRef__-input-clean-workspace"
+          data-l10n-id="pref-workspace-clean"
+          style="flex: 0 0 220px; margin-right: 10px"
+        ></html:label>
+        <html:input
+          type="checkbox"
+          id="zotero-prefpane-__addonRef__-input-clean-workspace"
+          preference="extensions.zotero.__addonRef__.codexAutoCleanWorkspace"
+          aria-describedby="zotero-prefpane-__addonRef__-clean-workspace-help"
+        ></html:input>
+      </hbox>
+      <html:p
+        id="zotero-prefpane-__addonRef__-clean-workspace-help"
+        data-l10n-id="pref-workspace-clean-help"
+        class="paperpilot-pref-help"
+      ></html:p>
+    </groupbox>
+
+    <groupbox>
+      <label
+        ><html:h2
           data-l10n-id="pref-section-claude-title"
           style="margin: 0"
         ></html:h2
       ></label>
       <html:p
         data-l10n-id="pref-section-claude-desc"
-        style="margin: 4px 0 10px; color: #555"
+        class="paperpilot-pref-description"
       ></html:p>
       <hbox
         align="center"
@@ -110,7 +159,7 @@
           type="text"
           id="zotero-prefpane-__addonRef__-input-claude-path"
           preference="extensions.zotero.__addonRef__.claudeExecutablePath"
-          placeholder="/Users/me/.local/bin/claude"
+          data-l10n-id="pref-claude-executable-path-input"
           style="flex: 1"
         ></html:input>
       </hbox>
@@ -119,32 +168,15 @@
         style="display: flex; align-items: center; margin-bottom: 10px"
       >
         <html:label
-          for="zotero-prefpane-__addonRef__-input-claude-model"
+          for="zotero-prefpane-__addonRef__-input-claude-default-model"
           data-l10n-id="pref-claude-default-model"
           style="flex: 0 0 220px; margin-right: 10px"
         ></html:label>
         <html:input
           type="text"
-          id="zotero-prefpane-__addonRef__-input-claude-model"
+          id="zotero-prefpane-__addonRef__-input-claude-default-model"
           preference="extensions.zotero.__addonRef__.claudeDefaultModel"
-          placeholder="sonnet, opus, claude-opus-5-5, claude-opus-5-5[1m]"
-          style="flex: 1"
-        ></html:input>
-      </hbox>
-      <hbox
-        align="center"
-        style="display: flex; align-items: center; margin-bottom: 10px"
-      >
-        <html:label
-          for="zotero-prefpane-__addonRef__-input-claude-reasoning-effort"
-          data-l10n-id="pref-claude-reasoning-effort"
-          style="flex: 0 0 220px; margin-right: 10px"
-        ></html:label>
-        <html:input
-          type="text"
-          id="zotero-prefpane-__addonRef__-input-claude-reasoning-effort"
-          preference="extensions.zotero.__addonRef__.claudeReasoningEffort"
-          placeholder="empty for CLI default, or low, medium, high, xhigh, max"
+          data-l10n-id="pref-claude-default-model-input"
           style="flex: 1"
         ></html:input>
       </hbox>
@@ -161,24 +193,90 @@
           type="text"
           id="zotero-prefpane-__addonRef__-input-claude-allowed-models"
           preference="extensions.zotero.__addonRef__.claudeAllowedModels"
-          placeholder="comma-separated Claude Code model ids"
+          data-l10n-id="pref-claude-allowed-models-input"
           style="flex: 1"
         ></html:input>
       </hbox>
-      <hbox align="center" style="display: flex; align-items: center">
+      <hbox
+        align="center"
+        style="display: flex; align-items: center; margin-bottom: 10px"
+      >
+        <html:label
+          for="zotero-prefpane-__addonRef__-input-claude-reasoning-effort"
+          data-l10n-id="pref-claude-reasoning-effort"
+          style="flex: 0 0 220px; margin-right: 10px"
+        ></html:label>
+        <html:select
+          id="zotero-prefpane-__addonRef__-input-claude-reasoning-effort"
+          preference="extensions.zotero.__addonRef__.claudeReasoningEffort"
+          style="flex: 1"
+        >
+          <html:option
+            value=""
+            data-l10n-id="pref-claude-reasoning-effort-default"
+          ></html:option>
+          <html:option value="low" data-l10n-id="pref-effort-low"></html:option>
+          <html:option
+            value="medium"
+            data-l10n-id="pref-effort-medium"
+          ></html:option>
+          <html:option
+            value="high"
+            data-l10n-id="pref-effort-high"
+          ></html:option>
+          <html:option
+            value="xhigh"
+            data-l10n-id="pref-effort-xhigh"
+          ></html:option>
+          <html:option value="max" data-l10n-id="pref-effort-max"></html:option>
+        </html:select>
+      </hbox>
+      <hbox
+        align="center"
+        style="display: flex; align-items: center; margin-bottom: 10px"
+      >
         <html:label
           for="zotero-prefpane-__addonRef__-input-claude-permission-mode"
           data-l10n-id="pref-claude-permission-mode"
           style="flex: 0 0 220px; margin-right: 10px"
         ></html:label>
-        <html:input
-          type="text"
+        <html:select
           id="zotero-prefpane-__addonRef__-input-claude-permission-mode"
           preference="extensions.zotero.__addonRef__.claudePermissionMode"
-          placeholder="default, acceptEdits, auto, bypassPermissions, dontAsk, or plan"
+          aria-describedby="zotero-prefpane-__addonRef__-claude-permission-mode-help"
           style="flex: 1"
-        ></html:input>
+        >
+          <html:option
+            value="default"
+            data-l10n-id="pref-claude-permission-mode-default"
+          ></html:option>
+          <html:option
+            value="acceptEdits"
+            data-l10n-id="pref-claude-permission-mode-accept-edits"
+          ></html:option>
+          <html:option
+            value="plan"
+            data-l10n-id="pref-claude-permission-mode-plan"
+          ></html:option>
+          <html:option
+            value="auto"
+            data-l10n-id="pref-claude-permission-mode-auto"
+          ></html:option>
+          <html:option
+            value="dontAsk"
+            data-l10n-id="pref-claude-permission-mode-dont-ask"
+          ></html:option>
+          <html:option
+            value="bypassPermissions"
+            data-l10n-id="pref-claude-permission-mode-bypass-permissions"
+          ></html:option>
+        </html:select>
       </hbox>
+      <html:p
+        id="zotero-prefpane-__addonRef__-claude-permission-mode-help"
+        data-l10n-id="pref-claude-permission-mode-help"
+        class="paperpilot-pref-help"
+      ></html:p>
     </groupbox>
 
     <groupbox>
@@ -190,7 +288,7 @@
       ></label>
       <html:p
         data-l10n-id="pref-section-codex-desc"
-        style="margin: 4px 0 10px; color: #555"
+        class="paperpilot-pref-description"
       ></html:p>
       <hbox
         align="center"
@@ -205,7 +303,7 @@
           type="text"
           id="zotero-prefpane-__addonRef__-input-codex-path"
           preference="extensions.zotero.__addonRef__.codexExecutablePath"
-          placeholder="/usr/local/bin/codex"
+          data-l10n-id="pref-codex-executable-path-input"
           style="flex: 1"
         ></html:input>
       </hbox>
@@ -214,15 +312,15 @@
         style="display: flex; align-items: center; margin-bottom: 10px"
       >
         <html:label
-          for="zotero-prefpane-__addonRef__-input-default-model"
+          for="zotero-prefpane-__addonRef__-input-codex-default-model"
           data-l10n-id="pref-codex-default-model"
           style="flex: 0 0 220px; margin-right: 10px"
         ></html:label>
         <html:input
           type="text"
-          id="zotero-prefpane-__addonRef__-input-default-model"
+          id="zotero-prefpane-__addonRef__-input-codex-default-model"
           preference="extensions.zotero.__addonRef__.codexDefaultModel"
-          placeholder="gpt-6-astra"
+          data-l10n-id="pref-codex-default-model-input"
           style="flex: 1"
         ></html:input>
       </hbox>
@@ -231,32 +329,15 @@
         style="display: flex; align-items: center; margin-bottom: 10px"
       >
         <html:label
-          for="zotero-prefpane-__addonRef__-input-reasoning-effort"
-          data-l10n-id="pref-codex-reasoning-effort"
-          style="flex: 0 0 220px; margin-right: 10px"
-        ></html:label>
-        <html:input
-          type="text"
-          id="zotero-prefpane-__addonRef__-input-reasoning-effort"
-          preference="extensions.zotero.__addonRef__.codexReasoningEffort"
-          placeholder="low, medium, high, xhigh, max, or ultra"
-          style="flex: 1"
-        ></html:input>
-      </hbox>
-      <hbox
-        align="center"
-        style="display: flex; align-items: center; margin-bottom: 10px"
-      >
-        <html:label
-          for="zotero-prefpane-__addonRef__-input-allowed-models"
+          for="zotero-prefpane-__addonRef__-input-codex-allowed-models"
           data-l10n-id="pref-codex-allowed-models"
           style="flex: 0 0 220px; margin-right: 10px"
         ></html:label>
         <html:input
           type="text"
-          id="zotero-prefpane-__addonRef__-input-allowed-models"
+          id="zotero-prefpane-__addonRef__-input-codex-allowed-models"
           preference="extensions.zotero.__addonRef__.codexAllowedModels"
-          placeholder="comma-separated model ids"
+          data-l10n-id="pref-codex-allowed-models-input"
           style="flex: 1"
         ></html:input>
       </hbox>
@@ -265,13 +346,53 @@
         style="display: flex; align-items: center; margin-bottom: 10px"
       >
         <html:label
-          for="zotero-prefpane-__addonRef__-input-web-search"
+          for="zotero-prefpane-__addonRef__-input-codex-reasoning-effort"
+          data-l10n-id="pref-codex-reasoning-effort"
+          style="flex: 0 0 220px; margin-right: 10px"
+        ></html:label>
+        <html:select
+          id="zotero-prefpane-__addonRef__-input-codex-reasoning-effort"
+          preference="extensions.zotero.__addonRef__.codexReasoningEffort"
+          aria-describedby="zotero-prefpane-__addonRef__-codex-reasoning-effort-help"
+          style="flex: 1"
+        >
+          <html:option value="low" data-l10n-id="pref-effort-low"></html:option>
+          <html:option
+            value="medium"
+            data-l10n-id="pref-effort-medium"
+          ></html:option>
+          <html:option
+            value="high"
+            data-l10n-id="pref-effort-high"
+          ></html:option>
+          <html:option
+            value="xhigh"
+            data-l10n-id="pref-effort-xhigh"
+          ></html:option>
+          <html:option value="max" data-l10n-id="pref-effort-max"></html:option>
+          <html:option
+            value="ultra"
+            data-l10n-id="pref-effort-ultra"
+          ></html:option>
+        </html:select>
+      </hbox>
+      <html:p
+        id="zotero-prefpane-__addonRef__-codex-reasoning-effort-help"
+        data-l10n-id="pref-codex-reasoning-effort-help"
+        class="paperpilot-pref-help"
+      ></html:p>
+      <hbox
+        align="center"
+        style="display: flex; align-items: center; margin-bottom: 10px"
+      >
+        <html:label
+          for="zotero-prefpane-__addonRef__-input-codex-web-search"
           data-l10n-id="pref-codex-web-search"
           style="flex: 0 0 220px; margin-right: 10px"
         ></html:label>
         <html:input
           type="checkbox"
-          id="zotero-prefpane-__addonRef__-input-web-search"
+          id="zotero-prefpane-__addonRef__-input-codex-web-search"
           preference="extensions.zotero.__addonRef__.codexEnableWebSearch"
         ></html:input>
       </hbox>
@@ -280,63 +401,63 @@
         style="display: flex; align-items: center; margin-bottom: 10px"
       >
         <html:label
-          for="zotero-prefpane-__addonRef__-input-sandbox"
+          for="zotero-prefpane-__addonRef__-input-codex-sandbox-mode"
           data-l10n-id="pref-codex-sandbox-mode"
           style="flex: 0 0 220px; margin-right: 10px"
         ></html:label>
-        <html:input
-          type="text"
-          id="zotero-prefpane-__addonRef__-input-sandbox"
+        <html:select
+          id="zotero-prefpane-__addonRef__-input-codex-sandbox-mode"
           preference="extensions.zotero.__addonRef__.codexSandboxMode"
-          placeholder="read-only, workspace-write, or danger-full-access"
+          aria-describedby="zotero-prefpane-__addonRef__-codex-sandbox-mode-help"
           style="flex: 1"
-        ></html:input>
+        >
+          <html:option
+            value="read-only"
+            data-l10n-id="pref-codex-sandbox-mode-read-only"
+          ></html:option>
+          <html:option
+            value="workspace-write"
+            data-l10n-id="pref-codex-sandbox-mode-workspace-write"
+          ></html:option>
+          <html:option
+            value="danger-full-access"
+            data-l10n-id="pref-codex-sandbox-mode-danger-full-access"
+          ></html:option>
+        </html:select>
       </hbox>
-      <hbox
-        align="center"
-        style="display: flex; align-items: center; margin-bottom: 10px"
-      >
+      <html:p
+        id="zotero-prefpane-__addonRef__-codex-sandbox-mode-help"
+        data-l10n-id="pref-codex-sandbox-mode-help"
+        class="paperpilot-pref-help"
+      ></html:p>
+      <hbox align="center" style="display: flex; align-items: center">
         <html:label
-          for="zotero-prefpane-__addonRef__-input-approval-mode"
+          for="zotero-prefpane-__addonRef__-input-codex-approval-mode"
           data-l10n-id="pref-codex-approval-mode"
           style="flex: 0 0 220px; margin-right: 10px"
         ></html:label>
-        <html:input
-          type="text"
-          id="zotero-prefpane-__addonRef__-input-approval-mode"
+        <html:select
+          id="zotero-prefpane-__addonRef__-input-codex-approval-mode"
           preference="extensions.zotero.__addonRef__.codexApprovalMode"
-          placeholder="on-request, never, untrusted, or on-failure"
           style="flex: 1"
-        ></html:input>
-      </hbox>
-      <hbox
-        align="center"
-        style="display: flex; align-items: center; margin-bottom: 10px"
-      >
-        <html:label
-          for="zotero-prefpane-__addonRef__-input-workspace-root"
-          data-l10n-id="pref-codex-workspace-root"
-          style="flex: 0 0 220px; margin-right: 10px"
-        ></html:label>
-        <html:input
-          type="text"
-          id="zotero-prefpane-__addonRef__-input-workspace-root"
-          preference="extensions.zotero.__addonRef__.codexWorkspaceRoot"
-          placeholder="optional path"
-          style="flex: 1"
-        ></html:input>
-      </hbox>
-      <hbox align="center" style="display: flex; align-items: center">
-        <html:label
-          for="zotero-prefpane-__addonRef__-input-clean-workspace"
-          data-l10n-id="pref-codex-clean-workspace"
-          style="flex: 0 0 220px; margin-right: 10px"
-        ></html:label>
-        <html:input
-          type="checkbox"
-          id="zotero-prefpane-__addonRef__-input-clean-workspace"
-          preference="extensions.zotero.__addonRef__.codexAutoCleanWorkspace"
-        ></html:input>
+        >
+          <html:option
+            value="never"
+            data-l10n-id="pref-codex-approval-mode-never"
+          ></html:option>
+          <html:option
+            value="on-request"
+            data-l10n-id="pref-codex-approval-mode-on-request"
+          ></html:option>
+          <html:option
+            value="untrusted"
+            data-l10n-id="pref-codex-approval-mode-untrusted"
+          ></html:option>
+          <html:option
+            value="on-failure"
+            data-l10n-id="pref-codex-approval-mode-on-failure"
+          ></html:option>
+        </html:select>
       </hbox>
     </groupbox>
 
@@ -349,62 +470,8 @@
       ></label>
       <html:p
         data-l10n-id="pref-section-retrieval-desc"
-        style="margin: 4px 0 10px; color: #555"
+        class="paperpilot-pref-description"
       ></html:p>
-      <hbox
-        align="center"
-        style="display: flex; align-items: center; margin-bottom: 10px"
-      >
-        <html:label
-          for="zotero-prefpane-__addonRef__-input-chunk-size"
-          data-l10n-id="pref-retrieval-chunk-size"
-          style="flex: 0 0 220px; margin-right: 10px"
-        ></html:label>
-        <html:input
-          type="number"
-          id="zotero-prefpane-__addonRef__-input-chunk-size"
-          preference="extensions.zotero.__addonRef__.retrievalChunkSize"
-          min="1"
-          max="100000"
-          style="flex: 1"
-        ></html:input>
-      </hbox>
-      <hbox
-        align="center"
-        style="display: flex; align-items: center; margin-bottom: 10px"
-      >
-        <html:label
-          for="zotero-prefpane-__addonRef__-input-overlap-size"
-          data-l10n-id="pref-retrieval-overlap-size"
-          style="flex: 0 0 220px; margin-right: 10px"
-        ></html:label>
-        <html:input
-          type="number"
-          id="zotero-prefpane-__addonRef__-input-overlap-size"
-          preference="extensions.zotero.__addonRef__.retrievalOverlapSize"
-          min="0"
-          max="99999"
-          style="flex: 1"
-        ></html:input>
-      </hbox>
-      <hbox
-        align="center"
-        style="display: flex; align-items: center; margin-bottom: 10px"
-      >
-        <html:label
-          for="zotero-prefpane-__addonRef__-input-top-k"
-          data-l10n-id="pref-retrieval-top-k"
-          style="flex: 0 0 220px; margin-right: 10px"
-        ></html:label>
-        <html:input
-          type="number"
-          id="zotero-prefpane-__addonRef__-input-top-k"
-          preference="extensions.zotero.__addonRef__.retrievalTopK"
-          min="1"
-          max="100"
-          style="flex: 1"
-        ></html:input>
-      </hbox>
       <hbox
         align="center"
         style="display: flex; align-items: center; margin-bottom: 10px"
@@ -420,7 +487,10 @@
           preference="extensions.zotero.__addonRef__.retrievalIncludeAbstract"
         ></html:input>
       </hbox>
-      <hbox align="center" style="display: flex; align-items: center">
+      <hbox
+        align="center"
+        style="display: flex; align-items: center; margin-bottom: 10px"
+      >
         <html:label
           for="zotero-prefpane-__addonRef__-input-nearby-context"
           data-l10n-id="pref-retrieval-nearby-context"
@@ -432,6 +502,103 @@
           preference="extensions.zotero.__addonRef__.retrievalIncludeNearbyContext"
         ></html:input>
       </hbox>
+      <html:details
+        id="zotero-prefpane-__addonRef__-retrieval-advanced"
+        class="paperpilot-pref-disclosure"
+      >
+        <html:summary data-l10n-id="pref-retrieval-advanced"></html:summary>
+        <html:p
+          data-l10n-id="pref-retrieval-advanced-desc"
+          class="paperpilot-pref-description"
+        ></html:p>
+        <hbox
+          align="center"
+          style="display: flex; align-items: center; margin-bottom: 10px"
+        >
+          <html:label
+            for="zotero-prefpane-__addonRef__-input-chunk-size"
+            data-l10n-id="pref-retrieval-chunk-size"
+            style="flex: 0 0 220px; margin-right: 10px"
+          ></html:label>
+          <html:input
+            type="number"
+            id="zotero-prefpane-__addonRef__-input-chunk-size"
+            preference="extensions.zotero.__addonRef__.retrievalChunkSize"
+            min="200"
+            max="100000"
+            step="1"
+            aria-describedby="zotero-prefpane-__addonRef__-chunk-size-help zotero-prefpane-__addonRef__-chunk-size-warning"
+            style="flex: 1"
+          ></html:input>
+        </hbox>
+        <html:p
+          id="zotero-prefpane-__addonRef__-chunk-size-help"
+          data-l10n-id="pref-retrieval-chunk-size-help"
+          class="paperpilot-pref-help"
+        ></html:p>
+        <html:p
+          id="zotero-prefpane-__addonRef__-chunk-size-warning"
+          class="paperpilot-pref-warning"
+          role="status"
+          hidden="hidden"
+        ></html:p>
+        <hbox
+          align="center"
+          style="display: flex; align-items: center; margin-bottom: 10px"
+        >
+          <html:label
+            for="zotero-prefpane-__addonRef__-input-overlap-size"
+            data-l10n-id="pref-retrieval-overlap-size"
+            style="flex: 0 0 220px; margin-right: 10px"
+          ></html:label>
+          <html:input
+            type="number"
+            id="zotero-prefpane-__addonRef__-input-overlap-size"
+            preference="extensions.zotero.__addonRef__.retrievalOverlapSize"
+            min="0"
+            max="50000"
+            step="1"
+            aria-describedby="zotero-prefpane-__addonRef__-overlap-size-help zotero-prefpane-__addonRef__-overlap-size-warning"
+            style="flex: 1"
+          ></html:input>
+        </hbox>
+        <html:p
+          id="zotero-prefpane-__addonRef__-overlap-size-help"
+          data-l10n-id="pref-retrieval-overlap-size-help"
+          class="paperpilot-pref-help"
+        ></html:p>
+        <html:p
+          id="zotero-prefpane-__addonRef__-overlap-size-warning"
+          class="paperpilot-pref-warning"
+          role="status"
+          hidden="hidden"
+        ></html:p>
+        <hbox
+          align="center"
+          style="display: flex; align-items: center; margin-bottom: 10px"
+        >
+          <html:label
+            for="zotero-prefpane-__addonRef__-input-top-k"
+            data-l10n-id="pref-retrieval-top-k"
+            style="flex: 0 0 220px; margin-right: 10px"
+          ></html:label>
+          <html:input
+            type="number"
+            id="zotero-prefpane-__addonRef__-input-top-k"
+            preference="extensions.zotero.__addonRef__.retrievalTopK"
+            min="1"
+            max="100"
+            step="1"
+            aria-describedby="zotero-prefpane-__addonRef__-top-k-help"
+            style="flex: 1"
+          ></html:input>
+        </hbox>
+        <html:p
+          id="zotero-prefpane-__addonRef__-top-k-help"
+          data-l10n-id="pref-retrieval-top-k-help"
+          class="paperpilot-pref-help"
+        ></html:p>
+      </html:details>
     </groupbox>
 
     <groupbox>
@@ -443,53 +610,68 @@
       ></label>
       <html:p
         data-l10n-id="pref-section-privacy-desc"
-        style="margin: 4px 0 10px; color: #555"
+        class="paperpilot-pref-description"
       ></html:p>
       <hbox
-        align="center"
-        style="display: flex; align-items: center; margin-bottom: 10px"
+        align="start"
+        style="display: flex; align-items: flex-start; margin-bottom: 10px"
       >
-        <html:label
-          for="zotero-prefpane-__addonRef__-input-store-history"
-          data-l10n-id="pref-privacy-store-history"
+        <html:span
+          id="zotero-prefpane-__addonRef__-history-mode-label"
+          data-l10n-id="pref-privacy-history-mode"
           style="flex: 0 0 220px; margin-right: 10px"
-        ></html:label>
-        <html:input
-          type="checkbox"
-          id="zotero-prefpane-__addonRef__-input-store-history"
-          preference="extensions.zotero.__addonRef__.privacyStoreLocalHistory"
-        ></html:input>
+        ></html:span>
+        <html:div
+          id="zotero-prefpane-__addonRef__-history-mode"
+          role="radiogroup"
+          aria-labelledby="zotero-prefpane-__addonRef__-history-mode-label"
+          aria-describedby="zotero-prefpane-__addonRef__-history-mode-help"
+          class="paperpilot-pref-radio-list"
+          style="flex: 1"
+        >
+          <html:div class="paperpilot-pref-radio">
+            <html:input
+              type="radio"
+              id="zotero-prefpane-__addonRef__-history-mode-full"
+              name="__addonRef__-history-mode"
+              value="full"
+            ></html:input>
+            <html:label
+              for="zotero-prefpane-__addonRef__-history-mode-full"
+              data-l10n-id="pref-privacy-history-mode-full"
+            ></html:label>
+          </html:div>
+          <html:div class="paperpilot-pref-radio">
+            <html:input
+              type="radio"
+              id="zotero-prefpane-__addonRef__-history-mode-prompts-only"
+              name="__addonRef__-history-mode"
+              value="prompts-only"
+            ></html:input>
+            <html:label
+              for="zotero-prefpane-__addonRef__-history-mode-prompts-only"
+              data-l10n-id="pref-privacy-history-mode-prompts-only"
+            ></html:label>
+          </html:div>
+          <html:div class="paperpilot-pref-radio">
+            <html:input
+              type="radio"
+              id="zotero-prefpane-__addonRef__-history-mode-disabled"
+              name="__addonRef__-history-mode"
+              value="disabled"
+            ></html:input>
+            <html:label
+              for="zotero-prefpane-__addonRef__-history-mode-disabled"
+              data-l10n-id="pref-privacy-history-mode-disabled"
+            ></html:label>
+          </html:div>
+        </html:div>
       </hbox>
-      <hbox
-        align="center"
-        style="display: flex; align-items: center; margin-bottom: 10px"
-      >
-        <html:label
-          for="zotero-prefpane-__addonRef__-input-save-prompts-only"
-          data-l10n-id="pref-privacy-save-prompts-only"
-          style="flex: 0 0 220px; margin-right: 10px"
-        ></html:label>
-        <html:input
-          type="checkbox"
-          id="zotero-prefpane-__addonRef__-input-save-prompts-only"
-          preference="extensions.zotero.__addonRef__.privacySavePromptsOnly"
-        ></html:input>
-      </hbox>
-      <hbox
-        align="center"
-        style="display: flex; align-items: center; margin-bottom: 10px"
-      >
-        <html:label
-          for="zotero-prefpane-__addonRef__-input-save-responses"
-          data-l10n-id="pref-privacy-save-responses"
-          style="flex: 0 0 220px; margin-right: 10px"
-        ></html:label>
-        <html:input
-          type="checkbox"
-          id="zotero-prefpane-__addonRef__-input-save-responses"
-          preference="extensions.zotero.__addonRef__.privacySaveResponses"
-        ></html:input>
-      </hbox>
+      <html:p
+        id="zotero-prefpane-__addonRef__-history-mode-help"
+        data-l10n-id="pref-privacy-history-mode-help"
+        class="paperpilot-pref-help"
+      ></html:p>
       <hbox align="center" style="display: flex; align-items: center">
         <html:label
           for="zotero-prefpane-__addonRef__-input-redact-paths"

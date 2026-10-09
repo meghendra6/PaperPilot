@@ -925,3 +925,40 @@ test("Research Workspace result surfaces no longer render raw JSON", () => {
     /JSON\.stringify\(artifact\.payload|pprw-pre/,
   );
 });
+
+test("Evidence Matrix rows of failed papers say Failed instead of Pending", () => {
+  const payload = {
+    matrix: {
+      columns: [{ id: "method", label: "Method" }],
+      rows: [
+        { paperKey: "SOURCE-OK", title: "Finished paper", cells: [] },
+        { paperKey: "SOURCE-FAILED", title: "Failed paper", cells: [] },
+      ],
+    },
+  };
+  const rendered = renderResearchWorkspaceArtifactValue(
+    new FakeDocument() as unknown as Document,
+    payload,
+    { artifactType: "evidence-matrix", failedSourceIDs: ["SOURCE-FAILED"] },
+  ) as unknown as FakeElement;
+  const rows = withClass(rendered, "pprw-render-badge").map(
+    (badge) => badge.textContent,
+  );
+  assert.deepEqual(rows, ["Pending", "Failed"]);
+  assert.equal(
+    withClass(rendered, "pprw-render-badge--error")[0]?.textContent,
+    "Failed",
+  );
+
+  const withoutRunState = renderResearchWorkspaceArtifactValue(
+    new FakeDocument() as unknown as Document,
+    payload,
+    { artifactType: "evidence-matrix" },
+  ) as unknown as FakeElement;
+  assert.deepEqual(
+    withClass(withoutRunState, "pprw-render-badge").map(
+      (badge) => badge.textContent,
+    ),
+    ["Pending", "Pending"],
+  );
+});

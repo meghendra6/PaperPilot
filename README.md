@@ -32,7 +32,7 @@ Drafts are memory-only. Full/prompts-only/off history rules also apply to new ch
 
 ## Integrated Research Workspace
 
-Research Workspace is built into Paper Pilot and uses the same selected local engine, paper extraction, and run lifecycle. A persistent modeless project window stays available with zero, one, or multiple selected items and provides screening, claim–evidence ledgers, comparisons, audits, mastery, citation workflows, citation/reference health, contradiction/gap review, scoped export, a local Living Review change inbox, and five editable Research project templates. Template presets only highlight recommended capabilities; they never start analysis or hide other capabilities, and exports retain the immutable template snapshot plus current assumptions. Citation & Reference Health derives a local checklist from current saved citation, methodology, and reproducibility artifacts, local Zotero correction/retraction metadata signals, and an optional bounded draft excerpt; it never produces an aggregate truth score. Living Review checks Zotero attachment and annotation metadata without reading their text or calling a model or network service. Safe Zotero collection/tag sync offers a complete preview and preview-bound approval token for one-way additions to existing collections and existing tags, writes a separate revisioned receipt before the transaction, fails closed without Zotero transaction support, and can undo only receipt-owned additions. It never creates or deletes Zotero items, collections, or tags and never writes bibliographic fields, PDFs, notes, attachments, or annotations. Install only the Paper Pilot XPI; there is no companion add-on or Research Monitor.
+Research Workspace is built into Paper Pilot and uses the same selected local engine, paper extraction, and run lifecycle. A persistent modeless project window stays available with zero, one, or multiple selected items and provides screening, claim–evidence ledgers, comparisons, audits, mastery, citation workflows, citation/reference health, contradiction/gap review, scoped export, a local Living Review change inbox, and five editable Research project templates. Template presets only highlight recommended capabilities; they never start analysis or hide other capabilities, and exports retain the immutable template snapshot plus current assumptions. Citation & Reference Health derives a local checklist from current saved citation, methodology, and reproducibility artifacts, local Zotero correction/retraction metadata signals, and an optional bounded draft excerpt; it never produces an aggregate truth score. Living Review checks Zotero attachment and annotation metadata without reading their text or calling a model or network service. Safe Zotero collection/tag sync offers a complete preview and preview-bound approval token for one-way additions to existing collections and existing tags, writes a separate revisioned receipt before the transaction, fails closed without Zotero transaction support, and can undo only receipt-owned additions. It never creates or deletes Zotero items, collections, or tags and never writes bibliographic fields, PDFs, notes, attachments, or annotations. Open it from **Tools → Open Research Workspace…**, the library item context menu, or the **Research Workspace** button in the Workbench. Leaving a project or closing the window while an analysis runs asks before cancelling it. A partial run reports its failed papers and offers **Resume**, and archived projects can be opened and restored. Install only the Paper Pilot XPI; there is no companion add-on or Research Monitor.
 
 ## Screenshots and demo
 
@@ -74,7 +74,7 @@ See [`docs/manual-qa.md`](./docs/manual-qa.md) for the current runtime checklist
 - Supports per-paper engine switching between Codex CLI and Claude Code
 - Preserves follow-up continuity within the same paper/session
 - Supports **Past sessions** for reopening, renaming, deleting, and clearing saved sessions for the current paper
-- Uses **New session** to preserve the current session and start a blank draft for the same paper
+- Uses **New session** to preserve the current session and start a blank draft for the same paper; it asks first when Critical Read or Paper Mastery has progress that the current history setting would not keep
 
 ### 2. Paper-aware actions from the reader
 
@@ -104,7 +104,7 @@ These workflows are designed to produce compact, reader-pane-safe outputs rather
 
 ### 4. Agent-led verified research discovery
 
-Choose **Find verified prior work** and optionally describe a research concern. The active agent infers the relevant fields, adjacent fields, leading venues, and query families; the user never has to maintain a conference list. Results are separated into:
+Choose **Find verified prior work** and optionally describe a research concern. Discovery needs Codex CLI with **Allow web search when needed** turned on; with any other setup, the entry points stay disabled and show the reason. The active agent infers the relevant fields, adjacent fields, leading venues, and query families; the user never has to maintain a conference list. Results are separated into:
 
 - **Verified main-conference papers** — high-confidence, paper-level official evidence for an observed main track at a leading venue
 - **Other peer-reviewed work** — journals, workshops, Findings, other tracks, or published records whose main-track status is not established
@@ -191,8 +191,8 @@ Claude Code mode uses the local `claude` CLI in print mode with the same paper w
 - configurable executable path
 - model selection across the Claude Code CLI family aliases (`sonnet` default, plus `opus`, `haiku`, and `fable`), which the installed CLI resolves to the newest model in each family (currently Sonnet 5.5, Opus 5.5, Haiku 5.5, and Fable 5.1), plus pinned ids `claude-opus-5-5`, `claude-sonnet-5-5`, `claude-haiku-5-5`, `claude-fable-5-1`, `claude-opus-5`, and `claude-sonnet-5`
 - any other model id typed in settings (for example `claude-opus-5-5[1m]` or a Bedrock/Vertex model id) is passed to the CLI unchanged; hand-typed names such as `Opus 5.5` or `claude-opus-5.5` are normalized to `claude-opus-5-5`, keeping a context suffix such as `[1m]`
-- optional effort level (`low`, `medium`, `high`, `xhigh`, or `max`; empty keeps the Claude Code CLI default) in settings and next to the model picker; it is passed as `--effort` only when the installed CLI's `--help` lists that flag
-- configurable permission mode
+- optional effort level (`low`, `medium`, `high`, `xhigh`, or `max`), set in settings or next to the model picker. The empty choice keeps the CLI default: settings call it **Claude Code default**, and the picker calls it **default effort**. The level is passed as `--effort` only when the installed CLI's `--help` lists that flag
+- configurable permission mode for chat runs
 - paper-scoped follow-up continuity
 - retrieval/context assembly for the active paper
 
@@ -318,8 +318,9 @@ The preferences UI currently exposes settings across these areas:
 - **General**
 - **Claude Code**
 - **Codex CLI**
-- **Retrieval**
-- **Privacy**
+- **Workspace** (workspace root and auto-clean, shared by both engines)
+- **Retrieval** (chunk size, overlap, and top-k sit in a collapsed **Advanced retrieval** group)
+- **Privacy** (one **Session history** choice: **Save prompts and responses**, **Save prompts only**, or **Do not save session history**)
 
 Important current details:
 

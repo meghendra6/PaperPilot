@@ -514,6 +514,22 @@ test("getPaperCompareWorkflowState tells users to recommend related papers first
   });
 });
 
+test("getPaperCompareWorkflowState does not point to discovery the engine cannot run", () => {
+  const state = getPaperCompareWorkflowState({
+    currentPaperTitle: "Current Paper",
+    groups: [],
+    discoveryUnavailableReason:
+      "Needs Codex CLI with web search allowed (engine settings).",
+  });
+
+  assert.equal(state.enabled, false);
+  assert.equal(
+    state.helperText,
+    "Compare needs related papers first. Finding them needs Codex CLI with web search allowed (engine settings).",
+  );
+  assert.doesNotMatch(state.helperText, /Step 1: Open Related papers/);
+});
+
 test("getPaperCompareWorkflowState falls back to metadata-unavailable copy", () => {
   const state = getPaperCompareWorkflowState({
     currentPaperTitle: "   ",

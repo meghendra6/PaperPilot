@@ -49,15 +49,28 @@ export function shiftChatTranscriptWindow(params: {
   };
 }
 
+export interface ChatTranscriptShowOptions {
+  // Rerenders restore the reading position without moving keyboard focus.
+  focus?: boolean;
+}
+
 export interface ChatTranscriptWindowHandle {
-  showMessage(key: string, offset?: number): boolean;
+  showMessage(
+    key: string,
+    offset?: number,
+    options?: ChatTranscriptShowOptions,
+  ): boolean;
   showLatest(): void;
   dispose(): void;
 }
 
 interface RegisteredChatTranscriptWindow {
   isLatest(): boolean;
-  showMessage(key: string, offset?: number): boolean;
+  showMessage(
+    key: string,
+    offset?: number,
+    options?: ChatTranscriptShowOptions,
+  ): boolean;
   showLatest(): void;
   notifyUpdate(follow: boolean): void;
   prepareAppend(): void;
@@ -110,6 +123,19 @@ export function showChatLatest(container: HTMLElement): void {
   else container.scrollTop = container.scrollHeight;
   container.parentElement?.querySelector("[data-pp-new-response]")?.remove();
 }
+function findNewResponseButton(container: Element): Element | null {
+  return (container.parentElement ?? container).querySelector(
+    "[data-pp-new-response]",
+  );
+}
+/** True while "New response · Jump to latest" is showing for `container`. */
+export function hasChatNewResponse(container: Element): boolean {
+  return Boolean(findNewResponseButton(container));
+}
+/** Removes the prompt, for example when the transcript becomes empty. */
+export function clearChatNewResponse(container: Element): void {
+  findNewResponseButton(container)?.remove();
+}
 function showNewResponseButton(container: HTMLElement): void {
   const host = container.parentElement ?? container;
   if (host.querySelector("[data-pp-new-response]")) return;
@@ -122,7 +148,9 @@ function showNewResponseButton(container: HTMLElement): void {
     showChatLatest(container);
     button.remove();
   });
-  host.append(button);
+  // Keep the prompt next to the transcript instead of below the composer.
+  if (container.parentElement) container.after(button);
+  else host.append(button);
 }
 export function notifyChatTranscriptUpdate(
   container: HTMLElement,
@@ -432,7 +460,11 @@ export function renderChatTranscriptWindow<T>(params: {
     );
   };
 
-  const showMessage = (key: string, offset = 0): boolean => {
+  const showMessage = (
+    key: string,
+    offset = 0,
+    options: ChatTranscriptShowOptions = {},
+  ): boolean => {
     const items = params.getItems();
     const index = items.findIndex((item, i) => params.getKey(item, i) === key);
     if (index < 0) return false;
@@ -452,8 +484,10 @@ export function renderChatTranscriptWindow<T>(params: {
       wrapper.getBoundingClientRect().top -
       params.container.getBoundingClientRect().top -
       offset;
-    wrapper.setAttribute("tabindex", "-1");
-    wrapper.focus({ preventScroll: true });
+    if (options.focus !== false) {
+      wrapper.setAttribute("tabindex", "-1");
+      wrapper.focus({ preventScroll: true });
+    }
     releaseScrollSuppression();
     return true;
   };

@@ -5,7 +5,8 @@ import {
   clearModeOverrideForItem,
   getDefaultMode,
   getModeForItem,
-  setModeOverrideForItem,
+  hasModeOverrideForItem,
+  selectModeForItem,
 } from "./ai/modeStore";
 import { getProviderDescriptorForItem } from "./ai/providerRegistry";
 import { retryLastEngineQuestion } from "./ai/retryEngineRequest";
@@ -32,14 +33,29 @@ import {
   type ReaderRunToken,
 } from "./ai/runPresentation";
 import type { RunProfile } from "./ai/runProfile";
-import { getRunProgressState } from "./ai/runProgress";
-import { renderChatComposer } from "./ui/chatComposer";
+import {
+  clearTerminalRunProgressState,
+  getRunProgressState,
+  isRunProgressVisibleInSession,
+} from "./ai/runProgress";
+import { isReaderChatBusy } from "./ai/readerBusy";
+import {
+  getBusySubmitHint,
+  renderChatComposer,
+  shouldIgnoreStopActivation,
+} from "./ui/chatComposer";
 import { captureChatSearchReturn } from "./ui/chatSearchReturn";
 import { getStatusLabel } from "./ai/statusLabels";
 import type { StructuredOutputSchema } from "./ai/structuredOutput";
 import type { EngineMode } from "./ai/types";
-import { shouldEnableAutoHighlight } from "./autoHighlight/status";
-import { runAutoHighlightWorkflow } from "./autoHighlight/workflow";
+import {
+  formatAutoHighlightCancelledStatus,
+  getAutoHighlightButtonPresentation,
+} from "./autoHighlight/status";
+import {
+  AutoHighlightCancelledError,
+  runAutoHighlightWorkflow,
+} from "./autoHighlight/workflow";
 import {
   handleClaudeQuestion,
   stopClaudeRunSilently,
@@ -92,11 +108,19 @@ import {
   consumeChatDraft,
   restoreChatDraft,
   createChatDraftSubmission,
+  formatDraftAnnotationNotice,
+  formatDraftSourceLabel,
   type ChatDraftSubmission,
 } from "./ui/chatDraft";
 import { persistChatDraftSubmission } from "./ui/chatAdmission";
 import { buildReaderActionQuestion } from "./readerActionPrompt";
 import { createChatTools, showChatReviewPanel } from "./ui/chatTools";
+import {
+  buildChatContextStatus,
+  renderChatContextStatus,
+  withChatContextTiming,
+  type ChatContextStatus,
+} from "./ui/chatContextStatus";
 import type { MessageRecord } from "./message/types";
 import { openChatCitation } from "./message/chatCitations";
 import {
@@ -128,6 +152,7 @@ import {
   reviseCriticalReadStep,
   startCriticalRead,
 } from "./criticalRead/workflow";
+import { getDiscoveryAvailability } from "./discovery/capabilities";
 import { areLikelySamePaper } from "./discovery/normalize";
 import { messageStore } from "./message/messageStore";
 import { saveCriticalReadToNote } from "./note/criticalReadNote";
@@ -160,6 +185,7 @@ import {
   type RecommendedPaper,
 } from "./relatedRecommendations";
 import { resolveSessionHistoryPrefs } from "./session/historyPrefs";
+import { describeNewSessionImpact } from "./session/newSessionImpact";
 import { sessionHistoryService } from "./session/sessionHistoryService";
 import { sessionStore } from "./session/sessionStore";
 import { isLikelySilentToolMessage } from "./session/silentTurnFilter";
@@ -173,20 +199,42 @@ import {
 } from "./ui/chatComposerSizing";
 import {
   captureChatPosition,
+  clearChatNewResponse,
+  hasChatNewResponse,
   jumpToChatMessage,
   isChatFollowingLatest,
   disposeChatTranscriptWindow,
+  notifyChatTranscriptUpdate,
   renderChatTranscriptWindow,
 } from "./ui/chatTranscriptWindow";
 import { createCollapsibleSection } from "./ui/collapsibleSection";
+import {
+  clearCriticalReadViewState,
+  getCriticalReadDraft,
+  getExpandedCriticalReadSteps,
+  pruneCriticalReadDrafts,
+  setCriticalReadDraft,
+  setCriticalReadStepExpanded,
+} from "./ui/criticalReadDraft";
 import { renderCriticalReadSection } from "./ui/criticalReadSection";
+import {
+  appendOpenResearchWorkspaceAction,
+  createOpenResearchWorkspaceButton,
+  showResearchWorkspaceRequiredPanel,
+} from "./ui/researchWorkspaceLauncher";
 import { buildDiscoveryRow } from "./ui/discoveryRow";
+import {
+  getDiscoveryButtonPresentation,
+  resolveDiscoveryRequest,
+} from "./ui/discoveryEntryState";
 import { renderDiscoverySection } from "./ui/discoverySection";
 import {
   createPaneHeader,
   normalizeModelForMode,
   renderClaudeEffortInput,
+  renderCodexAuthActions,
   renderCodexOptionsRow,
+  renderEngineSelection,
   renderModeHeader,
   renderModelHistory,
   renderModelRow,
@@ -200,11 +248,17 @@ import type { PaneSectionID } from "./ui/paneSectionState";
 import { installPopoverDismissal } from "./ui/popoverDismissal";
 import {
   getPaperArtifactState,
+  getWorkbenchBlockForItem,
   renderPaperArtifactState,
   renderWorkbenchArtifactState,
+  renderWorkbenchBusyState,
   setPaperArtifactState,
   WorkbenchElements,
 } from "./ui/readerWorkbench";
+import {
+  buildClearCardsConfirmation,
+  formatClearedCardsStatus,
+} from "./ui/workbenchAvailability";
 import {
   createRunProgressCard,
   PAPER_PILOT_PREF_PANE_ID,
@@ -213,8 +267,13 @@ import {
 import { resolvePaperWorkspaceRoot } from "./workspace/pathBuilder";
 import { probeWorkspaceWritable } from "./workspace/status";
 
+/** How long the composer keeps a "nothing was sent" hint visible. */
+const COMPOSER_HINT_MS = 4000;
 const publicReviewAbortControllers = new Map<number, AbortController>();
 const relatedDiscoveryAbortControllers = new Map<number, AbortController>();
+const autoHighlightAbortControllers = new Map<number, AbortController>();
+/** Last observed Codex login state; it decides whether auth controls show. */
+let lastCodexLoginState: string | undefined;
 const criticalReadDiscoveryAbortControllers = new Map<
   number,
   AbortController
@@ -366,7 +425,7 @@ export function registerPaperPilotPaneSection() {
           <div id="paper-pilot-workbench-mount">
             <div class="pp-workbench-highlight">
               <html:button id="chat-auto-highlight" class="pp-btn pp-btn--secondary">Highlight key passages</html:button>
-              <span id="chat-auto-highlight-status" class="pp-session-status"></span>
+              <span id="chat-auto-highlight-status" class="pp-session-status" role="status" aria-live="polite"></span>
             </div>
             <div id="chat-paper-workbench">
               <html:button id="chat-research-brief" class="pp-btn pp-btn--secondary">Research brief</html:button>
@@ -409,6 +468,7 @@ export function registerPaperPilotPaneSection() {
             <label for="chat-related-concern" class="pp-related-concern-label">Research concern or idea</label>
             <html:textarea id="chat-related-concern" class="pp-related-concern" placeholder="Optional: describe the research concern or novelty question." />
             <html:button id="chat-related-recommend" class="pp-btn pp-btn--secondary">Find verified prior work</html:button>
+            <div id="chat-related-availability" class="pp-related-availability" role="note" style="display: none;"></div>
             <html:button id="chat-related-save" class="pp-btn pp-btn--ghost" disabled="true">Save discovery note</html:button>
             <div class="pp-related-disclosure">Paper Pilot infers the field and leading venues, then verifies main-track acceptance from official paper-level sources. Workshops and preprints stay in separate lanes.</div>
             <div id="chat-related-status" class="pp-status-text" style="display: none;"></div>
@@ -428,6 +488,7 @@ export function registerPaperPilotPaneSection() {
         <div id="chat-messages" role="log" aria-live="polite" aria-relevant="additions text" aria-label="Paper conversation"></div>
         <div id="paper-pilot-composer">
           <div id="paper-pilot-draft" class="pp-status-card pp-status-card--draft" style="display: none;"></div>
+          <div id="chat-composer-hint" class="pp-composer-hint" role="status" aria-live="polite"></div>
           <div id="chat-input-shell">
             <html:textarea id="chat-input" placeholder="Ask a question about this paper or the current selection."/>
             <html:button id="chat-send" class="pp-btn pp-btn--primary" aria-label="Send message">Send</html:button>
@@ -560,11 +621,15 @@ export function registerPaperPilotPaneSection() {
       focusButton.className = "pp-btn pp-btn--ghost pp-chat-focus";
       focusButton.textContent = "Focus chat";
       focusButton.setAttribute("aria-pressed", "false");
+      focusButton.title = "Hide the Workbench to give chat more room";
       paneHeader.root.append(focusButton);
       focusButton.addEventListener("click", () => {
+        // The name stays "Focus chat". aria-pressed and its style carry state.
         const focused = focusButton.getAttribute("aria-pressed") !== "true";
         focusButton.setAttribute("aria-pressed", String(focused));
-        focusButton.textContent = focused ? "Show workbench" : "Focus chat";
+        focusButton.title = focused
+          ? "Show the Workbench again"
+          : "Hide the Workbench to give chat more room";
         sectionStack.hidden = focused;
         workspaceResize.root.hidden = focused;
       });
@@ -919,7 +984,7 @@ export function registerPaperPilotPaneSection() {
             streamingIndicator,
             Boolean(getActiveReaderRunMode(item.id)),
           );
-          runProgressCard.render(getRunProgressState(item.id));
+          runProgressCard.render(getVisibleRunProgressState(item.id));
           renderChatComposerForItem(input, item.id);
         };
         const runProgressCard = createRunProgressCard({
@@ -946,6 +1011,10 @@ export function registerPaperPilotPaneSection() {
                 "ai",
               );
             },
+            onDismiss: (state) => {
+              clearTerminalRunProgressState(item.id, state.token);
+              runProgressCard.render(getVisibleRunProgressState(item.id));
+            },
           },
         });
         runProgressCardByContainer.set(runStateCard, runProgressCard);
@@ -955,10 +1024,16 @@ export function registerPaperPilotPaneSection() {
           activeRunProgressCards.delete(runProgressCard);
           runProgressCardByContainer.delete(runStateCard);
         });
-        runProgressCard.render(getRunProgressState(item.id));
+        runProgressCard.render(getVisibleRunProgressState(item.id));
 
         let sessionHistoryOpen = sessionsSection.isExpanded();
         let renamingSessionId: string | undefined;
+        // Run events rebuild Past sessions. Keep the typed name and caret.
+        let renameDraft: { sessionId: string; value: string } | undefined;
+        let renameFocus:
+          | { mode: "select" }
+          | { mode: "restore"; start: number | null; end: number | null }
+          | undefined;
         let activeKebabClose: (() => void) | undefined;
         let activeKebabRoot: HTMLElement | undefined;
         cleanupTasks.push(
@@ -1126,13 +1201,40 @@ export function registerPaperPilotPaneSection() {
               : state.phase === "complete"
                 ? "Critical Read · Complete"
                 : `Critical Read · ${state.steps.filter((step) => step.status === "complete").length}/7`;
+          // Every status update rebuilds the section. Unsent input and open
+          // completed steps come from memory so a rebuild cannot erase them.
+          pruneCriticalReadDrafts(
+            item.id,
+            state.sessionID,
+            state.steps
+              .filter((step) => step.status === "complete")
+              .map((step) => step.id),
+          );
+          const currentStep = getCriticalReadStep(state);
           renderCriticalReadSection({
             root: criticalReadRoot,
             state,
             responseLanguage,
             paperTitle: String(item.getField("title") || t("Current paper")),
-            readerInput,
+            readerInput:
+              readerInput ??
+              (currentStep
+                ? getCriticalReadDraft(item.id, state.sessionID, currentStep.id)
+                : undefined),
+            expandedStepIDs: getExpandedCriticalReadSteps(
+              item.id,
+              state.sessionID,
+            ),
             actions: {
+              onDraftChange: (stepID, text) =>
+                setCriticalReadDraft(item.id, state.sessionID, stepID, text),
+              onToggleStep: (stepID, expanded) =>
+                setCriticalReadStepExpanded(
+                  item.id,
+                  state.sessionID,
+                  stepID,
+                  expanded,
+                ),
               onCancel: async () => {
                 const discoveryController =
                   criticalReadDiscoveryAbortControllers.get(item.id);
@@ -1455,11 +1557,9 @@ export function registerPaperPilotPaneSection() {
         cleanupTasks.push(
           subscribeToResponseLanguageChanges(() => {
             if (!isCurrentRender()) return;
-            const draft = criticalReadRoot.querySelector<HTMLTextAreaElement>(
-              ".pp-critical-read__input",
-            )?.value;
+            // The unsent assessment is kept in the draft store on every edit.
             const scrollTop = criticalReadRoot.scrollTop;
-            renderCriticalRead(draft);
+            renderCriticalRead();
             criticalReadRoot.scrollTop = scrollTop;
           }),
         );
@@ -1469,14 +1569,55 @@ export function registerPaperPilotPaneSection() {
           criticalReadRoot.style.display = visible ? "none" : "block";
           if (!visible) renderCriticalRead();
         };
+        // Requests from the Research Workspace window only open a panel. They
+        // expand the Workbench, leave Focus chat through its own button, and
+        // scroll the panel into view so the window's "opened" is true.
+        const revealWorkbenchPanel = (panel?: HTMLElement | null) => {
+          workbenchSection.setExpanded(true);
+          if (focusButton.getAttribute("aria-pressed") === "true") {
+            focusButton.click();
+          }
+          if (panel && panel.style.display !== "none") {
+            panel.scrollIntoView?.({ block: "nearest" });
+          }
+        };
+        const showCriticalRead = () => {
+          criticalReadRoot.style.display = "block";
+          renderCriticalRead();
+          revealWorkbenchPanel(criticalReadRoot);
+        };
         criticalReadButton.addEventListener("click", openCriticalRead);
+        criticalReadButton.after(
+          createOpenResearchWorkspaceButton(body.ownerDocument, {
+            items: [item],
+            label: "Research Workspace",
+            className: "pp-btn pp-btn--ghost",
+            onError: (error) =>
+              logReaderPaneError("Research Workspace launch failed", error),
+          }),
+        );
         if (addon.data.criticalReadStates?.has(item.id)) {
           criticalReadRoot.style.display = "block";
         }
         renderCriticalRead();
 
-        const rerenderPane = async () => {
-          await refreshPaneState({ isCurrent: isCurrentRender });
+        // Keep text the reader typed until the stored concern itself changes.
+        let renderedRelatedConcern = "";
+        const syncRelatedConcern = () => {
+          const stored = getRelatedRecommendationState(item.id).concern || "";
+          if (
+            relatedConcern.value === renderedRelatedConcern ||
+            stored !== renderedRelatedConcern
+          ) {
+            relatedConcern.value = stored;
+          }
+          renderedRelatedConcern = stored;
+        };
+
+        const rerenderPane = async (
+          options: { renderTranscript?: boolean } = {},
+        ) => {
+          await refreshPaneState({ isCurrent: isCurrentRender, ...options });
           if (disposed) return;
           renderRelatedRecommendationState(
             relatedRecommendButton,
@@ -1487,8 +1628,7 @@ export function registerPaperPilotPaneSection() {
             item.id,
             String(item.getField("title") || ""),
           );
-          relatedConcern.value =
-            getRelatedRecommendationState(item.id).concern || "";
+          syncRelatedConcern();
           renderCriticalRead();
           await renderSessionHistory();
           if (disposed) return;
@@ -1513,6 +1653,21 @@ export function registerPaperPilotPaneSection() {
           }
 
           const doc = sessionHistoryPanel.ownerDocument;
+          const previousRenameInput =
+            sessionHistoryPanel.querySelector<HTMLInputElement>(
+              ".pp-session-history__rename-input",
+            );
+          if (
+            !renameFocus &&
+            previousRenameInput &&
+            doc.activeElement === previousRenameInput
+          ) {
+            renameFocus = {
+              mode: "restore",
+              start: previousRenameInput.selectionStart,
+              end: previousRenameInput.selectionEnd,
+            };
+          }
           sessionHistoryPanel.style.display = "block";
           sessionHistoryPanel.replaceChildren();
 
@@ -1540,6 +1695,7 @@ export function registerPaperPilotPaneSection() {
                 await sessionHistoryService.deleteAllSavedSessions({
                   itemID: item.id,
                 });
+                clearCriticalReadViewState(item.id);
                 sessionHistoryOpen = false;
                 sessionsSection.setExpanded(false);
                 await rerenderPane();
@@ -1574,32 +1730,57 @@ export function registerPaperPilotPaneSection() {
             if (renamingSessionId === entry.sessionId) {
               const renameInput = doc.createElement("input");
               renameInput.className = "pp-session-history__rename-input";
-              renameInput.value = entry.title;
+              renameInput.setAttribute("aria-label", "Session name");
+              renameInput.value =
+                renameDraft?.sessionId === entry.sessionId
+                  ? renameDraft.value
+                  : entry.title;
+              renameInput.addEventListener("input", () => {
+                renameDraft = {
+                  sessionId: entry.sessionId,
+                  value: renameInput.value,
+                };
+              });
               titleRow.appendChild(renameInput);
 
-              const saveRenameButton = doc.createElement("button");
-              saveRenameButton.type = "button";
-              saveRenameButton.className = "pp-btn pp-btn--secondary";
-              saveRenameButton.textContent = "Save";
-              saveRenameButton.addEventListener("click", async () => {
+              const saveRename = async () => {
                 await sessionHistoryService.renameSavedSession({
                   itemID: item.id,
                   sessionId: entry.sessionId,
                   title: renameInput.value,
                 });
                 renamingSessionId = undefined;
+                renameDraft = undefined;
                 await renderSessionHistory();
+              };
+              const cancelRename = async () => {
+                renamingSessionId = undefined;
+                renameDraft = undefined;
+                await renderSessionHistory();
+              };
+              renameInput.addEventListener("keydown", (event) => {
+                if (event.key === "Enter" && !event.isComposing) {
+                  event.preventDefault();
+                  void saveRename();
+                } else if (event.key === "Escape") {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  void cancelRename();
+                }
               });
+
+              const saveRenameButton = doc.createElement("button");
+              saveRenameButton.type = "button";
+              saveRenameButton.className = "pp-btn pp-btn--secondary";
+              saveRenameButton.textContent = "Save";
+              saveRenameButton.addEventListener("click", saveRename);
               titleRow.appendChild(saveRenameButton);
 
               const cancelRenameButton = doc.createElement("button");
               cancelRenameButton.type = "button";
               cancelRenameButton.className = "pp-btn pp-btn--ghost";
               cancelRenameButton.textContent = "Cancel";
-              cancelRenameButton.addEventListener("click", async () => {
-                renamingSessionId = undefined;
-                await renderSessionHistory();
-              });
+              cancelRenameButton.addEventListener("click", cancelRename);
               titleRow.appendChild(cancelRenameButton);
             } else {
               const entryTitle = doc.createElement("div");
@@ -1717,6 +1898,8 @@ export function registerPaperPilotPaneSection() {
                 renameEvent.stopPropagation();
                 closeKebab();
                 renamingSessionId = entry.sessionId;
+                renameDraft = undefined;
+                renameFocus = { mode: "select" };
                 await renderSessionHistory();
               });
               kebabMenu.appendChild(renameItem);
@@ -1745,6 +1928,7 @@ export function registerPaperPilotPaneSection() {
                       itemID: item.id,
                       sessionId: entry.sessionId,
                     });
+                    clearCriticalReadViewState(item.id, entry.sessionId);
                     resetBlankSessionState();
                     renamingSessionId = undefined;
                     await rerenderPane();
@@ -1755,6 +1939,7 @@ export function registerPaperPilotPaneSection() {
                   itemID: item.id,
                   sessionId: entry.sessionId,
                 });
+                clearCriticalReadViewState(item.id, entry.sessionId);
                 renamingSessionId = undefined;
                 await rerenderPane();
               });
@@ -1768,6 +1953,22 @@ export function registerPaperPilotPaneSection() {
 
             row.appendChild(rowActions);
             sessionHistoryPanel.appendChild(row);
+          }
+
+          const focusRequest = renameFocus;
+          renameFocus = undefined;
+          const renameInput =
+            sessionHistoryPanel.querySelector<HTMLInputElement>(
+              ".pp-session-history__rename-input",
+            );
+          if (focusRequest && renameInput) {
+            renameInput.focus();
+            if (focusRequest.mode === "select") renameInput.select();
+            else
+              renameInput.setSelectionRange(
+                focusRequest.start ?? renameInput.value.length,
+                focusRequest.end ?? renameInput.value.length,
+              );
           }
         };
 
@@ -2066,10 +2267,15 @@ export function registerPaperPilotPaneSection() {
             },
             onSendToProject: async () => {
               const home = await loadResearchWorkspaceHome();
-              if (!home.projects.length)
-                throw new Error(
-                  "Create a Research Workspace project first, then send this question.",
-                );
+              if (!home.projects.length) {
+                showResearchWorkspaceRequiredPanel({
+                  mount: chatTools.root,
+                  title: "Send comparison question to project",
+                  body: "Create a Research Workspace project first, then send this question.",
+                  items: [item],
+                });
+                return;
+              }
               const doc = body.ownerDocument;
               const select = doc.createElement("select");
               select.setAttribute("aria-label", "Destination project");
@@ -2122,13 +2328,30 @@ export function registerPaperPilotPaneSection() {
         }));
 
         renderChatComposerForItem(input, item.id);
+        // Workbench and Compare share the paper's engine slot with chat.
+        // Refresh their availability on every run event so they never look
+        // usable while a click would be dropped.
+        const renderBusyDependentControls = () => {
+          renderWorkbenchBusyState(workbenchElements, item.id);
+          renderCompareButtonState(
+            compareButton,
+            item.id,
+            String(item.getField("title") || ""),
+          );
+        };
+        const isWorkbenchRequestBlocked = () => {
+          if (!getWorkbenchBlockForItem(item.id).blocked) return false;
+          renderBusyDependentControls();
+          return true;
+        };
         const cleanupComposerSizing = installChatComposerAutosize(input);
         const unsubscribeFromRunEvents = subscribeToReaderRunEvents(
           item.id,
           (event) => {
             if (!isCurrentRender()) return;
             renderChatComposerForItem(input, item.id);
-            runProgressCard.render(getRunProgressState(item.id));
+            renderBusyDependentControls();
+            runProgressCard.render(getVisibleRunProgressState(item.id));
             if (event.type === "started") {
               const activeLabel = getModeLabel(event.mode);
               renderModeHeader(modeChip, modeStatus, activeLabel, "running");
@@ -2136,7 +2359,11 @@ export function registerPaperPilotPaneSection() {
               setSectionSummary(`${activeLabel} · Running`);
               return;
             }
-            void rerenderPane();
+            // The live answer bubble is not stored until the run finishes.
+            // Rebuilding the transcript mid-run would detach it.
+            void rerenderPane({
+              renderTranscript: !getActiveReaderRunMode(item.id),
+            });
           },
         );
         cleanupTasks.push(cleanupComposerSizing, unsubscribeFromRunEvents);
@@ -2150,8 +2377,7 @@ export function registerPaperPilotPaneSection() {
           item.id,
           String(item.getField("title") || ""),
         );
-        relatedConcern.value =
-          getRelatedRecommendationState(item.id).concern || "";
+        syncRelatedConcern();
         updateWorkbenchSummary();
         updateRelatedSummary();
 
@@ -2170,25 +2396,87 @@ export function registerPaperPilotPaneSection() {
           return false;
         };
 
+        const renderRelatedState = () =>
+          renderRelatedRecommendationState(
+            relatedRecommendButton,
+            relatedStatus,
+            relatedGroups,
+            compareButton,
+            compareHelper,
+            item.id,
+            String(item.getField("title") || ""),
+          );
+        // Discovery availability depends on the engine and its web-search
+        // setting, so engine changes also refresh the discovery entry points.
+        const refreshAfterEngineChange = async () => {
+          await refreshPaneState({
+            isCurrent: isCurrentRender,
+            renderTranscript: false,
+          });
+          if (!isCurrentRender()) return;
+          renderRelatedState();
+        };
+        // Zotero Settings can change these outside the pane. Discovery
+        // availability and the engine popover follow them without a reload.
+        const engineSettingObservers = (
+          ["defaultMode", "codexEnableWebSearch"] as const
+        ).map((key) =>
+          Zotero.Prefs.registerObserver(
+            `${config.prefsPrefix}.${key}`,
+            () => void refreshAfterEngineChange(),
+            true,
+          ),
+        );
+        cleanupTasks.push(() => {
+          for (const observer of engineSettingObservers)
+            Zotero.Prefs.unregisterObserver(observer);
+        });
+
         modeClaudeButton.addEventListener("click", async () => {
           if (!canChangeProvider()) return;
-          setModeOverrideForItem(item.id, "claude_code");
-          await refreshPaneState({ renderTranscript: false });
+          selectModeForItem(item.id, "claude_code");
+          await refreshAfterEngineChange();
         });
 
         modeCodexButton.addEventListener("click", async () => {
           if (!canChangeProvider()) return;
-          setModeOverrideForItem(item.id, "codex_cli");
-          await refreshPaneState({ renderTranscript: false });
+          selectModeForItem(item.id, "codex_cli");
+          await refreshAfterEngineChange();
         });
 
         modeResetButton.addEventListener("click", async () => {
           if (!canChangeProvider()) return;
           clearModeOverrideForItem(item.id);
-          await refreshPaneState({ renderTranscript: false });
+          await refreshAfterEngineChange();
         });
 
         autoHighlightButton.addEventListener("click", async () => {
+          const presentation = getAutoHighlightButtonPresentation({
+            running: getAutoHighlightState(item.id).running,
+            cancelling: isAutoHighlightCancelling(item.id),
+          });
+          if (presentation.action === "cancel") {
+            const controller = autoHighlightAbortControllers.get(item.id);
+            controller?.abort();
+            // Without a controller nothing is running; clear the stale state.
+            setAutoHighlightState(item.id, {
+              running: Boolean(controller),
+              status: controller ? "Cancelling highlighting…" : "",
+            });
+            renderAutoHighlightState(
+              autoHighlightButton,
+              autoHighlightStatus,
+              item.id,
+            );
+            return;
+          }
+          if (presentation.action !== "start") return;
+          const abortController = createPaneAbortController(
+            autoHighlightButton.ownerDocument,
+          );
+          autoHighlightAbortControllers.set(item.id, abortController);
+          const isActiveRun = () =>
+            autoHighlightAbortControllers.get(item.id) === abortController;
           setAutoHighlightState(item.id, {
             running: true,
             status: "Finding important passages…",
@@ -2199,12 +2487,14 @@ export function registerPaperPilotPaneSection() {
             item.id,
           );
           try {
-            const { summary } = await runAutoHighlightWorkflow({
+            const workflow = runAutoHighlightWorkflow({
               itemID: item.id,
               itemTitle: item.getField("title"),
+              signal: abortController.signal,
               onStatus: (status) => {
+                // A late cleanup message must not mark a finished run active.
                 setAutoHighlightState(item.id, {
-                  running: true,
+                  running: isActiveRun(),
                   status,
                 });
                 renderAutoHighlightState(
@@ -2214,30 +2504,47 @@ export function registerPaperPilotPaneSection() {
                 );
               },
             });
+            // The workflow reserves the paper synchronously; show that now.
+            renderBusyDependentControls();
+            const { summary } = await workflow;
             setAutoHighlightState(item.id, {
               running: false,
               status: summary,
             });
-            renderAutoHighlightState(
-              autoHighlightButton,
-              autoHighlightStatus,
-              item.id,
-            );
           } catch (error) {
-            logReaderPaneError("auto-highlight workflow failed", error);
-            const message =
-              error instanceof Error ? error.message : "Auto-highlight failed.";
-            setAutoHighlightState(item.id, {
-              running: false,
-              status: message,
-            });
-            renderAutoHighlightState(
-              autoHighlightButton,
-              autoHighlightStatus,
-              item.id,
-            );
-            addMessage(chatMessages, `Auto-highlight error: ${message}`, "ai");
+            if (abortController.signal.aborted) {
+              setAutoHighlightState(item.id, {
+                running: false,
+                status: formatAutoHighlightCancelledStatus(
+                  error instanceof AutoHighlightCancelledError
+                    ? error.keptHighlights
+                    : 0,
+                ),
+              });
+            } else {
+              logReaderPaneError("auto-highlight workflow failed", error);
+              const message =
+                error instanceof Error
+                  ? error.message
+                  : "Auto-highlight failed.";
+              setAutoHighlightState(item.id, {
+                running: false,
+                status: message,
+              });
+              addMessage(
+                chatMessages,
+                `Auto-highlight error: ${message}`,
+                "ai",
+              );
+            }
+          } finally {
+            if (isActiveRun()) autoHighlightAbortControllers.delete(item.id);
           }
+          renderAutoHighlightState(
+            autoHighlightButton,
+            autoHighlightStatus,
+            item.id,
+          );
           workbenchSection.markUpdated();
           notifyReaderPaneStateChanged(item.id);
         });
@@ -2249,6 +2556,7 @@ export function registerPaperPilotPaneSection() {
         });
 
         researchBriefButton.addEventListener("click", async () => {
+          if (isWorkbenchRequestBlocked()) return;
           await runPaperArtifactRequest({
             item,
             kind: "research-brief",
@@ -2263,6 +2571,7 @@ export function registerPaperPilotPaneSection() {
         });
 
         compareButton.addEventListener("click", async () => {
+          if (isWorkbenchRequestBlocked()) return;
           await runPaperCompareRequest({
             item,
             input,
@@ -2277,6 +2586,7 @@ export function registerPaperPilotPaneSection() {
         });
 
         contributionsButton.addEventListener("click", async () => {
+          if (isWorkbenchRequestBlocked()) return;
           await runPaperArtifactRequest({
             item,
             kind: "summarize-contributions",
@@ -2291,6 +2601,7 @@ export function registerPaperPilotPaneSection() {
         });
 
         limitationsButton.addEventListener("click", async () => {
+          if (isWorkbenchRequestBlocked()) return;
           await runPaperArtifactRequest({
             item,
             kind: "extract-limitations",
@@ -2305,6 +2616,7 @@ export function registerPaperPilotPaneSection() {
         });
 
         followUpsButton.addEventListener("click", async () => {
+          if (isWorkbenchRequestBlocked()) return;
           await runPaperArtifactRequest({
             item,
             kind: "suggest-follow-ups",
@@ -2403,10 +2715,22 @@ export function registerPaperPilotPaneSection() {
           updateWorkbenchSummary();
         });
 
-        clearWorkbenchButton.addEventListener("click", () => {
-          addon.data.paperArtifactStates?.set(item.id, {
+        clearWorkbenchButton.addEventListener("click", async () => {
+          const { cards } = getPaperArtifactState(item.id);
+          if (!cards.length) return;
+          const confirmation = buildClearCardsConfirmation(cards.length);
+          if (
+            !confirmDestructive(
+              body.ownerDocument,
+              confirmation.title,
+              confirmation.message,
+            )
+          ) {
+            return;
+          }
+          setPaperArtifactState(item.id, {
             running: false,
-            status: "",
+            status: formatClearedCardsStatus(cards.length),
             cards: [],
           });
           renderPaperArtifactState(
@@ -2422,6 +2746,14 @@ export function registerPaperPilotPaneSection() {
             item.id,
           );
           updateWorkbenchSummary();
+          try {
+            await sessionHistoryService.persistActiveSession({
+              itemID: item.id,
+              paperTitle: String(item.getField("title") || ""),
+            });
+          } catch (error) {
+            logReaderPaneError("workbench clear persistence failed", error);
+          }
         });
 
         let relatedConcernOrigin =
@@ -2429,6 +2761,38 @@ export function registerPaperPilotPaneSection() {
         relatedConcern.addEventListener("input", () => {
           relatedConcernOrigin = "user_text";
         });
+        const getDiscoveryUnavailableReason = () => {
+          const availability = getDiscoveryAvailability(
+            getModeForItem(item.id),
+          );
+          return availability.available ? undefined : availability.reason;
+        };
+        const showRelatedStatus = (status: string) => {
+          addon.data.relatedRecommendationStates?.set(item.id, {
+            ...getRelatedRecommendationState(item.id),
+            status,
+          });
+          renderRelatedState();
+        };
+        /**
+         * Starts discovery unless one is already starting or running. Code
+         * paths call this directly; they never click the Cancel toggle.
+         */
+        const requestRelatedDiscovery = async (beforeStart?: () => void) => {
+          const decision = resolveDiscoveryRequest({
+            running:
+              relatedDiscoveryAbortControllers.has(item.id) ||
+              getRelatedRecommendationState(item.id).running,
+            unavailableReason: getDiscoveryUnavailableReason(),
+          });
+          if (decision.action !== "start") {
+            // Keep the running search's concern text in place.
+            showRelatedStatus(decision.message);
+            return;
+          }
+          beforeStart?.();
+          await startRelatedDiscovery();
+        };
         relatedRecommendButton.addEventListener("click", async () => {
           const currentRelatedState = getRelatedRecommendationState(item.id);
           if (currentRelatedState.reviewInsightRunningCandidateID) {
@@ -2457,6 +2821,9 @@ export function registerPaperPilotPaneSection() {
             );
             return;
           }
+          await requestRelatedDiscovery();
+        });
+        const startRelatedDiscovery = async () => {
           const abortController = createPaneAbortController(
             relatedRecommendButton.ownerDocument,
           );
@@ -2494,6 +2861,7 @@ export function registerPaperPilotPaneSection() {
                     "Understanding the research question",
                   ),
                 );
+                renderBusyDependentControls();
                 renderRelatedRecommendationState(
                   relatedRecommendButton,
                   relatedStatus,
@@ -2583,7 +2951,7 @@ export function registerPaperPilotPaneSection() {
           );
           updateRelatedSummary(true);
           notifyReaderPaneStateChanged(item.id);
-        });
+        };
 
         relatedSaveButton.addEventListener("click", async () => {
           const state = getRelatedRecommendationState(item.id);
@@ -3322,11 +3690,19 @@ export function registerPaperPilotPaneSection() {
           capability: import("./readerCapabilityBridge").ReaderCapabilityAction,
         ) => {
           if (capability === "critical-read") {
-            openCriticalRead();
+            showCriticalRead();
+            return true;
+          }
+          if (!masterySection) return false;
+          revealWorkbenchPanel();
+          if (getMasteryState(item.id)?.phase === "complete") {
+            // Opening a finished session shows its report. Restarting stays
+            // an explicit choice behind the pane's Restart button.
+            hydrateMasteryState();
           } else {
-            if (!masterySection) return false;
             await startPaperMastery();
           }
+          revealWorkbenchPanel(masterySection);
           return true;
         };
         addon.data.activateReaderCapability?.set(item.id, activateCapability);
@@ -3547,6 +3923,21 @@ export function registerPaperPilotPaneSection() {
 
         newSessionButton.addEventListener("click", async () => {
           const mode = getModeForItem(item.id);
+          const impact = describeNewSessionImpact({
+            criticalRead: getCriticalReadStateForItem(),
+            mastery: getMasteryState(item.id),
+            historyMode: resolveSessionHistoryPrefs().mode,
+          });
+          if (
+            impact &&
+            !confirmDestructive(
+              body.ownerDocument,
+              impact.title,
+              impact.message,
+            )
+          ) {
+            return;
+          }
           await runSessionRuntimeTransition(async () => {
             await sessionHistoryService.startNewSessionDraft({
               itemID: item.id,
@@ -3574,26 +3965,40 @@ export function registerPaperPilotPaneSection() {
             item.getField("title"),
             isCurrentRender,
           );
-          addMessage(
-            chatMessages,
+          if (!isCurrentRender()) return;
+          // Guidance stays inside the open popover, not in the transcript.
+          paneHeader.setCodexAuthStatus(
             buildCodexAuthenticateMessage(
               loginState,
               addon.data.codexLastProbeError,
             ),
-            "ai",
           );
         });
 
         codexDeviceAuthButton.addEventListener("click", () => {
-          addMessage(
-            chatMessages,
-            "If your Codex CLI prompts for device auth, complete that flow in the terminal and then use Re-check status here.",
-            "ai",
+          paneHeader.setCodexAuthStatus(
+            "If your Codex CLI prompts for device auth, complete that flow in the terminal, then click Re-check status.",
           );
         });
 
         codexRecheckButton.addEventListener("click", async () => {
-          await refreshPaneState({ renderTranscript: false });
+          paneHeader.setCodexAuthStatus("Checking Codex CLI status…");
+          await refreshPaneState({
+            isCurrent: isCurrentRender,
+            renderTranscript: false,
+          });
+          if (!isCurrentRender()) return;
+          const loginState = lastCodexLoginState;
+          paneHeader.setCodexAuthStatus(
+            loginState === "login_required" ||
+              loginState === "unavailable" ||
+              loginState === "error"
+              ? buildCodexAuthenticateMessage(
+                  loginState === "error" ? "unavailable" : loginState,
+                  addon.data.codexLastProbeError,
+                )
+              : "",
+          );
         });
 
         modelSaveButton.addEventListener("click", async () => {
@@ -3624,16 +4029,43 @@ export function registerPaperPilotPaneSection() {
             activeMode,
             normalizeModelForMode(activeMode, savedModel),
           );
+          paneHeader.markModelSaved();
           await refreshPaneState({ renderTranscript: false });
         });
 
         codexWebSearchToggle.addEventListener("change", async () => {
           setPref("codexEnableWebSearch", codexWebSearchToggle.checked);
-          await refreshPaneState({ renderTranscript: false });
+          await refreshAfterEngineChange();
         });
 
+        const composerHint = body.querySelector(
+          "#chat-composer-hint",
+        ) as HTMLElement | null;
+        let composerHintTimer: ReturnType<typeof setTimeout> | undefined;
+        const showComposerHint = (text: string) => {
+          if (!composerHint) return;
+          composerHint.textContent = text;
+          if (composerHintTimer) clearTimeout(composerHintTimer);
+          composerHintTimer = setTimeout(() => {
+            composerHintTimer = undefined;
+            if (isCurrentRender()) composerHint.textContent = "";
+          }, COMPOSER_HINT_MS);
+        };
+        cleanupTasks.push(() => {
+          if (composerHintTimer) clearTimeout(composerHintTimer);
+        });
+        let lastSendClickAt: number | undefined;
+
         const submitCurrentInput = async () => {
-          if (isReaderChatBusy(item.id)) return;
+          // A bare /word picks a command or reports an unknown one. It is
+          // never sent as a question.
+          if (chatTools.submitSlashCommand()) return;
+          if (isReaderChatBusy(item.id)) {
+            if (input.value.trim()) {
+              showComposerHint(getBusySubmitHint(getComposerRunFlags(item.id)));
+            }
+            return;
+          }
           saveInputDraft();
           const descriptor = getCurrentProviderDescriptor(item.id);
           await handleUserInput(
@@ -3650,15 +4082,28 @@ export function registerPaperPilotPaneSection() {
         };
 
         input.addEventListener("keydown", async (e) => {
+          if (e.defaultPrevented) return;
           if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
             e.preventDefault();
             await submitCurrentInput();
           }
         });
-        sendButton.addEventListener("click", () => {
+        sendButton.addEventListener("click", (event) => {
           if (isReaderChatBusy(item.id)) {
+            // Send relabels itself to Stop at once. The tail of a
+            // double-click must not cancel the request it just sent.
+            if (
+              shouldIgnoreStopActivation({
+                now: Date.now(),
+                lastSendAt: lastSendClickAt,
+                clickDetail: event.detail,
+              })
+            ) {
+              return;
+            }
             void cancelCurrentRun();
           } else {
+            lastSendClickAt = Date.now();
             void submitCurrentInput();
           }
         });
@@ -3676,11 +4121,12 @@ export function registerPaperPilotPaneSection() {
               addon.data.pendingDiscoveryConcerns?.delete(item.id);
               return;
             }
-            relatedConcern.value = pendingDiscovery.text;
-            relatedConcernOrigin = pendingDiscovery.origin;
-            relatedSection.setExpanded(true);
             addon.data.pendingDiscoveryConcerns?.delete(item.id);
-            relatedRecommendButton.click();
+            relatedSection.setExpanded(true);
+            await requestRelatedDiscovery(() => {
+              relatedConcern.value = pendingDiscovery.text;
+              relatedConcernOrigin = pendingDiscovery.origin;
+            });
             return;
           }
           const pending = addon.data.pendingReaderActions?.get(item.id);
@@ -3766,7 +4212,11 @@ function renderDraftCard(draftCard: HTMLElement, itemID: number) {
   const paper = doc.createElement("span");
   paper.className = "pp-chat-source";
   const item = Zotero.Items.get(itemID);
-  paper.textContent = `Paper: ${String(item?.getField("title") || "Current paper")} ${context?.attachmentID ? `· PDF ${context.attachmentID}` : ""}`;
+  const attachmentTitle = getAttachmentTitle(context?.attachmentID);
+  paper.textContent = formatDraftSourceLabel({
+    paperTitle: String(item?.getField("title") || ""),
+    attachmentTitle,
+  });
   paper.title = paper.textContent;
   draftCard.append(paper);
   if (!context || (!context.text && !context.annotationIDs?.length)) return;
@@ -3777,8 +4227,7 @@ function renderDraftCard(draftCard: HTMLElement, itemID: number) {
     : "Selected passage";
   const content = doc.createElement("div");
   content.textContent =
-    context.text ||
-    `Annotation text, comments and location will be read from PDF ${context.attachmentID ?? "source"} at send time. Missing annotations are excluded with an explanation.`;
+    context.text || formatDraftAnnotationNotice(attachmentTitle);
   if (context.pageLabel || context.pageIndex !== undefined)
     content.append(
       doc.createTextNode(
@@ -3799,6 +4248,18 @@ function renderDraftCard(draftCard: HTMLElement, itemID: number) {
   });
   details.append(summary, content, remove);
   draftCard.append(details);
+}
+
+/** The attachment's own title, such as "Full Text PDF", when available. */
+function getAttachmentTitle(attachmentID?: number): string | undefined {
+  if (!attachmentID) return undefined;
+  try {
+    const attachment = Zotero.Items.get(attachmentID);
+    const title = attachment?.getField?.("title");
+    return title ? String(title) : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function getCurrentProviderDescriptor(itemID?: number) {
@@ -3910,6 +4371,11 @@ async function renderPaneState(options: {
   );
   renderModelHistory(params.modelHistory, params.modelInput, descriptor.mode);
   renderClaudeEffortInput(params.claudeEffortInput, descriptor.mode);
+  renderEngineSelection(params.modeChip, {
+    mode,
+    defaultMode,
+    hasOverride: hasModeOverrideForItem(params.itemID),
+  });
   renderModeHeader(
     params.modeChip,
     params.modeStatus,
@@ -3980,17 +4446,22 @@ function setAutoHighlightState(
   addon.data.autoHighlightStates?.set(itemID, state);
 }
 
+function isAutoHighlightCancelling(itemID: number) {
+  return Boolean(autoHighlightAbortControllers.get(itemID)?.signal.aborted);
+}
+
 function renderAutoHighlightState(
   button: HTMLButtonElement,
   status: HTMLElement,
   itemID: number,
 ) {
   const state = getAutoHighlightState(itemID);
-  const enabled = shouldEnableAutoHighlight(true, state.running);
-  button.disabled = !enabled;
-  button.textContent = state.running
-    ? "Highlighting…"
-    : "Highlight key passages";
+  const presentation = getAutoHighlightButtonPresentation({
+    running: state.running,
+    cancelling: isAutoHighlightCancelling(itemID),
+  });
+  button.disabled = presentation.disabled;
+  button.textContent = presentation.label;
   status.textContent = state.status;
 }
 
@@ -4023,6 +4494,18 @@ function renderCompareButtonState(
     currentPaperTitle,
     groups: recommendationState.groups,
   });
+  const workbenchBlock = getWorkbenchBlockForItem(itemID);
+  if (!recommendationState.running && state.enabled && workbenchBlock.blocked) {
+    // Compare shares the engine slot with chat and the other Workbench cards.
+    const reason =
+      workbenchBlock.reason ??
+      "Wait for the current Workbench request to finish.";
+    compareButton.disabled = true;
+    compareButton.textContent = state.label;
+    compareButton.title = reason;
+    compareButton.setAttribute("aria-label", `Compare unavailable: ${reason}`);
+    return;
+  }
   compareButton.disabled = recommendationState.running || !state.enabled;
   compareButton.textContent = state.label;
   compareButton.title = recommendationState.running
@@ -4041,10 +4524,14 @@ function renderCompareHelperState(
   itemID: number,
   currentPaperTitle = getCurrentPaperTitle(itemID),
 ) {
+  const discovery = getDiscoveryAvailability(getModeForItem(itemID));
   const workflowState = getPaperCompareWorkflowState({
     currentPaperTitle,
     groups: getRelatedRecommendationState(itemID).groups,
     recommendationsRunning: getRelatedRecommendationState(itemID).running,
+    discoveryUnavailableReason: discovery.available
+      ? undefined
+      : discovery.reason,
   });
   compareHelper.textContent = workflowState.helperText;
   compareHelper.className =
@@ -4082,14 +4569,23 @@ function renderRelatedRecommendationState(
     "#chat-related-save",
   ) as HTMLButtonElement | null;
   if (saveButton) saveButton.disabled = state.running || !state.discovery;
-  button.disabled = false;
-  button.textContent = state.reviewInsightRunningCandidateID
-    ? "Cancel review insights"
-    : state.running
-      ? "Cancel discovery"
-      : state.groups.length
-        ? "Refresh verified prior work"
-        : "Find verified prior work";
+  const discovery = getDiscoveryAvailability(getModeForItem(itemID));
+  const presentation = getDiscoveryButtonPresentation({
+    reviewInsightRunning: Boolean(state.reviewInsightRunningCandidateID),
+    running: state.running,
+    hasResults: state.groups.length > 0,
+    unavailableReason: discovery.available ? undefined : discovery.reason,
+  });
+  button.disabled = presentation.disabled;
+  button.textContent = presentation.label;
+  button.title = presentation.note;
+  const availabilityNote = pane?.querySelector(
+    "#chat-related-availability",
+  ) as HTMLElement | null;
+  if (availabilityNote) {
+    availabilityNote.textContent = presentation.note;
+    availabilityNote.style.display = presentation.note ? "block" : "none";
+  }
   status.style.display = state.status ? "block" : "none";
   status.textContent = state.status;
   renderCompareButtonState(compareButton, itemID, currentPaperTitle);
@@ -4193,10 +4689,15 @@ function renderRelatedRecommendationState(
         actions: {
           onSaveCandidate: async (target) => {
             const home = await loadResearchWorkspaceHome();
-            if (!home.projects.length)
-              throw new Error(
-                "Create a Research Workspace project before saving a candidate.",
-              );
+            if (!home.projects.length) {
+              showResearchWorkspaceRequiredPanel({
+                mount: groupsContainer,
+                title: "Save candidate to project inbox",
+                body: "Create a Research Workspace project before saving a candidate.",
+                items: [Zotero.Items.get(itemID)].filter(Boolean),
+              });
+              return;
+            }
             const select = doc.createElement("select");
             select.setAttribute("aria-label", "Candidate destination project");
             for (const project of home.projects) {
@@ -4205,7 +4706,7 @@ function renderRelatedRecommendationState(
               option.textContent = project.name;
               select.append(option);
             }
-            showChatReviewPanel({
+            const candidatePanel = showChatReviewPanel({
               mount: groupsContainer,
               title: "Save candidate to project inbox",
               body: `${target.title}\n${target.reason || ""}\nPDF linking and screening remain separate steps.`,
@@ -4229,7 +4730,8 @@ function renderRelatedRecommendationState(
                   },
                   userNote: target.reason,
                 });
-                return "Candidate saved. Open the project inbox to link an exact PDF.";
+                appendOpenResearchWorkspaceAction(candidatePanel);
+                return "Candidate saved. Open the project inbox in the Research Workspace to link an exact PDF.";
               },
             });
           },
@@ -4409,6 +4911,7 @@ async function refreshCodexStatus(
     const workspaceWritable = await probeWorkspaceWritable(workspaceRoot);
     if (!isCurrent() || getActiveReaderRunMode(itemID)) return;
     renderModeHeader(chip, status, "Codex CLI", loginState);
+    renderCodexActionsForLoginState(chip, loginState);
     status.textContent = `${status.textContent}${workspaceWritable ? "" : " · workspace not writable"}`;
     setSectionSummary(`Codex CLI · ${getStatusLabel(loginState)}`);
     renderRunStateCard(
@@ -4423,6 +4926,7 @@ async function refreshCodexStatus(
     logReaderPaneError("Codex status probe failed", error);
     if (!isCurrent() || getActiveReaderRunMode(itemID)) return;
     renderModeHeader(chip, status, "Codex CLI", "error");
+    renderCodexActionsForLoginState(chip, "error");
     const detail =
       addon.data.codexLastProbeError ||
       (error instanceof Error ? error.message : String(error));
@@ -4453,11 +4957,25 @@ function renderRunStateCard(
   void workspaceWritable;
   runProgressCardByContainer
     .get(runStateCard)
-    ?.render(getRunProgressState(itemID));
+    ?.render(getVisibleRunProgressState(itemID));
 }
 
 function renderCodexActions(codexActions: HTMLElement, mode: EngineMode) {
-  codexActions.style.display = mode === "codex_cli" ? "flex" : "none";
+  renderCodexAuthActions(codexActions, mode, lastCodexLoginState);
+}
+
+/** Records the probed login state and shows auth controls only when needed. */
+function renderCodexActionsForLoginState(
+  anchor: HTMLElement,
+  loginState: string,
+) {
+  lastCodexLoginState = loginState;
+  const codexActions = anchor
+    .closest(".pp-pane-header")
+    ?.querySelector<HTMLElement>("#paper-pilot-codex-actions");
+  if (codexActions) {
+    renderCodexAuthActions(codexActions, "codex_cli", loginState);
+  }
 }
 
 function confirmDestructive(
@@ -4508,6 +5026,11 @@ function renderHelpState(chatMessages: HTMLElement, response: string) {
   chatMessages.appendChild(help);
 }
 
+const renderedTranscriptCounts = new WeakMap<
+  HTMLElement,
+  { sessionId: string; count: number }
+>();
+
 function renderMessageHistory(
   chatMessages: HTMLElement,
   sessionId: string,
@@ -4519,9 +5042,17 @@ function renderMessageHistory(
       .list(sessionId)
       .filter((message) => !isLikelySilentToolMessage(message));
   const messages = getMessages();
+  const previous = renderedTranscriptCounts.get(chatMessages);
+  renderedTranscriptCounts.set(chatMessages, {
+    sessionId,
+    count: messages.length,
+  });
+  // The rebuilt window clears the prompt, so remember whether it was unread.
+  const hadNewResponse = hasChatNewResponse(chatMessages);
 
   if (!messages.length) {
     disposeChatTranscriptWindow(chatMessages);
+    clearChatNewResponse(chatMessages);
     chatMessages.replaceChildren();
     renderHelpState(chatMessages, placeholderResponse);
     return;
@@ -4558,7 +5089,13 @@ function renderMessageHistory(
       return messageElement?.parentElement || null;
     },
   });
-  if (position) window.showMessage(position.key, position.offset);
+  if (!position) return;
+  window.showMessage(position.key, position.offset, { focus: false });
+  if (
+    previous?.sessionId === sessionId &&
+    (messages.length > previous.count || hadNewResponse)
+  )
+    notifyChatTranscriptUpdate(chatMessages, false);
 }
 
 function renderStreamingIndicator(
@@ -4933,7 +5470,7 @@ async function handleUserInput(
   let submitted = false;
   let turnId: string | undefined;
   let attemptId: string | undefined;
-  let requestContextStatus = "";
+  let requestContextStatus: ChatContextStatus | undefined;
   const complete = async (result: ReaderRunCompletionResult) => {
     result.timings ??= { preparingAt: admittedAt };
     if (result.timings) {
@@ -4948,14 +5485,21 @@ async function handleUserInput(
         ?.querySelector(".pp-chat-context-status");
       if (status) {
         t.displayedAt = Date.now();
-        status.textContent = `${requestContextStatus}\nPreparation ${seconds(t.contextReadyAt, t.admittedAt)} · First answer ${seconds(t.firstAssistantAt, t.spawnedAt)} · Final display ${seconds(t.displayedAt, t.spawnedAt)} · Total ${seconds(t.displayedAt, t.admittedAt)}`;
+        renderChatContextStatus(
+          status,
+          withChatContextTiming(
+            requestContextStatus,
+            `Preparation ${seconds(t.contextReadyAt, t.admittedAt)} · First answer ${seconds(t.firstAssistantAt, t.spawnedAt)} · Final display ${seconds(t.displayedAt, t.spawnedAt)} · Total ${seconds(t.displayedAt, t.admittedAt)}`,
+          ),
+        );
       }
     }
     await options?.onComplete?.(result);
   };
   try {
     const profile = options?.profile || "chat";
-    if (!continuingParent) startRunProgress(itemID, mode, admissionToken);
+    if (!continuingParent)
+      startRunProgress(itemID, mode, admissionToken, activeSessionID);
     renderChatComposerForItem(input, itemID);
     options?.onAdmitted?.();
     if (!preserveComposer) {
@@ -5036,8 +5580,17 @@ async function handleUserInput(
     const status = input
       .closest("#paper-pilot-container")
       ?.querySelector(".pp-chat-context-status");
-    requestContextStatus = `${continuityMode}. ${requestContext.paperTitle} · ${requestContext.source.attachmentKey} · ${continuity.includedTurns} prior turns, ${continuity.includedPins} pins${continuity.usedSummary ? ", summary" : ""}; ${continuity.omitted} omitted. ${requestContext.warnings.join(" ")}`;
-    if (status) status.textContent = requestContextStatus;
+    requestContextStatus = buildChatContextStatus({
+      continuityMode,
+      paperTitle: requestContext.paperTitle,
+      attachmentKey: requestContext.source.attachmentKey,
+      includedTurns: continuity.includedTurns,
+      includedPins: continuity.includedPins,
+      usedSummary: continuity.usedSummary,
+      omitted: continuity.omitted,
+      warnings: requestContext.warnings,
+    });
+    if (status) renderChatContextStatus(status, requestContextStatus);
     if (isChatPreparationCancelled(itemID)) return;
     const common = {
       itemID,
@@ -5148,12 +5701,27 @@ async function handleUserInput(
   }
 }
 
-function isReaderChatBusy(itemID: number): boolean {
-  return Boolean(
-    getActiveReaderRunMode(itemID) ||
-      getPendingEngineCompletion(itemID) ||
-      isReaderLifecycleClaimActive(itemID),
-  );
+// A finished run's card belongs to the session that ran it.
+function getVisibleRunProgressState(itemID: number) {
+  const state = getRunProgressState(itemID);
+  return isRunProgressVisibleInSession(
+    state,
+    sessionStore.get(itemID)?.sessionId,
+  )
+    ? state
+    : undefined;
+}
+
+function getComposerRunFlags(itemID: number) {
+  const pending = getPendingEngineCompletion(itemID);
+  return {
+    busy: isReaderChatBusy(itemID),
+    stopping:
+      isChatPreparationCancelled(itemID) || pending?.terminalClaim === "cancel",
+    canStop: pending
+      ? !pending.terminalClaim
+      : isChatEngineRequestPending(itemID),
+  };
 }
 
 function renderChatComposerForItem(
@@ -5164,15 +5732,5 @@ function renderChatComposerForItem(
     .closest("#paper-pilot-container")
     ?.querySelector<HTMLButtonElement>("#chat-send");
   if (!button) return;
-  const pending = getPendingEngineCompletion(itemID);
-  renderChatComposer({
-    input,
-    button,
-    busy: isReaderChatBusy(itemID),
-    stopping:
-      isChatPreparationCancelled(itemID) || pending?.terminalClaim === "cancel",
-    canStop: pending
-      ? !pending.terminalClaim
-      : isChatEngineRequestPending(itemID),
-  });
+  renderChatComposer({ input, button, ...getComposerRunFlags(itemID) });
 }

@@ -37,23 +37,15 @@ import {
 import { buildCodexCommandEnvironment } from "./environment";
 import { resolveCodexExecutablePath } from "./executable";
 import { parseCodexOutput } from "./outputParser";
+import { normalizeCodexSandboxMode } from "./sandboxMode";
 import { buildBackgroundCodexShellScript } from "./shell";
 
+export {
+  normalizeCodexSandboxMode,
+  type CodexSandboxMode,
+} from "./sandboxMode";
+
 declare const Zotero: any;
-
-export type CodexSandboxMode =
-  | "read-only"
-  | "workspace-write"
-  | "danger-full-access";
-
-export function normalizeCodexSandboxMode(value: string): CodexSandboxMode {
-  const normalized = value.trim() as CodexSandboxMode;
-  return ["read-only", "workspace-write", "danger-full-access"].includes(
-    normalized,
-  )
-    ? normalized
-    : "read-only";
-}
 
 export interface StartedCodexRun {
   ok: true;

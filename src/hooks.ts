@@ -36,6 +36,7 @@ import {
   unregisterResearchWorkspacePaneSection,
 } from "./modules/researchWorkspace/view";
 import { closeResearchWorkspaceWindow } from "./modules/researchWorkspace/window";
+import { clearCriticalReadViewState } from "./modules/ui/criticalReadDraft";
 import { PAPER_PILOT_PREF_PANE_ID } from "./modules/ui/runProgressCard";
 import { getString, initLocale } from "./utils/locale";
 import { createZToolkit } from "./utils/ztoolkit";
@@ -120,6 +121,7 @@ async function registerPreferencePane() {
     id: PAPER_PILOT_PREF_PANE_ID,
     pluginID: config.addonID,
     src: `${rootURI}chrome/content/preferences.xhtml`,
+    stylesheets: [`${rootURI}chrome/content/preferences.css`],
     label: getString("prefs-title"),
     image: `chrome://${config.addonRef}/content/icons/favicon.png`,
   });
@@ -152,6 +154,7 @@ async function onShutdown(): Promise<void> {
   );
   addon.data.pendingEngineCompletions?.clear();
   addon.data.runProgressStates?.clear();
+  clearCriticalReadViewState();
   unregisterReaderActionPlaceholders();
   unregisterResearchWorkspaceLivingReviewNotifier();
   unregisterResearchWorkspacePaneSection();

@@ -22,6 +22,7 @@ import {
   record,
   text,
 } from "./artifactView";
+import { getResearchWorkspaceCapabilityForOperation } from "./capabilityRegistry";
 import { metric as createMetric, element } from "./dom";
 import type { ResearchWorkspaceArtifact } from "./persistence/contracts";
 export * from "./artifactView";
@@ -1154,17 +1155,24 @@ function renderMatrix(
   head.append(headRow);
   table.append(head);
   const body = element(doc, "tbody");
+  const failed = new Set(options.failedSourceIDs ?? []);
   for (const row of view.rows) {
     const tableRow = element(doc, "tr");
     const paperCell = element(doc, "th", "pprw-matrix-paper", row.title);
     paperCell.scope = "row";
     tableRow.append(paperCell);
     const cells = new Map(row.cells.map((cell) => [cell.columnID, cell]));
+    const rowFailed = failed.has(row.sourceID);
     for (const column of view.columns) {
       const cell = cells.get(column.id);
       const tableCell = element(doc, "td");
       if (!cell) {
-        tableCell.append(badge(doc, "Pending", "warning"));
+        // A failed unit is not pending work; Resume retries it.
+        tableCell.append(
+          rowFailed
+            ? badge(doc, "Failed", "error")
+            : badge(doc, "Pending", "warning"),
+        );
       } else {
         const value = element(doc, "div", "pprw-matrix-value", cell.value);
         const meta = element(doc, "div", "pprw-render-inline");
@@ -2114,7 +2122,12 @@ export function renderResearchWorkspaceArtifactEnvelope(
   const root = element(doc, "div", "pprw-render-envelope");
   const lineage = element(doc, "div", "pprw-render-inline");
   lineage.append(
-    badge(doc, humanize(artifact.lineage.operation), "accent"),
+    badge(
+      doc,
+      getResearchWorkspaceCapabilityForOperation(artifact.lineage.operation)
+        ?.label ?? humanize(artifact.lineage.operation),
+      "accent",
+    ),
     badge(doc, artifact.lineage.operationVersion),
     badge(doc, humanize(artifact.lineage.providerMode)),
     badge(
@@ -2156,6 +2169,9 @@ export function renderResearchWorkspaceArtifactEnvelope(
     renderResearchWorkspaceArtifactValue(doc, artifact.payload, {
       ...options,
       artifactType: artifact.type,
+      failedSourceIDs: artifact.checkpoint?.failedUnits.map(
+        (unit) => unit.unitID,
+      ),
     }),
   );
   return root;
