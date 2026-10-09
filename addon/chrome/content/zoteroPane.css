@@ -1110,13 +1110,96 @@
   font-weight: 600;
 }
 
-.pp-critical-read__report {
-  max-height: 320px;
-  overflow: auto;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  font-family: var(--pp-font-mono);
+.pp-critical-read__status:empty {
+  display: none;
+}
+
+/* Reader judgment, paper claims, Paper Pilot inference, and external
+   discovery evidence stay visibly separate inside each completed step. */
+.pp-critical-read__block {
+  margin: 8px 0;
+  padding: 6px 8px;
+  border-left: 3px solid var(--pp-border-medium);
+  border-radius: var(--pp-radius-sm, 4px);
+  background: var(--pp-bg-secondary);
+  font-size: var(--pp-font-size-sm);
+  line-height: 1.45;
+}
+
+.pp-critical-read__block p,
+.pp-critical-read__block ul {
+  margin: 4px 0 0;
+}
+
+.pp-critical-read__block ul {
+  padding-left: 18px;
+}
+
+.pp-critical-read__label {
+  display: block;
   font-size: var(--pp-font-size-xs);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--pp-text-secondary, var(--pp-text-primary));
+}
+
+.pp-critical-read__block--reader {
+  border-left-color: var(--pp-accent, #1976d2);
+}
+
+.pp-critical-read__block--paper {
+  border-left-color: var(--pp-text-artifact-source, #6a737d);
+  background: var(--pp-bg-artifact-source, var(--pp-bg-secondary));
+}
+
+.pp-critical-read__block--agent {
+  border-left-color: var(--pp-border-recommendation, #b08800);
+  border-left-style: dashed;
+}
+
+.pp-critical-read__block--external {
+  border-left-color: var(--pp-border-light);
+  border-left-style: dotted;
+}
+
+.pp-critical-read__report {
+  max-height: 480px;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  padding: 8px 10px;
+  border-radius: var(--pp-radius-md);
+  background: var(--pp-bg-primary);
+  font-size: var(--pp-font-size-sm);
+  line-height: 1.5;
+}
+
+.pp-critical-read__report h1 {
+  margin: 0 0 8px;
+  font-size: var(--pp-font-size-md, 1em);
+}
+
+.pp-critical-read__report h2 {
+  margin: 12px 0 6px;
+  font-size: var(--pp-font-size-sm);
+}
+
+.pp-critical-read__report h3 {
+  margin: 8px 0 4px;
+  font-size: var(--pp-font-size-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.pp-critical-read__report p,
+.pp-critical-read__report ul,
+.pp-critical-read__report ol {
+  margin: 0 0 6px;
+}
+
+.pp-critical-read__report ul,
+.pp-critical-read__report ol {
+  padding-left: 18px;
 }
 
 .pp-critical-read__orientation {

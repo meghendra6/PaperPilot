@@ -20,33 +20,68 @@ interface FakeElement {
   children: FakeElement[];
   className: string;
   textContent: string;
+  innerHTML: string;
   disabled: boolean;
+  hidden: boolean;
   value: string;
   placeholder: string;
   open: boolean;
+  selectionStart: number;
+  selectionEnd: number;
+  attributes: Map<string, string>;
+  listeners: Map<string, Array<() => void>>;
   appendChild(child: FakeElement): FakeElement;
   append(...nodes: FakeElement[]): void;
-  replaceChildren(): void;
-  addEventListener(name: string, listener: (...args: unknown[]) => void): void;
+  replaceChildren(...nodes: FakeElement[]): void;
+  addEventListener(name: string, listener: () => void): void;
+  dispatch(name: string): void;
+  setAttribute(name: string, value: string): void;
+  getAttribute(name: string): string | null;
+  focus(): void;
+  setSelectionRange(start: number, end: number): void;
 }
 
 interface FakeDocument {
+  activeElement?: FakeElement;
   createElement(tag: string): FakeElement;
+  createDocumentFragment(): FakeElement;
+}
+
+function decodeEntities(value: string) {
+  return value
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, "&");
 }
 
 function createFakeDocument(): FakeDocument {
   const doc: FakeDocument = {
     createElement(tag: string) {
+      let html = "";
       const element: FakeElement = {
         tagName: tag.toUpperCase(),
         ownerDocument: doc,
         children: [],
         className: "",
         textContent: "",
+        get innerHTML() {
+          return html;
+        },
+        set innerHTML(value: string) {
+          html = value;
+          element.textContent = decodeEntities(value.replace(/<[^>]+>/g, ""));
+        },
         disabled: false,
+        hidden: false,
         value: "",
         placeholder: "",
         open: false,
+        selectionStart: 0,
+        selectionEnd: 0,
+        attributes: new Map(),
+        listeners: new Map(),
         appendChild(child) {
           element.children.push(child);
           return child;
@@ -54,12 +89,36 @@ function createFakeDocument(): FakeDocument {
         append(...nodes) {
           element.children.push(...nodes);
         },
-        replaceChildren() {
-          element.children = [];
+        replaceChildren(...nodes) {
+          element.children = [...nodes];
         },
-        addEventListener() {},
+        addEventListener(name, listener) {
+          element.listeners.set(name, [
+            ...(element.listeners.get(name) ?? []),
+            listener,
+          ]);
+        },
+        dispatch(name) {
+          for (const listener of element.listeners.get(name) ?? []) listener();
+        },
+        setAttribute(name, value) {
+          element.attributes.set(name, value);
+        },
+        getAttribute(name) {
+          return element.attributes.get(name) ?? null;
+        },
+        focus() {
+          doc.activeElement = element;
+        },
+        setSelectionRange(start, end) {
+          element.selectionStart = start;
+          element.selectionEnd = end;
+        },
       };
       return element;
+    },
+    createDocumentFragment() {
+      return doc.createElement("#fragment");
     },
   };
   return doc;
@@ -425,7 +484,15 @@ test("changing display language preserves an unsent assessment and regenerates r
   });
   const text = collectText(root);
   assert.match(text, /Critical Read 보고서/);
-  assert.match(text, /# Critical Read: Original English Title/);
+  assert.match(text, /Critical Read: Original English Title/);
+  assert.ok(
+    descendants(root).some(
+      (element) =>
+        element.tagName === "H1" &&
+        element.textContent.includes("Original English Title"),
+    ),
+    "the report renders Markdown headings instead of raw text",
+  );
   assert.match(text, /독자의 평가/);
   assert.match(text, /Step summary\./);
   assert.ok(text.includes(draft));
@@ -471,4 +538,147 @@ test("Korean status follows running, completion, and revision without changing p
   });
   assert.match(collectText(root), /1단계를 다시 열었습니다/);
   assert.match(collectText(root), /0\/7/);
+});
+
+function stepTwoState() {
+  const started = startCriticalRead(buildInitialCriticalReadState());
+  const running = markCriticalReadStepRunning(started, "Step one notes");
+  return completeCriticalReadStep({
+    state: running,
+    output: output({
+      provenance: [
+        {
+          source: "paper_claim",
+          text: "The paper claims X.",
+          sourceLocator: "p. 2",
+        },
+        { source: "agent_inference", text: "Paper Pilot infers Y." },
+      ],
+    }),
+  });
+}
+
+function byClass(root: FakeElement, className: string) {
+  return descendants(root).filter((element) =>
+    element.className.split(" ").includes(className),
+  );
+}
+
+test("an unsent assessment and expanded steps survive a status rebuild", () => {
+  const doc = createFakeDocument();
+  const root = doc.createElement("div");
+  const drafts: Array<[CriticalReadStepID, string]> = [];
+  const toggles: Array<[CriticalReadStepID, boolean]> = [];
+  const viewActions = {
+    ...actions,
+    onDraftChange: (stepID: CriticalReadStepID, text: string) =>
+      drafts.push([stepID, text]),
+    onToggleStep: (stepID: CriticalReadStepID, expanded: boolean) =>
+      toggles.push([stepID, expanded]),
+  };
+  const state = stepTwoState();
+  renderCriticalReadSection({
+    root: root as unknown as HTMLElement,
+    state,
+    actions: viewActions,
+  });
+  const input = descendants(root).find((node) => node.tagName === "TEXTAREA")!;
+  input.value = "Half-written step two";
+  input.dispatch("input");
+  assert.deepEqual(drafts, [[2, "Half-written step two"]]);
+
+  const completed = byClass(root, "pp-critical-read__completed")[0];
+  completed.open = true;
+  completed.dispatch("toggle");
+  assert.deepEqual(toggles, [[1, true]]);
+
+  renderCriticalReadSection({
+    root: root as unknown as HTMLElement,
+    state: { ...state, status: "Searching scholarly sources" },
+    actions: viewActions,
+    readerInput: drafts[drafts.length - 1][1],
+    expandedStepIDs: [1],
+  });
+  assert.equal(
+    descendants(root).find((node) => node.tagName === "TEXTAREA")?.value,
+    "Half-written step two",
+  );
+  assert.equal(byClass(root, "pp-critical-read__completed")[0].open, true);
+});
+
+test("a rebuild returns focus and caret to the assessment being typed", () => {
+  const doc = createFakeDocument();
+  const root = doc.createElement("div");
+  const state = stepTwoState();
+  const render = (readerInput?: string) =>
+    renderCriticalReadSection({
+      root: root as unknown as HTMLElement,
+      state,
+      actions,
+      readerInput,
+    });
+  render("abcdef");
+  const first = descendants(root).find((node) => node.tagName === "TEXTAREA")!;
+  first.focus();
+  first.setSelectionRange(2, 4);
+  render("abcdef");
+  const second = descendants(root).find((node) => node.tagName === "TEXTAREA")!;
+  assert.notEqual(second, first);
+  assert.equal(doc.activeElement, second);
+  assert.deepEqual([second.selectionStart, second.selectionEnd], [2, 4]);
+
+  doc.activeElement = undefined;
+  render();
+  assert.equal(doc.activeElement, undefined, "focus is never stolen");
+});
+
+test("the status line is one polite live region reused across rebuilds", () => {
+  const root = createFakeDocument().createElement("div");
+  const state = stepTwoState();
+  renderCriticalReadSection({
+    root: root as unknown as HTMLElement,
+    state,
+    actions,
+  });
+  const status = byClass(root, "pp-critical-read__status")[0];
+  assert.equal(status.getAttribute("role"), "status");
+  assert.equal(status.getAttribute("aria-live"), "polite");
+  renderCriticalReadSection({
+    root: root as unknown as HTMLElement,
+    state: { ...state, status: "Preparing results" },
+    actions,
+  });
+  assert.equal(byClass(root, "pp-critical-read__status")[0], status);
+  assert.equal(status.textContent, "Preparing results");
+  assert.equal(byClass(root, "pp-critical-read__status").length, 1);
+});
+
+test("completed steps keep reader judgment, paper claims, and Paper Pilot inference in labelled blocks", () => {
+  const root = createFakeDocument().createElement("div");
+  const render = (responseLanguage?: string) =>
+    renderCriticalReadSection({
+      root: root as unknown as HTMLElement,
+      state: stepTwoState(),
+      actions,
+      responseLanguage,
+    });
+  const block = (kind: string) =>
+    collectText(byClass(root, `pp-critical-read__block--${kind}`)[0]);
+  render();
+  assert.match(block("reader"), /^Your assessment\nStep one notes$/);
+  assert.match(
+    block("paper"),
+    /^Paper claims\nThe paper claims X\. \(p\. 2\)$/,
+  );
+  assert.match(block("agent"), /^Paper Pilot inference\nStep summary\./);
+  assert.match(block("agent"), /Paper Pilot infers Y\./);
+  assert.doesNotMatch(block("agent"), /The paper claims X/);
+  for (const kind of ["reader", "paper", "agent"]) {
+    const node = byClass(root, `pp-critical-read__block--${kind}`)[0];
+    assert.equal(node.getAttribute("role"), "group");
+    assert.ok(node.getAttribute("aria-label"));
+  }
+  render("Korean");
+  assert.match(block("agent"), /^Paper Pilot의 추론/);
+  assert.match(block("paper"), /^논문의 주장/);
 });

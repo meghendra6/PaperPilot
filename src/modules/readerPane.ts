@@ -202,6 +202,13 @@ import {
   renderChatTranscriptWindow,
 } from "./ui/chatTranscriptWindow";
 import { createCollapsibleSection } from "./ui/collapsibleSection";
+import {
+  getCriticalReadDraft,
+  getExpandedCriticalReadSteps,
+  pruneCriticalReadDrafts,
+  setCriticalReadDraft,
+  setCriticalReadStepExpanded,
+} from "./ui/criticalReadDraft";
 import { renderCriticalReadSection } from "./ui/criticalReadSection";
 import { buildDiscoveryRow } from "./ui/discoveryRow";
 import {
@@ -1182,13 +1189,40 @@ export function registerPaperPilotPaneSection() {
               : state.phase === "complete"
                 ? "Critical Read · Complete"
                 : `Critical Read · ${state.steps.filter((step) => step.status === "complete").length}/7`;
+          // Every status update rebuilds the section. Unsent input and open
+          // completed steps come from memory so a rebuild cannot erase them.
+          pruneCriticalReadDrafts(
+            item.id,
+            state.sessionID,
+            state.steps
+              .filter((step) => step.status === "complete")
+              .map((step) => step.id),
+          );
+          const currentStep = getCriticalReadStep(state);
           renderCriticalReadSection({
             root: criticalReadRoot,
             state,
             responseLanguage,
             paperTitle: String(item.getField("title") || t("Current paper")),
-            readerInput,
+            readerInput:
+              readerInput ??
+              (currentStep
+                ? getCriticalReadDraft(item.id, state.sessionID, currentStep.id)
+                : undefined),
+            expandedStepIDs: getExpandedCriticalReadSteps(
+              item.id,
+              state.sessionID,
+            ),
             actions: {
+              onDraftChange: (stepID, text) =>
+                setCriticalReadDraft(item.id, state.sessionID, stepID, text),
+              onToggleStep: (stepID, expanded) =>
+                setCriticalReadStepExpanded(
+                  item.id,
+                  state.sessionID,
+                  stepID,
+                  expanded,
+                ),
               onCancel: async () => {
                 const discoveryController =
                   criticalReadDiscoveryAbortControllers.get(item.id);
@@ -1511,11 +1545,9 @@ export function registerPaperPilotPaneSection() {
         cleanupTasks.push(
           subscribeToResponseLanguageChanges(() => {
             if (!isCurrentRender()) return;
-            const draft = criticalReadRoot.querySelector<HTMLTextAreaElement>(
-              ".pp-critical-read__input",
-            )?.value;
+            // The unsent assessment is kept in the draft store on every edit.
             const scrollTop = criticalReadRoot.scrollTop;
-            renderCriticalRead(draft);
+            renderCriticalRead();
             criticalReadRoot.scrollTop = scrollTop;
           }),
         );
