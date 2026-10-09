@@ -14,6 +14,7 @@ test("Send becomes Stop throughout preparation and response generation", () => {
     canStop: true,
   });
   assert.equal(running.label, "Stop");
+  assert.equal(running.sendAction, "stop");
   assert.equal(running.inputDisabled, false);
   assert.equal(running.buttonDisabled, false);
   assert.match(running.placeholder, /Press Stop/);
@@ -26,6 +27,7 @@ test("cancellation and cleanup allow drafting but prevent a second send", () => 
     canStop: false,
   });
   assert.equal(stopping.label, "Stopping…");
+  assert.equal(stopping.sendAction, "stopping");
   assert.equal(stopping.inputDisabled, false);
   assert.equal(stopping.buttonDisabled, true);
   const cleanup = getChatComposerPresentation({
@@ -41,6 +43,7 @@ test("cancellation and cleanup allow drafting but prevent a second send", () => 
     canStop: false,
   });
   assert.equal(settled.label, "Send");
+  assert.equal(settled.sendAction, "send");
   assert.equal(settled.inputDisabled, false);
   assert.equal(settled.buttonDisabled, false);
 });

@@ -79,7 +79,11 @@ test("chat composer keeps the Send control inset without covering text", () => {
   );
   assert.match(
     paneStyleSource,
-    /#chat-input \{[\s\S]*?padding: 10px 78px 10px 12px;/,
+    /#chat-input \{[\s\S]*?padding: 10px 84px 10px 12px;/,
+  );
+  assert.match(
+    paneStyleSource,
+    /#chat-input\[data-send-action="stopping"\] \{\s*padding-inline-end: 124px;/,
   );
   assert.match(
     paneStyleSource,

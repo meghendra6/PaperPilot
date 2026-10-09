@@ -92,6 +92,21 @@
 
   --pp-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
   --pp-shadow-md: 0 2px 6px rgba(0, 0, 0, 0.06);
+  --pp-shadow-float: 0 4px 14px rgba(0, 0, 0, 0.12),
+    0 1px 3px rgba(0, 0, 0, 0.08);
+
+  /* Hover and press tints follow the text color over a transparent base.
+     They show on the pane, an answer, and the draft card alike. */
+  --pp-fill-quiet: color-mix(in srgb, var(--pp-text-primary) 5%, transparent);
+  --pp-fill-hover: color-mix(in srgb, var(--pp-text-primary) 9%, transparent);
+  --pp-fill-press: color-mix(in srgb, var(--pp-text-primary) 15%, transparent);
+  /* Zotero's own button surface, used by chat chips and Stop. */
+  --pp-bg-button: var(--material-button, #fff);
+  --pp-border-accent-soft: color-mix(
+    in srgb,
+    var(--pp-accent) 45%,
+    transparent
+  );
 
   --pp-font-size-xs: 11px;
   --pp-font-size-sm: 12px;
@@ -136,6 +151,9 @@
 
     --pp-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.2);
     --pp-shadow-md: 0 2px 6px rgba(0, 0, 0, 0.3);
+    --pp-shadow-float: 0 4px 14px rgba(0, 0, 0, 0.45),
+      0 1px 3px rgba(0, 0, 0, 0.35);
+    --pp-bg-button: var(--material-button, #404040);
 
     --pp-text-run-state: #c4b5e0;
     --pp-text-session-doc: #b0b0b0;
@@ -757,8 +775,9 @@
 .pp-chat-window-control {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   justify-content: center;
-  gap: 8px;
+  gap: 4px 8px;
   min-height: 30px;
   padding: 2px 4px;
   color: var(--pp-text-muted);
@@ -768,7 +787,12 @@
 
 .pp-chat-window-control .pp-btn {
   min-height: 26px;
-  padding: 3px 8px;
+  padding: 3px 12px;
+  border-radius: var(--pp-radius-pill);
+  background-color: var(--pp-fill-quiet);
+  color: var(--pp-text-accent);
+  font-weight: 500;
+  white-space: nowrap;
 }
 
 .pp-message-wrapper--user {
@@ -838,7 +862,7 @@
   min-width: 0;
   min-height: 72px;
   max-height: 180px;
-  padding: 10px 78px 10px 12px;
+  padding: 10px 84px 10px 12px;
   border: 1px solid var(--pp-border-medium);
   border-radius: var(--pp-radius-md);
   font-family: inherit;
@@ -853,13 +877,59 @@
   color: var(--pp-text-primary);
 }
 
+/* Send is the only filled control in chat. Stop switches to the neutral
+   button surface with a square mark, so a running answer reads as
+   "press to halt" and never as a second Send. */
+/* "Stopping…" is the widest label. The input reserves room for it only
+   while it shows, so typed text never runs under the button. */
+#chat-input[data-send-action="stopping"] {
+  padding-inline-end: 124px;
+}
+
 #chat-send {
   position: absolute;
   right: 12px;
   bottom: 12px;
   z-index: 1;
-  min-width: 52px;
-  min-height: 32px;
+  min-width: 60px;
+  height: 30px;
+  min-height: 30px;
+  padding: 0 14px;
+  border-radius: var(--pp-radius-pill);
+  font-weight: 600;
+  box-shadow: 0 1px 2px
+    color-mix(in srgb, var(--pp-accent-fill) 40%, transparent);
+}
+
+#chat-send:disabled {
+  box-shadow: none;
+}
+
+#chat-send[data-action="stop"] {
+  gap: 6px;
+  border-color: var(--pp-border-medium);
+  background: var(--pp-bg-button);
+  color: var(--pp-text-primary);
+  box-shadow: var(--pp-shadow-sm);
+}
+
+#chat-send[data-action="stop"]::before {
+  content: "";
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: currentColor;
+}
+
+#chat-send[data-action="stop"]:hover:not(:disabled) {
+  border-color: var(--pp-border-medium);
+  background-color: var(--pp-bg-button);
+  background-image: linear-gradient(var(--pp-fill-hover), var(--pp-fill-hover));
+}
+
+#chat-send[data-action="stop"]:active:not(:disabled) {
+  background-image: linear-gradient(var(--pp-fill-press), var(--pp-fill-press));
 }
 
 #chat-input::-webkit-scrollbar {
@@ -1261,6 +1331,8 @@
   transition:
     background-color 0.15s,
     border-color 0.15s,
+    color 0.15s,
+    box-shadow 0.15s,
     opacity 0.15s,
     transform 0.08s;
   line-height: 1.4;
@@ -1335,12 +1407,14 @@
   border: 1px solid transparent;
 }
 
+/* The tint is an image layer, so hover keeps a chip's own background color.
+   On the light pane --pp-bg-tertiary equals the pane color and hid hover. */
 .pp-btn--ghost:hover:not(:disabled) {
-  background: var(--pp-bg-tertiary);
+  background-image: linear-gradient(var(--pp-fill-hover), var(--pp-fill-hover));
 }
 
 .pp-btn--ghost:active:not(:disabled) {
-  background: var(--pp-bg-secondary);
+  background-image: linear-gradient(var(--pp-fill-press), var(--pp-fill-press));
 }
 
 /* ============================================================
@@ -1553,28 +1627,109 @@
   background: var(--pp-bg-secondary);
 }
 
-/* Message footer (copy button) */
+/* Message footer: Copy and More sit right-aligned under the answer as quiet
+   pills. They stay visible without hover, so keyboard and touch users see
+   them too. */
 .pp-message-footer {
   display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
   justify-content: flex-end;
-  margin-top: 6px;
-  padding-top: 4px;
-  border-top: 1px solid var(--pp-border-light);
-  opacity: 1;
-  transition: opacity 0.15s;
+  gap: 4px;
+  margin-top: 8px;
 }
 
-.pp-message:hover .pp-message-footer {
-  opacity: 1;
+.pp-message-footer .pp-btn,
+.pp-message-actions > summary {
+  min-height: 24px;
+  padding: 2px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--pp-radius-pill);
+  background-color: var(--pp-fill-quiet);
+  color: var(--pp-text-secondary);
+  font-size: var(--pp-font-size-sm);
+  font-weight: 500;
+  line-height: 18px;
+  white-space: nowrap;
+  box-sizing: border-box;
 }
 
-.pp-message:focus-within .pp-message-footer {
-  opacity: 1;
+.pp-message-copy[data-state="copied"] {
+  color: var(--pp-success);
 }
 
-.pp-message-copy {
-  font-size: var(--pp-font-size-xs);
-  padding: 2px 6px;
+.pp-message-copy[data-state="failed"] {
+  color: var(--pp-error);
+}
+
+/* More is a disclosure. A drawn chevron replaces the default triangle and
+   turns over when the menu opens. */
+.pp-message-actions > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+  transition:
+    background-color 0.15s,
+    color 0.15s;
+}
+
+.pp-message-actions > summary::-webkit-details-marker {
+  display: none;
+}
+
+.pp-message-actions > summary::after {
+  content: "";
+  width: 5px;
+  height: 5px;
+  margin-top: -3px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg);
+  transition: transform 0.15s;
+}
+
+.pp-message-actions[open] > summary::after {
+  margin-top: 3px;
+  transform: rotate(-135deg);
+}
+
+.pp-message-actions > summary:hover {
+  background-image: linear-gradient(var(--pp-fill-hover), var(--pp-fill-hover));
+}
+
+/* The open menu is a small card. Its items are full-width rows. */
+.pp-message-actions[open] {
+  min-width: 180px;
+  max-width: 100%;
+  padding: 4px;
+  border: 1px solid var(--pp-border-light);
+  border-radius: var(--pp-radius-md);
+  background: var(--pp-bg-primary);
+  box-shadow: var(--pp-shadow-md);
+  box-sizing: border-box;
+}
+
+.pp-message-actions[open] > summary {
+  display: flex;
+  width: fit-content;
+  margin: 0 0 4px auto;
+}
+
+.pp-message-footer .pp-message-actions[open] .pp-btn {
+  display: flex;
+  justify-content: flex-start;
+  width: 100%;
+  min-height: 28px;
+  padding: 4px 8px;
+  border-radius: var(--pp-radius-sm);
+  background-color: transparent;
+  color: var(--pp-text-primary);
+  font-weight: 400;
+  text-align: start;
+  white-space: normal;
 }
 
 /* Streaming indicator animation */
@@ -3762,12 +3917,64 @@ button.pprw-render-evidence-link {
   align-items: center;
   gap: 4px;
 }
-.pp-chat-tools .pp-btn,
-.pp-message-footer .pp-btn,
-.pp-chat-focus,
-.pp-chat-length {
+.pp-chat-tools .pp-btn {
   min-height: 26px;
   padding: 3px 7px;
+}
+/* Toolbar chips wear Zotero's button surface with a hairline border. Hover
+   and press add a tint layer. Accent marks the control that is on. */
+.pp-chat-tools__bar .pp-btn,
+.pp-chat-tools__bar .pp-chat-length {
+  min-height: 26px;
+  padding: 3px 11px;
+  border: 1px solid var(--pp-border-medium);
+  border-radius: var(--pp-radius-pill);
+  background-color: var(--pp-bg-button);
+  color: var(--pp-text-primary);
+  box-shadow: var(--pp-shadow-sm);
+  font-size: var(--pp-font-size-sm);
+  font-weight: 500;
+  line-height: 18px;
+  white-space: nowrap;
+}
+.pp-chat-tools__bar .pp-chat-length {
+  padding-inline-end: 6px;
+  cursor: pointer;
+}
+.pp-chat-tools__bar .pp-chat-length:hover {
+  background-image: linear-gradient(var(--pp-fill-hover), var(--pp-fill-hover));
+}
+.pp-chat-tools__bar .pp-btn[aria-expanded="true"],
+.pp-chat-commands .pp-btn[data-active="true"] {
+  border-color: var(--pp-border-accent-soft);
+  background-color: var(--pp-bg-accent);
+  color: var(--pp-text-accent);
+}
+/* Slash commands open as a small menu card under the toolbar. */
+.pp-chat-commands {
+  margin-top: 4px;
+  padding: 4px;
+  border: 1px solid var(--pp-border-light);
+  border-radius: var(--pp-radius-md);
+  background: var(--pp-bg-button);
+  box-shadow: var(--pp-shadow-md);
+}
+.pp-chat-commands .pp-btn {
+  min-height: 26px;
+  padding: 3px 11px;
+  border-radius: var(--pp-radius-pill);
+  color: var(--pp-text-primary);
+  font-size: var(--pp-font-size-sm);
+  font-weight: 500;
+  line-height: 18px;
+  white-space: nowrap;
+}
+/* Focus chat sits in the pane header next to the borderless "+". */
+.pp-chat-focus {
+  min-height: 26px;
+  padding: 3px 11px;
+  border-radius: var(--pp-radius-pill);
+  font-weight: 500;
 }
 .pp-chat-tools select,
 .pp-chat-tools input,
@@ -3799,9 +4006,6 @@ button.pprw-render-evidence-link {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.pp-chat-commands .pp-btn[data-active="true"] {
-  border-color: var(--pp-accent);
 }
 .pp-composer-hint {
   font-size: var(--pp-font-size-xs);
@@ -3873,17 +4077,52 @@ button.pprw-render-evidence-link {
   overflow: auto;
   white-space: pre-wrap;
 }
-/* Sits right after #chat-messages and overlaps its bottom edge.
-   The margins cancel the button height, so the layout does not shift. */
+/* Sits right after #chat-messages and overlaps its bottom edge as a floating
+   pill. The 28px height and the margins cancel out, so the layout does not
+   shift. */
 .pp-chat-new-response {
   position: relative;
   flex: 0 0 auto;
   align-self: center;
   z-index: 2;
+  gap: 7px;
+  height: 28px;
+  min-height: 28px;
   margin: -42px auto 14px;
-  background: var(--pp-bg-primary);
+  padding: 0 14px 0 12px;
   border: 1px solid var(--pp-border-medium);
-  box-shadow: var(--pp-shadow-md);
+  border-radius: var(--pp-radius-pill);
+  background: var(--pp-bg-button);
+  color: var(--pp-text-accent);
+  box-shadow: var(--pp-shadow-float);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.pp-chat-new-response::before {
+  content: "";
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  margin-top: -4px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg);
+}
+.pp-chat-new-response:hover {
+  background-image: linear-gradient(var(--pp-fill-hover), var(--pp-fill-hover));
+}
+.pp-chat-new-response:active {
+  background-image: linear-gradient(var(--pp-fill-press), var(--pp-fill-press));
+}
+/* Remove context is a quiet pill inside the draft card. */
+#paper-pilot-draft .pp-btn {
+  min-height: 24px;
+  margin-top: 6px;
+  padding: 2px 10px;
+  border-radius: var(--pp-radius-pill);
+  background-color: var(--pp-fill-quiet);
+  color: var(--pp-text-primary);
+  font-weight: 500;
 }
 .pp-message--ai {
   line-height: 1.55;
@@ -3904,31 +4143,11 @@ button.pprw-render-evidence-link {
   padding: 5px 8px;
   border: 1px solid var(--pp-border-light);
 }
-.pp-message-footer {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 3px;
-  margin-top: 7px;
-}
 .pp-message-wrapper:focus-visible,
 .pp-chat-tools :focus-visible,
 #paper-pilot-draft :focus-visible {
   outline: var(--pp-focus-width) solid var(--pp-focus-color);
   outline-offset: var(--pp-focus-offset);
-}
-
-.pp-message-actions > summary {
-  cursor: pointer;
-  min-height: 26px;
-  padding: 3px 7px;
-  box-sizing: border-box;
-}
-.pp-message-actions[open] {
-  max-width: 100%;
-}
-.pp-message-actions[open] .pp-btn {
-  display: block;
-  text-align: start;
 }
 
 /* Reduced motion: stop every animation and transition Paper Pilot renders in

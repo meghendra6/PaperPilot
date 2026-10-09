@@ -1,9 +1,17 @@
+export type ChatSendAction = "send" | "stop" | "stopping";
+
 export function getChatComposerPresentation(params: {
   busy: boolean;
   stopping: boolean;
   canStop: boolean;
 }) {
+  const sendAction: ChatSendAction = params.stopping
+    ? "stopping"
+    : params.busy
+      ? "stop"
+      : "send";
   return {
+    sendAction,
     inputDisabled: false,
     buttonDisabled: params.busy && (params.stopping || !params.canStop),
     label: params.stopping ? "Stopping…" : params.busy ? "Stop" : "Send",
@@ -35,6 +43,8 @@ export function renderChatComposer(params: {
   params.button.setAttribute("aria-label", presentation.ariaLabel);
   params.button.title = presentation.ariaLabel;
   params.button.dataset.action = params.busy ? "stop" : "send";
+  // The stylesheet widens the input's inset for the wider "Stopping…" label.
+  params.input.dataset.sendAction = presentation.sendAction;
 }
 
 /** A Stop click this soon after Send is the tail of a double-click. */

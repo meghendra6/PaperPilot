@@ -435,12 +435,15 @@ export function addMessage(
           doc,
         );
         copyBtn.textContent = "Copied!";
+        copyBtn.dataset.state = "copied";
       } catch {
         copyBtn.textContent = "Copy failed";
+        copyBtn.dataset.state = "failed";
       }
       copyBtn.disabled = false;
       copyResetTimer = setTimeout(() => {
         copyBtn.textContent = "Copy";
+        delete copyBtn.dataset.state;
         copyResetTimer = undefined;
       }, 1500);
     });

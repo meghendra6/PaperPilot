@@ -340,3 +340,64 @@ test("context status keeps warnings visible and diagnostics on one line", () => 
   assert.match(warning, /color: var\(--pp-warning\);/);
   assert.doesNotMatch(warning, /nowrap/);
 });
+
+test("ghost hover tints the button instead of matching the pane", () => {
+  assert.match(
+    lightTokens.get("--pp-fill-hover") ?? "",
+    /^color-mix\(in srgb, var\(--pp-text-primary\) \d+%, transparent\)$/,
+  );
+  const hover = rule(".pp-btn--ghost:hover:not(:disabled)");
+  assert.match(
+    hover,
+    /background-image: linear-gradient\(\s*var\(--pp-fill-hover\),\s*var\(--pp-fill-hover\)\s*\);/,
+  );
+  assert.doesNotMatch(hover, /var\(--pp-bg-tertiary\)/);
+});
+
+test("chat chips read clearly at rest and when on", () => {
+  const chips = rule(
+    ".pp-chat-tools__bar .pp-btn,\n.pp-chat-tools__bar .pp-chat-length",
+  );
+  assert.match(chips, /border-radius: var\(--pp-radius-pill\);/);
+  assert.match(chips, /background-color: var\(--pp-bg-button\);/);
+  assert.match(chips, /color: var\(--pp-text-primary\);/);
+  assertContrast("var(--pp-text-primary)", "var(--pp-bg-button)", 4.5);
+
+  const on = rule(
+    '.pp-chat-tools__bar .pp-btn[aria-expanded="true"],\n.pp-chat-commands .pp-btn[data-active="true"]',
+  );
+  assert.match(on, /background-color: var\(--pp-bg-accent\);/);
+  assert.match(on, /color: var\(--pp-text-accent\);/);
+  assertContrast("var(--pp-text-accent)", "var(--pp-bg-accent)", 4.5);
+});
+
+test("Send is the only filled chat control and Stop reads differently", () => {
+  assert.match(rule("#chat-send"), /border-radius: var\(--pp-radius-pill\);/);
+  const stop = rule('#chat-send[data-action="stop"]');
+  assert.match(stop, /background: var\(--pp-bg-button\);/);
+  assert.match(stop, /color: var\(--pp-text-primary\);/);
+  const mark = rule('#chat-send[data-action="stop"]::before');
+  assert.match(mark, /content: "";/);
+  assert.match(mark, /background: currentColor;/);
+});
+
+test("Jump to latest floats without shifting the layout", () => {
+  const jump = rule(".pp-chat-new-response");
+  assert.match(jump, /height: 28px;/);
+  assert.match(jump, /margin: -42px auto 14px;/);
+  assert.match(jump, /color: var\(--pp-text-accent\);/);
+  assertContrast("var(--pp-text-accent)", "var(--pp-bg-button)", 4.5);
+});
+
+test("message actions are quiet pills and More hides the default marker", () => {
+  const quiet = rule(
+    ".pp-message-footer .pp-btn,\n.pp-message-actions > summary",
+  );
+  assert.match(quiet, /border-radius: var\(--pp-radius-pill\);/);
+  assert.match(quiet, /background-color: var\(--pp-fill-quiet\);/);
+  assert.match(rule(".pp-message-actions > summary"), /list-style: none;/);
+  assert.match(
+    rule('.pp-message-copy[data-state="copied"]'),
+    /color: var\(--pp-success\);/,
+  );
+});

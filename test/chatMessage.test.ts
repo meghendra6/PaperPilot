@@ -330,6 +330,7 @@ test("an updated assistant message copies its latest answer", async () => {
 
     assert.equal(copied, "The final answer");
     assert.equal(copyButton?.textContent, "Copied!");
+    assert.equal(copyButton?.dataset.state, "copied");
     assert.equal(copyButton?.disabled, false);
   } finally {
     globalThis.document = previousDocument;
