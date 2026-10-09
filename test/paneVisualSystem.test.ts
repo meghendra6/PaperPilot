@@ -289,6 +289,19 @@ test("a fully collapsed section stack shrinks to its triggers", () => {
   );
 });
 
+test("citation chips are compact inline controls with a 24px target", () => {
+  const chip = rule(".pp-btn.pp-citation");
+  assert.match(chip, /min-height: 0;/);
+  assert.match(chip, /min-width: 0;/);
+  assert.match(chip, /display: inline-block;/);
+  assert.match(chip, /line-height: 18px;/);
+  assert.match(rule(".pp-btn.pp-citation::after"), /inset: -2px 0;/);
+  assert.match(
+    rule(".pp-btn.pp-citation.pp-citation--unavailable"),
+    /cursor: help;/,
+  );
+});
+
 test("wide math and tables scroll inside the answer", () => {
   const table = rule(".pp-table");
   assert.match(table, /table-layout: auto;/);

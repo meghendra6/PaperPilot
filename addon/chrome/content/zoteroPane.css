@@ -1329,6 +1329,56 @@
   text-decoration: underline;
 }
 
+/* Inline citation chips sit inside answer sentences. They keep the line
+   height, and ::after extends the pointer target to 24px. */
+.pp-btn.pp-citation {
+  position: relative;
+  display: inline-block;
+  min-width: 0;
+  min-height: 0;
+  margin: 0 1px;
+  padding: 0 4px;
+  border: 1px solid var(--pp-border-accent);
+  border-radius: var(--pp-radius-sm);
+  background: var(--pp-bg-evidence);
+  color: var(--pp-text-evidence);
+  font-size: var(--pp-font-size-xs);
+  font-weight: 600;
+  line-height: 18px;
+  white-space: nowrap;
+  vertical-align: baseline;
+}
+
+.pp-btn.pp-citation::after {
+  content: "";
+  position: absolute;
+  inset: -2px 0;
+}
+
+.pp-btn.pp-citation:hover {
+  border-color: var(--pp-accent);
+}
+
+.pp-btn.pp-citation:active:not(:disabled) {
+  transform: none;
+}
+
+/* Unverified chips stay focusable (aria-disabled) and explain on activation. */
+.pp-btn.pp-citation.pp-citation--unavailable {
+  border-style: dashed;
+  border-color: var(--pp-border-medium);
+  background: transparent;
+  color: var(--pp-text-muted);
+  cursor: help;
+}
+
+.pp-citation-notice {
+  flex: 1 0 100%;
+  color: var(--pp-warning);
+  font-size: var(--pp-font-size-xs);
+  line-height: 1.4;
+}
+
 /* ============================================================
    18. Math blocks (KaTeX MathML)
    ============================================================ */
