@@ -330,3 +330,13 @@ test("composer extras share one capped scrolling area", () => {
   assert.match(extras, /min-height: 0;/);
   assert.match(extras, /overflow-y: auto;/);
 });
+
+test("context status keeps warnings visible and diagnostics on one line", () => {
+  const details = rule(".pp-chat-context-status__details");
+  assert.match(details, /white-space: nowrap;/);
+  assert.match(details, /text-overflow: ellipsis;/);
+  assert.match(details, /overflow: hidden;/);
+  const warning = rule(".pp-chat-context-status__warning");
+  assert.match(warning, /color: var\(--pp-warning\);/);
+  assert.doesNotMatch(warning, /nowrap/);
+});

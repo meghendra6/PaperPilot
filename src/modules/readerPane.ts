@@ -101,6 +101,12 @@ import {
 import { persistChatDraftSubmission } from "./ui/chatAdmission";
 import { buildReaderActionQuestion } from "./readerActionPrompt";
 import { createChatTools, showChatReviewPanel } from "./ui/chatTools";
+import {
+  buildChatContextStatus,
+  renderChatContextStatus,
+  withChatContextTiming,
+  type ChatContextStatus,
+} from "./ui/chatContextStatus";
 import type { MessageRecord } from "./message/types";
 import { openChatCitation } from "./message/chatCitations";
 import {
@@ -5036,7 +5042,7 @@ async function handleUserInput(
   let submitted = false;
   let turnId: string | undefined;
   let attemptId: string | undefined;
-  let requestContextStatus = "";
+  let requestContextStatus: ChatContextStatus | undefined;
   const complete = async (result: ReaderRunCompletionResult) => {
     result.timings ??= { preparingAt: admittedAt };
     if (result.timings) {
@@ -5051,7 +5057,13 @@ async function handleUserInput(
         ?.querySelector(".pp-chat-context-status");
       if (status) {
         t.displayedAt = Date.now();
-        status.textContent = `${requestContextStatus}\nPreparation ${seconds(t.contextReadyAt, t.admittedAt)} · First answer ${seconds(t.firstAssistantAt, t.spawnedAt)} · Final display ${seconds(t.displayedAt, t.spawnedAt)} · Total ${seconds(t.displayedAt, t.admittedAt)}`;
+        renderChatContextStatus(
+          status,
+          withChatContextTiming(
+            requestContextStatus,
+            `Preparation ${seconds(t.contextReadyAt, t.admittedAt)} · First answer ${seconds(t.firstAssistantAt, t.spawnedAt)} · Final display ${seconds(t.displayedAt, t.spawnedAt)} · Total ${seconds(t.displayedAt, t.admittedAt)}`,
+          ),
+        );
       }
     }
     await options?.onComplete?.(result);
@@ -5140,8 +5152,17 @@ async function handleUserInput(
     const status = input
       .closest("#paper-pilot-container")
       ?.querySelector(".pp-chat-context-status");
-    requestContextStatus = `${continuityMode}. ${requestContext.paperTitle} · ${requestContext.source.attachmentKey} · ${continuity.includedTurns} prior turns, ${continuity.includedPins} pins${continuity.usedSummary ? ", summary" : ""}; ${continuity.omitted} omitted. ${requestContext.warnings.join(" ")}`;
-    if (status) status.textContent = requestContextStatus;
+    requestContextStatus = buildChatContextStatus({
+      continuityMode,
+      paperTitle: requestContext.paperTitle,
+      attachmentKey: requestContext.source.attachmentKey,
+      includedTurns: continuity.includedTurns,
+      includedPins: continuity.includedPins,
+      usedSummary: continuity.usedSummary,
+      omitted: continuity.omitted,
+      warnings: requestContext.warnings,
+    });
+    if (status) renderChatContextStatus(status, requestContextStatus);
     if (isChatPreparationCancelled(itemID)) return;
     const common = {
       itemID,
