@@ -401,3 +401,22 @@ test("message actions are quiet pills and More hides the default marker", () => 
     /color: var\(--pp-success\);/,
   );
 });
+
+test("chat and workspace selects keep Zotero's arrow image", () => {
+  // Zotero draws the select arrow as a background image. The shorthand
+  // `background:` would reset it to none.
+  for (const selector of [
+    ".pp-chat-tools select,\n.pp-chat-tools input,\n.pp-chat-tools textarea",
+    ".pprw-select",
+    ".pprw-input,\n.pprw-textarea",
+  ]) {
+    assert.doesNotMatch(rule(selector), /(^|\n)\s*background:/);
+  }
+  assert.match(rule("select.pprw-input"), /padding-inline-end: 32px;/);
+  const length = rule(".pp-chat-tools__bar .pp-chat-length");
+  assert.match(length, /padding-inline-end: 30px;/);
+  assert.doesNotMatch(
+    rule(".pp-chat-tools__bar .pp-chat-length:hover"),
+    /background-image/,
+  );
+});
