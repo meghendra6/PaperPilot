@@ -1,18 +1,21 @@
 import type { CodexExecOptions, CodexResumeOptions } from "./types";
 
-const LEGACY_APPROVAL_MODE_MAP: Record<string, string> = {
-  suggested: "never",
-  "auto-edit": "never",
-  autoedit: "never",
-  manual: "untrusted",
-};
+const LEGACY_APPROVAL_MODE_MAP = new Map<string, string>([
+  ["suggested", "never"],
+  ["auto-edit", "never"],
+  ["autoedit", "never"],
+  ["manual", "untrusted"],
+]);
 
-const SUPPORTED_APPROVAL_MODES = new Set([
+/** Values accepted by `codex --ask-for-approval`, in settings display order. */
+export const CODEX_APPROVAL_MODES = [
+  "never",
+  "on-request",
   "untrusted",
   "on-failure",
-  "on-request",
-  "never",
-]);
+] as const;
+
+const SUPPORTED_APPROVAL_MODES = new Set<string>(CODEX_APPROVAL_MODES);
 
 function maybePush(parts: string[], enabled: boolean, value: string) {
   if (enabled) {
@@ -20,10 +23,16 @@ function maybePush(parts: string[], enabled: boolean, value: string) {
   }
 }
 
+/**
+ * Maps a saved approval mode to the CLI value. Letter case is ignored, and
+ * spaces or underscores count as hyphens. Unknown values return undefined,
+ * and the command then omits `--ask-for-approval`.
+ */
 export function normalizeCodexApprovalMode(approvalMode?: string) {
   const normalized = String(approvalMode || "")
     .trim()
-    .toLowerCase();
+    .toLowerCase()
+    .replace(/[\s_]+/g, "-");
   if (!normalized) {
     return undefined;
   }
@@ -32,7 +41,7 @@ export function normalizeCodexApprovalMode(approvalMode?: string) {
     return normalized;
   }
 
-  return LEGACY_APPROVAL_MODE_MAP[normalized];
+  return LEGACY_APPROVAL_MODE_MAP.get(normalized);
 }
 
 export function buildCodexLoginStatusCommand(executablePath = "codex") {

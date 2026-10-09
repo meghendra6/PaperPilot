@@ -200,11 +200,20 @@ export function normalizeCodexReasoningEffort(
   const supportedEfforts = catalogModel
     ? catalogModel.reasoningEfforts
     : findCodexBuiltInModel(CODEX_DEFAULT_MODEL)!.reasoningEfforts;
-  const normalized = reasoningEffort.trim();
+  const normalized = reasoningEffort.trim().toLowerCase();
   if (supportedEfforts.includes(normalized)) {
     return normalized;
   }
   return catalogModel?.defaultReasoningEffort ?? CODEX_DEFAULT_REASONING_EFFORT;
+}
+
+/** Every effort any built-in Codex model accepts, in catalog order. */
+export function getCodexReasoningEffortOptions() {
+  return [
+    ...new Set(
+      CODEX_BUILT_IN_MODEL_CATALOG.flatMap((model) => model.reasoningEfforts),
+    ),
+  ];
 }
 
 // An empty/obsolete configured list uses the built-in catalog. This is a picker
