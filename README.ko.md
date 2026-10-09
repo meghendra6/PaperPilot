@@ -192,7 +192,7 @@ Claude Code 모드는 로컬 `claude` CLI의 print 모드를 사용하며, 리�
 - 설정 가능한 실행 파일 경로
 - Claude Code CLI 계열 별칭 모델 선택(`sonnet` 기본, `opus`, `haiku`, `fable`). 설치된 CLI가 각 계열의 최신 모델(현재 Sonnet 5.5, Opus 5.5, Haiku 5.5, Fable 5.1)로 해석하며, 고정 ID `claude-opus-5-5`, `claude-sonnet-5-5`, `claude-haiku-5-5`, `claude-fable-5-1`, `claude-opus-5`, `claude-sonnet-5`도 제공
 - 설정에 직접 입력한 그 밖의 모델 ID(예: `claude-opus-5-5[1m]`, Bedrock/Vertex 모델 ID)는 그대로 CLI에 전달. `Opus 5.5`, `claude-opus-5.5`처럼 직접 입력한 이름은 `claude-opus-5-5`로 정규화되며 `[1m]` 같은 컨텍스트 접미사는 유지
-- 선택적 effort 수준(`low`, `medium`, `high`, `xhigh`, `max`, **Claude Code default** 옵션은 Claude Code CLI 기본값 사용)을 설정과 모델 선택기 옆에서 지정. 설치된 CLI의 `--help`에 `--effort`가 있을 때만 전달
+- 선택적 effort 수준(`low`, `medium`, `high`, `xhigh`, `max`, 설정의 **Claude Code default**와 모델 선택기 옆의 **default effort**는 Claude Code CLI 기본값 사용)을 설정과 모델 선택기 옆에서 지정. 설치된 CLI의 `--help`에 `--effort`가 있을 때만 전달
 - chat 실행에 적용되는 permission mode 설정
 - 논문 단위 후속 대화 맥락 유지
 - 현재 논문용 retrieval/context 조합

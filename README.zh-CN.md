@@ -190,7 +190,7 @@ Claude Code 模式使用本地 `claude` CLI 的 print 模式，并基于阅读�
 - 可配置的可执行文件路径
 - 可选择 Claude Code CLI 的模型系列别名（默认 `sonnet`，另含 `opus`、`haiku`、`fable`），已安装的 CLI 会将其解析为各系列的最新模型（当前为 Sonnet 5.5、Opus 5.5、Haiku 5.5、Fable 5.1）；另提供固定 ID `claude-opus-5-5`、`claude-sonnet-5-5`、`claude-haiku-5-5`、`claude-fable-5-1`、`claude-opus-5`、`claude-sonnet-5`
 - 在设置中手动输入的其他模型 ID（例如 `claude-opus-5-5[1m]` 或 Bedrock/Vertex 模型 ID）会原样传给 CLI；`Opus 5.5`、`claude-opus-5.5` 等手动输入的名称会规范化为 `claude-opus-5-5`，并保留 `[1m]` 等上下文后缀
-- 可选的 effort 级别（`low`、`medium`、`high`、`xhigh`、`max`；**Claude Code default** 选项沿用 Claude Code CLI 默认值），可在设置中或模型选择器旁设置；仅当已安装 CLI 的 `--help` 列出 `--effort` 时才会传入
+- 可选的 effort 级别（`low`、`medium`、`high`、`xhigh`、`max`；设置中的 **Claude Code default** 与模型选择器旁的 **default effort** 沿用 Claude Code CLI 默认值），可在设置中或模型选择器旁设置；仅当已安装 CLI 的 `--help` 列出 `--effort` 时才会传入
 - 可配置的 permission mode（仅用于聊天运行）
 - 论文级追问上下文连续性
 - 面向当前论文的 retrieval/context 组装

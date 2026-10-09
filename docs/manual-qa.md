@@ -770,13 +770,17 @@ Run these in Zotero 7 and 10, in light and dark themes, with the pane about
 - [ ] Type a draft taller than 180px; confirm the caret stays visible while typing at the end
 - [ ] Double-click Send; confirm the request is not cancelled. Press Enter during a run and confirm the composer hint appears
 - [ ] Type `/su`, `/`, and `/foo`, then press Enter; confirm filtering, command selection, and the "Unknown command" notice. Confirm Korean and Japanese input-method composition still works
+- [ ] While "New response · Jump to latest" shows, complete a Critical Read step; confirm the prompt stays. Start a new session; confirm the prompt disappears
+- [ ] Tab to Dismiss on a Failed run card, then let another run event arrive; confirm focus stays on Dismiss
 
 ### Controls
 
 - [ ] Send a chat; confirm Workbench actions and Compare are disabled with a reason and return afterwards
 - [ ] On Claude Code, or Codex with web search off, confirm all three "Find prior work" entry points are disabled with the reason and the Compare helper text changes
 - [ ] Click a card's "Find prior work" while discovery runs; confirm "already running" appears and the search continues
-- [ ] Cancel highlighting part-way; confirm no annotations remain from the cancelled run
+- [ ] Cancel highlighting part-way; confirm no annotations remain from the cancelled run, including highlights saved before the cancel
+- [ ] Pick a model in the engine popover, then tick "Allow web search when needed" or click Re-check; confirm the pick and the enabled Save stay
+- [ ] With Codex selected, turn web search off in Zotero Settings; confirm "Find prior work" turns disabled with its reason without reopening the paper
 - [ ] Confirm the engine buttons show the pressed engine, the reset reads "Use default (…)", and it is disabled without an override
 - [ ] Change the model and close the popover without saving; confirm the selection reverts. Confirm Save shows "Saved" and a Claude effort change enables Save
 - [ ] With Codex ready, confirm the auth buttons are hidden; with login required, confirm the instructions appear inside the popover
@@ -820,6 +824,8 @@ Run these in Zotero 7 and 10, in light and dark themes, with the pane about
 - [ ] Confirm an unsent Critical Read answer survives a status update and a step-3 search
 - [ ] Close the project window during a run; confirm the prompt appears and Cancel keeps the window open. Confirm Check now during an Evidence Matrix run keeps the run going
 - [ ] Relaunch the window with a new library selection; confirm the banner's Use and Add paths
+- [ ] While an analysis runs, choose the banner's Add path; confirm the add is refused with a message and the run continues
+- [ ] Relaunch from the library while the window is still opening; confirm the selection banner appears once the window is ready
 - [ ] Archive a project, then restore it from Archived projects
 - [ ] Force a partial Evidence Matrix; confirm Failed cells, paper titles in progress text, and Resume
 - [ ] Open Critical Read from the window while the pane is in Focus chat mode; confirm the Workbench expands and the panel scrolls into view

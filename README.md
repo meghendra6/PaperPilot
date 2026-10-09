@@ -191,7 +191,7 @@ Claude Code mode uses the local `claude` CLI in print mode with the same paper w
 - configurable executable path
 - model selection across the Claude Code CLI family aliases (`sonnet` default, plus `opus`, `haiku`, and `fable`), which the installed CLI resolves to the newest model in each family (currently Sonnet 5.5, Opus 5.5, Haiku 5.5, and Fable 5.1), plus pinned ids `claude-opus-5-5`, `claude-sonnet-5-5`, `claude-haiku-5-5`, `claude-fable-5-1`, `claude-opus-5`, and `claude-sonnet-5`
 - any other model id typed in settings (for example `claude-opus-5-5[1m]` or a Bedrock/Vertex model id) is passed to the CLI unchanged; hand-typed names such as `Opus 5.5` or `claude-opus-5.5` are normalized to `claude-opus-5-5`, keeping a context suffix such as `[1m]`
-- optional effort level (`low`, `medium`, `high`, `xhigh`, or `max`; the **Claude Code default** option keeps the CLI default) in settings and next to the model picker; it is passed as `--effort` only when the installed CLI's `--help` lists that flag
+- optional effort level (`low`, `medium`, `high`, `xhigh`, or `max`), set in settings or next to the model picker. The empty choice keeps the CLI default: settings call it **Claude Code default**, and the picker calls it **default effort**. The level is passed as `--effort` only when the installed CLI's `--help` lists that flag
 - configurable permission mode for chat runs
 - paper-scoped follow-up continuity
 - retrieval/context assembly for the active paper
