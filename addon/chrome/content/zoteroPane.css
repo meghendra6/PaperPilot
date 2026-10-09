@@ -315,6 +315,21 @@
   margin-bottom: 10px;
 }
 
+.pp-pane-header__row-label {
+  margin-bottom: 4px;
+  font-size: var(--pp-font-size-xs);
+  color: var(--pp-text-secondary);
+}
+
+/* Pressed toggles: the active engine and Focus chat. */
+.pp-pane-header__mode-actions .pp-btn[aria-pressed="true"],
+.pp-chat-focus[aria-pressed="true"] {
+  background: var(--pp-bg-accent);
+  color: var(--pp-text-accent);
+  border-color: var(--pp-accent);
+  font-weight: 600;
+}
+
 /* ============================================================
    2. Mode bar
    ============================================================ */
@@ -626,6 +641,14 @@
   gap: 8px;
   flex-wrap: wrap;
   margin-bottom: 10px;
+}
+
+.pp-codex-actions__status {
+  flex-basis: 100%;
+  font-size: var(--pp-font-size-sm);
+  color: var(--pp-text-secondary);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
 }
 
 .pp-model-row {
@@ -966,6 +989,13 @@
 .pp-related-disclosure {
   margin: 8px 0;
   color: var(--pp-text-recommendation-meta);
+  font-size: var(--pp-font-size-xs);
+  line-height: 1.45;
+}
+
+.pp-related-availability {
+  margin-top: 6px;
+  color: var(--pp-text-secondary);
   font-size: var(--pp-font-size-xs);
   line-height: 1.45;
 }
@@ -3625,6 +3655,18 @@ button.pprw-render-evidence-link {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.pp-chat-commands .pp-btn[data-active="true"] {
+  border-color: var(--pp-accent);
+}
+.pp-composer-hint {
+  font-size: var(--pp-font-size-xs);
+  color: var(--pp-text-secondary);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.pp-composer-hint:not(:empty) {
+  margin-block: 4px;
 }
 .pp-chat-search,
 .pp-chat-review {

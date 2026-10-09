@@ -45,3 +45,23 @@ export function setModeOverrideForItem(itemID: number, mode: EngineMode) {
 export function clearModeOverrideForItem(itemID: number) {
   addon.data.modeOverrides?.delete(itemID);
 }
+
+export function hasModeOverrideForItem(itemID: number): boolean {
+  return Boolean(addon.data.modeOverrides?.has(itemID));
+}
+
+/** Choosing the default engine removes the override instead of pinning it. */
+export function resolveModeSelection(
+  chosen: EngineMode,
+  defaultMode: EngineMode,
+): "clear_override" | "set_override" {
+  return chosen === defaultMode ? "clear_override" : "set_override";
+}
+
+export function selectModeForItem(itemID: number, chosen: EngineMode) {
+  if (resolveModeSelection(chosen, getDefaultMode()) === "clear_override") {
+    clearModeOverrideForItem(itemID);
+  } else {
+    setModeOverrideForItem(itemID, chosen);
+  }
+}

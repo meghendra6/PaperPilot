@@ -1,6 +1,51 @@
 import type { ChatResponseLength } from "../message/chatTypes";
 import type { ReaderActionName } from "../readerActionPrompt";
 
+export const SLASH_COMMANDS = [
+  "explain",
+  "summarize",
+  "translate",
+  "critique",
+] as const satisfies readonly ReaderActionName[];
+export type SlashCommand = (typeof SLASH_COMMANDS)[number];
+
+/** Returns the typed word of a bare `/word` draft, or undefined otherwise. */
+export function parseSlashCommandInput(value: string): string | undefined {
+  const match = /^\/([a-z]*)$/i.exec(value);
+  return match ? match[1].toLowerCase() : undefined;
+}
+
+export function filterSlashCommands(
+  typed: string,
+  commands: readonly SlashCommand[] = SLASH_COMMANDS,
+): SlashCommand[] {
+  const prefix = typed.toLowerCase();
+  return commands.filter((command) => command.startsWith(prefix));
+}
+
+export type SlashCommandSubmission =
+  | { kind: "not_command" }
+  | { kind: "pick"; command: SlashCommand }
+  | { kind: "unknown"; typed: string };
+
+/**
+ * A bare `/word` draft is never sent as a question. It picks the highlighted
+ * (first) matching command, or reports that no command matches.
+ */
+export function resolveSlashCommandSubmission(
+  value: string,
+): SlashCommandSubmission {
+  const typed = parseSlashCommandInput(value);
+  if (typed === undefined) return { kind: "not_command" };
+  const [command] = filterSlashCommands(typed);
+  return command ? { kind: "pick", command } : { kind: "unknown", typed };
+}
+
+export function formatUnknownSlashCommand(typed: string): string {
+  const available = SLASH_COMMANDS.map((command) => `/${command}`).join(", ");
+  return `Unknown command /${typed}. Available commands: ${available}.`;
+}
+
 export interface ChatSearchResult {
   sessionId: string;
   title: string;
@@ -44,21 +89,34 @@ export function createChatTools(params: {
     commands.hidden = !open;
     actionButton.setAttribute("aria-expanded", String(open));
   };
-  for (const action of [
-    "explain",
-    "summarize",
-    "translate",
-    "critique",
-  ] as const)
-    commands.append(
-      button(action[0].toUpperCase() + action.slice(1), () => {
-        setCommandsOpen(false);
-        params.onAction(action);
-      }),
-    );
+  const commandButtons = SLASH_COMMANDS.map((action) => {
+    const el = button(action[0].toUpperCase() + action.slice(1), () => {
+      setCommandsOpen(false);
+      params.onAction(action);
+    });
+    el.setAttribute("data-command", action);
+    return el;
+  });
+  commands.append(...commandButtons);
+  /** Shows only matching commands and highlights the first one for Enter. */
+  const showCommandMatches = (matches: readonly SlashCommand[]) => {
+    let highlighted = false;
+    SLASH_COMMANDS.forEach((command, index) => {
+      const visible = matches.includes(command);
+      commandButtons[index].hidden = !visible;
+      commandButtons[index].setAttribute(
+        "data-active",
+        String(visible && !highlighted),
+      );
+      if (visible) highlighted = true;
+    });
+  };
+  const focusHighlightedCommand = () =>
+    commandButtons.find((el) => !el.hidden)?.focus();
   const actionButton = button("/ Actions", () => {
+    showCommandMatches(SLASH_COMMANDS);
     setCommandsOpen(commands.hidden);
-    if (!commands.hidden) commands.querySelector("button")?.focus();
+    if (!commands.hidden) focusHighlightedCommand();
   });
   actionButton.setAttribute("aria-expanded", "false");
   const length = doc.createElement("select");
@@ -215,13 +273,16 @@ export function createChatTools(params: {
   status.setAttribute("role", "status");
   root.append(bar, commands, search, status);
   const onInput = () => {
-    setCommandsOpen(/^\/[a-z]*$/i.test(params.input.value));
+    const typed = parseSlashCommandInput(params.input.value);
+    const matches = typed === undefined ? [] : filterSlashCommands(typed);
+    showCommandMatches(matches);
+    setCommandsOpen(matches.length > 0);
   };
   const onKey = (event: KeyboardEvent) => {
     if (commands.hidden) return;
     if (event.target === params.input && event.key === "ArrowDown") {
       event.preventDefault();
-      commands.querySelector("button")?.focus();
+      focusHighlightedCommand();
     }
     if (event.key === "Escape") {
       event.preventDefault();
@@ -237,6 +298,22 @@ export function createChatTools(params: {
     root,
     setStatus(text: string) {
       status.textContent = text;
+    },
+    /**
+     * Handles a bare `/word` draft on submit. Returns true when the draft was
+     * a command attempt, so the caller must not send it as a question.
+     */
+    submitSlashCommand(): boolean {
+      const submission = resolveSlashCommandSubmission(params.input.value);
+      if (submission.kind === "not_command") return false;
+      if (submission.kind === "unknown") {
+        setCommandsOpen(false);
+        status.textContent = formatUnknownSlashCommand(submission.typed);
+        return true;
+      }
+      setCommandsOpen(false);
+      params.onAction(submission.command);
+      return true;
     },
     refresh() {
       length.value = params.getLength();

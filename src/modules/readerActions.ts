@@ -12,18 +12,34 @@ import {
   buildDictionaryButton,
   closeDictionaryPopups,
 } from "./ui/dictionaryPopup";
-import { getActiveReaderRunMode } from "./ai/runPresentation";
-import {
-  getPendingEngineCompletion,
-  isReaderLifecycleClaimActive,
-} from "./ai/runLifecycle";
+import { isReaderChatBusy } from "./ai/readerBusy";
+import { getDiscoveryAvailability } from "./discovery/capabilities";
+import { DISCOVERY_ALREADY_RUNNING_MESSAGE } from "./ui/discoveryEntryState";
+
+function isDiscoveryRunning(itemID: number): boolean {
+  return Boolean(addon.data.relatedRecommendationStates?.get(itemID)?.running);
+}
 
 function isReaderActionBusy(itemID: number): boolean {
-  return Boolean(
-    getActiveReaderRunMode(itemID) ||
-      getPendingEngineCompletion(itemID) ||
-      isReaderLifecycleClaimActive(itemID),
-  );
+  // Discovery holds a workspace reservation. Check its own state as well so a
+  // second request cannot reach the pane while that search runs.
+  return isReaderChatBusy(itemID) || isDiscoveryRunning(itemID);
+}
+
+/** Why a popup action cannot run now, or undefined when it can. */
+function getSelectionActionBlockReason(
+  itemID: number | undefined,
+  action: ReaderActionName,
+): string | undefined {
+  if (!itemID) return undefined;
+  if (action === "find-prior-work") {
+    if (isDiscoveryRunning(itemID)) return DISCOVERY_ALREADY_RUNNING_MESSAGE;
+    const availability = getDiscoveryAvailability(getModeForItem(itemID));
+    if (!availability.available) return availability.reason;
+  }
+  return isReaderActionBusy(itemID)
+    ? "Stop the current response in Paper Pilot first."
+    : undefined;
 }
 
 export {
@@ -124,7 +140,7 @@ function triggerAction(params: {
     return;
   }
 
-  if (isReaderActionBusy(params.itemID)) return;
+  if (getSelectionActionBlockReason(params.itemID, params.action)) return;
 
   if (params.action === "find-prior-work" && params.text) {
     addon.data.pendingDiscoveryConcerns?.set(params.itemID, {
@@ -156,9 +172,12 @@ function buildSelectionActionButton(params: {
   button.type = "button";
   button.textContent = params.label;
   button.className = "pp-btn pp-btn--secondary pp-selection-action";
-  button.disabled = Boolean(params.itemID && isReaderActionBusy(params.itemID));
-  if (button.disabled)
-    button.title = "Stop the current response in Paper Pilot first.";
+  const blockReason = getSelectionActionBlockReason(
+    params.itemID,
+    params.action,
+  );
+  button.disabled = Boolean(blockReason);
+  if (blockReason) button.title = blockReason;
   button.addEventListener("click", () => {
     triggerAction({
       source: "selection-popup",

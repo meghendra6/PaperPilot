@@ -116,3 +116,118 @@ test("session rename keeps its draft and supports the keyboard", () => {
     /event\.key === "Escape"[\s\S]*?cancelRename\(\)/,
   );
 });
+
+const workbenchSource = readFileSync(
+  join(process.cwd(), "src", "modules", "ui", "readerWorkbench.ts"),
+  "utf8",
+);
+const readerActionsSource = readFileSync(
+  join(process.cwd(), "src", "modules", "readerActions.ts"),
+  "utf8",
+);
+
+// Source contracts for DOM wiring only. Pure decisions have unit tests.
+// Real focus, popover, and timing behavior needs manual Zotero QA.
+test("Workbench requests refresh their busy state on every run event", () => {
+  assert.match(
+    readerPaneSource,
+    /subscribeToReaderRunEvents\([\s\S]*?renderBusyDependentControls\(\);/,
+  );
+  assert.match(workbenchSource, /readerBusy: isReaderChatBusy\(itemID\)/);
+  for (const button of [
+    "researchBriefButton",
+    "contributionsButton",
+    "limitationsButton",
+    "followUpsButton",
+    "compareButton",
+  ]) {
+    assert.match(
+      readerPaneSource,
+      new RegExp(
+        `${button}\\.addEventListener\\("click", async \\(\\) => \\{\\s*if \\(isWorkbenchRequestBlocked\\(\\)\\) return;`,
+      ),
+    );
+  }
+});
+
+test("discovery entry points honor engine capability and never click the toggle", () => {
+  assert.doesNotMatch(readerPaneSource, /relatedRecommendButton\.click\(\)/);
+  assert.match(readerPaneSource, /id="chat-related-availability"/);
+  assert.match(
+    workbenchSource,
+    /findPriorWork\.disabled = true;\s*findPriorWork\.title = options\.discoveryUnavailableReason;/,
+  );
+  assert.match(
+    readerActionsSource,
+    /action === "find-prior-work"[\s\S]*?getDiscoveryAvailability/,
+  );
+});
+
+test("highlighting can be cancelled and announces its status", () => {
+  assert.match(
+    readerPaneSource,
+    /id="chat-auto-highlight-status"[^>]*role="status"[^>]*aria-live="polite"/,
+  );
+  assert.match(readerPaneSource, /signal: abortController\.signal,/);
+  assert.match(readerPaneSource, /AUTO_HIGHLIGHT_CANCELLED_STATUS/);
+});
+
+test("composer guards Stop after Send and explains swallowed submits", () => {
+  assert.match(
+    readerPaneSource,
+    /shouldIgnoreStopActivation\(\{[\s\S]*?clickDetail: event\.detail,/,
+  );
+  assert.match(
+    readerPaneSource,
+    /id="chat-composer-hint"[^>]*role="status"[^>]*aria-live="polite"/,
+  );
+  assert.match(
+    readerPaneSource,
+    /if \(chatTools\.submitSlashCommand\(\)\) return;\s*if \(isReaderChatBusy\(item\.id\)\) \{[\s\S]*?showComposerHint\(/,
+  );
+  assert.match(
+    readerPaneSource,
+    /input\.addEventListener\("keydown", async \(e\) => \{\s*if \(e\.defaultPrevented\) return;/,
+  );
+});
+
+test("engine settings expose pressed state, saved defaults, and in-popover auth help", () => {
+  assert.match(
+    paneHeaderSource,
+    /modeClaudeButton\.setAttribute\("aria-pressed"/,
+  );
+  assert.match(
+    paneHeaderSource,
+    /modeCodexButton\.setAttribute\("aria-pressed"/,
+  );
+  assert.match(paneHeaderSource, /"Default model \(all papers\)"/);
+  assert.match(
+    paneHeaderSource,
+    /modelInput\.addEventListener\("change", onModelSelectionChange\)/,
+  );
+  assert.match(
+    paneHeaderSource,
+    /if \(!open && !popover\.hidden\) resetUnsavedModelSelection\(\);/,
+  );
+  assert.match(paneHeaderSource, /createNativeSelectClickGuard\(\[/);
+  assert.match(readerPaneSource, /renderEngineSelection\(params\.modeChip, \{/);
+  assert.match(readerPaneSource, /paneHeader\.setCodexAuthStatus\(/);
+  assert.doesNotMatch(
+    readerPaneSource,
+    /addMessage\(\s*chatMessages,\s*buildCodexAuthenticateMessage/,
+  );
+});
+
+test("Clear cards confirms and persists, and Focus chat keeps its name", () => {
+  assert.match(
+    readerPaneSource,
+    /clearWorkbenchButton\.addEventListener\("click", async \(\) => \{[\s\S]*?confirmDestructive\([\s\S]*?persistActiveSession/,
+  );
+  assert.doesNotMatch(readerPaneSource, /"Show workbench"/);
+  assert.match(paneStyleSource, /\.pp-chat-focus\[aria-pressed="true"\]/);
+});
+
+test("the draft card does not expose internal attachment IDs", () => {
+  assert.doesNotMatch(readerPaneSource, /PDF \$\{context\.attachmentID/);
+  assert.match(readerPaneSource, /formatDraftSourceLabel\(\{/);
+});

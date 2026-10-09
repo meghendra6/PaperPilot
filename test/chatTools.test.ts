@@ -2,6 +2,11 @@ import * as assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   createChatTools,
+  filterSlashCommands,
+  formatUnknownSlashCommand,
+  parseSlashCommandInput,
+  resolveSlashCommandSubmission,
+  SLASH_COMMANDS,
   type ChatSearchResult,
 } from "../src/modules/ui/chatTools";
 
@@ -90,12 +95,15 @@ function setup(options: {
 }) {
   const doc = new TestDocument();
   const input = doc.createElement("textarea");
+  const actions: string[] = [];
   const tools = createChatTools({
     doc: doc as unknown as Document,
     input: input as unknown as HTMLTextAreaElement,
     getLength: () => "default",
     onLength: () => {},
-    onAction: () => {},
+    onAction: (action) => {
+      actions.push(action);
+    },
     onSearch: options.onSearch,
     onResult: options.onResult ?? (async () => {}),
     onSearchClose: options.onSearchClose ?? (() => true),
@@ -109,10 +117,17 @@ function setup(options: {
     query.value = value;
     query.dispatchEvent(new Event("input"));
   };
+  const typeInput = (value: string) => {
+    input.value = value;
+    input.dispatchEvent(new Event("input"));
+  };
   return {
     tools,
     doc,
     input,
+    actions,
+    typeInput,
+    status: root.children[3],
     root,
     commands,
     actionButton: bar.children[0],
@@ -234,4 +249,72 @@ test("actions collapse consistently after selection and Escape from their contro
   assert.equal(ui.actionButton.getAttribute("aria-expanded"), "false");
   assert.equal(ui.doc.activeElement, ui.input);
   assert.equal(escape.defaultPrevented, true);
+});
+
+test("slash command parsing accepts only a bare /word draft", () => {
+  assert.equal(parseSlashCommandInput("/Sum"), "sum");
+  assert.equal(parseSlashCommandInput("/"), "");
+  assert.equal(parseSlashCommandInput("/summarize this"), undefined);
+  assert.equal(parseSlashCommandInput("What is /etc?"), undefined);
+});
+
+test("slash commands filter by the typed prefix", () => {
+  assert.deepEqual(filterSlashCommands(""), [...SLASH_COMMANDS]);
+  assert.deepEqual(filterSlashCommands("s"), ["summarize"]);
+  assert.deepEqual(filterSlashCommands("TR"), ["translate"]);
+  assert.deepEqual(filterSlashCommands("cr"), ["critique"]);
+  assert.deepEqual(filterSlashCommands("x"), []);
+});
+
+test("a bare slash draft picks the first match or reports an unknown command", () => {
+  assert.deepEqual(resolveSlashCommandSubmission("/sum"), {
+    kind: "pick",
+    command: "summarize",
+  });
+  assert.deepEqual(resolveSlashCommandSubmission("/"), {
+    kind: "pick",
+    command: "explain",
+  });
+  assert.deepEqual(resolveSlashCommandSubmission("/foo"), {
+    kind: "unknown",
+    typed: "foo",
+  });
+  assert.deepEqual(resolveSlashCommandSubmission("Explain the method"), {
+    kind: "not_command",
+  });
+  assert.match(formatUnknownSlashCommand("foo"), /^Unknown command \/foo\./);
+});
+
+test("typing a slash prefix shows only matching commands and highlights the first", () => {
+  const ui = setup({ onSearch: async () => [] });
+  ui.typeInput("/t");
+  assert.equal(ui.commands.hidden, false);
+  const visible = ui.commands.children.filter((child) => !child.hidden);
+  assert.deepEqual(
+    visible.map((child) => child.getAttribute("data-command")),
+    ["translate"],
+  );
+  assert.equal(visible[0].getAttribute("data-active"), "true");
+  ui.typeInput("/zzz");
+  assert.equal(ui.commands.hidden, true);
+  ui.typeInput("A normal question");
+  assert.equal(ui.commands.hidden, true);
+});
+
+test("Enter on a slash draft picks the highlighted command instead of sending", () => {
+  const ui = setup({ onSearch: async () => [] });
+  ui.typeInput("/su");
+  assert.equal(ui.tools.submitSlashCommand(), true);
+  assert.deepEqual(ui.actions, ["summarize"]);
+  assert.equal(ui.commands.hidden, true);
+});
+
+test("an unknown slash command is not sent and the composer says why", () => {
+  const ui = setup({ onSearch: async () => [] });
+  ui.typeInput("/foo");
+  assert.equal(ui.tools.submitSlashCommand(), true);
+  assert.deepEqual(ui.actions, []);
+  assert.match(ui.status.textContent, /^Unknown command \/foo/);
+  ui.typeInput("Explain the method");
+  assert.equal(ui.tools.submitSlashCommand(), false);
 });

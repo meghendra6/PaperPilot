@@ -35,8 +35,10 @@ import type {
 import { normalizeResponseLanguage } from "./translation/responseLanguage";
 import { getPref } from "../utils/prefs";
 import {
+  buildWebSearchRequiredMessage,
   canRunDiscovery,
   getDiscoveryCapabilities,
+  WEB_SEARCH_SETTING_LABEL,
 } from "./discovery/capabilities";
 import {
   buildStructuredSeedQueries,
@@ -688,16 +690,14 @@ export async function generateRelatedPaperGroups(params: {
     const capabilities = getDiscoveryCapabilities(mode);
     if (!canRunDiscovery(capabilities)) {
       throw new Error(
-        mode === "codex_cli"
-          ? "Research discovery requires Codex web search so official venue, track, and decision evidence can be found. Enable Codex web search and try again."
-          : "Research discovery is unavailable because this engine does not expose a verified web-search capability. Select Codex with web search enabled.",
+        buildWebSearchRequiredMessage("Research discovery", mode),
       );
     }
     const assertCapabilitiesUnchanged = () => {
       const current = getDiscoveryCapabilities(mode);
       if (!canRunDiscovery(current)) {
         throw new Error(
-          "Research discovery capability changed before the run started. Re-enable verified web search and retry.",
+          `Web search was turned off before research discovery started. Turn on “${WEB_SEARCH_SETTING_LABEL}” in engine settings and retry.`,
         );
       }
       return current;
@@ -930,9 +930,7 @@ export async function generatePublicReviewInsight(params: {
   const capabilities = getDiscoveryCapabilities(mode);
   if (!capabilities.agentWebSearch) {
     throw new Error(
-      mode === "codex_cli"
-        ? "Public review insight requires Codex web search. Enable Codex web search and try again."
-        : "Public review insight is unavailable because this engine does not expose a verified web-search capability. Select Codex with web search enabled.",
+      buildWebSearchRequiredMessage("Public review insight", mode),
     );
   }
   const reservationToken = claimWorkspaceRunReservation(mode, params.itemID);
@@ -964,7 +962,7 @@ export async function generatePublicReviewInsight(params: {
         const current = getDiscoveryCapabilities(mode);
         if (!current.agentWebSearch) {
           throw new Error(
-            "Public-review web-search capability changed before the run started.",
+            `Web search was turned off before public-review analysis started. Turn on “${WEB_SEARCH_SETTING_LABEL}” in engine settings and retry.`,
           );
         }
         return current;
