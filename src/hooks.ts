@@ -120,6 +120,7 @@ async function registerPreferencePane() {
     id: PAPER_PILOT_PREF_PANE_ID,
     pluginID: config.addonID,
     src: `${rootURI}chrome/content/preferences.xhtml`,
+    stylesheets: [`${rootURI}chrome/content/preferences.css`],
     label: getString("prefs-title"),
     image: `chrome://${config.addonRef}/content/icons/favicon.png`,
   });

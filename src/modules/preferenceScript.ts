@@ -1,6 +1,7 @@
 import { config } from "../../package.json";
 import { getString } from "../utils/locale";
 import { getPref, setPref } from "../utils/prefs";
+import { bindPreferencePane } from "./preferences/paneBindings";
 import {
   normalizeResponseLanguage,
   notifyResponseLanguageChanged,
@@ -30,6 +31,7 @@ export async function registerPrefsScripts(_window: Window) {
     addon.data.prefs.window = _window;
   }
   syncResponseLanguagePreference(_window.document);
+  bindPreferencePane(_window.document);
 }
 
 function syncResponseLanguagePreference(doc: Document) {

@@ -8,6 +8,8 @@ import {
   getCodexBuiltInModels,
   parseAllowedModels,
 } from "../src/modules/codex/modelOptions";
+import { PREF_PANE_ELEMENT_SUFFIXES } from "../src/modules/preferences/paneBindings";
+import { SESSION_HISTORY_PREF_KEYS } from "../src/modules/session/historyPrefs";
 
 function keys(source: string, pattern: RegExp) {
   return new Set([...source.matchAll(pattern)].map((match) => match[1]));
@@ -61,6 +63,14 @@ test("preference defaults, types, UI declarations, and source usage stay in sync
     ui,
     /preference="extensions\.zotero\.__addonRef__\.([A-Za-z0-9]+)"/g,
   );
+  // One Session history choice drives these keys through the pane script.
+  assert.match(
+    ui,
+    new RegExp(
+      `id="zotero-prefpane-__addonRef__-${PREF_PANE_ELEMENT_SUFFIXES.historyMode}"`,
+    ),
+  );
+  for (const key of SESSION_HISTORY_PREF_KEYS) uiKeys.add(key);
   const internalOnly = new Set(["paneSectionState"]);
 
   assert.deepEqual(typeKeys, defaultKeys);
