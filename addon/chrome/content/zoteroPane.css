@@ -39,17 +39,24 @@
   --pp-text-run-state: #423960;
   --pp-text-session-doc: #444;
   --pp-text-streaming: #5b6b82;
-  --pp-text-artifact-time: #64748b;
+  --pp-text-artifact-time: #54657d;
   --pp-text-artifact-source: #54657d;
   --pp-bg-artifact-source: #eef4fb;
   --pp-border-recommendation: #eef1f4;
-  --pp-text-recommendation-meta: #64748b;
+  --pp-text-recommendation-meta: #54657d;
   --pp-text-recommendation-reason: #475569;
 
   --pp-text-status-info: #5b6472;
   --pp-text-status-warning: #7a4d14;
   --pp-text-status-success: #2f5b3c;
   --pp-text-status-embed: #29456a;
+
+  /* Status colors used as text, borders, and dots. Each reaches 4.5:1 on the
+     pane, the message background, and the error status background. */
+  --pp-error: var(--color-invalid, #b81d29);
+  --pp-warning: var(--pp-text-status-warning);
+  --pp-success: var(--pp-text-status-success);
+  --pp-bg-status-error: var(--color-invalid-background, #fce8ea);
 
   --pp-bg-evidence: #e6eef9;
   --pp-text-evidence: #35527a;
@@ -65,10 +72,16 @@
   --pp-border-hr: #d1d5db;
   --pp-text-link: #2563eb;
   --pp-accent: var(--accent-blue, #2563eb);
-  --pp-focus-color: var(--color-focus-border, #2563eb);
-  --pp-focus-width: var(--width-focus-border, 2px);
-  --pp-focus-outer-color: var(--color-focus-outer-border, #2563eb);
-  --pp-focus-outer-width: var(--width-focus-outer-border, 2px);
+  /* Filled accent controls darken the accent so white text keeps 4.5:1. */
+  --pp-accent-fill: color-mix(in srgb, var(--pp-accent) 90%, #000);
+  --pp-accent-fill-hover: color-mix(in srgb, var(--pp-accent) 80%, #000);
+  --pp-accent-fill-active: color-mix(in srgb, var(--pp-accent) 70%, #000);
+  --pp-on-accent: #fff;
+  /* Zotero's focus width is 1px on Windows. Paper Pilot draws a fixed 2px
+     ring with an offset so it stays visible next to filled buttons. */
+  --pp-focus-color: var(--pp-accent);
+  --pp-focus-width: 2px;
+  --pp-focus-offset: 2px;
 
   color-scheme: light dark;
 
@@ -139,6 +152,11 @@
     --pp-text-status-success: #7ec09a;
     --pp-text-status-embed: #7faad4;
 
+    --pp-error: var(--color-invalid, #ff7078);
+    --pp-warning: var(--pp-text-status-warning);
+    --pp-success: var(--pp-text-status-success);
+    --pp-bg-status-error: var(--color-invalid-background, #40191c);
+
     --pp-bg-evidence: #2a3444;
     --pp-text-evidence: #7faad4;
 
@@ -153,10 +171,8 @@
     --pp-border-hr: #4a4f58;
     --pp-text-link: #60a5fa;
     --pp-accent: var(--accent-blue, #2563eb);
-    --pp-focus-color: var(--color-focus-border, #60a5fa);
-    --pp-focus-width: var(--width-focus-border, 2px);
-    --pp-focus-outer-color: var(--color-focus-outer-border, #60a5fa);
-    --pp-focus-outer-width: var(--width-focus-outer-border, 2px);
+    /* Lighten the ring so it keeps 3:1 against the dark pane. */
+    --pp-focus-color: color-mix(in srgb, var(--pp-accent) 65%, #fff);
   }
 }
 
@@ -246,7 +262,7 @@
 .pp-pane-header[data-status="error"] .pp-pane-header__dot,
 .pp-pane-header[data-status="login_required"] .pp-pane-header__dot,
 .pp-pane-header[data-status="unsupported"] .pp-pane-header__dot {
-  background: var(--pp-error, #c62828);
+  background: var(--pp-error);
 }
 
 .pp-pane-header__label {
@@ -327,9 +343,10 @@
 /* ============================================================
    3. Run state card
    ============================================================ */
+/* The card never shrinks, so Retry stays reachable. Long progress output
+   scrolls inside the card instead. */
 .pp-run-state {
-  flex: 0 1 auto;
-  min-height: 0;
+  flex: 0 0 auto;
   max-height: 132px;
   margin: 6px 0;
   padding: 6px 8px;
@@ -896,7 +913,7 @@
   border-radius: var(--pp-radius-pill);
   background: var(--pp-bg-evidence);
   color: var(--pp-text-evidence);
-  font-size: 10px;
+  font-size: var(--pp-font-size-xs);
   font-weight: 700;
   text-transform: uppercase;
 }
@@ -1148,19 +1165,21 @@
   cursor: default;
 }
 
-@media (-moz-platform: windows) {
-  #paper-pilot-container :is(button, input, select, textarea):focus-visible {
-    outline: var(--pp-focus-outer-width) solid var(--pp-focus-outer-color);
-    outline-offset: var(--pp-focus-width);
-    box-shadow: 0 0 0 var(--pp-focus-width) var(--pp-focus-color);
-  }
+/* One fixed 2px ring on every platform. The offset leaves a strip of pane
+   background between the ring and a filled button. */
+#paper-pilot-container
+  :is(button, input, select, textarea, summary):focus-visible {
+  outline: var(--pp-focus-width) solid var(--pp-focus-color);
+  outline-offset: var(--pp-focus-offset);
 }
 
-@media not (-moz-platform: windows) {
-  #paper-pilot-container :is(button, input, select, textarea):focus-visible {
-    outline: none;
-    box-shadow: 0 0 0 var(--pp-focus-width) var(--pp-focus-color);
-  }
+/* Full-width triggers touch clipping edges, so their ring sits inside. */
+#paper-pilot-container
+  :is(
+    .pp-pane-header__trigger,
+    .pp-collapsible-section__trigger
+  ):focus-visible {
+  outline-offset: calc(-1 * var(--pp-focus-width));
 }
 
 .pp-btn:active:not(:disabled) {
@@ -1168,19 +1187,19 @@
 }
 
 .pp-btn--primary {
-  background: #2563eb;
-  color: #fff;
-  border: 1px solid #2563eb;
+  background: var(--pp-accent-fill);
+  color: var(--pp-on-accent);
+  border: 1px solid var(--pp-accent-fill);
 }
 
 .pp-btn--primary:hover:not(:disabled) {
-  background: #1d4ed8;
-  border-color: #1d4ed8;
+  background: var(--pp-accent-fill-hover);
+  border-color: var(--pp-accent-fill-hover);
 }
 
 .pp-btn--primary:active:not(:disabled) {
-  background: #1e40af;
-  border-color: #1e40af;
+  background: var(--pp-accent-fill-active);
+  border-color: var(--pp-accent-fill-active);
 }
 
 .pp-btn--secondary {
@@ -1325,17 +1344,32 @@
   font-size: 1.1em;
 }
 
+/* Inline KaTeX scrolls inside its own box instead of being clipped by the
+   message. Display math already scrolls in .pp-math-block. */
+.pp-message--ai :not(.pp-math-block) > .katex {
+  display: inline-block;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  vertical-align: middle;
+}
+
 /* ============================================================
    19. Tables
    ============================================================ */
+/* The table box scrolls horizontally. Columns keep whole words instead of
+   squeezing to one character per line. */
 .pp-table {
+  display: block;
   width: 100%;
   max-width: 100%;
+  overflow-x: auto;
   border-collapse: collapse;
   margin: 0 0 12px;
   font-size: var(--pp-font-size-sm);
-  table-layout: fixed;
-  overflow-wrap: anywhere;
+  table-layout: auto;
+  overflow-wrap: normal;
+  word-break: normal;
 }
 
 .pp-table th,
@@ -1443,6 +1477,20 @@
   padding: 4px 0;
 }
 
+/* Every section is collapsed: size the stack to its triggers. The !important
+   rules outrank a pinned manual height without discarding it, so expanding a
+   section restores the previous size. */
+#paper-pilot-section-stack.pp-section-stack--all-collapsed {
+  flex: 0 0 auto !important;
+  height: auto !important;
+  min-height: 0;
+}
+
+#paper-pilot-section-stack.pp-section-stack--all-collapsed
+  + .pp-resize-handle--workspace {
+  display: none;
+}
+
 .pp-collapsible-section {
   display: flex;
   flex: 0 0 auto;
@@ -1536,21 +1584,24 @@
   box-sizing: border-box;
 }
 
+/* The grip grows with a transform (36px at rest, 52px active) so the
+   transition stays on the compositor. */
 .pp-resize-handle::before {
   content: "";
-  width: 36px;
+  width: 52px;
   height: 3px;
   border-radius: var(--pp-radius-pill);
   background: var(--pp-border-medium);
+  transform: scaleX(0.6923);
   transition:
-    width 0.15s ease,
+    transform 0.15s ease,
     background-color 0.15s ease;
 }
 
 .pp-resize-handle:hover::before,
 .pp-resize-handle:focus-visible::before,
 .pp-resize-handle--active::before {
-  width: 52px;
+  transform: scaleX(1);
   background: var(--pp-accent);
 }
 
@@ -1683,10 +1734,11 @@
 
 .pp-mastery-progress {
   display: flex;
-  gap: 6px;
+  gap: 0;
   flex-wrap: wrap;
   align-items: center;
-  margin: 0;
+  /* Align the first 10px mark with the card text and keep the row compact. */
+  margin: -4px 0 -4px -7px;
 }
 
 .pp-mastery-progress:empty {
@@ -1694,24 +1746,42 @@
 }
 
 /* --- Progress dots --- */
+/* Each dot is a 24px target. ::before draws the 10px mark. */
 .pp-mastery-progress-dot {
+  --pp-mastery-dot-color: var(--pp-text-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+}
+
+.pp-mastery-progress-dot::before {
+  content: "";
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  display: inline-block;
-  flex-shrink: 0;
+  background: var(--pp-mastery-dot-color);
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease;
 }
 
 .pp-mastery-progress-dot--correct {
-  background: var(--pp-success, #4caf50);
+  --pp-mastery-dot-color: var(--pp-success);
 }
 
 .pp-mastery-progress-dot--incorrect {
-  background: var(--pp-error, #e53935);
+  --pp-mastery-dot-color: var(--pp-error);
 }
 
 .pp-mastery-progress-dot--current {
-  background: var(--pp-accent, #1976d2);
+  --pp-mastery-dot-color: var(--pp-accent);
+}
+
+.pp-mastery-progress-dot--current::before {
   animation: pp-mastery-pulse 1.2s infinite;
 }
 
@@ -1810,15 +1880,15 @@
 }
 
 .pp-mastery-feedback--correct {
-  background: color-mix(in srgb, var(--pp-success, #4caf50) 12%, transparent);
+  background: color-mix(in srgb, var(--pp-success) 12%, transparent);
   color: var(--pp-text-primary);
-  border-left: 3px solid var(--pp-success, #4caf50);
+  border-left: 3px solid var(--pp-success);
 }
 
 .pp-mastery-feedback--incorrect {
-  background: color-mix(in srgb, var(--pp-error, #e53935) 12%, transparent);
+  background: color-mix(in srgb, var(--pp-error) 12%, transparent);
   color: var(--pp-text-primary);
-  border-left: 3px solid var(--pp-error, #e53935);
+  border-left: 3px solid var(--pp-error);
 }
 
 /* Override label colors on tinted backgrounds for adequate contrast */
@@ -1890,29 +1960,24 @@
 .pp-mastery-progress-dot--incorrect,
 .pp-mastery-progress-dot--current {
   cursor: pointer;
-  transition:
-    transform 0.15s ease,
-    box-shadow 0.15s ease;
 }
 
-.pp-mastery-progress-dot--correct:hover,
-.pp-mastery-progress-dot--incorrect:hover,
-.pp-mastery-progress-dot--current:hover {
+.pp-mastery-progress-dot--correct:hover::before,
+.pp-mastery-progress-dot--incorrect:hover::before,
+.pp-mastery-progress-dot--current:hover::before {
   transform: scale(1.3);
 }
 
-.pp-mastery-progress-dot--active {
+.pp-mastery-progress-dot--active::before {
   box-shadow:
     0 0 0 2px var(--pp-bg-primary),
-    0 0 0 4px var(--pp-accent, #1976d2);
+    0 0 0 4px var(--pp-accent);
   transform: scale(1.3);
 }
 
-.pp-mastery-progress-dot--correct:focus-visible,
-.pp-mastery-progress-dot--incorrect:focus-visible,
-.pp-mastery-progress-dot--current:focus-visible {
-  outline: 2px solid var(--pp-accent, #1976d2);
-  outline-offset: 2px;
+.pp-mastery-progress-dot:focus-visible {
+  outline: var(--pp-focus-width) solid var(--pp-focus-color);
+  outline-offset: calc(-1 * var(--pp-focus-width));
 }
 
 /* History view in feedback — vertical card layout */
@@ -1963,11 +2028,11 @@
 }
 
 .pp-mastery-history-section--feedback .pp-mastery-history-label {
-  color: var(--pp-success, #4caf50);
+  color: var(--pp-success);
 }
 
 .pp-mastery-history-section--explanation .pp-mastery-history-label {
-  color: var(--pp-warning, #ff9800);
+  color: var(--pp-warning);
 }
 
 /* Section body — markdown content */
@@ -2217,9 +2282,9 @@
 .pprw-capture-skipped {
   flex: 0 0 auto;
   margin: 8px 20px 0;
-  border: 1px solid var(--pp-error, #c62828);
+  border: 1px solid var(--pp-error);
   border-radius: var(--pp-radius-md);
-  color: var(--pp-error, #c62828);
+  color: var(--pp-error);
 }
 
 .pprw-capture-skipped-title {
@@ -2260,8 +2325,8 @@
 }
 
 .pprw-window-error {
-  border-color: var(--pp-error, #c62828);
-  color: var(--pp-error, #c62828);
+  border-color: var(--pp-error);
+  color: var(--pp-error);
 }
 
 .pprw-home h2 {
@@ -2424,17 +2489,17 @@
 }
 
 .pprw-artifact-status--complete {
-  color: var(--pp-success, #2e7d32);
+  color: var(--pp-success);
 }
 
 .pprw-artifact-status--stale,
 .pprw-artifact-status--partial,
 .pprw-project-warning {
-  color: var(--pp-warning, #9a6700);
+  color: var(--pp-warning);
 }
 
 .pprw-artifact-status--failed {
-  color: var(--pp-error, #c62828);
+  color: var(--pp-error);
 }
 
 .pprw-project-warning {
@@ -2580,13 +2645,9 @@
 }
 
 .pprw-status[data-kind="error"] {
-  border-color: var(--pp-error, #c62828);
-  background: color-mix(
-    in srgb,
-    var(--pp-error, #c62828) 8%,
-    var(--pp-bg-primary)
-  );
-  color: var(--pp-error, #c62828);
+  border-color: var(--pp-error);
+  background: var(--pp-bg-status-error);
+  color: var(--pp-error);
   white-space: pre-wrap;
 }
 
@@ -2707,8 +2768,8 @@
 
 .paperpilot-research-workspace
   :is(button, input, select, textarea):focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 var(--pp-focus-width) var(--pp-focus-color);
+  outline: var(--pp-focus-width) solid var(--pp-focus-color);
+  outline-offset: var(--pp-focus-offset);
 }
 
 .pprw-question {
@@ -2841,7 +2902,7 @@
 }
 
 .pprw-render-badge--warning {
-  color: var(--pp-warning, #9a6700);
+  color: var(--pp-warning);
 }
 
 .pprw-render-badge--accent {
@@ -3041,7 +3102,7 @@ button.pprw-render-evidence-link {
 
 .pprw-claim-metric[data-status="needs-review"] strong,
 .pprw-claim-metric[data-status="conflicting"] strong {
-  color: var(--pp-warning, #9a6700);
+  color: var(--pp-warning);
 }
 
 .pprw-claim-guidance {
@@ -3115,8 +3176,8 @@ button.pprw-render-evidence-link {
 .pprw-claim-filter:focus-visible,
 .pprw-claim-summary:focus-visible,
 .pprw-claim-type:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 var(--pp-focus-width) var(--pp-focus-color);
+  outline: var(--pp-focus-width) solid var(--pp-focus-color);
+  outline-offset: var(--pp-focus-offset);
 }
 
 .pprw-claim-type {
@@ -3202,7 +3263,7 @@ button.pprw-render-evidence-link {
 
 .pprw-claim-meta--needs-review,
 .pprw-claim-meta--conflicting {
-  color: var(--pp-warning, #9a6700);
+  color: var(--pp-warning);
 }
 
 .pprw-claim-disclosure {
@@ -3267,7 +3328,7 @@ button.pprw-render-evidence-link {
 .pprw-claim-evidence-item[data-status="unverified"],
 .pprw-claim-evidence-item[data-status="not-found"],
 .pprw-claim-evidence-item[data-status="source-unavailable"] {
-  border-inline-start-color: var(--pp-warning, #9a6700);
+  border-inline-start-color: var(--pp-warning);
 }
 
 .pprw-claim-evidence-header {
@@ -3286,7 +3347,7 @@ button.pprw-render-evidence-link {
 
 .pprw-claim-evidence-item:not([data-status="verified"])
   .pprw-claim-evidence-status {
-  color: var(--pp-warning, #9a6700);
+  color: var(--pp-warning);
 }
 
 .pprw-claim-evidence-locator {
@@ -3367,7 +3428,7 @@ button.pprw-render-evidence-link {
 
 .pprw-render-note--warning,
 .pprw-render-section--warning {
-  color: var(--pp-warning, #9a6700);
+  color: var(--pp-warning);
 }
 
 .pprw-graph-relationship {
@@ -3447,10 +3508,28 @@ button.pprw-render-evidence-link {
 #paper-pilot-container [hidden] {
   display: none !important;
 }
+/* Search results and the save or send previews share one capped area, so
+   #chat-messages keeps its own minimum height. The bar and status never
+   shrink. The extras shrink and scroll first. The padding keeps edge focus
+   rings inside the scroll box. */
 .pp-chat-tools {
   flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
   min-width: 0;
-  margin-block: 4px;
+  max-height: min(260px, 36vh);
+  overflow-y: auto;
+  padding: 4px;
+  box-sizing: border-box;
+}
+.pp-chat-tools > * {
+  flex: 0 0 auto;
+}
+.pp-chat-tools > .pp-chat-search,
+.pp-chat-tools > .pp-chat-review {
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow-y: auto;
 }
 .pp-chat-tools__bar,
 .pp-chat-commands {
@@ -3585,8 +3664,8 @@ button.pprw-render-evidence-link {
 .pp-message-wrapper:focus-visible,
 .pp-chat-tools :focus-visible,
 #paper-pilot-draft :focus-visible {
-  outline: 2px solid var(--pp-accent, Highlight);
-  outline-offset: 2px;
+  outline: var(--pp-focus-width) solid var(--pp-focus-color);
+  outline-offset: var(--pp-focus-offset);
 }
 
 .pp-message-actions > summary {
@@ -3601,4 +3680,32 @@ button.pprw-render-evidence-link {
 .pp-message-actions[open] .pp-btn {
   display: block;
   text-align: start;
+}
+
+/* Reduced motion: stop every animation and transition Paper Pilot renders in
+   the reader pane and the Research Workspace. State changes still apply. */
+@media (prefers-reduced-motion: reduce) {
+  #paper-pilot-container *,
+  #paper-pilot-container *::before,
+  #paper-pilot-container *::after,
+  .paperpilot-research-workspace *,
+  .paperpilot-research-workspace *::before,
+  .paperpilot-research-workspace *::after,
+  .paperpilot-research-workspace-document *,
+  .paperpilot-research-workspace-document *::before,
+  .paperpilot-research-workspace-document *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+
+  .pp-btn:active:not(:disabled) {
+    transform: none;
+  }
+
+  .pp-mastery-progress-dot--correct:hover::before,
+  .pp-mastery-progress-dot--incorrect:hover::before,
+  .pp-mastery-progress-dot--current:hover::before {
+    transform: none;
+  }
 }
