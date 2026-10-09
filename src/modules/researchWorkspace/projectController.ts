@@ -835,6 +835,15 @@ export class ResearchWorkspaceProjectController {
     return this.details(projectID);
   }
 
+  /** Restores an archived project. Restoring an active project is a no-op. */
+  async restoreProject(projectID: string) {
+    const bundle = await this.repository.getProject(projectID);
+    if (bundle.project.archivedAt) {
+      await this.repository.unarchiveProject(projectID, bundle.projectRevision);
+    }
+    return this.details(projectID);
+  }
+
   deleteProject(projectID: string) {
     return this.repository.deleteProject(projectID);
   }

@@ -1027,3 +1027,35 @@ for (const operation of ["add-papers", "bind-candidate"] as const)
         undefined,
       );
   });
+
+test("archived projects can be restored to the active list without losing members", async () => {
+  const { projects } = setup();
+  await projects.createProject(
+    { projectID: "project-archive", name: "Archive me" },
+    [paper("A")],
+  );
+
+  const archived = await projects.archiveProject("project-archive");
+  assert.ok(archived.project.archivedAt);
+  let home = await projects.home();
+  assert.deepEqual(
+    home.archivedProjects.map((entry) => entry.projectID),
+    ["project-archive"],
+  );
+  assert.equal(home.projects.length, 0);
+
+  const restored = await projects.restoreProject("project-archive");
+  assert.equal(restored.project.archivedAt, undefined);
+  assert.equal(restored.project.name, "Archive me");
+  assert.equal(restored.members.length, 1);
+  home = await projects.home();
+  assert.deepEqual(
+    home.projects.map((entry) => entry.projectID),
+    ["project-archive"],
+  );
+  assert.equal(home.archivedProjects.length, 0);
+  assert.equal(home.projects[0].archivedAt, undefined);
+
+  const again = await projects.restoreProject("project-archive");
+  assert.equal(again.project.archivedAt, undefined);
+});

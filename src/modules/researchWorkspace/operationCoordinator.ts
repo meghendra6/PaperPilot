@@ -21,6 +21,11 @@ import type {
 import type { ResearchWorkspaceProjectRepository } from "./persistence/projectRepository";
 import { ResearchWorkspaceProjectController } from "./projectController";
 import {
+  buildRunOutcome,
+  formatIncrementalProgress,
+  summarizeRunOutcome,
+} from "./runOutcome";
+import {
   claimResearchWorkspaceOwner,
   isResearchWorkspaceOwnerClaimCurrent,
   releaseResearchWorkspaceOwner,
@@ -911,7 +916,12 @@ export class ResearchWorkspaceOperationCoordinator {
           break;
         }
         params.onStatus?.(
-          `${params.artifactTitle}: ${completedUnits.length}/${params.units.length} · ${unit.unitID}`,
+          formatIncrementalProgress({
+            title: params.artifactTitle,
+            completed: completedUnits.length,
+            total: params.units.length,
+            label: paperBySource.get(unit.sourceID)?.title || unit.unitID,
+          }),
         );
         run = await this.repository.updateRun(
           params.projectID,
@@ -1116,9 +1126,18 @@ export class ResearchWorkspaceOperationCoordinator {
         }),
       );
       params.onStatus?.(
-        failedUnits.length
-          ? `${params.artifactTitle} saved with ${failedUnits.length} failed unit(s). Run again to resume.`
-          : `${params.artifactTitle} saved to the project.`,
+        summarizeRunOutcome(
+          params.artifactTitle,
+          buildRunOutcome({
+            checkpoint: artifact.artifact.checkpoint,
+            total: params.units.length,
+            labelFor: (unitID) =>
+              paperBySource.get(
+                params.units.find((unit) => unit.unitID === unitID)?.sourceID ??
+                  unitID,
+              )?.title,
+          }),
+        ).message,
       );
       return { projectID: params.projectID, result: payload, artifact, run };
     } catch (error) {

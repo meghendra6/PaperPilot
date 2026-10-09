@@ -26,12 +26,12 @@ function createLiteratureGraph(
     typeof paramsOrId === "string"
       ? {
           id: paramsOrId,
-          title: legacyName || "Literature Graph",
+          title: legacyName || "Relationship Graph",
           now: legacyNow,
         }
       : paramsOrId;
   const now = params.now ?? new Date().toISOString();
-  const title = (params.title || params.name || "Literature Graph").trim();
+  const title = (params.title || params.name || "Relationship Graph").trim();
   return {
     schemaVersion: 2,
     id: params.id,

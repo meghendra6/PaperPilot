@@ -436,6 +436,8 @@ export interface ResearchWorkspaceArtifactRendererOptions {
   responseLanguage?: string;
   onOpenEvidence?: (reference: UnknownRecord) => void | Promise<void>;
   onCopyText?: (value: string) => void | Promise<void>;
+  /** Source IDs whose unit failed in the run that produced this payload. */
+  failedSourceIDs?: readonly string[];
 }
 
 export function record(value: unknown): UnknownRecord | undefined {
