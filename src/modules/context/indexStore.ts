@@ -36,7 +36,10 @@ export function getIndexedChunks(params: {
 }) {
   const store = getStore();
   const key = buildPaperIndexKey(params.libraryID, params.itemKey);
-  const hash = hashText(params.text);
+  const chunkSize = params.chunkSize ?? 1100;
+  const overlapSize = params.overlapSize ?? 200;
+  // Changed chunking settings must rebuild the index, not reuse old chunks.
+  const hash = `${chunkSize}:${overlapSize}:${hashText(params.text)}`;
   const existing = store?.get(key);
   if (existing?.hash === hash) {
     store?.delete(key);
@@ -44,11 +47,7 @@ export function getIndexedChunks(params: {
     return existing.chunks;
   }
 
-  const chunks = splitTextIntoChunks(
-    params.text,
-    params.chunkSize ?? 1100,
-    params.overlapSize ?? 200,
-  );
+  const chunks = splitTextIntoChunks(params.text, chunkSize, overlapSize);
   store?.delete(key);
   store?.set(key, { hash, chunks });
   while (store && store.size > MAX_INDEXED_PAPERS) {

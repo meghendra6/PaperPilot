@@ -378,6 +378,7 @@ export async function prepareRunInput(params: {
   const { findNearbyContext } = await import("./nearbyContext");
   const { getIndexedChunks } = await import("./indexStore");
   const { selectRelevantChunksFromChunks } = await import("./retriever");
+  const { resolveRetrievalChunking } = await import("./retrievalSettings");
   const selectionText =
     context.selectedText ||
     context.annotations
@@ -398,13 +399,17 @@ export async function prepareRunInput(params: {
         pageIndex: context.pageIndex,
       })
     : undefined;
+  const chunking = resolveRetrievalChunking({
+    chunkSize: getPref("retrievalChunkSize"),
+    overlapSize: getPref("retrievalOverlapSize"),
+  });
   payload.retrievedChunks = selectRelevantChunksFromChunks(
     getIndexedChunks({
       libraryID: context.source.libraryID,
       itemKey: `${context.source.itemKey}:${context.source.attachmentKey}`,
       text: content.fullText,
-      chunkSize: Number(getPref("retrievalChunkSize") || 1100),
-      overlapSize: Number(getPref("retrievalOverlapSize") || 200),
+      chunkSize: chunking.chunkSize,
+      overlapSize: chunking.overlapSize,
     }),
     [params.question, selectionText].filter(Boolean).join("\n"),
     Number(getPref("retrievalTopK") || 5),
