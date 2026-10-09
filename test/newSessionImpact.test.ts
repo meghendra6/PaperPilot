@@ -51,17 +51,19 @@ test("prompts-only and disabled history say the work is lost", () => {
     criticalRead: started,
     historyMode: "prompts-only",
   });
-  assert.match(promptsOnly!.message, /Critical Read \(started\)/);
-  assert.match(promptsOnly!.message, /saves prompts only/);
-  assert.match(promptsOnly!.message, /will be lost/);
+  assert.ok(promptsOnly);
+  assert.match(promptsOnly.message, /Critical Read \(started\)/);
+  assert.match(promptsOnly.message, /saves prompts only/);
+  assert.match(promptsOnly.message, /will be lost/);
 
   const disabled = describeNewSessionImpact({
     mastery: { phase: "complete", rounds: [{}], finalReport: "# Report" },
     historyMode: "disabled",
   });
-  assert.match(disabled!.message, /Paper Mastery \(final report\)/);
-  assert.match(disabled!.message, /Session history is off/);
-  assert.match(disabled!.message, /will be lost/);
+  assert.ok(disabled);
+  assert.match(disabled.message, /Paper Mastery \(final report\)/);
+  assert.match(disabled.message, /Session history is off/);
+  assert.match(disabled.message, /will be lost/);
 });
 
 test("a complete Critical Read is described as a finished report", () => {
@@ -69,9 +71,10 @@ test("a complete Critical Read is described as a finished report", () => {
     ...criticalReadAfterOneStep(),
     phase: "complete" as const,
   };
-  assert.match(
-    describeNewSessionImpact({ criticalRead: complete, historyMode: "full" })!
-      .message,
-    /Critical Read \(complete report\)/,
-  );
+  const impact = describeNewSessionImpact({
+    criticalRead: complete,
+    historyMode: "full",
+  });
+  assert.ok(impact);
+  assert.match(impact.message, /Critical Read \(complete report\)/);
 });

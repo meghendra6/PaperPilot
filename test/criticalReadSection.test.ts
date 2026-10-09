@@ -364,23 +364,27 @@ for (const [language, header, instruction, checklist, run] of [
       responseLanguage: language,
     });
     const text = collectText(root);
+    const abstract = state.steps[0].orientation.abstract;
+    assert.ok(abstract);
     for (const expected of [
       header,
       instruction,
       checklist,
       run,
       "0/7",
-      state.steps[0].orientation.abstract!,
+      abstract,
       ...state.steps[0].orientation.captions,
     ]) {
       assert.ok(text.includes(expected), `missing ${expected}`);
     }
     const input = descendants(root).find(
       (element) => element.tagName === "TEXTAREA",
-    )!;
+    );
+    assert.ok(input);
     const button = descendants(root).find(
       (element) => element.textContent === run,
-    )!;
+    );
+    assert.ok(button);
     assert.equal(input.value, "");
     assert.equal(
       button.disabled,
@@ -582,7 +586,8 @@ test("an unsent assessment and expanded steps survive a status rebuild", () => {
     state,
     actions: viewActions,
   });
-  const input = descendants(root).find((node) => node.tagName === "TEXTAREA")!;
+  const input = descendants(root).find((node) => node.tagName === "TEXTAREA");
+  assert.ok(input);
   input.value = "Half-written step two";
   input.dispatch("input");
   assert.deepEqual(drafts, [[2, "Half-written step two"]]);
@@ -618,11 +623,13 @@ test("a rebuild returns focus and caret to the assessment being typed", () => {
       readerInput,
     });
   render("abcdef");
-  const first = descendants(root).find((node) => node.tagName === "TEXTAREA")!;
+  const first = descendants(root).find((node) => node.tagName === "TEXTAREA");
+  assert.ok(first);
   first.focus();
   first.setSelectionRange(2, 4);
   render("abcdef");
-  const second = descendants(root).find((node) => node.tagName === "TEXTAREA")!;
+  const second = descendants(root).find((node) => node.tagName === "TEXTAREA");
+  assert.ok(second);
   assert.notEqual(second, first);
   assert.equal(doc.activeElement, second);
   assert.deepEqual([second.selectionStart, second.selectionEnd], [2, 4]);

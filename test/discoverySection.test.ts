@@ -118,7 +118,8 @@ test("lanes keep their open state and revealed rows after a row action re-render
   other.dispatch("toggle");
   main.open = false;
   main.dispatch("toggle");
-  const showMore = other.children.find((node) => node.tagName === "BUTTON")!;
+  const showMore = other.children.find((node) => node.tagName === "BUTTON");
+  assert.ok(showMore);
   showMore.dispatch("click");
 
   render(container, groups(8, { existingItemID: 42 }));
