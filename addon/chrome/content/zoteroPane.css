@@ -2815,13 +2815,9 @@
 }
 
 .pprw-status[data-kind="warning"] {
-  border-color: var(--pp-warning, #9a6700);
-  background: color-mix(
-    in srgb,
-    var(--pp-warning, #9a6700) 8%,
-    var(--pp-bg-primary)
-  );
-  color: var(--pp-warning, #9a6700);
+  border-color: var(--pp-border-status-warning);
+  background: var(--pp-bg-status-warning);
+  color: var(--pp-warning);
 }
 
 /* The project status line stays visible at the top of the scrolling
@@ -2875,8 +2871,8 @@
 }
 
 .pprw-render-badge--error {
-  border-color: var(--pp-error, #c62828);
-  color: var(--pp-error, #c62828);
+  border-color: var(--pp-error);
+  color: var(--pp-error);
 }
 
 .pprw-paper-summary {
