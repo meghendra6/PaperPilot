@@ -2784,12 +2784,14 @@
   white-space: nowrap;
 }
 
+/* Zotero draws the select arrow as a background image, so only the color
+   is set here. */
 .pprw-select {
   min-width: 128px;
   min-height: 30px;
   border: 1px solid var(--pp-border-light);
   border-radius: var(--pp-radius-sm);
-  background: var(--pp-bg-primary);
+  background-color: var(--pp-bg-primary);
   color: var(--pp-text-primary);
 }
 
@@ -3099,10 +3101,21 @@
   padding: 7px 9px;
   border: 1px solid var(--pp-border-medium);
   border-radius: var(--pp-radius-md);
-  background: var(--pp-bg-input);
+  background-color: var(--pp-bg-input);
   color: var(--pp-text-primary);
   font: inherit;
   font-size: var(--pp-font-size-base);
+}
+
+/* Zotero draws the select arrow as a background image. Text fields drop any
+   inherited image, and selects keep the arrow with room beside it. */
+input.pprw-input,
+.pprw-textarea {
+  background-image: none;
+}
+
+select.pprw-input {
+  padding-inline-end: 32px;
 }
 
 .pprw-input::placeholder,
@@ -3559,9 +3572,10 @@ button.pprw-render-evidence-link {
   outline-offset: var(--pp-focus-offset);
 }
 
+/* The end padding leaves room for Zotero's select arrow. */
 .pprw-claim-type {
   max-width: 190px;
-  padding-inline: 7px;
+  padding-inline: 7px 28px;
   font: inherit;
   font-size: var(--pp-font-size-xs);
 }
@@ -3937,12 +3951,18 @@ button.pprw-render-evidence-link {
   line-height: 18px;
   white-space: nowrap;
 }
+/* The end padding leaves room for Zotero's arrow, 10px from the edge.
+   Hover changes the color, because a tint image would hide the arrow. */
 .pp-chat-tools__bar .pp-chat-length {
-  padding-inline-end: 6px;
+  padding-inline-end: 30px;
   cursor: pointer;
 }
 .pp-chat-tools__bar .pp-chat-length:hover {
-  background-image: linear-gradient(var(--pp-fill-hover), var(--pp-fill-hover));
+  background-color: color-mix(
+    in srgb,
+    var(--pp-bg-button) 91%,
+    var(--pp-text-primary)
+  );
 }
 .pp-chat-tools__bar .pp-btn[aria-expanded="true"],
 .pp-chat-commands .pp-btn[data-active="true"] {
@@ -3981,11 +4001,17 @@ button.pprw-render-evidence-link {
 .pp-chat-tools textarea {
   font: inherit;
   color: var(--pp-text-primary);
-  background: var(--pp-bg-primary);
+  background-color: var(--pp-bg-primary);
   border: 1px solid var(--pp-border-medium);
   border-radius: 4px;
   max-width: 100%;
   box-sizing: border-box;
+}
+/* Zotero draws the select arrow as a background image. Inputs drop any
+   inherited image, and selects keep the arrow. */
+.pp-chat-tools input,
+.pp-chat-tools textarea {
+  background-image: none;
 }
 .pp-chat-context-status {
   font-size: var(--pp-font-size-xs);
