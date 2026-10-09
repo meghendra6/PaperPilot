@@ -2,6 +2,8 @@ import { getEngineLabel } from "../ai/runFailure";
 import { isRunProgressActive, type RunProgressState } from "../ai/runProgress";
 
 export const PAPER_PILOT_PREF_PANE_ID = "paper-pilot-preferences";
+// A completed run needs no action, so its card leaves after a short confirmation.
+export const COMPLETED_RUN_CARD_MS = 6000;
 
 export interface RunProgressCardHandle {
   render(state?: RunProgressState): void;
@@ -12,6 +14,7 @@ export interface RunProgressCardActions {
   onRetry(): void | Promise<void>;
   onOpenSettings(): void | Promise<void>;
   onShowLoginHelp(engine: RunProgressState["engine"]): void | Promise<void>;
+  onDismiss?(state: RunProgressState): void;
 }
 
 const PHASE_LABELS: Record<RunProgressState["phase"], string> = {
@@ -37,12 +40,22 @@ export function createRunProgressCard(params: {
   let disposed = false;
   let state: RunProgressState | undefined;
   let timer: ReturnType<typeof setInterval> | undefined;
+  let dismissTimer: ReturnType<typeof setTimeout> | undefined;
   let elapsedElement: HTMLElement | undefined;
 
   const stopTimer = () => {
+    if (dismissTimer) {
+      clearTimeout(dismissTimer);
+      dismissTimer = undefined;
+    }
     if (!timer) return;
     clearInterval(timer);
     timer = undefined;
+  };
+
+  const dismiss = (dismissed: RunProgressState) => {
+    if (disposed || state !== dismissed) return;
+    params.actions.onDismiss?.(dismissed);
   };
 
   const makeButton = (label: string, action: () => void | Promise<void>) => {
@@ -152,6 +165,12 @@ export function createRunProgressCard(params: {
         ),
       );
     }
+    if (!isRunProgressActive(state) && params.actions.onDismiss) {
+      const shown = state;
+      const dismissButton = makeButton("Dismiss", () => dismiss(shown));
+      dismissButton.className = "pp-btn pp-btn--ghost";
+      actions.appendChild(dismissButton);
+    }
 
     params.container.append(header, body, actions);
   };
@@ -164,6 +183,16 @@ export function createRunProgressCard(params: {
       paint();
       if (state && isRunProgressActive(state)) {
         timer = setInterval(updateElapsed, 1000);
+      } else if (
+        state?.phase === "completed" &&
+        !state.failure &&
+        params.actions.onDismiss
+      ) {
+        const shown = state;
+        dismissTimer = setTimeout(() => {
+          dismissTimer = undefined;
+          dismiss(shown);
+        }, COMPLETED_RUN_CARD_MS);
       }
     },
     dispose() {

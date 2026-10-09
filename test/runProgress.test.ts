@@ -2,8 +2,10 @@ import * as assert from "node:assert/strict";
 import { test } from "node:test";
 import { classifyRunFailure } from "../src/modules/ai/runFailure";
 import {
+  clearTerminalRunProgressState,
   createRunProgressState,
   getRunProgressState,
+  isRunProgressVisibleInSession,
   isRunTimedOut,
   RUN_TIMEOUT_MS,
   setRunProgressState,
@@ -166,6 +168,52 @@ test("absolute timeout guard is scheduled from the preparing start time", () => 
     Date.now = originalNow;
     globalThis.setTimeout = originalSetTimeout;
     globalThis.clearTimeout = originalClearTimeout;
+    (globalThis as { addon?: unknown }).addon = previousAddon;
+  }
+});
+
+test("terminal run progress is visible only in the session that ran it", () => {
+  const running = createRunProgressState({
+    itemID: 31,
+    engine: "claude_code",
+    token: Symbol("run-31"),
+    sessionId: "session-a",
+    now: 100,
+  });
+  const failed = { ...running, phase: "failed" as const, canRetry: true };
+  const legacy = { ...failed, sessionId: undefined };
+
+  assert.equal(running.sessionId, "session-a");
+  assert.equal(isRunProgressVisibleInSession(running, "session-b"), true);
+  assert.equal(isRunProgressVisibleInSession(failed, "session-a"), true);
+  assert.equal(isRunProgressVisibleInSession(failed, "session-b"), false);
+  assert.equal(isRunProgressVisibleInSession(legacy, "session-b"), true);
+  assert.equal(isRunProgressVisibleInSession(undefined, "session-a"), false);
+});
+
+test("clearing run progress removes only the matching terminal state", () => {
+  const previousAddon = (globalThis as { addon?: unknown }).addon;
+  (globalThis as { addon?: unknown }).addon = {
+    data: { runProgressStates: new Map() },
+  };
+
+  try {
+    const token = Symbol("run-41");
+    const running = createRunProgressState({
+      itemID: 41,
+      engine: "codex_cli",
+      token,
+      now: 100,
+    });
+    setRunProgressState(running);
+    assert.equal(clearTerminalRunProgressState(41, token), false);
+    assert.equal(getRunProgressState(41), running);
+
+    setRunProgressState({ ...running, phase: "completed" });
+    assert.equal(clearTerminalRunProgressState(41, Symbol("other")), false);
+    assert.equal(clearTerminalRunProgressState(41, token), true);
+    assert.equal(getRunProgressState(41), undefined);
+  } finally {
     (globalThis as { addon?: unknown }).addon = previousAddon;
   }
 });

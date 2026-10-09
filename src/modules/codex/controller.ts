@@ -138,7 +138,7 @@ export async function handleCodexQuestion(params: {
   }
 
   const runToken = markReaderRunStarted(params.itemID, "codex_cli");
-  startRunProgress(params.itemID, "codex_cli", runToken);
+  startRunProgress(params.itemID, "codex_cli", runToken, params.sessionId);
   let assistantMessage: HTMLElement | null | undefined = null;
   const pendingCompletion = {
     sessionId: params.sessionId,

@@ -309,8 +309,9 @@ export function startRunProgress(
   itemID: number,
   engine: EngineMode,
   token: ReaderRunToken,
+  sessionId?: string,
 ): RunProgressState {
-  const state = createRunProgressState({ itemID, engine, token });
+  const state = createRunProgressState({ itemID, engine, token, sessionId });
   setRunProgressState(state);
   notifyReaderPaneStateChanged(itemID);
   return state;

@@ -86,3 +86,33 @@ test("chat composer keeps the Send control inset without covering text", () => {
     /#chat-send \{[\s\S]*?position: absolute;[\s\S]*?right: 12px;[\s\S]*?bottom: 12px;/,
   );
 });
+
+test("run events keep the live transcript while a run is active", () => {
+  assert.match(
+    readerPaneSource,
+    /void rerenderPane\(\{\s*renderTranscript: !getActiveReaderRunMode\(item\.id\),?\s*\}\)/,
+  );
+  assert.match(
+    readerPaneSource,
+    /window\.showMessage\(position\.key, position\.offset, \{ focus: false \}\)/,
+  );
+});
+
+test("session rename keeps its draft and supports the keyboard", () => {
+  assert.match(
+    readerPaneSource,
+    /renameInput\.setAttribute\("aria-label", "Session name"\)/,
+  );
+  assert.match(
+    readerPaneSource,
+    /renameDraft\?\.sessionId === entry\.sessionId/,
+  );
+  assert.match(
+    readerPaneSource,
+    /event\.key === "Enter"[\s\S]*?saveRename\(\)/,
+  );
+  assert.match(
+    readerPaneSource,
+    /event\.key === "Escape"[\s\S]*?cancelRename\(\)/,
+  );
+});

@@ -3545,13 +3545,17 @@ button.pprw-render-evidence-link {
   overflow: auto;
   white-space: pre-wrap;
 }
+/* Sits right after #chat-messages and overlaps its bottom edge.
+   The margins cancel the button height, so the layout does not shift. */
 .pp-chat-new-response {
-  position: sticky;
-  bottom: 4px;
+  position: relative;
+  flex: 0 0 auto;
   align-self: center;
   z-index: 2;
+  margin: -42px auto 14px;
   background: var(--pp-bg-primary);
   border: 1px solid var(--pp-border-medium);
+  box-shadow: var(--pp-shadow-md);
 }
 .pp-message--ai {
   line-height: 1.55;

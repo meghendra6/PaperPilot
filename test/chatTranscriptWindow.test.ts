@@ -5,6 +5,7 @@ import {
   CHAT_TRANSCRIPT_WINDOW_STEP,
   getLatestChatTranscriptWindow,
   notifyChatTranscriptAppend,
+  notifyChatTranscriptUpdate,
   prepareChatTranscriptAppend,
   renderChatTranscriptWindow,
   shiftChatTranscriptWindow,
@@ -82,6 +83,13 @@ class FakeElement {
       (child) => child !== this,
     );
     this.parentElement = null;
+  }
+
+  after(sibling: FakeElement) {
+    if (!this.parentElement) return;
+    const siblings = this.parentElement.children;
+    sibling.parentElement = this.parentElement;
+    siblings.splice(siblings.indexOf(this) + 1, 0, sibling);
   }
 
   replaceWith(replacement: FakeElement) {
@@ -378,5 +386,57 @@ test("suspension control restores a stored entry displaced by a transient append
     container.querySelector('[data-pp-chat-window-control="earlier"]'),
     null,
   );
+  handle.dispose();
+});
+
+test("restoring a transcript position moves focus only when asked", () => {
+  const doc = new FakeDocument();
+  const container = new FakeElement("div", doc);
+  const focused: string[] = [];
+  const items = ["question", "answer", "follow-up"];
+
+  const handle = renderChatTranscriptWindow({
+    container: container as unknown as HTMLElement,
+    getItems: () => items,
+    getKey: (item) => item,
+    renderItem: (item) => {
+      const wrapper = new FakeElement("div", doc);
+      wrapper.className = "pp-message-wrapper";
+      wrapper.focus = () => focused.push(item);
+      container.append(wrapper);
+      return wrapper as unknown as HTMLElement;
+    },
+  });
+
+  assert.equal(handle.showMessage("answer", 0, { focus: false }), true);
+  assert.deepEqual(focused, []);
+  assert.equal(handle.showMessage("answer"), true);
+  assert.deepEqual(focused, ["answer"]);
+  handle.dispose();
+});
+
+test("new response button sits directly below the transcript", () => {
+  const doc = new FakeDocument();
+  const host = new FakeElement("div", doc);
+  const container = new FakeElement("div", doc);
+  const composer = new FakeElement("div", doc);
+  host.append(container, composer);
+
+  const handle = renderChatTranscriptWindow({
+    container: container as unknown as HTMLElement,
+    getItems: () => ["question"],
+    getKey: (item) => item,
+    renderItem: () => {
+      const wrapper = new FakeElement("div", doc);
+      wrapper.className = "pp-message-wrapper";
+      container.append(wrapper);
+      return wrapper as unknown as HTMLElement;
+    },
+  });
+
+  notifyChatTranscriptUpdate(container as unknown as HTMLElement, false);
+  assert.equal(host.children[0], container);
+  assert.equal(host.children[1]?.dataset.ppNewResponse, "true");
+  assert.equal(host.children[2], composer);
   handle.dispose();
 });

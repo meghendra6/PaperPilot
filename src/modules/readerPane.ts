@@ -32,7 +32,11 @@ import {
   type ReaderRunToken,
 } from "./ai/runPresentation";
 import type { RunProfile } from "./ai/runProfile";
-import { getRunProgressState } from "./ai/runProgress";
+import {
+  clearTerminalRunProgressState,
+  getRunProgressState,
+  isRunProgressVisibleInSession,
+} from "./ai/runProgress";
 import { renderChatComposer } from "./ui/chatComposer";
 import { captureChatSearchReturn } from "./ui/chatSearchReturn";
 import { getStatusLabel } from "./ai/statusLabels";
@@ -176,6 +180,7 @@ import {
   jumpToChatMessage,
   isChatFollowingLatest,
   disposeChatTranscriptWindow,
+  notifyChatTranscriptUpdate,
   renderChatTranscriptWindow,
 } from "./ui/chatTranscriptWindow";
 import { createCollapsibleSection } from "./ui/collapsibleSection";
@@ -919,7 +924,7 @@ export function registerPaperPilotPaneSection() {
             streamingIndicator,
             Boolean(getActiveReaderRunMode(item.id)),
           );
-          runProgressCard.render(getRunProgressState(item.id));
+          runProgressCard.render(getVisibleRunProgressState(item.id));
           renderChatComposerForItem(input, item.id);
         };
         const runProgressCard = createRunProgressCard({
@@ -946,6 +951,10 @@ export function registerPaperPilotPaneSection() {
                 "ai",
               );
             },
+            onDismiss: (state) => {
+              clearTerminalRunProgressState(item.id, state.token);
+              runProgressCard.render(getVisibleRunProgressState(item.id));
+            },
           },
         });
         runProgressCardByContainer.set(runStateCard, runProgressCard);
@@ -955,10 +964,16 @@ export function registerPaperPilotPaneSection() {
           activeRunProgressCards.delete(runProgressCard);
           runProgressCardByContainer.delete(runStateCard);
         });
-        runProgressCard.render(getRunProgressState(item.id));
+        runProgressCard.render(getVisibleRunProgressState(item.id));
 
         let sessionHistoryOpen = sessionsSection.isExpanded();
         let renamingSessionId: string | undefined;
+        // Run events rebuild Past sessions. Keep the typed name and caret.
+        let renameDraft: { sessionId: string; value: string } | undefined;
+        let renameFocus:
+          | { mode: "select" }
+          | { mode: "restore"; start: number | null; end: number | null }
+          | undefined;
         let activeKebabClose: (() => void) | undefined;
         let activeKebabRoot: HTMLElement | undefined;
         cleanupTasks.push(
@@ -1475,8 +1490,23 @@ export function registerPaperPilotPaneSection() {
         }
         renderCriticalRead();
 
-        const rerenderPane = async () => {
-          await refreshPaneState({ isCurrent: isCurrentRender });
+        // Keep text the reader typed until the stored concern itself changes.
+        let renderedRelatedConcern = "";
+        const syncRelatedConcern = () => {
+          const stored = getRelatedRecommendationState(item.id).concern || "";
+          if (
+            relatedConcern.value === renderedRelatedConcern ||
+            stored !== renderedRelatedConcern
+          ) {
+            relatedConcern.value = stored;
+          }
+          renderedRelatedConcern = stored;
+        };
+
+        const rerenderPane = async (
+          options: { renderTranscript?: boolean } = {},
+        ) => {
+          await refreshPaneState({ isCurrent: isCurrentRender, ...options });
           if (disposed) return;
           renderRelatedRecommendationState(
             relatedRecommendButton,
@@ -1487,8 +1517,7 @@ export function registerPaperPilotPaneSection() {
             item.id,
             String(item.getField("title") || ""),
           );
-          relatedConcern.value =
-            getRelatedRecommendationState(item.id).concern || "";
+          syncRelatedConcern();
           renderCriticalRead();
           await renderSessionHistory();
           if (disposed) return;
@@ -1513,6 +1542,21 @@ export function registerPaperPilotPaneSection() {
           }
 
           const doc = sessionHistoryPanel.ownerDocument;
+          const previousRenameInput =
+            sessionHistoryPanel.querySelector<HTMLInputElement>(
+              ".pp-session-history__rename-input",
+            );
+          if (
+            !renameFocus &&
+            previousRenameInput &&
+            doc.activeElement === previousRenameInput
+          ) {
+            renameFocus = {
+              mode: "restore",
+              start: previousRenameInput.selectionStart,
+              end: previousRenameInput.selectionEnd,
+            };
+          }
           sessionHistoryPanel.style.display = "block";
           sessionHistoryPanel.replaceChildren();
 
@@ -1574,32 +1618,57 @@ export function registerPaperPilotPaneSection() {
             if (renamingSessionId === entry.sessionId) {
               const renameInput = doc.createElement("input");
               renameInput.className = "pp-session-history__rename-input";
-              renameInput.value = entry.title;
+              renameInput.setAttribute("aria-label", "Session name");
+              renameInput.value =
+                renameDraft?.sessionId === entry.sessionId
+                  ? renameDraft.value
+                  : entry.title;
+              renameInput.addEventListener("input", () => {
+                renameDraft = {
+                  sessionId: entry.sessionId,
+                  value: renameInput.value,
+                };
+              });
               titleRow.appendChild(renameInput);
 
-              const saveRenameButton = doc.createElement("button");
-              saveRenameButton.type = "button";
-              saveRenameButton.className = "pp-btn pp-btn--secondary";
-              saveRenameButton.textContent = "Save";
-              saveRenameButton.addEventListener("click", async () => {
+              const saveRename = async () => {
                 await sessionHistoryService.renameSavedSession({
                   itemID: item.id,
                   sessionId: entry.sessionId,
                   title: renameInput.value,
                 });
                 renamingSessionId = undefined;
+                renameDraft = undefined;
                 await renderSessionHistory();
+              };
+              const cancelRename = async () => {
+                renamingSessionId = undefined;
+                renameDraft = undefined;
+                await renderSessionHistory();
+              };
+              renameInput.addEventListener("keydown", (event) => {
+                if (event.key === "Enter" && !event.isComposing) {
+                  event.preventDefault();
+                  void saveRename();
+                } else if (event.key === "Escape") {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  void cancelRename();
+                }
               });
+
+              const saveRenameButton = doc.createElement("button");
+              saveRenameButton.type = "button";
+              saveRenameButton.className = "pp-btn pp-btn--secondary";
+              saveRenameButton.textContent = "Save";
+              saveRenameButton.addEventListener("click", saveRename);
               titleRow.appendChild(saveRenameButton);
 
               const cancelRenameButton = doc.createElement("button");
               cancelRenameButton.type = "button";
               cancelRenameButton.className = "pp-btn pp-btn--ghost";
               cancelRenameButton.textContent = "Cancel";
-              cancelRenameButton.addEventListener("click", async () => {
-                renamingSessionId = undefined;
-                await renderSessionHistory();
-              });
+              cancelRenameButton.addEventListener("click", cancelRename);
               titleRow.appendChild(cancelRenameButton);
             } else {
               const entryTitle = doc.createElement("div");
@@ -1717,6 +1786,8 @@ export function registerPaperPilotPaneSection() {
                 renameEvent.stopPropagation();
                 closeKebab();
                 renamingSessionId = entry.sessionId;
+                renameDraft = undefined;
+                renameFocus = { mode: "select" };
                 await renderSessionHistory();
               });
               kebabMenu.appendChild(renameItem);
@@ -1768,6 +1839,22 @@ export function registerPaperPilotPaneSection() {
 
             row.appendChild(rowActions);
             sessionHistoryPanel.appendChild(row);
+          }
+
+          const focusRequest = renameFocus;
+          renameFocus = undefined;
+          const renameInput =
+            sessionHistoryPanel.querySelector<HTMLInputElement>(
+              ".pp-session-history__rename-input",
+            );
+          if (focusRequest && renameInput) {
+            renameInput.focus();
+            if (focusRequest.mode === "select") renameInput.select();
+            else
+              renameInput.setSelectionRange(
+                focusRequest.start ?? renameInput.value.length,
+                focusRequest.end ?? renameInput.value.length,
+              );
           }
         };
 
@@ -2128,7 +2215,7 @@ export function registerPaperPilotPaneSection() {
           (event) => {
             if (!isCurrentRender()) return;
             renderChatComposerForItem(input, item.id);
-            runProgressCard.render(getRunProgressState(item.id));
+            runProgressCard.render(getVisibleRunProgressState(item.id));
             if (event.type === "started") {
               const activeLabel = getModeLabel(event.mode);
               renderModeHeader(modeChip, modeStatus, activeLabel, "running");
@@ -2136,7 +2223,11 @@ export function registerPaperPilotPaneSection() {
               setSectionSummary(`${activeLabel} · Running`);
               return;
             }
-            void rerenderPane();
+            // The live answer bubble is not stored until the run finishes.
+            // Rebuilding the transcript mid-run would detach it.
+            void rerenderPane({
+              renderTranscript: !getActiveReaderRunMode(item.id),
+            });
           },
         );
         cleanupTasks.push(cleanupComposerSizing, unsubscribeFromRunEvents);
@@ -2150,8 +2241,7 @@ export function registerPaperPilotPaneSection() {
           item.id,
           String(item.getField("title") || ""),
         );
-        relatedConcern.value =
-          getRelatedRecommendationState(item.id).concern || "";
+        syncRelatedConcern();
         updateWorkbenchSummary();
         updateRelatedSummary();
 
@@ -4453,7 +4543,7 @@ function renderRunStateCard(
   void workspaceWritable;
   runProgressCardByContainer
     .get(runStateCard)
-    ?.render(getRunProgressState(itemID));
+    ?.render(getVisibleRunProgressState(itemID));
 }
 
 function renderCodexActions(codexActions: HTMLElement, mode: EngineMode) {
@@ -4508,6 +4598,11 @@ function renderHelpState(chatMessages: HTMLElement, response: string) {
   chatMessages.appendChild(help);
 }
 
+const renderedTranscriptCounts = new WeakMap<
+  HTMLElement,
+  { sessionId: string; count: number }
+>();
+
 function renderMessageHistory(
   chatMessages: HTMLElement,
   sessionId: string,
@@ -4519,6 +4614,11 @@ function renderMessageHistory(
       .list(sessionId)
       .filter((message) => !isLikelySilentToolMessage(message));
   const messages = getMessages();
+  const previous = renderedTranscriptCounts.get(chatMessages);
+  renderedTranscriptCounts.set(chatMessages, {
+    sessionId,
+    count: messages.length,
+  });
 
   if (!messages.length) {
     disposeChatTranscriptWindow(chatMessages);
@@ -4558,7 +4658,10 @@ function renderMessageHistory(
       return messageElement?.parentElement || null;
     },
   });
-  if (position) window.showMessage(position.key, position.offset);
+  if (!position) return;
+  window.showMessage(position.key, position.offset, { focus: false });
+  if (previous?.sessionId === sessionId && messages.length > previous.count)
+    notifyChatTranscriptUpdate(chatMessages, false);
 }
 
 function renderStreamingIndicator(
@@ -4955,7 +5058,8 @@ async function handleUserInput(
   };
   try {
     const profile = options?.profile || "chat";
-    if (!continuingParent) startRunProgress(itemID, mode, admissionToken);
+    if (!continuingParent)
+      startRunProgress(itemID, mode, admissionToken, activeSessionID);
     renderChatComposerForItem(input, itemID);
     options?.onAdmitted?.();
     if (!preserveComposer) {
@@ -5146,6 +5250,17 @@ async function handleUserInput(
       if (!isReaderChatBusy(itemID)) input.focus();
     }
   }
+}
+
+// A finished run's card belongs to the session that ran it.
+function getVisibleRunProgressState(itemID: number) {
+  const state = getRunProgressState(itemID);
+  return isRunProgressVisibleInSession(
+    state,
+    sessionStore.get(itemID)?.sessionId,
+  )
+    ? state
+    : undefined;
 }
 
 function isReaderChatBusy(itemID: number): boolean {
