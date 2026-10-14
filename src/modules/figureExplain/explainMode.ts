@@ -1,5 +1,7 @@
 /** An armed toolbar mode expires so a forgotten click cannot start a run later. */
 export const EXPLAIN_MODE_TIMEOUT_MS = 2 * 60 * 1000;
+/** Zotero stores dateAdded in whole seconds, so allow the truncation. */
+const DATE_ADDED_TOLERANCE_MS = 2_000;
 
 /** One reader waiting for the area that the reader is about to draw. */
 export interface ArmedFigureReader {
@@ -14,11 +16,14 @@ export interface AddedAnnotation {
   key?: string;
   annotationType?: string;
   parentItemID?: number;
+  /** Creation time in milliseconds, when known. */
+  dateAdded?: number;
 }
 
 /**
  * Returns the armed reader that a newly saved annotation completes. Only an
- * area (image) annotation of the same PDF counts, and only before expiry.
+ * area (image) annotation of the same PDF counts, created after arming and
+ * before expiry, so a synced or imported older area cannot complete it.
  */
 export function matchArmedArea(
   armed: readonly ArmedFigureReader[],
@@ -27,10 +32,14 @@ export function matchArmedArea(
 ): ArmedFigureReader | undefined {
   if (annotation.annotationType !== "image" || !annotation.key)
     return undefined;
+  const created = annotation.dateAdded;
   return armed.find(
     (entry) =>
       entry.attachmentID === Number(annotation.parentItemID) &&
-      now - entry.armedAt <= EXPLAIN_MODE_TIMEOUT_MS,
+      now - entry.armedAt <= EXPLAIN_MODE_TIMEOUT_MS &&
+      (created === undefined ||
+        !Number.isFinite(created) ||
+        created >= entry.armedAt - DATE_ADDED_TOLERANCE_MS),
   );
 }
 

@@ -161,6 +161,11 @@ export async function startWorkspaceTextRun(params: {
   onDeferredCleanup?: (cleanup: Promise<void>) => void;
   prepareRun?: () => Promise<WorkspaceRunResult | FailedWorkspaceRun>;
 }): Promise<WorkspaceRunResult | FailedWorkspaceRun> {
+  // Runners stage an image only into a paper workspace; never drop it silently.
+  if (params.imagePath && params.prebuiltInput)
+    throw new Error(
+      "An image input needs the paper workspace, not an admitted project input.",
+    );
   if (
     !isDirectWorkspaceRunClaimCurrent(
       params.reservationItemID,

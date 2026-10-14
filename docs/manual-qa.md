@@ -165,6 +165,8 @@ Use this checklist inside real Zotero 7, 8, 9, and 10 runtimes before claiming r
 - [ ] Stop during preparation and during the run; confirm "Stopped." within a second, no surviving CLI process, no `figures/selected-region.png` left in the workspace, and that Retry starts without "already active"
 - [ ] Close the window during a run; confirm the run stops and a late result cannot reopen the window
 - [ ] Request another area while one runs; confirm only the latest result appears and the paper is not left reserved
+- [ ] Stop while the status still reads "Reading the selected area…" or "Starting…", then Retry at once; confirm "Waiting for the previous run to stop…" and a normal start instead of "already active"
+- [ ] Arm the toolbar tool and close the PDF tab; confirm no later area or sync opens a window and Zotero logs no dead-object error
 - [ ] Start chat on the same paper during an explanation, and the reverse; confirm the busy message and that Retry works afterwards
 - [ ] Explain the same area again; confirm "Reused from this session", and that Regenerate starts a new run
 - [ ] Remove the area's cached PNG; confirm Zotero renders it again or the text-only notice and caveat appear

@@ -101,9 +101,11 @@ table** button that `readerActions.ts` adds to PDF reader toolbars through the
 `renderToolbar` event. `ui/figureExplainTool.ts` arms one selection per reader:
 it switches the internal reader to the area tool, registers an item notifier
 while any reader is armed, and opens the explanation for the next image
-annotation saved on that PDF (`figureExplain/explainMode.ts` holds the pure
-matching rule). It then restores the previous tool. A second click, Esc, or a
-two-minute expiry cancels the mode, and add-on shutdown disarms every reader.
+annotation saved on that PDF after arming (`figureExplain/explainMode.ts`
+holds the pure matching rule; `dateAdded` keeps older synced or imported areas
+out). It then restores the previous tool. A second click, Esc, a two-minute
+expiry, or closing the reader cancels the mode, and add-on shutdown disarms
+every reader.
 Existing area annotations are reachable through **Explain figure or table** in
 the annotation context menu (exactly one image annotation) and an **Explain**
 button on image-annotation cards (`renderSidebarAnnotationHeader`).
@@ -115,9 +117,11 @@ Zotero 10.0.6 runs reader context-menu commands from a timer inside the reader
 iframe, and opening a chrome window from that task crashed Zotero with a native
 SIGSEGV. The window is placed inside the right edge of the Zotero window after
 clamping the reported main-window frame onto the screen. A new request aborts
-the previous run and starts after that run settles, because the paper's engine
-reservation is held until cleanup finishes. Closing the window, Stop, and add-on
-shutdown abort the run. The add-on sandbox has neither `AbortController` nor
+the previous run and starts after that run settles. An abort during workspace
+preparation releases the paper's engine reservation only after deferred
+cleanup, so a request within a minute of an abort waits up to 15 seconds for
+it. A result that arrives after Stop is not shown. Closing the window, Stop,
+and add-on shutdown abort the run. The add-on sandbox has neither `AbortController` nor
 `DOMException`: the window supplies the controller, and the shared
 `ai/workspaceRun.ts` wait loop rejects with a plain `AbortError`.
 

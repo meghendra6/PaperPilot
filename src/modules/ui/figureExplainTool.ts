@@ -30,6 +30,7 @@ export interface FigureModeEntry extends ArmedFigureReader {
   timer: ReturnType<typeof setTimeout>;
   onArea: (target: FigureExplainTarget) => void;
   onKeyDown: (event: KeyboardEvent) => void;
+  onUnload: () => void;
 }
 
 function entries(): Map<string, FigureModeEntry> {
@@ -84,6 +85,8 @@ function setReaderTool(reader: FigureToolReader, type: string) {
 
 function syncButtons(reader: FigureToolReader) {
   const armed = entries().has(readerID(reader));
+  // A closed reader leaves a dead window; there is nothing left to update.
+  if (!reader._iframeWindow || reader._iframeWindow.closed) return;
   const doc = reader._iframeWindow?.document;
   const buttons = Array.from(
     doc?.querySelectorAll(`button.${TOOL_CLASS}`) ?? [],
@@ -103,6 +106,15 @@ function unregisterObserver() {
   if (id) Zotero.Notifier.unregisterObserver(id);
 }
 
+function dateAddedMs(item: { dateAdded?: string }) {
+  try {
+    const date = Zotero.Date.sqlToDate(String(item.dateAdded || ""), true);
+    return date ? date.getTime() : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function completeArea(id: number | string) {
   const item = Zotero.Items.get(Number(id));
   if (!item?.isAnnotation?.()) return;
@@ -112,6 +124,7 @@ function completeArea(id: number | string) {
       key: String(item.key || ""),
       annotationType: String(item.annotationType || ""),
       parentItemID: Number(item.parentItemID),
+      dateAdded: dateAddedMs(item),
     },
     Date.now(),
   );
@@ -150,15 +163,19 @@ export function disarmFigureMode(id: string, restoreTool = true) {
   if (!entry) return;
   entries().delete(id);
   clearTimeout(entry.timer);
-  entry.reader._iframeWindow?.removeEventListener(
-    "keydown",
-    entry.onKeyDown,
-    true,
-  );
-  if (restoreTool && currentTool(entry.reader) === "image")
-    setReaderTool(entry.reader, entry.previousTool);
-  syncButtons(entry.reader);
-  if (!entries().size) unregisterObserver();
+  try {
+    const win = entry.reader._iframeWindow;
+    win?.removeEventListener("keydown", entry.onKeyDown, true);
+    win?.removeEventListener("unload", entry.onUnload);
+    if (restoreTool && currentTool(entry.reader) === "image")
+      setReaderTool(entry.reader, entry.previousTool);
+    syncButtons(entry.reader);
+  } catch (error) {
+    // A closed reader throws "dead object"; the mode is already removed.
+    logError(error);
+  } finally {
+    if (!entries().size) unregisterObserver();
+  }
 }
 
 /**
@@ -176,6 +193,7 @@ export function armFigureMode(
   const onKeyDown = (event: KeyboardEvent) => {
     if (event.key === "Escape") disarmFigureMode(id);
   };
+  const onUnload = () => disarmFigureMode(id, false);
   const entry: FigureModeEntry = {
     readerID: id,
     attachmentID,
@@ -184,17 +202,25 @@ export function armFigureMode(
     reader,
     onArea,
     onKeyDown,
+    onUnload,
     timer: setTimeout(() => disarmFigureMode(id), EXPLAIN_MODE_TIMEOUT_MS),
   };
   entries().set(id, entry);
   ensureObserver();
   reader._iframeWindow?.addEventListener("keydown", onKeyDown, true);
+  reader._iframeWindow?.addEventListener("unload", onUnload, { once: true });
   setReaderTool(reader, "image");
   syncButtons(reader);
 }
 
 export function disarmAllFigureModes() {
-  for (const id of [...entries().keys()]) disarmFigureMode(id);
+  for (const id of [...entries().keys()]) {
+    try {
+      disarmFigureMode(id);
+    } catch (error) {
+      logError(error);
+    }
+  }
   unregisterObserver();
 }
 
@@ -244,6 +270,8 @@ export function buildFigureToolButton(
   button.addEventListener("click", (event) => {
     event.preventDefault();
     event.stopPropagation();
+    // Open readers keep this button after the add-on is disabled.
+    if (typeof addon === "undefined" || !addon.data.alive) return;
     if (entries().has(readerID(reader))) disarmFigureMode(readerID(reader));
     else armFigureMode(reader, onArea);
   });

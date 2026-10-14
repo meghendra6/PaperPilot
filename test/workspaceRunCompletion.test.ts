@@ -128,3 +128,28 @@ test("Stop settles a polled run even where DOMException does not exist", async (
     globals.DOMException = previous.DOMException;
   }
 });
+
+test("an image input is rejected with an admitted project input instead of dropped", async () => {
+  const { startWorkspaceTextRun } = await import(
+    "../src/modules/ai/workspaceRun"
+  );
+  await assert.rejects(
+    startWorkspaceTextRun({
+      mode: "codex_cli",
+      itemID: 1,
+      reservationItemID: 1,
+      reservationToken: Symbol("unused"),
+      title: "Paper",
+      sessionId: "s",
+      question: "q",
+      profile: "analysis",
+      imagePath: "/cache/AREA0001.png",
+      prebuiltInput: {
+        files: { "papers/A.md": "A" },
+        sourceIDs: ["A"],
+        scopeFingerprint: "A",
+      },
+    }),
+    /image input needs the paper workspace/,
+  );
+});

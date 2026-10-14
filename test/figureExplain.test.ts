@@ -374,3 +374,32 @@ test("the explanation window sits inside the right edge of the Zotero window", (
     { left: 1204, top: 105 },
   );
 });
+
+test("an area created before arming, such as a synced one, does not complete the mode", () => {
+  const armed = [
+    {
+      readerID: "r1",
+      attachmentID: 8,
+      previousTool: "pointer",
+      armedAt: 10_000,
+    },
+  ];
+  const area = { key: "AREA0001", annotationType: "image", parentItemID: 8 };
+  assert.equal(
+    matchArmedArea(armed, { ...area, dateAdded: 4_000 }, 11_000),
+    undefined,
+  );
+  // Zotero keeps whole seconds, so a just-drawn area can read slightly early.
+  assert.equal(
+    matchArmedArea(armed, { ...area, dateAdded: 9_000 }, 11_000)?.readerID,
+    "r1",
+  );
+  assert.equal(
+    matchArmedArea(armed, { ...area, dateAdded: 10_500 }, 11_000)?.readerID,
+    "r1",
+  );
+  assert.equal(
+    matchArmedArea(armed, { ...area, dateAdded: Number.NaN }, 11_000)?.readerID,
+    "r1",
+  );
+});

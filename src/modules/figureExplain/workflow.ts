@@ -2,6 +2,7 @@ import { extractPdfTextPages } from "../autoHighlight/pdfMatch";
 import { captureExecutionSettings } from "../ai/executionSettings";
 import { getModeForItem } from "../ai/modeStore";
 import { classifyRunFailure, getEngineLabel } from "../ai/runFailure";
+import { isWorkspaceRunActiveForItem } from "../ai/workspaceRun";
 import { captureRequestContext } from "../context/requestContext";
 import {
   runResearchWorkspaceAnalysis,
@@ -28,6 +29,7 @@ const MAX_CACHED_EXPLANATIONS = 24;
 /** The reader saves a new area's PNG shortly after the annotation itself. */
 const NEW_IMAGE_WAIT_MS = 2_500;
 const NEW_IMAGE_POLL_MS = 250;
+const RESERVATION_POLL_MS = 250;
 
 /** One image annotation, named by stable keys rather than a live selection. */
 export interface FigureExplainTarget {
@@ -193,6 +195,11 @@ export async function explainFigure(params: {
   region: FigureRegion;
   prepared: PreparedFigure;
   force?: boolean;
+  /**
+   * After an abort during preparation, cleanup releases the paper's engine
+   * reservation later. Wait this long for it instead of failing as "busy".
+   */
+  reservationWaitMs?: number;
   signal?: AbortSignal;
   onStatus?: (status: string) => void;
 }): Promise<FigureExplainResult> {
@@ -214,6 +221,16 @@ export async function explainFigure(params: {
   const cached = params.force ? undefined : cache.get(cacheKey);
   if (cached)
     return { explanation: cached, engineLabel, hasImage, cached: true };
+
+  const waitUntil = Date.now() + (params.reservationWaitMs ?? 0);
+  if (isWorkspaceRunActiveForItem(settings.mode, region.itemID))
+    params.onStatus?.("Waiting for the previous run to stop…");
+  while (
+    Date.now() < waitUntil &&
+    !params.signal?.aborted &&
+    isWorkspaceRunActiveForItem(settings.mode, region.itemID)
+  )
+    await Zotero.Promise.delay(RESERVATION_POLL_MS);
 
   const requestContext = await captureRequestContext({
     itemID: region.itemID,

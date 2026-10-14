@@ -22,6 +22,9 @@ const ROOT_ID = "paperpilot-figure-window";
 const HTML_NS = "http://www.w3.org/1999/xhtml";
 const WINDOW_TITLE = "Figure explanation · Paper Pilot";
 const WINDOW_SIZE = { width: 500, height: 660 };
+/** A request this soon after an abort may find the reservation still held. */
+const RECENT_ABORT_MS = 60_000;
+const RESERVATION_WAIT_MS = 15_000;
 const FALLBACK_HEADING = "Selected area";
 
 const KIND_LABELS: Record<FigureKind, string> = {
@@ -249,6 +252,13 @@ function mountFigureWindow(state: FigureExplainWindowState) {
   let running: Promise<void> = Promise.resolve();
   let inFlight = false;
   let startedGeneration = 0;
+  let lastAbortAt = 0;
+  const abortCurrent = () => {
+    if (controller && !controller.signal.aborted) {
+      lastAbortAt = Date.now();
+      controller.abort();
+    }
+  };
   let imageURL: string | undefined;
   let timer: ReturnType<typeof win.setInterval> | undefined;
 
@@ -364,12 +374,18 @@ function mountFigureWindow(state: FigureExplainWindowState) {
         region,
         prepared,
         force,
+        reservationWaitMs:
+          Date.now() - lastAbortAt < RECENT_ABORT_MS ? RESERVATION_WAIT_MS : 0,
         signal,
         onStatus: (text) => {
           if (isCurrent()) setStatus(text);
         },
       });
-      if (isCurrent()) showResult(region, result);
+      // A result that lands after Stop must not replace the stopped state.
+      if (isCurrent()) {
+        if (signal.aborted) setStatus("Stopped.", "idle");
+        else showResult(region, result);
+      }
     } catch (error) {
       if (!isCurrent()) return;
       if (signal.aborted) setStatus("Stopped.", "idle");
@@ -401,7 +417,7 @@ function mountFigureWindow(state: FigureExplainWindowState) {
   const request = (target: FigureExplainTarget, force = false) => {
     state.target = target;
     const current = ++generation;
-    controller?.abort();
+    abortCurrent();
     resetView();
     const previous = running;
     running = previous
@@ -421,7 +437,7 @@ function mountFigureWindow(state: FigureExplainWindowState) {
   };
 
   stop.addEventListener("click", () => {
-    controller?.abort();
+    abortCurrent();
     if (startedGeneration !== generation) {
       // The request still waits for the previous run; never start it.
       generation++;
@@ -446,7 +462,7 @@ function mountFigureWindow(state: FigureExplainWindowState) {
     if (!active) return;
     active = false;
     generation++;
-    controller?.abort();
+    abortCurrent();
     stopTimer();
     releaseImage();
     doc.removeEventListener("keydown", onKeyDown);
@@ -561,6 +577,8 @@ export function buildFigureExplainButton(
   node.addEventListener("click", (event) => {
     event.stopPropagation();
     event.preventDefault();
+    // Open readers keep this button after the add-on is disabled.
+    if (typeof addon === "undefined" || !addon.data.alive) return;
     showFigureExplanation(target);
   });
   return node;
