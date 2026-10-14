@@ -16,9 +16,25 @@ import {
 } from "../ai/workspaceRun";
 import { cleanupWorkspaceIfEnabled } from "../workspace/cleanup";
 import type { WorkspaceSupplementalFiles } from "../workspace/supplementalFiles";
-import type { PrebuiltWorkspaceInput } from "../context/requestContext";
+import type {
+  PrebuiltWorkspaceInput,
+  RequestContextSnapshot,
+} from "../context/requestContext";
+import type { EngineMode } from "../ai/types";
 
 const RUN_TIMEOUT_MS = 4 * 60 * 1000;
+
+/** A completed run that failed; callers may classify its diagnostics. */
+export class WorkspaceAnalysisRunError extends Error {
+  constructor(
+    message: string,
+    readonly mode: EngineMode,
+    readonly diagnosticOutput: string,
+  ) {
+    super(message);
+    this.name = "WorkspaceAnalysisRunError";
+  }
+}
 
 export async function runResearchWorkspaceAnalysis(params: {
   itemID: number;
@@ -28,9 +44,13 @@ export async function runResearchWorkspaceAnalysis(params: {
   outputSchema?: StructuredOutputSchema;
   workspaceFiles?: WorkspaceSupplementalFiles;
   prebuiltInput?: PrebuiltWorkspaceInput;
+  requestContext?: RequestContextSnapshot;
+  imagePath?: string;
   executionSettings?: ExecutionSettings;
   signal?: AbortSignal;
   onStatus?: (status: string) => void;
+  /** Names the task in the busy message; defaults to Research Workspace. */
+  taskLabel?: string;
 }) {
   const settings =
     params.executionSettings ??
@@ -40,7 +60,10 @@ export async function runResearchWorkspaceAnalysis(params: {
   const reservationToken = claimWorkspaceRunReservation(mode, params.itemID);
   if (!reservationToken) {
     throw new Error(
-      getWorkspaceEngineActiveMessage(mode, "this Research Workspace task"),
+      getWorkspaceEngineActiveMessage(
+        mode,
+        params.taskLabel ?? "this Research Workspace task",
+      ),
     );
   }
 
@@ -64,6 +87,8 @@ export async function runResearchWorkspaceAnalysis(params: {
       outputSchema: params.outputSchema,
       workspaceFiles: params.workspaceFiles,
       prebuiltInput: params.prebuiltInput,
+      requestContext: params.requestContext,
+      imagePath: params.imagePath,
       signal: params.signal,
       deadline,
       onDeferredCleanup: (cleanup) => {
@@ -97,7 +122,11 @@ export async function runResearchWorkspaceAnalysis(params: {
     });
     completed = true;
     if (completion.progress.exitCode !== "0") {
-      throw new Error(completion.text || `${engineLabel} run failed.`);
+      throw new WorkspaceAnalysisRunError(
+        completion.text || `${engineLabel} run failed.`,
+        mode,
+        completion.progress.diagnosticOutput,
+      );
     }
     return completion.text;
   } finally {

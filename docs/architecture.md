@@ -93,6 +93,62 @@ responses. Window close and add-on shutdown release requests and listeners.
 No query is made on selection alone and no lookup is added to AI/chat state or
 Paper Pilot persistence. Source links open externally only on explicit clicks.
 
+## Figure and table explanation
+
+Readers select a figure or table with Zotero's native Select Area tool, which
+creates an image annotation. The primary entry point is the **Explain figure or
+table** button that `readerActions.ts` adds to PDF reader toolbars through the
+`renderToolbar` event. `ui/figureExplainTool.ts` arms one selection per reader:
+it switches the internal reader to the area tool, registers an item notifier
+while any reader is armed, and opens the explanation for the next image
+annotation saved on that PDF after arming (`figureExplain/explainMode.ts`
+holds the pure matching rule; `dateAdded` keeps older synced or imported areas
+out). It then restores the previous tool. A second click, Esc, a two-minute
+expiry, or closing the reader cancels the mode, and add-on shutdown disarms
+every reader.
+Existing area annotations are reachable through **Explain figure or table** in
+the annotation context menu (exactly one image annotation) and an **Explain**
+button on image-annotation cards (`renderSidebarAnnotationHeader`).
+
+All entry points open `ui/figureExplainPopup.ts`, a modeless `DialogHelper`
+window that `addon.data.figureExplainWindow` owns as a singleton. The window
+always opens from a fresh main-thread task (`Services.tm.dispatchToMainThread`).
+Zotero 10.0.6 runs reader context-menu commands from a timer inside the reader
+iframe, and opening a chrome window from that task crashed Zotero with a native
+SIGSEGV. The window is placed inside the right edge of the Zotero window after
+clamping the reported main-window frame onto the screen. A new request aborts
+the previous run and starts after that run settles. An abort during workspace
+preparation releases the paper's engine reservation only after deferred
+cleanup, so a request within a minute of an abort waits up to 15 seconds for
+it. A result that arrives after Stop is not shown. Closing the window, Stop,
+and add-on shutdown abort the run. The add-on sandbox has neither `AbortController` nor
+`DOMException`: the window supplies the controller, and the shared
+`ai/workspaceRun.ts` wait loop rejects with a plain `AbortError`.
+
+`figureExplain/workflow.ts` resolves the annotation by attachment ID and key,
+never from the live reader selection. It uses Zotero's cached annotation PNG
+(`Zotero.Annotations.getCacheImagePath`) and asks
+`Zotero.PDFWorker.renderAttachmentAnnotations` to render a missing one.
+`figureExplain/locator.ts` reads the page's PDF.js text spans from the
+owned-worker extraction and derives non-authoritative hints. The hints are the
+nearest caption label within 120 points (`Figure 3:` captions rank above
+body-text mentions), the caption's continuation lines in the same column, and
+the text printed inside the area with cell separators. `figure-request.json`
+holds these hints, the selected rectangle, and the annotation comment; the
+prompt only names the file.
+
+The run reuses `researchWorkspace/analysisRunner.ts` with the `analysis`
+profile. It therefore shares the item-scoped reservation, read-only provider
+modes, the four-minute deadline, cancellation, and workspace cleanup. When an
+image exists, each runner copies it to the runtime-owned
+`figures/selected-region.png` after writing the input manifest, so cleanup
+removes the copy. Codex receives the copy through `--image`; Claude Code opens
+it with its read tool. Without an image, the prompt switches to a text-only
+contract. `figureExplain/response.ts` validates the JSON, and the window renders
+text nodes only. Explanations stay in memory per annotation revision and
+execution settings (`addon.data.figureExplanations`, at most 24 entries). They
+are not written to session history, notes, or Research Workspace artifacts.
+
 ## Integrated Research Workspace boundary
 
 `src/modules/researchWorkspace/` owns the paper- and project-level research
@@ -263,7 +319,7 @@ is shown as unresolved and is not eligible for undo or reapplication.
 
 `workspaceRun.ts` is the shared entry point used by non-chat workflows (research
 brief, paper tools, compare, verified discovery, Critical Read, auto-highlight,
-mastery). It dynamically imports
+mastery, figure explanation). It dynamically imports
 the engine runner so the engine modules stay independently loadable.
 
 Each engine then has a parallel module with the same five files:
@@ -465,22 +521,24 @@ runtime until those process-control assumptions have a platform adapter.
 
 `context/workspaceArtifacts.ts` builds the payload; the runner writes the files.
 
-| File                        | Written by                      | Contents                                                                         |
-| --------------------------- | ------------------------------- | -------------------------------------------------------------------------------- |
-| `paper.md`                  | all engines                     | structured Markdown, or full text if extraction fell back                        |
-| `paper.json`                | all engines                     | structured elements + `extractionMethod` + `extractionNotes`                     |
-| `paper.txt`                 | all engines                     | compatibility snapshot: metadata header plus text                                |
-| `metadata.json`             | all engines                     | title, authors, year, item/attachment key, abstract, extraction method and notes |
-| `selection.json`            | all engines                     | selected text, actual nearby context, page, annotations, retrieved chunks        |
-| `recent-turns.json`         | all engines                     | last 3 privacy-eligible turns for follow-up continuity                           |
-| `annotations.json`          | all engines                     | annotation ids tied to this request                                              |
-| `CONTEXT_INDEX.md`          | all engines                     | reading-order file map                                                           |
-| `discovery-request.json`    | discovery runs                  | normalized research concern and current-paper context                            |
-| `discovery-plan.json`       | discovery runs                  | agent-owned field, venue, and query planning scaffold                            |
-| `discovery-candidates.json` | discovery runs                  | deterministic scholarly-provider candidates                                      |
-| `discovery-evidence.json`   | discovery runs                  | official-evidence collection scaffold                                            |
-| `figures/`                  | Codex only                      | empty directory for image assets                                                 |
-| `output-schema.json`        | supported Codex structured runs | native final-output JSON Schema                                                  |
+| File                          | Written by                      | Contents                                                                         |
+| ----------------------------- | ------------------------------- | -------------------------------------------------------------------------------- |
+| `paper.md`                    | all engines                     | structured Markdown, or full text if extraction fell back                        |
+| `paper.json`                  | all engines                     | structured elements + `extractionMethod` + `extractionNotes`                     |
+| `paper.txt`                   | all engines                     | compatibility snapshot: metadata header plus text                                |
+| `metadata.json`               | all engines                     | title, authors, year, item/attachment key, abstract, extraction method and notes |
+| `selection.json`              | all engines                     | selected text, actual nearby context, page, annotations, retrieved chunks        |
+| `recent-turns.json`           | all engines                     | last 3 privacy-eligible turns for follow-up continuity                           |
+| `annotations.json`            | all engines                     | annotation ids tied to this request                                              |
+| `CONTEXT_INDEX.md`            | all engines                     | reading-order file map                                                           |
+| `discovery-request.json`      | discovery runs                  | normalized research concern and current-paper context                            |
+| `discovery-plan.json`         | discovery runs                  | agent-owned field, venue, and query planning scaffold                            |
+| `discovery-candidates.json`   | discovery runs                  | deterministic scholarly-provider candidates                                      |
+| `discovery-evidence.json`     | discovery runs                  | official-evidence collection scaffold                                            |
+| `figures/`                    | Codex only                      | empty directory for image assets                                                 |
+| `figure-request.json`         | figure explanation runs         | selected area, annotation comment, locally detected label/caption/area text      |
+| `figures/selected-region.png` | figure explanation runs         | runtime-owned copy of Zotero's cached area-annotation image, for both engines    |
+| `output-schema.json`          | supported Codex structured runs | native final-output JSON Schema                                                  |
 
 Both engine prompts instruct the agent to read `CONTEXT_INDEX.md`. Discovery
 runs additionally stage the four `discovery-*.json` files for a reproducible
@@ -558,6 +616,7 @@ common answer-style rules used by both engines.
 | Review insight     | `discovery/prompt.ts`                              | strict JSON from public review content       |
 | Critical Read      | `criticalRead/prompt.ts`                           | strict JSON per step, Markdown final report  |
 | Auto-highlight     | `autoHighlight/prompt.ts`                          | strict JSON                                  |
+| Figure explanation | `figureExplain/prompt.ts`                          | strict JSON                                  |
 | Paper Mastery      | `comprehensionCheck/prompt.ts`                     | strict JSON per round, Markdown final report |
 
 Every shape is specified in [`prompt-contracts.md`](./prompt-contracts.md).

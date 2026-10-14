@@ -8,6 +8,7 @@ import {
   MASTERY_QUESTION_OUTPUT_SCHEMA,
 } from "../src/modules/comprehensionCheck/prompt";
 import { getCriticalReadOutputSchema } from "../src/modules/criticalRead/prompt";
+import { FIGURE_EXPLANATION_OUTPUT_SCHEMA } from "../src/modules/figureExplain/prompt";
 import {
   DISCOVERY_OUTPUT_SCHEMA,
   PUBLIC_REVIEW_OUTPUT_SCHEMA,
@@ -29,6 +30,7 @@ test("every shipped native output schema satisfies provider strict object rules"
     ["criticalReadStep6", getCriticalReadOutputSchema(6)],
     ["criticalReadStep7", getCriticalReadOutputSchema(7)],
     ["discovery", DISCOVERY_OUTPUT_SCHEMA],
+    ["figureExplanation", FIGURE_EXPLANATION_OUTPUT_SCHEMA],
     ["publicReview", PUBLIC_REVIEW_OUTPUT_SCHEMA],
     ["paperCompare", PAPER_COMPARE_OUTPUT_SCHEMA],
     ["paperTool", PAPER_TOOL_OUTPUT_SCHEMA],

@@ -78,10 +78,15 @@ export async function writeWorkspaceSupplementalFiles(
   }
 }
 
+/** The selected-area image that a figure explanation run copies in. */
+export const WORKSPACE_IMAGE_INPUT_PATH = "figures/selected-region.png";
+const MAX_WORKSPACE_IMAGE_BYTES = 20 * 1024 * 1024;
+
 const WORKSPACE_RUNTIME_FILE_PATHS = [
   "prompt.txt",
   "claude-prompt.txt",
   "output-schema.json",
+  WORKSPACE_IMAGE_INPUT_PATH,
   ...["codex", "claude"].flatMap((engine) => [
     `${engine}-output.${engine === "codex" ? "jsonl" : "txt"}`,
     `${engine}-stderr.log`,
@@ -152,6 +157,30 @@ export function parseWorkspaceInputManifest(
       throw new Error("An input manifest cannot own itself.");
   }
   return manifest;
+}
+
+/**
+ * Copies one PNG into the runtime-owned image path after the manifest exists,
+ * so workspace cleanup removes it with the other generated files.
+ */
+export async function stageWorkspaceImageInput(
+  workspacePath: string,
+  sourcePath: string,
+): Promise<string> {
+  if (!/\.png$/i.test(sourcePath))
+    throw new Error("Only a PNG image can be attached to a workspace run.");
+  const io = (globalThis as typeof globalThis & { IOUtils?: any }).IOUtils;
+  if (!io?.stat || !io?.copy)
+    throw new Error("Cannot copy the selected image into the workspace.");
+  const info = await io.stat(sourcePath);
+  if (info?.type !== "regular" || Number(info.size) > MAX_WORKSPACE_IMAGE_BYTES)
+    throw new Error("The selected image is missing or too large to attach.");
+  const destination = `${workspacePath}/${WORKSPACE_IMAGE_INPUT_PATH}`;
+  await Zotero.File.createDirectoryIfMissingAsync(
+    destination.slice(0, destination.lastIndexOf("/")),
+  );
+  await io.copy(sourcePath, destination);
+  return destination;
 }
 
 export function workspaceInputContentFingerprint(text: string) {

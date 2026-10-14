@@ -133,6 +133,18 @@ class Addon {
     >;
     dialog?: DialogHelper;
     dictionaryWindow?: import("./modules/ui/dictionaryPopup").DictionaryWindowState;
+    figureExplainWindow?: import("./modules/ui/figureExplainPopup").FigureExplainWindowState;
+    /** Readers whose "Explain figure" tool waits for the next area. */
+    figureExplainModes?: Map<
+      string,
+      import("./modules/ui/figureExplainTool").FigureModeEntry
+    >;
+    figureExplainObserverID?: string;
+    /** In-memory figure explanations; never written to history or notes. */
+    figureExplanations?: Map<
+      string,
+      import("./modules/figureExplain/types").FigureExplanation
+    >;
     researchWorkspaceWindowState?: import("./modules/researchWorkspace/window").ResearchWorkspaceWindowState;
     researchWorkspaceOpening?: Promise<void>;
   };

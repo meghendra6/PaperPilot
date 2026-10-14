@@ -48,6 +48,33 @@ export function ensureSelectionPopupStyles(doc: Document): void {
       background: Highlight;
       color: HighlightText;
     }
+    button.pp-annotation-explain {
+      appearance: none;
+      flex: none;
+      margin: 0 4px;
+      padding: 0 6px;
+      border: 1px solid GrayText;
+      border-radius: 4px;
+      background: transparent;
+      color: inherit;
+      font: inherit;
+      font-size: 11px;
+      line-height: 16px;
+      white-space: nowrap;
+      cursor: pointer;
+    }
+    button.pp-annotation-explain:hover {
+      border-color: Highlight;
+      box-shadow: inset 0 0 0 1px Highlight;
+    }
+    button.pp-annotation-explain:focus-visible {
+      outline: 2px solid Highlight;
+      outline-offset: 1px;
+    }
+    button.pp-annotation-explain:active {
+      background: Highlight;
+      color: HighlightText;
+    }
   `;
   (doc.head || doc.documentElement).appendChild(style);
 }
