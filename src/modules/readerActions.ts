@@ -12,6 +12,17 @@ import {
   buildDictionaryButton,
   closeDictionaryPopups,
 } from "./ui/dictionaryPopup";
+import {
+  buildFigureExplainButton,
+  closeFigureExplainPopups,
+  showFigureExplanation,
+} from "./ui/figureExplainPopup";
+import {
+  buildFigureToolButton,
+  disarmAllFigureModes,
+  type FigureToolReader,
+} from "./ui/figureExplainTool";
+import { resolveFigureTarget } from "./figureExplain/workflow";
 import { isReaderChatBusy } from "./ai/readerBusy";
 import { getDiscoveryAvailability } from "./discovery/capabilities";
 import { DISCOVERY_ALREADY_RUNNING_MESSAGE } from "./ui/discoveryEntryState";
@@ -65,10 +76,30 @@ type TextSelectionPopupEvent = {
   append: (...nodes: Array<Node | string>) => void;
 };
 
+type ReaderAttachment = {
+  id?: number;
+  parentItemID?: number;
+  isPDFAttachment?: () => boolean;
+  getAnnotations?: () => unknown[];
+};
+
 type AnnotationContextMenuEvent = {
-  reader?: { itemID?: number; _item?: { id?: number; parentItemID?: number } };
+  reader?: { itemID?: number; _item?: ReaderAttachment };
   params: { ids?: string[] };
   append: (params: { label: string; onCommand: () => void }) => void;
+};
+
+type ToolbarEvent = {
+  doc: Document;
+  reader?: FigureToolReader;
+  append: (...nodes: Array<Node | string>) => void;
+};
+
+type SidebarAnnotationHeaderEvent = {
+  doc: Document;
+  reader?: { itemID?: number; _item?: ReaderAttachment };
+  params: { annotation?: { id?: string; key?: string; type?: string } };
+  append: (...nodes: Array<Node | string>) => void;
 };
 
 function ensureReaderActionSession(itemID: number) {
@@ -247,6 +278,13 @@ const renderTextSelectionPopup = (event: TextSelectionPopupEvent) => {
 };
 
 const createAnnotationContextMenu = (event: AnnotationContextMenuEvent) => {
+  const figure = resolveFigureTarget(event.reader?._item, event.params.ids);
+  if (figure) {
+    event.append({
+      label: getString("reader-action-explain-figure"),
+      onCommand: () => showFigureExplanation(figure),
+    });
+  }
   for (const item of ANNOTATION_ACTIONS) {
     event.append({
       label: item.label(),
@@ -263,6 +301,26 @@ const createAnnotationContextMenu = (event: AnnotationContextMenuEvent) => {
   }
 };
 
+// Area annotations get a compact Explain button on their sidebar card.
+const renderSidebarAnnotationHeader = (event: SidebarAnnotationHeaderEvent) => {
+  const annotation = event.params.annotation;
+  const annotationKey = String(annotation?.id || annotation?.key || "");
+  const attachmentID = Number(event.reader?._item?.id ?? event.reader?.itemID);
+  if (annotation?.type !== "image" || !annotationKey || !attachmentID) return;
+  ensureSelectionPopupStyles(event.doc);
+  event.append(
+    buildFigureExplainButton(event.doc, { attachmentID, annotationKey }),
+  );
+};
+
+// PDF readers get an "Explain figure" tool: one area selection opens the window.
+const renderToolbar = (event: ToolbarEvent) => {
+  if (!event.reader || event.reader._type !== "pdf") return;
+  event.append(
+    buildFigureToolButton(event.doc, event.reader, showFigureExplanation),
+  );
+};
+
 export function registerReaderActionPlaceholders() {
   Zotero.Reader.registerEventListener(
     "renderTextSelectionPopup",
@@ -274,10 +332,22 @@ export function registerReaderActionPlaceholders() {
     createAnnotationContextMenu,
     config.addonID,
   );
+  Zotero.Reader.registerEventListener(
+    "renderSidebarAnnotationHeader",
+    renderSidebarAnnotationHeader,
+    config.addonID,
+  );
+  Zotero.Reader.registerEventListener(
+    "renderToolbar",
+    renderToolbar,
+    config.addonID,
+  );
 }
 
 export function unregisterReaderActionPlaceholders() {
   closeDictionaryPopups();
+  disarmAllFigureModes();
+  closeFigureExplainPopups();
   Zotero.Reader.unregisterEventListener(
     "renderTextSelectionPopup",
     renderTextSelectionPopup,
@@ -286,4 +356,9 @@ export function unregisterReaderActionPlaceholders() {
     "createAnnotationContextMenu",
     createAnnotationContextMenu,
   );
+  Zotero.Reader.unregisterEventListener(
+    "renderSidebarAnnotationHeader",
+    renderSidebarAnnotationHeader,
+  );
+  Zotero.Reader.unregisterEventListener("renderToolbar", renderToolbar);
 }

@@ -151,6 +151,35 @@ Use this checklist inside real Zotero 7, 8, 9, and 10 runtimes before claiming r
 - [ ] Confirm More on Naver opens only on click and points to the displayed entry (or the selected query when no exact entry URL exists)
 - [ ] Verify empty and oversized selections (over 80 characters or 8 words) have no dictionary button; repeated lookups and Retry must not accumulate active requests or listeners
 
+### Figure and table explanation
+
+- [ ] In a PDF reader, click the toolbar **Explain figure or table** button; confirm it turns active, Zotero switches to Select Area, and the tooltip explains the next step
+- [ ] Drag around a chart; confirm the explanation window opens beside the PDF without another click, the reader returns to its previous tool, and the toolbar button turns inactive
+- [ ] Arm the mode and press Esc, click the button again, or wait two minutes; confirm the previous tool returns and a later area selection opens nothing
+- [ ] Draw an area around a chart with Select Area; confirm the sidebar card shows **Explain** on area annotations only, and clicking it keeps the current annotation selection
+- [ ] Right-click the area in the PDF view and in the sidebar; confirm **Explain figure or table** appears for one area annotation and not for highlights or multi-selections
+- [ ] Confirm a separate Zotero window opens with the selected image, the page label, the detected caption, elapsed time, and Stop; the reader stays usable
+- [ ] With Codex CLI and with Claude Code, confirm the result shows a title, summary, How to read, Key points with Visible/Paper/Inference badges, In the paper, and Caveats in the response language
+- [ ] Explain a table with its caption above it and an IEEE-style `TABLE II` caption; confirm label and caption detection
+- [ ] Choose **Explain figure or table** from the reader's own annotation context menu; confirm Zotero stays open (Zotero 10.0.6 crashed when this command opened the window synchronously)
+- [ ] Stop during preparation and during the run; confirm "Stopped." within a second, no surviving CLI process, no `figures/selected-region.png` left in the workspace, and that Retry starts without "already active"
+- [ ] Close the window during a run; confirm the run stops and a late result cannot reopen the window
+- [ ] Request another area while one runs; confirm only the latest result appears and the paper is not left reserved
+- [ ] Start chat on the same paper during an explanation, and the reverse; confirm the busy message and that Retry works afterwards
+- [ ] Explain the same area again; confirm "Reused from this session", and that Regenerate starts a new run
+- [ ] Remove the area's cached PNG; confirm Zotero renders it again or the text-only notice and caveat appear
+- [ ] Check light and dark themes, keyboard focus, Escape, resizing, and that a long explanation scrolls together with the image
+
+#### Runtime record — 2026-10-14 (Zotero 10.0.6, macOS, Codex CLI)
+
+Driven over the remote debugger on the DistServe paper (area annotation on page 1).
+
+- Reproduced the reported crash twice: the reader's internal context-menu row opened the window from the iframe timer and Zotero exited with the same SIGSEGV stack. Opening from a fresh main-thread task did not crash; the fixed build passed the same path.
+- The toolbar button armed the area tool, an `add` notifier event for the area opened the window, the previous tool returned, and the observer unregistered.
+- The window showed the cached image, the detected `Figure 1` caption, and a Korean explanation with Visible/Paper badges after about 52 seconds.
+- Stop returned "Stopped." in about 0.25 seconds twice; the Codex process exited and Retry started a new run without "already active".
+- Not exercised: a real mouse drag in the PDF view, Claude Code, dark mode, and the text-only path without a cached image.
+
 ### Review verification — 2026-09-21
 
 See [the product review](product-review-2026-09-21.md) for confirmed defects,

@@ -146,6 +146,8 @@ export async function startWorkspaceTextRun(params: {
   profile: Exclude<RunProfile, "chat">;
   outputSchema?: StructuredOutputSchema;
   workspaceFiles?: WorkspaceSupplementalFiles;
+  /** A PNG the engine should view; both runners copy it into the workspace. */
+  imagePath?: string;
   prebuiltInput?: PrebuiltWorkspaceInput;
   requestContext?: RequestContextSnapshot;
   executionSettings?: ExecutionSettings;
@@ -212,6 +214,7 @@ export async function startWorkspaceTextRun(params: {
         profile: params.profile,
         outputSchema: params.outputSchema,
         workspaceFiles: params.workspaceFiles,
+        imagePath: params.imagePath,
         prebuiltInput: params.prebuiltInput,
         requestContext: params.requestContext,
         onWorkspaceAllocated,
@@ -240,6 +243,7 @@ export async function startWorkspaceTextRun(params: {
         profile: params.profile,
         outputSchema: params.outputSchema,
         workspaceFiles: params.workspaceFiles,
+        imagePath: params.imagePath,
         prebuiltInput: params.prebuiltInput,
         requestContext: params.requestContext,
         onWorkspaceAllocated,
@@ -366,10 +370,21 @@ export function extractWorkspaceRunText(
   return progress.parsedOutput;
 }
 
+/**
+ * The Zotero add-on sandbox has no DOMException. Constructing one inside the
+ * abort listener threw, so the wait never settled and Stop left the paper
+ * reserved. Callers identify cancellation by `name`.
+ */
+export function createWorkspaceCancelledError(): Error {
+  const error = new Error("Cancelled");
+  error.name = "AbortError";
+  return error;
+}
+
 function waitForWorkspacePoll(ms: number, signal?: AbortSignal) {
   return new Promise<void>((resolve, reject) => {
     if (signal?.aborted) {
-      reject(new DOMException("Cancelled", "AbortError"));
+      reject(createWorkspaceCancelledError());
       return;
     }
     const timer = setTimeout(() => {
@@ -378,7 +393,7 @@ function waitForWorkspacePoll(ms: number, signal?: AbortSignal) {
     }, ms);
     const onAbort = () => {
       clearTimeout(timer);
-      reject(new DOMException("Cancelled", "AbortError"));
+      reject(createWorkspaceCancelledError());
     };
     signal?.addEventListener("abort", onAbort, { once: true });
   });
@@ -397,7 +412,7 @@ export async function waitForWorkspaceTextRun(params: {
 }) {
   while (Date.now() < params.deadline) {
     if (params.signal?.aborted) {
-      throw new DOMException("Cancelled", "AbortError");
+      throw createWorkspaceCancelledError();
     }
     const progress = await readWorkspaceRunProgress(params.mode, params.paths);
     if (progress.completed) {

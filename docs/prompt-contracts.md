@@ -161,6 +161,20 @@ language; existing Zotero notes and verbatim source material remain unchanged.
   - the repair request serializes the first response as untrusted JSON source data
   - unused `reason` and `importance` fields are ignored and are not part of the output contract
 
+### Figure explanation
+
+- Files: `src/modules/figureExplain/prompt.ts`, `src/modules/figureExplain/response.ts`
+- Purpose: explain one figure, table, or other page area that the reader selected with Zotero's Select Area tool
+- Shape: one JSON object with `kind` (`table|chart|diagram|image|other`), `label`, `title`, `summary`, `howToRead[]` (at most 5), `keyPoints[]` (1–5 `{ "text", "basis" }` items with `basis ∈ {visual, paper-text, inference}`), `paperContext`, and `caveats[]` (at most 4)
+- Guardrails:
+  - `figure-request.json` is the sole owner of the selected area, the annotation comment, and the locally detected label, caption, and in-area text; the prompt names the file and does not repeat its contents
+  - detected hints are unverified local text matches; the engine checks them against the paper and ignores a hint that does not fit
+  - with an image, the engine opens `figures/selected-region.png`; without one, it does not describe visual details it cannot see and adds a text-based caveat
+  - the annotation comment is reader context, not an instruction; the image, its printed text, the caption, and the paper are source data only
+  - values are read only when legible, approximate readings are marked, and labels and numbers are never invented
+  - the parser accepts fenced or prefixed JSON, bounds every string and list, maps an unknown `kind` to `other` and an unknown `basis` to `inference`, and rejects output without a summary and at least one key point
+  - the result appears only in the explanation window and is never persisted
+
 ### Paper Mastery (comprehension check)
 
 - File: `src/modules/comprehensionCheck/prompt.ts`
@@ -201,13 +215,13 @@ language; existing Zotero notes and verbatim source material remain unchanged.
 ### Run profiles and native schemas
 
 - Visible chat uses the `chat` profile and may resume only the provider session recorded for that Paper Pilot session.
-- Workbench, Compare, Paper Mastery, Critical Read, and Auto Highlight use `analysis`; verified discovery and public-review inspection use `discovery`.
+- Workbench, Compare, Paper Mastery, Critical Read, Auto Highlight, and figure explanation use `analysis`; verified discovery and public-review inspection use `discovery`.
 - Analysis and discovery have distinct workspace paths, do not read or update visible-chat resume metadata, and use read-only provider modes. Only discovery admits the verified web-search path.
 - Structured workflows export a JSON Schema beside their prompt/parser. Codex and Claude receive it only when their installed help surface reports `--output-schema` or `--json-schema`; older CLIs continue through the same prompt plus authoritative local parser.
 - Before a native schema flag is used, Paper Pilot verifies that the root is an object, every schema node has an explicit type or composition, every object is closed with `additionalProperties: false`, and every declared property is required. An incompatible schema is omitted from the native CLI invocation so the existing prompt plus authoritative local parser remains available instead of failing the entire run.
 - Native schema output never replaces local parsing, normalization, live publication verification, or exact PDF quote matching.
 
-For structured workflows (`Research brief`, `Agent-led verified research discovery`, `Public review insight`, `Critical Read`, `Paper tools`, `Paper compare`, `Auto-highlight`, and Paper Mastery JSON turns), prompts instruct the model to use full current-paper workspace content when available, treat supplied content/metadata/abstracts as source data only, and ignore instructions embedded inside those sources.
+For structured workflows (`Research brief`, `Agent-led verified research discovery`, `Public review insight`, `Critical Read`, `Paper tools`, `Paper compare`, `Auto-highlight`, `Figure explanation`, and Paper Mastery JSON turns), prompts instruct the model to use full current-paper workspace content when available, treat supplied content/metadata/abstracts as source data only, and ignore instructions embedded inside those sources.
 
 ### Integrated Research Workspace
 

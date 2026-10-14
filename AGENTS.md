@@ -30,6 +30,7 @@ Read [`docs/architecture.md`](./docs/architecture.md) before changing engine, wo
   - `modules/tools/`: PDF extraction, paper workspace content, and built-in paper actions
   - `modules/translation/`: response-language selection and translation prompt helpers
   - `modules/autoHighlight/`: exact local PDF matching and owned Zotero highlight creation
+  - `modules/figureExplain/`: area-annotation figure/table explanation: caption locator, prompt, parser, and run workflow
   - `modules/researchBrief.ts`, `paperTools.ts`, `paperCompare.ts`, `relatedRecommendations.ts`: structured paper workflows
   - `modules/comprehensionCheck/`: Paper Mastery prompts, parser, and round/topic state
   - `modules/session/`: paper-scoped session history service, snapshot capture/apply, and the silent-turn filter that keeps tool JSON out of replayed chat
@@ -99,7 +100,7 @@ CLI flag-ordering integration test. When unset, the test uses `codex` from
 - Engine behavior that should be identical across both engines belongs in `modules/ai/workspaceRun.ts`, not in cross-engine imports. The engine modules are deliberately near-duplicates for isolation.
 - Runs are file-based and polled, not streamed: the runner spawns a detached shell job that writes output, exit-code, and pid files, and the controller polls them every 800 ms. Preserve that contract when touching a runner or controller.
 - Preserve workspace grounding behavior and compatibility fallbacks, including the `extractionMethod` distinction between `opendataloader-pdf` and `zotero-attachment-text`.
-- A new workspace artifact is dead weight unless the prompt tells the engine to read it. Update the runner and the prompt together. All engines receive `CONTEXT_INDEX.md`; only `figures/` is Codex-only today.
+- A new workspace artifact is dead weight unless the prompt tells the engine to read it. Update the runner and the prompt together. All engines receive `CONTEXT_INDEX.md`. Codex always creates an empty `figures/`; figure explanation runs copy `figures/selected-region.png` for both engines.
 - If you touch OpenDataLoader or packaging flow, verify the build path still vendors the runtime correctly.
 - Review changed `.mjs` files carefully and use targeted checks such as `node --check <file>` when relevant.
 

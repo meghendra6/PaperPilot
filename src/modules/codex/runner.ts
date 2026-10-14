@@ -27,6 +27,7 @@ import {
   resolvePaperWorkspaceRoot,
 } from "../workspace/pathBuilder";
 import {
+  stageWorkspaceImageInput,
   writeOwnedWorkspaceInputs,
   type WorkspaceSupplementalFiles,
 } from "../workspace/supplementalFiles";
@@ -195,6 +196,11 @@ export async function startCodexRunForQuestion(params: {
   await Zotero.File.putContentsAsync(promptPath, codexPrompt, "utf-8");
   if (!params.prebuiltInput)
     await Zotero.File.createDirectoryIfMissingAsync(`${workspacePath}/figures`);
+  // The manifest already owns this path, so cleanup removes the copy.
+  const imagePath =
+    params.imagePath && !params.prebuiltInput
+      ? await stageWorkspaceImageInput(workspacePath, params.imagePath)
+      : undefined;
 
   const command =
     params.useResume &&
@@ -221,7 +227,7 @@ export async function startCodexRunForQuestion(params: {
             sandbox,
             approvalMode,
             webSearchEnabled,
-            imagePath: params.imagePath,
+            imagePath,
             outputSchemaPath: nativeOutputSchema ? outputSchemaPath : undefined,
             skipGitRepoCheck: true,
           },

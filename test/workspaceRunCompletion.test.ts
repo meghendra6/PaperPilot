@@ -90,3 +90,41 @@ for (const fixture of fixtures) {
     }
   });
 }
+
+test("Stop settles a polled run even where DOMException does not exist", async () => {
+  // The Zotero add-on sandbox has no DOMException; Node provides one.
+  const globals = globalThis as unknown as {
+    Zotero?: unknown;
+    DOMException?: unknown;
+  };
+  const previous = {
+    Zotero: globals.Zotero,
+    DOMException: globals.DOMException,
+  };
+  globals.Zotero = { File: { getContentsAsync: async () => "" } };
+  delete globals.DOMException;
+  const controller = new AbortController();
+  try {
+    const waiting = waitForWorkspaceTextRun({
+      mode: "codex_cli",
+      paths: { outputPath: "out", stderrPath: "err", exitCodePath: "exit" },
+      deadline: Date.now() + 10_000,
+      signal: controller.signal,
+      pollIntervalMs: 5_000,
+    });
+    setTimeout(() => controller.abort(), 20);
+    await assert.rejects(waiting, { name: "AbortError" });
+    await assert.rejects(
+      waitForWorkspaceTextRun({
+        mode: "codex_cli",
+        paths: { outputPath: "out", stderrPath: "err", exitCodePath: "exit" },
+        deadline: Date.now() + 10_000,
+        signal: controller.signal,
+      }),
+      { name: "AbortError" },
+    );
+  } finally {
+    globals.Zotero = previous.Zotero;
+    globals.DOMException = previous.DOMException;
+  }
+});
