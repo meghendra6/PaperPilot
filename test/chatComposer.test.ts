@@ -37,6 +37,9 @@ test("cancellation and cleanup allow drafting but prevent a second send", () => 
   });
   assert.equal(cleanup.inputDisabled, false);
   assert.equal(cleanup.buttonDisabled, true);
+  // A disabled Stop is never offered as the way out.
+  assert.doesNotMatch(cleanup.placeholder, /Press Stop/);
+  assert.match(cleanup.ariaLabel, /unavailable/);
   const settled = getChatComposerPresentation({
     busy: false,
     stopping: false,

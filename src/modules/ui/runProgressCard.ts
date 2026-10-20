@@ -26,6 +26,25 @@ const PHASE_LABELS: Record<RunProgressState["phase"], string> = {
   cancelled: "Cancelled",
 };
 
+/**
+ * What the reader should know while a run is active. A quiet run answers in
+ * its own panel, so it must not promise an answer in chat.
+ */
+export function getRunProgressGuidance(state: RunProgressState): string {
+  if (state.quiet) {
+    return state.phase === "preparing"
+      ? "Preparing a Paper Pilot task. Its result appears where you started it."
+      : state.phase === "running"
+        ? "A Paper Pilot task is running. Its result appears where you started it."
+        : "Finishing a Paper Pilot task. You can send a message when this finishes.";
+  }
+  return state.phase === "preparing"
+    ? "Preparing your request. Stop it before asking a new question."
+    : state.phase === "running"
+      ? "Your request is running. The answer will appear here; no need to send it again."
+      : "Saving the answer. You can send another message when this finishes.";
+}
+
 export function formatRunElapsed(startedAt: number, now = Date.now()): string {
   const totalSeconds = Math.max(0, Math.floor((now - startedAt) / 1000));
   const minutes = Math.floor(totalSeconds / 60);
@@ -36,6 +55,8 @@ export function formatRunElapsed(startedAt: number, now = Date.now()): string {
 export function createRunProgressCard(params: {
   container: HTMLElement;
   actions: RunProgressCardActions;
+  /** Where focus goes when a repaint removes the focused card button. */
+  focusAfterCard?: () => HTMLElement | null | undefined;
 }): RunProgressCardHandle {
   let disposed = false;
   let state: RunProgressState | undefined;
@@ -91,6 +112,14 @@ export function createRunProgressCard(params: {
 
   const paint = () => {
     if (disposed) return;
+    const doc = params.container.ownerDocument;
+    // Repainting removes the Retry or Dismiss button the reader just used.
+    const active = doc?.activeElement;
+    const hadFocus = Boolean(
+      active &&
+        typeof params.container.contains === "function" &&
+        params.container.contains(active),
+    );
     params.container.replaceChildren();
     elapsedElement = undefined;
     if (!state) {
@@ -98,6 +127,7 @@ export function createRunProgressCard(params: {
       delete params.container.dataset.phase;
       params.container.removeAttribute("role");
       params.container.removeAttribute("aria-live");
+      if (hadFocus) params.focusAfterCard?.()?.focus();
       return;
     }
 
@@ -106,7 +136,6 @@ export function createRunProgressCard(params: {
     params.container.setAttribute("aria-live", "polite");
     params.container.dataset.phase = state.phase;
 
-    const doc = params.container.ownerDocument;
     const header = doc.createElement("div");
     header.className = "pp-run-progress__header";
     const label = doc.createElement("strong");
@@ -121,6 +150,9 @@ export function createRunProgressCard(params: {
 
     const body = doc.createElement("div");
     body.className = "pp-run-progress__body";
+    // Raw logs go after the actions so expanding them cannot push Retry out
+    // of the height-capped card.
+    let rawLogs: HTMLElement | undefined;
     if (state.failure) {
       const message = doc.createElement("div");
       message.className = "pp-run-progress__message";
@@ -134,19 +166,14 @@ export function createRunProgressCard(params: {
         const raw = doc.createElement("pre");
         raw.textContent = state.failure.rawError;
         details.append(summary, raw);
-        body.appendChild(details);
+        rawLogs = details;
       }
     }
 
     if (!state.failure && isRunProgressActive(state)) {
       const guidance = doc.createElement("div");
       guidance.className = "pp-run-progress__message";
-      guidance.textContent =
-        state.phase === "preparing"
-          ? "Preparing your request. Stop it before asking a new question."
-          : state.phase === "running"
-            ? "Your request is running. The answer will appear here; no need to send it again."
-            : "Saving the answer. You can send another message when this finishes.";
+      guidance.textContent = getRunProgressGuidance(state);
       body.appendChild(guidance);
     }
     const actions = doc.createElement("div");
@@ -173,7 +200,18 @@ export function createRunProgressCard(params: {
       actions.appendChild(dismissButton);
     }
 
-    params.container.append(header, body, actions);
+    params.container.append(
+      header,
+      body,
+      actions,
+      ...(rawLogs ? [rawLogs] : []),
+    );
+    if (hadFocus) {
+      const next =
+        (actions.querySelector?.("button") as HTMLElement | null) ??
+        params.focusAfterCard?.();
+      next?.focus();
+    }
   };
 
   return {

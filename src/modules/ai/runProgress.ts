@@ -26,6 +26,8 @@ export interface RunProgressState {
   processId?: string;
   failure?: RunFailure;
   canRetry?: boolean;
+  /** The run answers in its own panel (Mastery, Workbench), not in chat. */
+  quiet?: boolean;
 }
 
 export type RunProgressEvent =
@@ -41,6 +43,7 @@ export function createRunProgressState(params: {
   token: ReaderRunToken;
   sessionId?: string;
   now?: number;
+  quiet?: boolean;
 }): RunProgressState {
   const now = params.now ?? Date.now();
   return {
@@ -48,6 +51,7 @@ export function createRunProgressState(params: {
     engine: params.engine,
     token: params.token,
     ...(params.sessionId ? { sessionId: params.sessionId } : {}),
+    ...(params.quiet ? { quiet: true } : {}),
     phase: "preparing",
     startedAt: now,
     updatedAt: now,

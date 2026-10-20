@@ -225,6 +225,57 @@ test("engine settings expose pressed state, saved defaults, and in-popover auth 
   );
 });
 
+test("saving the default model closes engine settings and announces it outside", () => {
+  assert.match(
+    readerPaneSource,
+    /paneHeader\.markModelSaved\(\);[\s\S]*?paneHeader\.setOpen\(false, true\);[\s\S]*?await refreshPaneState\(/,
+  );
+  assert.match(
+    paneHeaderSource,
+    /root\.append\(trigger, newSessionButton, popover, modelSaveStatus\)/,
+  );
+});
+
+test("both engines pick an effort next to the model", () => {
+  assert.match(
+    readerPaneSource,
+    /renderEffortInput\(params\.effortInput, params\.modelInput, descriptor\.mode\)/,
+  );
+  assert.doesNotMatch(readerPaneSource, /modelInput\.value\.split\("\|"\)/);
+  assert.match(
+    paneHeaderSource,
+    /renderedEngines\.get\(effortInput\) === "codex_cli"\) \{\s*fillCodexEffortOptions\(effortInput, modelInput\.value, effortInput\.value\)/,
+  );
+});
+
+test("Paper Mastery renders from one function on live updates and re-renders", () => {
+  // Re-renders used to call a second renderer that hid the feedback card.
+  assert.doesNotMatch(
+    readerPaneSource,
+    /hydrateMasteryState|showMasteryQuestion/,
+  );
+  assert.match(
+    readerPaneSource,
+    /updateRelatedSummary\(\);\s*renderMasteryPanel\(\);/,
+  );
+  assert.match(
+    readerPaneSource,
+    /id="paper-mastery-status" class="pp-mastery-status" role="status" aria-live="polite"/,
+  );
+  assert.match(
+    readerPaneSource,
+    /id="paper-mastery-answer"[^>]*aria-label="Your answer"/,
+  );
+  assert.match(readerPaneSource, /id="paper-mastery-next"/);
+});
+
+test("a finished Critical Read step opens its result", () => {
+  assert.match(
+    readerPaneSource,
+    /setCriticalReadStateForItem\(nextState\);[\s\S]*?setCriticalReadStepExpanded\(/,
+  );
+});
+
 test("Clear cards confirms and persists, and Focus chat keeps its name", () => {
   assert.match(
     readerPaneSource,

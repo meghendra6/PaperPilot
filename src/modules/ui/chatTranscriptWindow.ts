@@ -304,14 +304,16 @@ export function renderChatTranscriptWindow<T>(params: {
     const button = doc.createElement("button");
     button.type = "button";
     button.className = "pp-btn pp-btn--ghost";
+    const shown = Math.min(step, hiddenCount);
+    const noun = shown === 1 ? "message" : "messages";
     button.textContent =
       direction === "earlier"
-        ? `Show ${Math.min(step, hiddenCount)} earlier messages`
-        : `Show ${Math.min(step, hiddenCount)} newer messages`;
+        ? `Show ${shown} earlier ${noun}`
+        : `Show ${shown} newer ${noun}`;
     button.addEventListener("click", () => onActivate(true));
 
     const note = doc.createElement("span");
-    note.textContent = ` · ${hiddenCount} message${hiddenCount === 1 ? "" : "s"} suspended`;
+    note.textContent = ` · ${hiddenCount} message${hiddenCount === 1 ? "" : "s"} not shown`;
     root.append(button, note);
     return root;
   };
@@ -353,6 +355,18 @@ export function renderChatTranscriptWindow<T>(params: {
       effectiveBehavior === "preserve" ? captureAnchor() : undefined;
     rendering = true;
     suppressScroll = true;
+    // The transcript is a live log. Mark the rebuild busy so screen readers
+    // do not read every re-added message as new. Clearing it on a later tick
+    // lets them see the flag while the mutations are processed.
+    params.container.setAttribute("aria-busy", "true");
+    const clearBusy = () => {
+      if (!disposed) params.container.setAttribute("aria-busy", "false");
+    };
+    if (typeof doc.defaultView?.setTimeout === "function") {
+      doc.defaultView.setTimeout(clearBusy, 0);
+    } else {
+      clearBusy();
+    }
     params.container.replaceChildren();
 
     if (normalized.start > 0) {

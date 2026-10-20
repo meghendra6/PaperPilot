@@ -270,7 +270,8 @@ function hasPersistableMasteryState(
   );
 }
 
-function persistedMasteryState(value: unknown) {
+/** The Mastery state a saved session stores and restores; exported for tests. */
+export function persistedMasteryState(value: unknown) {
   if (!hasPersistableMasteryState(value)) return undefined;
   const cloned = cloneValue(value) as ComprehensionCheckState;
   const interrupted = cloned.running;
@@ -281,7 +282,14 @@ function persistedMasteryState(value: unknown) {
   if (cloned.phase === "evaluating" && cloned.currentQuestion) {
     cloned.phase = "awaiting-answer";
   } else if (cloned.phase === "generating-question") {
-    cloned.phase = cloned.currentQuestion ? "awaiting-answer" : "complete";
+    // After grading, currentQuestion still holds the graded question until
+    // the next one arrives. Reopening it would grade the same question twice.
+    const lastRound = cloned.rounds[cloned.rounds.length - 1];
+    const alreadyGraded = Boolean(
+      lastRound && lastRound.question === cloned.currentQuestion,
+    );
+    cloned.phase =
+      cloned.currentQuestion && !alreadyGraded ? "awaiting-answer" : "complete";
   }
   if (interrupted) {
     cloned.status =

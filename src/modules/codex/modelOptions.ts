@@ -192,14 +192,20 @@ export function normalizeCodexModelList(models: string[]) {
   );
 }
 
+/** Efforts one built-in Codex model accepts; unknown ids use the default's. */
+export function getCodexReasoningEffortsForModel(model: string) {
+  const catalogModel =
+    findCodexBuiltInModel(model.trim()) ??
+    findCodexBuiltInModel(CODEX_DEFAULT_MODEL)!;
+  return [...catalogModel.reasoningEfforts];
+}
+
 export function normalizeCodexReasoningEffort(
   reasoningEffort: string,
   model?: string,
 ) {
   const catalogModel = model ? findCodexBuiltInModel(model.trim()) : undefined;
-  const supportedEfforts = catalogModel
-    ? catalogModel.reasoningEfforts
-    : findCodexBuiltInModel(CODEX_DEFAULT_MODEL)!.reasoningEfforts;
+  const supportedEfforts = getCodexReasoningEffortsForModel(model ?? "");
   const normalized = reasoningEffort.trim().toLowerCase();
   if (supportedEfforts.includes(normalized)) {
     return normalized;

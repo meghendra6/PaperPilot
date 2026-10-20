@@ -143,7 +143,18 @@ export function isReaderLifecycleClaimActive(itemID: number): boolean {
 }
 
 export function releaseRetryEngineRequest(itemID: number, token: symbol): void {
+  releaseOwnedClaimAndNotify(itemID, token);
+}
+
+/**
+ * Busy-gated controls (Workbench, highlighting, prior-work search, Critical
+ * Read) re-enable on a pane event. A release that emits none, such as a
+ * deferred cleanup after Cancel, would leave them disabled.
+ */
+function releaseOwnedClaimAndNotify(itemID: number, token: symbol) {
+  const owned = readerLifecycleClaims().get(itemID)?.token === token;
   releaseReaderLifecycle(itemID, token);
+  if (owned) notifyReaderPaneStateChanged(itemID);
 }
 
 export function isRetryEngineRequestPending(itemID: number): boolean {
@@ -171,7 +182,7 @@ export function directWorkspaceRunOwner(itemID: number, token: symbol) {
 }
 
 export function releaseDirectWorkspaceRun(itemID: number, token: symbol): void {
-  releaseReaderLifecycle(itemID, token);
+  releaseOwnedClaimAndNotify(itemID, token);
 }
 
 export function isDirectWorkspaceRunClaimed(itemID: number): boolean {
@@ -310,8 +321,15 @@ export function startRunProgress(
   engine: EngineMode,
   token: ReaderRunToken,
   sessionId?: string,
+  options: { quiet?: boolean } = {},
 ): RunProgressState {
-  const state = createRunProgressState({ itemID, engine, token, sessionId });
+  const state = createRunProgressState({
+    itemID,
+    engine,
+    token,
+    sessionId,
+    quiet: options.quiet,
+  });
   setRunProgressState(state);
   notifyReaderPaneStateChanged(itemID);
   return state;

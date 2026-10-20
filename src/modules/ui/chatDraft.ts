@@ -10,6 +10,27 @@ export interface ChatDraftContext {
   attachmentID?: number;
   pageIndex?: number;
   pageLabel?: string;
+  /**
+   * "pane-open" marks the context the pane records by itself when it renders.
+   * Only that context, or none, lets a typed question use the live selection;
+   * a context the reader chose or cleared is kept as it is.
+   */
+  origin?: "pane-open";
+}
+
+/**
+ * Whether a typed chat question should read the reader's live selection at
+ * send time. Hidden workflow runs never do: a leftover highlight must not
+ * steer a whole-paper card, quiz, or Critical Read step.
+ */
+export function shouldReadLiveSelection(params: {
+  context?: ChatDraftContext;
+  visibleChat: boolean;
+}): boolean {
+  const { context } = params;
+  if (!params.visibleChat) return false;
+  if (context?.text || context?.annotationIDs?.length) return false;
+  return !context || ("origin" in context && context.origin === "pane-open");
 }
 export interface ChatDraft {
   revision: number;

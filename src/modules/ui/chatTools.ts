@@ -171,7 +171,7 @@ export function createChatTools(params: {
         ? await params.onSearch(query.value, scope.value as "current" | "saved")
         : [];
     } catch (error) {
-      if (ownsSearch(revision)) results.textContent = String(error);
+      if (ownsSearch(revision)) results.textContent = errorText(error);
       return;
     }
     if (!ownsSearch(revision)) return;
@@ -189,7 +189,7 @@ export function createChatTools(params: {
           () => {
             if (closingSearch) return;
             void params.onResult(result).catch((error) => {
-              if (ownsSearch(revision)) results.textContent = String(error);
+              if (ownsSearch(revision)) results.textContent = errorText(error);
             });
           },
         ),
@@ -219,11 +219,12 @@ export function createChatTools(params: {
       .then((closed) => {
         if (disposed || search.hidden || closed === false) return;
         search.hidden = true;
+        searchButton.setAttribute("aria-expanded", "false");
         searchRevision++;
         params.input.focus();
       })
       .catch((error) => {
-        if (ownsSearch(revision)) results.textContent = String(error);
+        if (ownsSearch(revision)) results.textContent = errorText(error);
       })
       .finally(() => {
         closingSearch = false;
@@ -250,24 +251,24 @@ export function createChatTools(params: {
     void params
       .onSummary()
       .catch((error) => {
-        status.textContent = String(error);
+        status.textContent = errorText(error);
       })
       .finally(() => {
         summary.disabled = false;
       });
   });
-  bar.append(
-    actionButton,
-    length,
-    button("Search", () => {
-      if (search.hidden) {
-        search.hidden = false;
-        query.focus();
-        onSearchInput();
-      } else closeSearch();
-    }),
-    summary,
-  );
+  summary.title =
+    "Summarize this conversation as context for later questions. The summary is shown here and is not paper evidence.";
+  const searchButton = button("Search", () => {
+    if (search.hidden) {
+      search.hidden = false;
+      searchButton.setAttribute("aria-expanded", "true");
+      query.focus();
+      onSearchInput();
+    } else closeSearch();
+  });
+  searchButton.setAttribute("aria-expanded", "false");
+  bar.append(actionButton, length, searchButton, summary);
   const status = doc.createElement("div");
   status.className = "pp-chat-context-status";
   status.setAttribute("role", "status");
@@ -328,19 +329,37 @@ export function createChatTools(params: {
   };
 }
 
+/** A thrown Error shows its message without the "Error: " prefix. */
+function errorText(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
+}
+
 /** Inline review surface. Writes happen only through its explicit final button. */
 export function showChatReviewPanel(params: {
   mount: HTMLElement;
   title: string;
   body: string;
   fields?: HTMLElement[];
-  confirmLabel: string;
-  onConfirm(): Promise<string | void>;
+  /** Omit both to show a read-only panel with only Close. */
+  confirmLabel?: string;
+  onConfirm?(): Promise<string | void>;
+  /** False leaves focus where it is, for a panel that opens on its own. */
+  focus?: boolean;
 }) {
-  params.mount.querySelector(".pp-chat-review")?.remove();
+  const readOnly = !params.confirmLabel || !params.onConfirm;
+  const kind = readOnly ? "info" : "confirm";
+  // A read-only panel that opens later (a finished summary) must not
+  // discard a panel the reader is still editing; it replaces only its kind.
+  const existing = Array.from(
+    params.mount.querySelectorAll(".pp-chat-review"),
+  ) as HTMLElement[];
+  for (const previous of existing) {
+    if (!readOnly || previous.dataset.reviewKind === "info") previous.remove();
+  }
   const doc = params.mount.ownerDocument;
   const panel = doc.createElement("section");
   panel.className = "pp-chat-review";
+  panel.dataset.reviewKind = kind;
   panel.setAttribute("aria-label", params.title);
   const title = doc.createElement("strong");
   title.textContent = params.title;
@@ -349,26 +368,33 @@ export function showChatReviewPanel(params: {
   body.textContent = params.body;
   const status = doc.createElement("div");
   status.setAttribute("role", "status");
-  const confirm = doc.createElement("button");
-  confirm.type = "button";
-  confirm.className = "pp-btn pp-btn--primary";
-  confirm.textContent = params.confirmLabel;
   const cancel = doc.createElement("button");
   cancel.type = "button";
   cancel.className = "pp-btn pp-btn--ghost";
   cancel.textContent = "Close";
   cancel.addEventListener("click", () => panel.remove());
+  const onConfirm = params.onConfirm;
+  if (!params.confirmLabel || !onConfirm) {
+    panel.append(title, body, ...(params.fields ?? []), cancel, status);
+    params.mount.append(panel);
+    if (params.focus !== false) cancel.focus();
+    return panel;
+  }
+  const confirm = doc.createElement("button");
+  confirm.type = "button";
+  confirm.className = "pp-btn pp-btn--primary";
+  confirm.textContent = params.confirmLabel;
   confirm.addEventListener("click", async () => {
     confirm.disabled = true;
     try {
-      status.textContent = (await params.onConfirm()) || "Saved.";
+      status.textContent = (await onConfirm()) || "Saved.";
     } catch (error) {
-      status.textContent = String(error);
+      status.textContent = errorText(error);
       confirm.disabled = false;
     }
   });
   panel.append(title, body, ...(params.fields ?? []), confirm, cancel, status);
   params.mount.append(panel);
-  confirm.focus();
+  if (params.focus !== false) confirm.focus();
   return panel;
 }

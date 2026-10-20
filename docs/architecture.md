@@ -41,8 +41,8 @@ is the most common regression in this codebase.
 
 The pane itself uses a bounded flex column. `ui/paneHeader.ts` owns the compact
 engine/model header and its settings popover, while `ui/collapsibleSection.ts`
-owns the accessible Workbench, Find verified prior work, and Past sessions
-surfaces. Critical Read is rendered within Workbench. `ui/chatComposerSizing.ts` preserves textarea auto-sizing
+owns the accessible Workbench, Related papers (with Find verified prior work),
+and Past sessions surfaces. Critical Read is rendered within Workbench. `ui/chatComposerSizing.ts` preserves textarea auto-sizing
 without changing the pane height. Disclosure state is serialized in the internal
 `paneSectionState` preference through the pure helpers in
 `ui/paneSectionState.ts`. The chat transcript takes the remaining space and
@@ -57,7 +57,20 @@ Run events refresh pane state on every lifecycle change. While a run is
 active they skip the transcript rebuild, because the live answer bubble is
 not stored until the run finishes. A rebuild restores a scrolled-up reading
 position without moving keyboard focus. Past sessions keep an in-progress
-rename across rebuilds. Each run records the chat session that started it,
+rename, an open ⋯ menu, and the focused session control across rebuilds. The
+prior-work list (`ui/discoverySection.ts`) keeps open review insights and the
+focused row button the same way, and a row action's error shows in its row.
+
+Status notices that are not answers (Stop results, "still running", login
+help, a request that could not start) go to the composer hint through
+`showComposerNotice` in `readerPane.ts`, never into the transcript: the
+transcript is rebuilt from saved messages, so a notice added there would look
+like an answer and then vanish. Instructions use a sticky notice that stays
+until the next question is sent. Code that writes `#chat-input` calls
+`resizeChatComposer` from `ui/chatComposerSizing.ts`, because only typing
+fires the autosize input event. A run started with `suppressChatMessages`
+is marked `quiet` in its run progress state, so the card does not promise an
+answer in chat. Each run records the chat session that started it,
 and a finished run card shows only in that session.
 
 `ui/paneAutoSize.ts` derives the default pane height from its actual top position
@@ -349,7 +362,12 @@ resolves to the newest model in each family, followed by pinned version ids.
 `[1m]`; any other id, including Bedrock/Vertex ids, passes to the CLI unchanged.
 `claudeReasoningEffort` is empty (the CLI default) or one of `low`, `medium`,
 `high`, `xhigh`, and `max`; it is set in preferences or with the effort select
-next to the reader-pane model picker, which is shown only in Claude mode.
+next to the reader-pane model picker. Codex uses the same effort select, which
+lists only the levels the picked model supports; changing the model keeps the
+picked effort when the new model supports it and otherwise selects that model's
+default effort. Save in the engine popover writes the model and effort prefs
+for the active engine, then closes the popover and returns focus to its
+trigger.
 
 ## How one run works
 
@@ -687,6 +705,22 @@ explicit, confirmed replacement of that saved state. Terminal workflow
 callbacks persist the updated derived state after the silent assistant turn,
 so the saved snapshot includes the report/card rather than the earlier
 `running` state.
+
+`ui/masteryPanelView.ts` derives every Mastery control from that saved state
+plus memory-only view choices: the graded round still under review and an
+opened progress dot. The choices are keyed by paper and Mastery run (chat
+session plus the run's creation time), and live in the module, not the pane
+closure, so a pane rebuild such as a tab switch keeps them and a restart drops
+them. Live run callbacks and pane re-renders both call the one
+`renderMasteryPanel` in `readerPane.ts`, so a run event cannot hide a result
+the reader is still reading. A graded result stays on screen until the reader
+clicks Next question. The module also keeps the unsent answer and confidence
+per paper, session, and question, and whether Mastery is still reading the
+paper; nothing there is persisted. Mastery runs report whether the engine
+admitted them; a refused start, grade, end, or report retry keeps the draft or
+failure reason and explains the refusal in the composer hint. A session saved
+while the next question was being generated restores as ended, not as the
+already graded question.
 
 Zotero-facing persistence is separate: `note/paperArtifactNote.ts` writes child
 notes, and `workspace/artifactBundle.ts` packages collection-linked artifact sets.

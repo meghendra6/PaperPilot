@@ -265,7 +265,7 @@ test("rendered chat transcript detaches overflow while keeping suspension contro
   assert.equal(wrappers.at(-1)?.dataset.ppTranscriptKey, "message-99");
   assert.match(
     container.children[0]?.textContent || "",
-    /52 messages suspended/,
+    /52 messages not shown/,
   );
 
   const liveWrapper = new FakeElement("div", doc);
@@ -281,7 +281,7 @@ test("rendered chat transcript detaches overflow while keeping suspension contro
   assert.equal(wrappers[0]?.dataset.ppTranscriptKey, "message-53");
   assert.match(
     container.children[0]?.textContent || "",
-    /53 messages suspended/,
+    /53 messages not shown/,
   );
 
   const earlierButton = container.children[0]?.children[0];

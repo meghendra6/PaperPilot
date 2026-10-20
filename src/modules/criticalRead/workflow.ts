@@ -222,16 +222,14 @@ export function failCriticalReadStep(
   };
 }
 
-export function reviseCriticalReadStep(
-  state: CriticalReadState,
+/**
+ * The steps a revision reopens or locks, with the reason each one shows. The
+ * revised step comes first. The Revise confirmation reads this same map, so
+ * its warning always names what a revision clears.
+ */
+export function getCriticalReadRevisionInvalidations(
   stepID: CriticalReadStepID,
-  now?: Date,
-) {
-  if (state.running) {
-    throw new Error(
-      "Cancel the active Critical Read run before revising a step.",
-    );
-  }
+): Map<CriticalReadStepID, string> {
   const invalidated = new Map<CriticalReadStepID, string>([
     [stepID, `Step ${stepID} is being revised.`],
   ]);
@@ -254,6 +252,20 @@ export function reviseCriticalReadStep(
       "Step 6 changed the author comparison used by the final synthesis.",
     );
   }
+  return invalidated;
+}
+
+export function reviseCriticalReadStep(
+  state: CriticalReadState,
+  stepID: CriticalReadStepID,
+  now?: Date,
+) {
+  if (state.running) {
+    throw new Error(
+      "Cancel the active Critical Read run before revising a step.",
+    );
+  }
+  const invalidated = getCriticalReadRevisionInvalidations(stepID);
   return {
     ...state,
     phase: "active" as const,

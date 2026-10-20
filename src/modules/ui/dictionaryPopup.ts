@@ -113,7 +113,12 @@ function mountDictionaryWindow(state: DictionaryWindowState) {
   const query = element(doc, "div", "", "dictionary-query");
   const headingGroup = element(doc, "div", "", "dictionary-heading");
   headingGroup.append(
-    element(doc, "div", "NAVER Dictionary", "dictionary-label"),
+    element(
+      doc,
+      "div",
+      dictionaryString("reader-action-dictionary"),
+      "dictionary-label",
+    ),
     heading,
     query,
   );

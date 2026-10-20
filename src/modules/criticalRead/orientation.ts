@@ -49,7 +49,9 @@ export function buildCriticalReadOrientations(params: {
   const abstract = params.abstract?.replace(/\s+/g, " ").trim().slice(0, 2_000);
   const shared = { extractionMode, notice, captions, abstract };
   return {
-    1: { ...shared, sourceLocations: captions.slice(0, 12) },
+    // Step 1 shows the caption index already; repeating captions as source
+    // locations listed them twice.
+    1: { ...shared, sourceLocations: [] },
     4: {
       ...shared,
       sourceLocations: methodLocations,

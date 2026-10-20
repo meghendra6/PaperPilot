@@ -148,7 +148,7 @@ function normalizePaperToolResult(
 export const PAPER_TOOL_PRESETS: PaperToolPreset[] = [
   {
     id: "summarize-contributions",
-    label: "Summarize contributions",
+    label: "Contributions",
     buttonLabel: "Contributions",
     prompt: [
       "Summarize the current paper for a research reader.",
@@ -171,7 +171,7 @@ export const PAPER_TOOL_PRESETS: PaperToolPreset[] = [
   },
   {
     id: "extract-limitations",
-    label: "Extract limitations",
+    label: "Limitations",
     buttonLabel: "Limitations",
     prompt: [
       "Identify the current paper's limitations, assumptions, and likely failure modes.",
@@ -190,7 +190,7 @@ export const PAPER_TOOL_PRESETS: PaperToolPreset[] = [
   },
   {
     id: "suggest-follow-ups",
-    label: "Suggest follow-up work",
+    label: "Follow-up work",
     buttonLabel: "Follow-ups",
     prompt: [
       "Propose 3 concrete follow-up experiments or project extensions for the current paper.",

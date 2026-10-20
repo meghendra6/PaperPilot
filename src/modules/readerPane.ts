@@ -110,10 +110,14 @@ import {
   createChatDraftSubmission,
   formatDraftAnnotationNotice,
   formatDraftSourceLabel,
+  shouldReadLiveSelection,
   type ChatDraftSubmission,
 } from "./ui/chatDraft";
 import { persistChatDraftSubmission } from "./ui/chatAdmission";
-import { buildReaderActionQuestion } from "./readerActionPrompt";
+import {
+  buildReaderActionQuestion,
+  readerActionNeedsPassage,
+} from "./readerActionPrompt";
 import { createChatTools, showChatReviewPanel } from "./ui/chatTools";
 import {
   buildChatContextStatus,
@@ -147,6 +151,7 @@ import {
   canViewPublicReviewInsights,
   completeCriticalReadStep,
   failCriticalReadStep,
+  getCriticalReadRevisionInvalidations,
   getCriticalReadStep,
   markCriticalReadStepRunning,
   reviseCriticalReadStep,
@@ -180,6 +185,7 @@ import {
   buildRelatedRunSuccessState,
   generatePublicReviewInsight,
   generateRelatedPaperGroups,
+  isCollectionChoiceCancelled,
   openRecommendedPaper,
   type RecommendationGroup,
   type RecommendedPaper,
@@ -194,8 +200,8 @@ import {
   subscribeToResponseLanguageChanges,
 } from "./translation/responseLanguage";
 import {
-  CHAT_INPUT_MIN_HEIGHT,
   installChatComposerAutosize,
+  resizeChatComposer,
 } from "./ui/chatComposerSizing";
 import {
   captureChatPosition,
@@ -231,14 +237,27 @@ import { renderDiscoverySection } from "./ui/discoverySection";
 import {
   createPaneHeader,
   normalizeModelForMode,
-  renderClaudeEffortInput,
   renderCodexAuthActions,
+  renderEffortInput,
   renderCodexOptionsRow,
   renderEngineSelection,
   renderModeHeader,
   renderModelHistory,
   renderModelRow,
 } from "./ui/paneHeader";
+import {
+  clearMasteryAnswerDraft,
+  clearMasteryPanelMemory,
+  getMasteryAnswerDraft,
+  getMasteryPanelChoices,
+  getMasteryPanelView,
+  isMasteryPreparing,
+  masteryRunKey,
+  setMasteryAnswerDraft,
+  setMasteryPanelChoices,
+  setMasteryPreparing,
+  syncMasteryPanelChoices,
+} from "./ui/masteryPanelView";
 import { createVerticalResizeHandle } from "./ui/paneResize";
 import {
   installAutomaticPaneHeight,
@@ -269,6 +288,39 @@ import { probeWorkspaceWritable } from "./workspace/status";
 
 /** How long the composer keeps a "nothing was sent" hint visible. */
 const COMPOSER_HINT_MS = 4000;
+const composerNoticeTimers = new WeakMap<
+  HTMLElement,
+  ReturnType<typeof setTimeout>
+>();
+
+/**
+ * Status notices go to the composer hint, never the transcript. The transcript
+ * is rebuilt from saved messages, so a notice added there looked like an answer
+ * and then vanished on the next run event. A sticky notice holds instructions
+ * until the next notice or the next sent question replaces it.
+ */
+function showComposerNotice(
+  anchor: Element,
+  text: string,
+  options: { sticky?: boolean } = {},
+) {
+  const hint = anchor
+    .closest("#paper-pilot-container")
+    ?.querySelector("#chat-composer-hint") as HTMLElement | null;
+  if (!hint) return;
+  const previous = composerNoticeTimers.get(hint);
+  if (previous) clearTimeout(previous);
+  composerNoticeTimers.delete(hint);
+  hint.textContent = text;
+  if (!text || options.sticky) return;
+  composerNoticeTimers.set(
+    hint,
+    setTimeout(() => {
+      composerNoticeTimers.delete(hint);
+      if (hint.textContent === text) hint.textContent = "";
+    }, COMPOSER_HINT_MS),
+  );
+}
 const publicReviewAbortControllers = new Map<number, AbortController>();
 const relatedDiscoveryAbortControllers = new Map<number, AbortController>();
 const autoHighlightAbortControllers = new Map<number, AbortController>();
@@ -334,7 +386,9 @@ export function pruneReaderPaneItemState(itemID: number) {
   addon.data.pendingDiscoveryConcerns?.delete(itemID);
   addon.data.readerActionDrafts?.delete(itemID);
   addon.data.applyReaderActionToPane?.delete(itemID);
+  addon.data.showReaderPaneNotice?.delete(itemID);
   addon.data.activateReaderCapability?.delete(itemID);
+  clearMasteryPanelMemory(itemID);
 }
 
 export function disposeReaderPaneRunProgressCards(): void {
@@ -433,33 +487,35 @@ export function registerPaperPilotPaneSection() {
               <html:button id="chat-tool-contributions" class="pp-btn pp-btn--secondary">Contributions</html:button>
               <html:button id="chat-tool-limitations" class="pp-btn pp-btn--secondary">Limitations</html:button>
               <html:button id="chat-tool-followups" class="pp-btn pp-btn--secondary">Follow-ups</html:button>
-              <html:button id="chat-tool-save-note" class="pp-btn pp-btn--ghost">Save latest to note</html:button>
-              <html:button id="chat-tool-save-collection" class="pp-btn pp-btn--ghost">Save for collection</html:button>
+              <html:button id="chat-tool-save-note" class="pp-btn pp-btn--ghost" title="Save the newest Workbench card as a child note of this paper">Save latest to note</html:button>
+              <html:button id="chat-tool-save-collection" class="pp-btn pp-btn--ghost" title="Save every Workbench card as one note in a Zotero collection">Save for collection</html:button>
               <html:button id="chat-tool-clear" class="pp-btn pp-btn--ghost">Clear cards</html:button>
               <html:button id="chat-paper-mastery" class="pp-btn pp-btn--secondary">Paper Mastery</html:button>
               <html:button id="chat-critical-read" class="pp-btn pp-btn--secondary">Critical Read</html:button>
             </div>
             <div id="chat-compare-helper" class="pp-compare-helper pp-compare-helper--default" role="status" aria-live="polite" aria-atomic="true"></div>
-            <div id="chat-paper-tool-status" class="pp-status-text" style="display: none;"></div>
+            <div id="chat-paper-tool-status" class="pp-status-text" role="status" aria-live="polite" style="display: none;"></div>
             <div id="chat-paper-tool-cards" class="pp-tool-cards" style="display: none;"></div>
             <div id="paper-pilot-mastery-section" class="pp-mastery-panel" style="display: none;">
               <div class="pp-mastery-topic-card">
-                <div id="paper-mastery-status" class="pp-mastery-status"></div>
+                <div id="paper-mastery-status" class="pp-mastery-status" role="status" aria-live="polite"></div>
                 <div id="paper-mastery-metrics" class="pp-mastery-metrics"></div>
                 <div id="paper-mastery-progress" class="pp-mastery-progress"></div>
               </div>
               <div id="paper-mastery-question" class="pp-mastery-question" style="display: none;"></div>
               <div id="paper-mastery-feedback" class="pp-mastery-feedback" style="display: none;"></div>
               <div id="paper-mastery-report" class="pp-mastery-report" style="display: none;"></div>
-              <html:textarea id="paper-mastery-answer" class="pp-mastery-answer" placeholder="Type your answer here..." style="display: none;" />
+              <html:textarea id="paper-mastery-answer" class="pp-mastery-answer" aria-label="Your answer" placeholder="Type your answer here..." style="display: none;" />
               <label id="paper-mastery-confidence-row" class="pp-mastery-confidence" style="display: none;">
                 Confidence before grading
-                <html:input id="paper-mastery-confidence" type="range" min="0" max="1" step="0.05" value="0.7" />
+                <html:input id="paper-mastery-confidence" type="range" min="0" max="1" step="0.05" value="0.7" aria-valuetext="70%" />
                 <span id="paper-mastery-confidence-value">70%</span>
               </label>
               <div id="paper-mastery-actions" class="pp-mastery-actions" style="display: none;">
                 <html:button id="paper-mastery-submit" class="pp-btn pp-btn--primary">Submit Answer</html:button>
+                <html:button id="paper-mastery-next" class="pp-btn pp-btn--primary" style="display: none;">Next question</html:button>
                 <html:button id="paper-mastery-end" class="pp-btn pp-btn--ghost">End Session</html:button>
+                <html:button id="paper-mastery-report-retry" class="pp-btn pp-btn--secondary" style="display: none;">Generate final report</html:button>
               </div>
             </div>
             <div id="paper-pilot-critical-read" class="pp-critical-read" style="display: none;"></div>
@@ -469,9 +525,9 @@ export function registerPaperPilotPaneSection() {
             <html:textarea id="chat-related-concern" class="pp-related-concern" placeholder="Optional: describe the research concern or novelty question." />
             <html:button id="chat-related-recommend" class="pp-btn pp-btn--secondary">Find verified prior work</html:button>
             <div id="chat-related-availability" class="pp-related-availability" role="note" style="display: none;"></div>
-            <html:button id="chat-related-save" class="pp-btn pp-btn--ghost" disabled="true">Save discovery note</html:button>
+            <html:button id="chat-related-save" class="pp-btn pp-btn--ghost" disabled="true" title="Save the verified prior-work results as a child note of this paper">Save prior-work note</html:button>
             <div class="pp-related-disclosure">Paper Pilot infers the field and leading venues, then verifies main-track acceptance from official paper-level sources. Workshops and preprints stay in separate lanes.</div>
-            <div id="chat-related-status" class="pp-status-text" style="display: none;"></div>
+            <div id="chat-related-status" class="pp-status-text" role="status" aria-live="polite" style="display: none;"></div>
             <div id="chat-related-groups" style="display: none;"></div>
           </div>
           <div id="paper-pilot-sessions-mount">
@@ -490,7 +546,7 @@ export function registerPaperPilotPaneSection() {
           <div id="paper-pilot-draft" class="pp-status-card pp-status-card--draft" style="display: none;"></div>
           <div id="chat-composer-hint" class="pp-composer-hint" role="status" aria-live="polite"></div>
           <div id="chat-input-shell">
-            <html:textarea id="chat-input" placeholder="Ask a question about this paper or the current selection."/>
+            <html:textarea id="chat-input" aria-label="Ask about this paper" placeholder="Ask a question about this paper or the current selection."/>
             <html:button id="chat-send" class="pp-btn pp-btn--primary" aria-label="Send message">Send</html:button>
           </div>
         </div>
@@ -677,15 +733,21 @@ export function registerPaperPilotPaneSection() {
       const saveInputDraft = () =>
         updateChatDraft(item.id, draftSessionID, { text: input.value });
       input.addEventListener("input", saveInputDraft);
-      cleanupTasks.push(() =>
-        input.removeEventListener("input", saveInputDraft),
-      );
+      // Send stays disabled while the composer is empty.
+      const renderSendAvailability = () =>
+        renderChatComposerForItem(input, item.id);
+      input.addEventListener("input", renderSendAvailability);
+      cleanupTasks.push(() => {
+        input.removeEventListener("input", saveInputDraft);
+        input.removeEventListener("input", renderSendAvailability);
+      });
       const restoreInputDraft = () => {
         const next = sessionStore.get(item.id)?.sessionId;
         if (next && next !== draftSessionID) {
           draftSessionID = next;
           input.value = getChatDraft(item.id, next).text;
-          input.style.height = `${CHAT_INPUT_MIN_HEIGHT}px`;
+          resizeChatComposer(input);
+          renderChatComposerForItem(input, item.id);
         }
       };
 
@@ -716,6 +778,7 @@ export function registerPaperPilotPaneSection() {
               text: ztoolkit.Reader.getSelectedText?.(reader) || "",
               pageIndex: reader._state?.primaryViewStats?.pageIndex,
               pageLabel: reader._state?.primaryViewStats?.pageLabel,
+              origin: "pane-open",
             },
           });
           renderDraftCard(draftCard, item.id);
@@ -740,7 +803,7 @@ export function registerPaperPilotPaneSection() {
         codexRecheckButton,
         modelRow,
         modelInput,
-        claudeEffortInput,
+        effortInput,
         modelSaveButton,
         codexOptionsRow,
         codexWebSearchToggle,
@@ -904,7 +967,7 @@ export function registerPaperPilotPaneSection() {
         codexRecheckButton &&
         modelRow &&
         modelInput &&
-        claudeEffortInput &&
+        effortInput &&
         modelSaveButton &&
         codexOptionsRow &&
         codexWebSearchToggle &&
@@ -942,7 +1005,7 @@ export function registerPaperPilotPaneSection() {
           codexActions,
           modelRow,
           modelInput,
-          claudeEffortInput,
+          effortInput,
           codexOptionsRow,
           codexWebSearchToggle,
           modelHistory,
@@ -970,15 +1033,14 @@ export function registerPaperPilotPaneSection() {
           const state = getRunProgressState(item.id);
           const cancelled = await cancelActiveEngineRun(item.id);
           const updatedState = getRunProgressState(item.id);
-          addMessage(
-            chatMessages,
+          showComposerNotice(
+            input,
             cancelled
               ? isReaderChatBusy(item.id)
                 ? "Stopping the current request. Wait for it to settle before sending another message."
                 : `${getModeLabel(state?.engine ?? getModeForItem(item.id))} run cancelled.`
               : updatedState?.failure?.userMessage ||
                   "No cancellable run is active for this paper.",
-            "ai",
           );
           renderStreamingIndicator(
             streamingIndicator,
@@ -989,14 +1051,18 @@ export function registerPaperPilotPaneSection() {
         };
         const runProgressCard = createRunProgressCard({
           container: runStateCard,
+          focusAfterCard: () => input,
           actions: {
-            onRetry: () =>
-              retryLastEngineQuestion({
+            onRetry: () => {
+              // A retry acts on the instruction a notice gave; drop it.
+              showComposerNotice(input, "");
+              return retryLastEngineQuestion({
                 itemID: item.id,
                 itemTitle: String(item.getField("title") || ""),
                 chatMessages,
                 streamingIndicator,
-              }),
+              });
+            },
             onOpenSettings: () => {
               Zotero.Utilities.Internal.openPreferences(
                 PAPER_PILOT_PREF_PANE_ID,
@@ -1005,13 +1071,14 @@ export function registerPaperPilotPaneSection() {
             onShowLoginHelp: (engine) => {
               const command =
                 engine === "codex_cli" ? "codex login" : "claude /login";
-              addMessage(
-                chatMessages,
+              showComposerNotice(
+                input,
                 `Authenticate in a terminal with ${command}, then retry the request.`,
-                "ai",
+                { sticky: true },
               );
             },
             onDismiss: (state) => {
+              showComposerNotice(input, "");
               clearTerminalRunProgressState(item.id, state.token);
               runProgressCard.render(getVisibleRunProgressState(item.id));
             },
@@ -1036,6 +1103,10 @@ export function registerPaperPilotPaneSection() {
           | undefined;
         let activeKebabClose: (() => void) | undefined;
         let activeKebabRoot: HTMLElement | undefined;
+        // Run events rebuild Past sessions; an open menu reopens afterwards.
+        let openKebabSessionId: string | undefined;
+        // The last failed session action, shown at the top of Past sessions.
+        let sessionHistoryError: string | undefined;
         cleanupTasks.push(
           installPopoverDismissal({
             doc: body.ownerDocument,
@@ -1057,10 +1128,9 @@ export function registerPaperPilotPaneSection() {
               isReaderLifecycleClaimActive(item.id),
           );
           if (activeMode || lifecycleReserved) {
-            addMessage(
-              chatMessages,
+            showComposerNotice(
+              input,
               `${getModeLabel(activeMode ?? getModeForItem(item.id))} is still running or finishing for this paper. Wait for it to settle before changing sessions.`,
-              "ai",
             );
             return undefined;
           }
@@ -1084,10 +1154,10 @@ export function registerPaperPilotPaneSection() {
               "Paper Pilot session transition cleanup failed:",
               error,
             );
-            addMessage(
-              chatMessages,
+            showComposerNotice(
+              input,
               "Paper Pilot could not safely change sessions because a local process could not be stopped. Try Cancel again or restart Zotero.",
-              "ai",
+              { sticky: true },
             );
             return undefined;
           }
@@ -1116,6 +1186,7 @@ export function registerPaperPilotPaneSection() {
           clearMasteryState(item.id);
           addon.data.criticalReadStates?.delete(item.id);
           input.value = "";
+          resizeChatComposer(input);
         };
 
         const updateWorkbenchSummary = (markUpdated = false) => {
@@ -1189,6 +1260,27 @@ export function registerPaperPilotPaneSection() {
         };
 
         let startPaperMastery: () => Promise<void> = async () => undefined;
+        // Per-run Mastery view memory (reviewed round, opened dot, preparing)
+        // lives in ui/masteryPanelView.ts so a pane rebuild keeps it.
+        const updateMasteryChoices = (
+          patch: Partial<import("./ui/masteryPanelView").MasteryPanelChoices>,
+        ) =>
+          setMasteryPanelChoices(item.id, {
+            ...getMasteryPanelChoices(item.id),
+            ...patch,
+          });
+        let renderedMasteryDots: string | undefined;
+        let renderedMasteryQuestion: string | undefined;
+        let renderedMasteryFeedback: string | undefined;
+        let renderedMasteryReport: string | undefined;
+        let criticalReadPreparing = false;
+        let criticalReadSaving = false;
+        const getCriticalReadBusyReason = () => {
+          const block = getWorkbenchBlockForItem(item.id);
+          return block.blocked
+            ? (block.reason ?? "Wait for the Workbench request to finish.")
+            : undefined;
+        };
         const renderCriticalRead = (readerInput?: string) => {
           const state = getCriticalReadStateForItem();
           const responseLanguage = normalizeResponseLanguage(
@@ -1225,6 +1317,15 @@ export function registerPaperPilotPaneSection() {
               item.id,
               state.sessionID,
             ),
+            preparing: criticalReadPreparing,
+            saving: criticalReadSaving,
+            busyReason: getCriticalReadBusyReason(),
+            discoveryUnavailableReason: (() => {
+              const discovery = getDiscoveryAvailability(
+                getModeForItem(item.id),
+              );
+              return discovery.available ? undefined : discovery.reason;
+            })(),
             actions: {
               onDraftChange: (stepID, text) =>
                 setCriticalReadDraft(item.id, state.sessionID, stepID, text),
@@ -1249,15 +1350,25 @@ export function registerPaperPilotPaneSection() {
                   renderCriticalRead();
                   return;
                 }
+                // Agent steps gave no sign that Cancel was received.
+                setCriticalReadStateForItem({
+                  ...getCriticalReadStateForItem(),
+                  status: "Cancelling Critical Read step…",
+                  updatedAt: new Date().toISOString(),
+                });
+                renderCriticalRead();
                 await cancelActiveEngineRun(item.id);
               },
               onStartMastery: () => {
                 void startPaperMastery();
               },
               onStart: async () => {
+                if (criticalReadPreparing) return;
                 let orientations: ReturnType<
                   typeof import("./criticalRead/orientation").buildCriticalReadOrientations
                 > = {};
+                criticalReadPreparing = true;
+                renderCriticalRead();
                 try {
                   const [
                     { paperWorkspaceContentCache },
@@ -1281,6 +1392,8 @@ export function registerPaperPilotPaneSection() {
                     "./criticalRead/orientation"
                   );
                   orientations = buildCriticalReadOrientations({});
+                } finally {
+                  criticalReadPreparing = false;
                 }
                 const started = startCriticalRead(state);
                 setCriticalReadStateForItem({
@@ -1310,22 +1423,29 @@ export function registerPaperPilotPaneSection() {
                     };
                   }
                 ).Services?.prompt;
+                // Name the completed steps the revision clears, from the
+                // same map the workflow applies.
+                const completedIDs = new Set(
+                  getCriticalReadStateForItem()
+                    .steps.filter((entry) => entry.status === "complete")
+                    .map((entry) => entry.id),
+                );
+                const clearedSteps = [
+                  ...getCriticalReadRevisionInvalidations(stepID).keys(),
+                ].filter((id) => id !== stepID && completedIDs.has(id));
                 const confirmed =
                   promptService?.confirm?.(
                     null,
                     t("Revise Critical Read step"),
-                    stepID === 2
+                    clearedSteps.length
                       ? t(
-                          "Replace Step 2 and invalidate its prior-work map? Your unrelated methodology and conclusion work will be preserved.",
+                          "Replace Step {step}? Completed Steps {steps} depend on it and will be cleared. Other completed steps are kept.",
+                          { step: stepID, steps: clearedSteps.join(", ") },
                         )
-                      : stepID === 5
-                        ? t(
-                            "Replace Step 5 and invalidate the author comparison? Your other completed work will be preserved.",
-                          )
-                        : t(
-                            "Replace Step {step}? Unrelated completed steps will be preserved.",
-                            { step: stepID },
-                          ),
+                      : t(
+                          "Replace Step {step}? Other completed steps are kept.",
+                          { step: stepID },
+                        ),
                   ) ?? false;
                 if (!confirmed) return;
                 setCriticalReadStateForItem(
@@ -1335,6 +1455,10 @@ export function registerPaperPilotPaneSection() {
                 await persistCriticalReadState();
               },
               onSave: async () => {
+                // Each save creates a new note, so ignore repeat clicks.
+                if (criticalReadSaving) return;
+                criticalReadSaving = true;
+                renderCriticalRead();
                 const current = getCriticalReadStateForItem();
                 try {
                   const note = await saveCriticalReadToNote({
@@ -1362,6 +1486,8 @@ export function registerPaperPilotPaneSection() {
                         : "Critical Read report could not be saved.",
                     updatedAt: new Date().toISOString(),
                   });
+                } finally {
+                  criticalReadSaving = false;
                 }
                 renderCriticalRead();
                 await persistCriticalReadState();
@@ -1380,6 +1506,16 @@ export function registerPaperPilotPaneSection() {
                   renderCriticalRead();
                   return;
                 }
+                // The engine runs one request per paper. Without this the
+                // click would be dropped with no message.
+                // A re-render shows Run disabled with the reason as its
+                // tooltip. The saved status is left alone, so it cannot go
+                // stale once the other run ends.
+                if (getCriticalReadBusyReason()) {
+                  renderCriticalRead(readerInput);
+                  return;
+                }
+                if (criticalReadDiscoveryAbortControllers.has(item.id)) return;
 
                 if (step.id === 3) {
                   let reserved = false;
@@ -1438,6 +1574,13 @@ export function registerPaperPilotPaneSection() {
                           discovery: result.discovery,
                         });
                         setCriticalReadStateForItem(completed);
+                        // Open the result the reader just waited for.
+                        setCriticalReadStepExpanded(
+                          item.id,
+                          completed.sessionID,
+                          step.id,
+                          true,
+                        );
                         addon.data.relatedRecommendationStates?.set(item.id, {
                           sessionID: sessionStore.get(item.id)?.sessionId,
                           running: false,
@@ -1536,15 +1679,31 @@ export function registerPaperPilotPaneSection() {
                           };
                         }
                       } catch (error) {
+                        // Parser messages name internal fields. Tell the
+                        // reader what to do and keep the detail in the log.
+                        logReaderPaneError(
+                          `Critical Read Step ${step.id} output was rejected`,
+                          error,
+                        );
                         nextState = failCriticalReadStep(
                           getCriticalReadStateForItem(),
-                          error instanceof Error
-                            ? error.message
-                            : "Critical Read output could not be parsed.",
+                          `Step ${step.id} returned an incomplete answer. Run it again.`,
                         );
                       }
                     }
                     setCriticalReadStateForItem(nextState);
+                    if (
+                      nextState.steps.find((entry) => entry.id === step.id)
+                        ?.status === "complete"
+                    ) {
+                      // Open the result the reader just waited for.
+                      setCriticalReadStepExpanded(
+                        item.id,
+                        nextState.sessionID,
+                        step.id,
+                        true,
+                      );
+                    }
                     renderCriticalRead();
                     await persistCriticalReadState();
                   },
@@ -1564,9 +1723,16 @@ export function registerPaperPilotPaneSection() {
           }),
         );
 
+        const syncCriticalReadToggle = () =>
+          criticalReadButton.setAttribute(
+            "aria-expanded",
+            String(criticalReadRoot.style.display !== "none"),
+          );
+        criticalReadButton.setAttribute("aria-controls", criticalReadRoot.id);
         const openCriticalRead = () => {
           const visible = criticalReadRoot.style.display !== "none";
           criticalReadRoot.style.display = visible ? "none" : "block";
+          syncCriticalReadToggle();
           if (!visible) renderCriticalRead();
         };
         // Requests from the Research Workspace window only open a panel. They
@@ -1583,6 +1749,7 @@ export function registerPaperPilotPaneSection() {
         };
         const showCriticalRead = () => {
           criticalReadRoot.style.display = "block";
+          syncCriticalReadToggle();
           renderCriticalRead();
           revealWorkbenchPanel(criticalReadRoot);
         };
@@ -1599,6 +1766,7 @@ export function registerPaperPilotPaneSection() {
         if (addon.data.criticalReadStates?.has(item.id)) {
           criticalReadRoot.style.display = "block";
         }
+        syncCriticalReadToggle();
         renderCriticalRead();
 
         // Keep text the reader typed until the stored concern itself changes.
@@ -1634,7 +1802,25 @@ export function registerPaperPilotPaneSection() {
           if (disposed) return;
           updateWorkbenchSummary();
           updateRelatedSummary();
-          hydrateMasteryState();
+          renderMasteryPanel();
+        };
+
+        // Rename, Open, and Delete used to fail with no message. Show the
+        // error at the top of Past sessions instead.
+        const runSessionHistoryAction = async (
+          action: () => Promise<unknown>,
+        ) => {
+          sessionHistoryError = undefined;
+          try {
+            await action();
+          } catch (error) {
+            logReaderPaneError("session history action failed", error);
+            sessionHistoryError =
+              error instanceof Error
+                ? `That session action failed: ${error.message}`
+                : "That session action failed.";
+            await renderSessionHistory();
+          }
         };
 
         const renderSessionHistory = async () => {
@@ -1668,8 +1854,27 @@ export function registerPaperPilotPaneSection() {
               end: previousRenameInput.selectionEnd,
             };
           }
+          // A rebuild replaces the focused button. Remember which session
+          // control had focus so the same control gets it back.
+          const focusedControl = (() => {
+            const active = doc.activeElement as HTMLElement | null;
+            if (!active || !sessionHistoryPanel.contains(active)) return;
+            const sessionId = (
+              active.closest("[data-session-id]") as HTMLElement | null
+            )?.dataset.sessionId;
+            const action = active.dataset.sessionAction;
+            return sessionId && action ? { sessionId, action } : undefined;
+          })();
           sessionHistoryPanel.style.display = "block";
           sessionHistoryPanel.replaceChildren();
+
+          if (sessionHistoryError) {
+            const error = doc.createElement("div");
+            error.className = "pp-session-history__error";
+            error.setAttribute("role", "status");
+            error.textContent = sessionHistoryError;
+            sessionHistoryPanel.appendChild(error);
+          }
 
           if (entries.length) {
             const header = doc.createElement("div");
@@ -1690,16 +1895,18 @@ export function registerPaperPilotPaneSection() {
               ) {
                 return;
               }
-              await runSessionRuntimeTransition(async () => {
-                resetBlankSessionState();
-                await sessionHistoryService.deleteAllSavedSessions({
-                  itemID: item.id,
-                });
-                clearCriticalReadViewState(item.id);
-                sessionHistoryOpen = false;
-                sessionsSection.setExpanded(false);
-                await rerenderPane();
-              });
+              await runSessionHistoryAction(() =>
+                runSessionRuntimeTransition(async () => {
+                  resetBlankSessionState();
+                  await sessionHistoryService.deleteAllSavedSessions({
+                    itemID: item.id,
+                  });
+                  clearCriticalReadViewState(item.id);
+                  sessionHistoryOpen = false;
+                  sessionsSection.setExpanded(false);
+                  await rerenderPane();
+                }),
+              );
             });
             headerActions.appendChild(deleteAllButton);
             header.appendChild(headerActions);
@@ -1715,10 +1922,18 @@ export function registerPaperPilotPaneSection() {
           }
 
           const currentSessionId = sessionStore.get(item.id)?.sessionId;
+          let reopenKebab: (() => void) | undefined;
+          // The old menu was detached with its row; forget it first.
+          if (openKebabSessionId) {
+            const reopenID = openKebabSessionId;
+            activeKebabClose?.();
+            openKebabSessionId = reopenID;
+          }
 
           for (const entry of entries) {
             const row = doc.createElement("div");
             row.className = "pp-session-history__item";
+            row.dataset.sessionId = entry.sessionId;
             row.title = `Created ${new Date(entry.createdAt).toLocaleString()}`;
 
             const info = doc.createElement("div");
@@ -1735,23 +1950,21 @@ export function registerPaperPilotPaneSection() {
                 renameDraft?.sessionId === entry.sessionId
                   ? renameDraft.value
                   : entry.title;
-              renameInput.addEventListener("input", () => {
-                renameDraft = {
-                  sessionId: entry.sessionId,
-                  value: renameInput.value,
-                };
-              });
               titleRow.appendChild(renameInput);
 
+              // An empty name used to be ignored without a word.
               const saveRename = async () => {
-                await sessionHistoryService.renameSavedSession({
-                  itemID: item.id,
-                  sessionId: entry.sessionId,
-                  title: renameInput.value,
+                if (!renameInput.value.trim()) return;
+                await runSessionHistoryAction(async () => {
+                  await sessionHistoryService.renameSavedSession({
+                    itemID: item.id,
+                    sessionId: entry.sessionId,
+                    title: renameInput.value,
+                  });
+                  renamingSessionId = undefined;
+                  renameDraft = undefined;
+                  await renderSessionHistory();
                 });
-                renamingSessionId = undefined;
-                renameDraft = undefined;
-                await renderSessionHistory();
               };
               const cancelRename = async () => {
                 renamingSessionId = undefined;
@@ -1773,6 +1986,19 @@ export function registerPaperPilotPaneSection() {
               saveRenameButton.type = "button";
               saveRenameButton.className = "pp-btn pp-btn--secondary";
               saveRenameButton.textContent = "Save";
+              const syncSaveRename = () => {
+                const empty = !renameInput.value.trim();
+                saveRenameButton.disabled = empty;
+                saveRenameButton.title = empty ? "Enter a session name" : "";
+              };
+              syncSaveRename();
+              renameInput.addEventListener("input", () => {
+                renameDraft = {
+                  sessionId: entry.sessionId,
+                  value: renameInput.value,
+                };
+                syncSaveRename();
+              });
               saveRenameButton.addEventListener("click", saveRename);
               titleRow.appendChild(saveRenameButton);
 
@@ -1786,6 +2012,8 @@ export function registerPaperPilotPaneSection() {
               const entryTitle = doc.createElement("div");
               entryTitle.className = "pp-session-history__item-title";
               entryTitle.textContent = entry.title;
+              // The title is cut with an ellipsis; hovering shows all of it.
+              entryTitle.title = entry.title;
               titleRow.appendChild(entryTitle);
 
               if (currentSessionId === entry.sessionId) {
@@ -1804,10 +2032,11 @@ export function registerPaperPilotPaneSection() {
                 const cardsBadge = doc.createElement("span");
                 cardsBadge.className = "pp-session-history__badge";
                 cardsBadge.textContent = "●";
-                cardsBadge.setAttribute(
-                  "aria-label",
-                  "Has saved cards, discovery, Critical Read, or mastery state",
-                );
+                const cardsLabel =
+                  "Has saved cards, discovery, Critical Read, or mastery state";
+                cardsBadge.setAttribute("role", "img");
+                cardsBadge.setAttribute("aria-label", cardsLabel);
+                cardsBadge.title = cardsLabel;
                 titleRow.appendChild(cardsBadge);
               }
             }
@@ -1837,19 +2066,25 @@ export function registerPaperPilotPaneSection() {
             openButton.type = "button";
             openButton.className = "pp-btn pp-btn--secondary";
             openButton.textContent = "Open";
+            openButton.dataset.sessionAction = "open";
             openButton.disabled = currentSessionId === entry.sessionId;
+            if (openButton.disabled)
+              openButton.title = "This is the open session";
             openButton.addEventListener("click", async () => {
-              await runSessionRuntimeTransition(async () => {
-                await sessionHistoryService.openSavedSession({
-                  itemID: item.id,
-                  sessionId: entry.sessionId,
-                });
-                input.value = "";
-                sessionHistoryOpen = false;
-                sessionsSection.setExpanded(false);
-                renamingSessionId = undefined;
-                await rerenderPane();
-              });
+              await runSessionHistoryAction(() =>
+                runSessionRuntimeTransition(async () => {
+                  await sessionHistoryService.openSavedSession({
+                    itemID: item.id,
+                    sessionId: entry.sessionId,
+                  });
+                  input.value = "";
+                  resizeChatComposer(input);
+                  sessionHistoryOpen = false;
+                  sessionsSection.setExpanded(false);
+                  renamingSessionId = undefined;
+                  await rerenderPane();
+                }),
+              );
             });
             rowActions.appendChild(openButton);
 
@@ -1865,34 +2100,47 @@ export function registerPaperPilotPaneSection() {
               `More actions for session "${entry.title}"`,
             );
             kebabButton.setAttribute("aria-haspopup", "menu");
+            kebabButton.setAttribute("aria-expanded", "false");
+            kebabButton.dataset.sessionAction = "more";
+            const kebabMenuID = `pp-session-menu-${entry.sessionId}`;
 
             let kebabMenu: HTMLElement | undefined;
             const closeKebab = () => {
               kebabMenu?.remove();
               kebabMenu = undefined;
+              kebabButton.setAttribute("aria-expanded", "false");
+              kebabButton.removeAttribute("aria-controls");
+              if (openKebabSessionId === entry.sessionId) {
+                openKebabSessionId = undefined;
+              }
               if (activeKebabClose === closeKebab) {
                 activeKebabClose = undefined;
                 activeKebabRoot = undefined;
               }
             };
 
-            kebabButton.addEventListener("click", (event) => {
-              event.stopPropagation();
-              if (kebabMenu) {
-                closeKebab();
-                return;
-              }
-
+            const openKebab = (focusItem?: "rename" | "delete") => {
               activeKebabClose?.();
               activeKebabClose = closeKebab;
               activeKebabRoot = kebabContainer;
+              openKebabSessionId = entry.sessionId;
 
               kebabMenu = doc.createElement("div");
               kebabMenu.className = "pp-session-history__kebab-menu";
+              kebabMenu.id = kebabMenuID;
+              kebabMenu.setAttribute("role", "menu");
+              kebabMenu.setAttribute(
+                "aria-label",
+                `Actions for session "${entry.title}"`,
+              );
+              kebabButton.setAttribute("aria-expanded", "true");
+              kebabButton.setAttribute("aria-controls", kebabMenuID);
 
               const renameItem = doc.createElement("button");
               renameItem.type = "button";
               renameItem.className = "pp-btn pp-btn--ghost";
+              renameItem.setAttribute("role", "menuitem");
+              renameItem.dataset.sessionAction = "rename";
               renameItem.textContent = "Rename";
               renameItem.addEventListener("click", async (renameEvent) => {
                 renameEvent.stopPropagation();
@@ -1907,6 +2155,8 @@ export function registerPaperPilotPaneSection() {
               const deleteItem = doc.createElement("button");
               deleteItem.type = "button";
               deleteItem.className = "pp-btn pp-btn--ghost";
+              deleteItem.setAttribute("role", "menuitem");
+              deleteItem.dataset.sessionAction = "delete";
               deleteItem.textContent = "Delete";
               deleteItem.addEventListener("click", async (deleteEvent) => {
                 deleteEvent.stopPropagation();
@@ -1923,36 +2173,99 @@ export function registerPaperPilotPaneSection() {
                 const deletingCurrent =
                   sessionStore.get(item.id)?.sessionId === entry.sessionId;
                 if (deletingCurrent) {
-                  await runSessionRuntimeTransition(async () => {
-                    await sessionHistoryService.deleteSavedSession({
-                      itemID: item.id,
-                      sessionId: entry.sessionId,
-                    });
-                    clearCriticalReadViewState(item.id, entry.sessionId);
-                    resetBlankSessionState();
-                    renamingSessionId = undefined;
-                    await rerenderPane();
-                  });
+                  await runSessionHistoryAction(() =>
+                    runSessionRuntimeTransition(async () => {
+                      await sessionHistoryService.deleteSavedSession({
+                        itemID: item.id,
+                        sessionId: entry.sessionId,
+                      });
+                      clearCriticalReadViewState(item.id, entry.sessionId);
+                      resetBlankSessionState();
+                      renamingSessionId = undefined;
+                      await rerenderPane();
+                    }),
+                  );
                   return;
                 }
-                await sessionHistoryService.deleteSavedSession({
-                  itemID: item.id,
-                  sessionId: entry.sessionId,
+                await runSessionHistoryAction(async () => {
+                  await sessionHistoryService.deleteSavedSession({
+                    itemID: item.id,
+                    sessionId: entry.sessionId,
+                  });
+                  clearCriticalReadViewState(item.id, entry.sessionId);
+                  renamingSessionId = undefined;
+                  await rerenderPane();
                 });
-                clearCriticalReadViewState(item.id, entry.sessionId);
-                renamingSessionId = undefined;
-                await rerenderPane();
               });
               kebabMenu.appendChild(deleteItem);
 
+              // Arrow keys move between the two menu items.
+              const items = [renameItem, deleteItem];
+              kebabMenu.addEventListener("keydown", (keyEvent) => {
+                if (keyEvent.key !== "ArrowDown" && keyEvent.key !== "ArrowUp")
+                  return;
+                keyEvent.preventDefault();
+                const index = items.indexOf(
+                  doc.activeElement as HTMLButtonElement,
+                );
+                const step = keyEvent.key === "ArrowDown" ? 1 : -1;
+                items[(index + step + items.length) % items.length].focus();
+              });
+
               kebabContainer.appendChild(kebabMenu);
+              if (focusItem === "rename") renameItem.focus();
+              if (focusItem === "delete") deleteItem.focus();
+            };
+
+            kebabButton.addEventListener("click", (event) => {
+              event.stopPropagation();
+              if (kebabMenu) {
+                closeKebab();
+                return;
+              }
+              openKebab("rename");
             });
+            if (openKebabSessionId === entry.sessionId) {
+              reopenKebab = () =>
+                openKebab(
+                  focusedControl?.sessionId === entry.sessionId &&
+                    (focusedControl.action === "rename" ||
+                      focusedControl.action === "delete")
+                    ? focusedControl.action
+                    : undefined,
+                );
+            }
 
             kebabContainer.appendChild(kebabButton);
             rowActions.appendChild(kebabContainer);
 
             row.appendChild(rowActions);
             sessionHistoryPanel.appendChild(row);
+          }
+
+          if (reopenKebab) {
+            reopenKebab();
+          } else {
+            openKebabSessionId = undefined;
+          }
+          if (focusedControl && !doc.activeElement?.closest?.("[role=menu]")) {
+            const rows = Array.from(
+              sessionHistoryPanel.querySelectorAll("[data-session-id]"),
+            ) as HTMLElement[];
+            const row = rows.find(
+              (candidate) =>
+                candidate.dataset.sessionId === focusedControl.sessionId,
+            );
+            const controls = Array.from(
+              row?.querySelectorAll("[data-session-action]") ?? [],
+            ) as HTMLElement[];
+            const control = controls.find(
+              (candidate) =>
+                candidate.dataset.sessionAction === focusedControl.action,
+            );
+            if (control && !(control as HTMLButtonElement).disabled) {
+              control.focus();
+            }
           }
 
           const focusRequest = renameFocus;
@@ -1995,11 +2308,46 @@ export function registerPaperPilotPaneSection() {
               ? `${existing}\n\n${command.question}`
               : command.question;
             saveInputDraft();
-            input.style.height = `${CHAT_INPUT_MIN_HEIGHT}px`;
             input.focus();
+            resizeChatComposer(input);
+            renderChatComposerForItem(input, item.id);
             chatTools.setStatus(
-              "Edit the question, then Send. Your existing draft and selected context are preserved.",
+              "Edit the question, then Send. Your existing draft is kept.",
             );
+            if (!readerActionNeedsPassage(action)) return;
+            // The question names "the selected passage"; say so when none
+            // would be attached. This mirrors what a send does: the same
+            // live-selection rule and the same same-PDF check.
+            const recorded = getChatDraft(item.id, draftSessionID).context;
+            if (recorded?.text || recorded?.annotationIDs?.length) return;
+            const noPassage =
+              "No passage is selected. Select one in the PDF before you send, or edit the question to ask about the whole paper.";
+            if (
+              !shouldReadLiveSelection({ context: recorded, visibleChat: true })
+            ) {
+              chatTools.setStatus(noPassage);
+              return;
+            }
+            void ztoolkit.Reader.getReader()
+              .catch(() => undefined)
+              .then((reader) => {
+                if (!isCurrentRender()) return;
+                const readerAttachmentID = Number(
+                  reader?._item?.id ?? reader?.itemID,
+                );
+                const samePDF =
+                  recorded?.attachmentID === undefined ||
+                  recorded.attachmentID === readerAttachmentID;
+                const selected =
+                  reader && samePDF
+                    ? ztoolkit.Reader.getSelectedText?.(reader)?.trim()
+                    : "";
+                chatTools.setStatus(
+                  selected
+                    ? "Edit the question, then Send. Your draft is kept, and the passage selected in the PDF is attached when you send."
+                    : noPassage,
+                );
+              });
           },
           onSearch: async (query, scope) => {
             searchOrigin ??= {
@@ -2136,23 +2484,72 @@ export function registerPaperPilotPaneSection() {
                 silentUserMessage: true,
                 suppressChatMessages: true,
                 profile: "analysis",
+                // This runs after the summary button's promise settled, so a
+                // thrown error would reach no one. Report it in the status.
                 onComplete: async (result) => {
-                  if (!result.success)
-                    throw new Error(result.assistantText || "Summary failed.");
+                  if (!result.success) {
+                    chatTools.setStatus(
+                      `Summary failed: ${result.assistantText || "the engine returned no summary."}`,
+                    );
+                    return;
+                  }
                   if (
                     sessionStore.get(item.id)?.sessionId !== session.sessionId
-                  )
-                    throw new Error("The conversation changed.");
-                  await sessionHistoryService.setSummary({
-                    itemID: item.id,
-                    paperTitle: String(item.getField("title") || ""),
-                    text: result.assistantText,
-                    basedOnMessageId: last.id,
-                    sourceFingerprint: last.requestContext!.contentFingerprint,
-                  });
+                  ) {
+                    chatTools.setStatus(
+                      "The summary was discarded because the conversation changed.",
+                    );
+                    return;
+                  }
+                  try {
+                    await sessionHistoryService.setSummary({
+                      itemID: item.id,
+                      paperTitle: String(item.getField("title") || ""),
+                      text: result.assistantText,
+                      basedOnMessageId: last.id,
+                      sourceFingerprint:
+                        last.requestContext!.contentFingerprint,
+                    });
+                  } catch (error) {
+                    logReaderPaneError(
+                      "conversation summary save failed",
+                      error,
+                    );
+                    chatTools.setStatus(
+                      `Summary failed: ${error instanceof Error ? error.message : "it could not be saved."}`,
+                    );
+                    return;
+                  }
+                  const keptNote = resolveSessionHistoryPrefs().persistHistory
+                    ? "Saved with this session."
+                    : "Kept in memory for this Zotero session.";
                   chatTools.setStatus(
-                    `${resolveSessionHistoryPrefs().persistHistory ? "Conversation summary saved." : "Conversation summary kept in memory for this Zotero session."} It is model-generated context, not paper evidence.`,
+                    `Conversation summary ready. ${keptNote}`,
                   );
+                  if (!isCurrentRender()) return;
+                  const summaryBody = body.ownerDocument.createElement("div");
+                  summaryBody.className = "pp-chat-review__summary";
+                  try {
+                    summaryBody.appendChild(
+                      renderMarkdownFragment(
+                        result.assistantText,
+                        body.ownerDocument,
+                      ),
+                    );
+                  } catch {
+                    summaryBody.textContent = result.assistantText;
+                  }
+                  // The summary arrives on its own; keep focus where the
+                  // reader is unless it is already in the chat tools.
+                  showChatReviewPanel({
+                    mount: chatTools.root,
+                    title: "Conversation summary",
+                    body: `Model-generated context for later questions in this conversation, not paper evidence. ${keptNote}`,
+                    fields: [summaryBody],
+                    focus: chatTools.root.contains(
+                      body.ownerDocument.activeElement,
+                    ),
+                  });
                 },
               },
             );
@@ -2338,6 +2735,13 @@ export function registerPaperPilotPaneSection() {
             item.id,
             String(item.getField("title") || ""),
           );
+          renderAutoHighlightState(
+            autoHighlightButton,
+            autoHighlightStatus,
+            item.id,
+          );
+          renderDiscoveryEntryButton(relatedRecommendButton, item.id);
+          renderMasteryPanel();
         };
         const isWorkbenchRequestBlocked = () => {
           if (!getWorkbenchBlockForItem(item.id).blocked) return false;
@@ -2353,6 +2757,8 @@ export function registerPaperPilotPaneSection() {
             renderBusyDependentControls();
             runProgressCard.render(getVisibleRunProgressState(item.id));
             if (event.type === "started") {
+              // A new run makes an earlier failure or login notice stale.
+              showComposerNotice(input, "");
               const activeLabel = getModeLabel(event.mode);
               renderModeHeader(modeChip, modeStatus, activeLabel, "running");
               renderStreamingIndicator(streamingIndicator, true);
@@ -2388,10 +2794,9 @@ export function registerPaperPilotPaneSection() {
             Boolean(getPendingEngineCompletion(item.id)) ||
             isReaderLifecycleClaimActive(item.id);
           if (!activeMode && !preparing) return true;
-          addMessage(
-            chatMessages,
+          showComposerNotice(
+            input,
             `${getModeLabel(activeMode ?? getModeForItem(item.id))} is still running for this paper. Wait for it to finish or cancel it before changing providers.`,
-            "ai",
           );
           return false;
         };
@@ -2527,15 +2932,11 @@ export function registerPaperPilotPaneSection() {
                 error instanceof Error
                   ? error.message
                   : "Auto-highlight failed.";
+              // The highlight status line next to the button shows it.
               setAutoHighlightState(item.id, {
                 running: false,
-                status: message,
+                status: `Highlighting failed: ${message}`,
               });
-              addMessage(
-                chatMessages,
-                `Auto-highlight error: ${message}`,
-                "ai",
-              );
             }
           } finally {
             if (isActiveRun()) autoHighlightAbortControllers.delete(item.id);
@@ -2630,9 +3031,19 @@ export function registerPaperPilotPaneSection() {
           });
         });
 
+        // Each save creates a new note, so a second click waits for the first.
+        let workbenchSaving = false;
+        const startWorkbenchSave = () => {
+          if (workbenchSaving) return false;
+          workbenchSaving = true;
+          saveWorkbenchNoteButton.disabled = true;
+          saveWorkbenchCollectionButton.disabled = true;
+          return true;
+        };
+
         saveWorkbenchNoteButton.addEventListener("click", async () => {
           const [latestCard] = getPaperArtifactState(item.id).cards;
-          if (!latestCard) {
+          if (!latestCard || !startWorkbenchSave()) {
             return;
           }
 
@@ -2643,7 +3054,7 @@ export function registerPaperPilotPaneSection() {
             });
             setPaperArtifactState(item.id, {
               ...getPaperArtifactState(item.id),
-              status: `Saved ${latestCard.title.toLowerCase()} to Zotero note`,
+              status: `Saved “${latestCard.title}” to a Zotero note`,
             });
           } catch (error) {
             logReaderPaneError("workbench note save failed", error);
@@ -2654,6 +3065,8 @@ export function registerPaperPilotPaneSection() {
                   ? `Save to note failed: ${error.message}`
                   : "Save to note failed.",
             });
+          } finally {
+            workbenchSaving = false;
           }
 
           renderPaperArtifactState(
@@ -2673,31 +3086,33 @@ export function registerPaperPilotPaneSection() {
 
         saveWorkbenchCollectionButton.addEventListener("click", async () => {
           const { cards } = getPaperArtifactState(item.id);
-          if (!cards.length) {
+          if (!cards.length || !startWorkbenchSave()) {
             return;
           }
 
           try {
-            await savePaperArtifactSetToCollection({
+            const { collection } = await savePaperArtifactSetToCollection({
               item,
               cards,
             });
             setPaperArtifactState(item.id, {
               ...getPaperArtifactState(item.id),
-              status:
-                cards.length === 1
-                  ? `Saved 1 workbench artifact for collection reuse`
-                  : `Saved ${cards.length} workbench artifacts for collection reuse`,
+              status: `Saved ${cards.length === 1 ? "1 card" : `${cards.length} cards`} as a note in the collection “${collection.name}”`,
             });
           } catch (error) {
-            logReaderPaneError("workbench collection save failed", error);
-            setPaperArtifactState(item.id, {
-              ...getPaperArtifactState(item.id),
-              status:
-                error instanceof Error
-                  ? `Save for collection failed: ${error.message}`
-                  : "Save for collection failed.",
-            });
+            // Dismissing the collection picker is a choice, not a failure.
+            if (!isCollectionChoiceCancelled(error)) {
+              logReaderPaneError("workbench collection save failed", error);
+              setPaperArtifactState(item.id, {
+                ...getPaperArtifactState(item.id),
+                status:
+                  error instanceof Error
+                    ? `Save for collection failed: ${error.message}`
+                    : "Save for collection failed.",
+              });
+            }
+          } finally {
+            workbenchSaving = false;
           }
 
           renderPaperArtifactState(
@@ -2801,6 +3216,16 @@ export function registerPaperPilotPaneSection() {
               ...currentRelatedState,
               status: "Cancelling public-review analysis…",
             });
+            // Show the cancellation now, like the discovery branch below.
+            renderRelatedRecommendationState(
+              relatedRecommendButton,
+              relatedStatus,
+              relatedGroups,
+              compareButton,
+              compareHelper,
+              item.id,
+              String(item.getField("title") || ""),
+            );
             return;
           }
           if (currentRelatedState.running) {
@@ -2808,7 +3233,7 @@ export function registerPaperPilotPaneSection() {
             const current = getRelatedRecommendationState(item.id);
             addon.data.relatedRecommendationStates?.set(item.id, {
               ...current,
-              status: "Cancelling research discovery…",
+              status: "Cancelling the prior-work search…",
             });
             renderRelatedRecommendationState(
               relatedRecommendButton,
@@ -2924,12 +3349,22 @@ export function registerPaperPilotPaneSection() {
           } catch (error) {
             logReaderPaneError("related-paper discovery failed", error);
             if (!reservationOwned) {
-              addMessage(
-                chatMessages,
-                error instanceof Error
-                  ? error.message
-                  : "Related paper recommendations could not start.",
-                "ai",
+              // Report it under the prior-work button, not as a chat answer.
+              addon.data.relatedRecommendationStates?.set(item.id, {
+                ...getRelatedRecommendationState(item.id),
+                status:
+                  error instanceof Error
+                    ? error.message
+                    : "Prior-work search could not start.",
+              });
+              renderRelatedRecommendationState(
+                relatedRecommendButton,
+                relatedStatus,
+                relatedGroups,
+                compareButton,
+                compareHelper,
+                item.id,
+                String(item.getField("title") || ""),
               );
               return;
             }
@@ -2999,13 +3434,89 @@ export function registerPaperPilotPaneSection() {
         const masteryActionsDiv = body.querySelector(
           "#paper-mastery-actions",
         ) as HTMLElement | null;
+        const masteryNext = body.querySelector(
+          "#paper-mastery-next",
+        ) as HTMLButtonElement | null;
+        const masteryReportRetry = body.querySelector(
+          "#paper-mastery-report-retry",
+        ) as HTMLButtonElement | null;
 
-        let selectedHistoryDot: number = -1;
+        const getCurrentMasteryDraft = (
+          state:
+            | import("./comprehensionCheck/types").ComprehensionCheckState
+            | undefined,
+        ) =>
+          getMasteryAnswerDraft(
+            item.id,
+            state?.sessionID,
+            state?.currentQuestion,
+          );
+
+        // Moves focus only when it is already in Mastery or nowhere, so a
+        // question that arrives late never pulls the reader out of the PDF.
+        const focusMasteryControl = (control: HTMLElement | null) => {
+          if (!control || !masterySection) return;
+          const doc = body.ownerDocument;
+          const active = doc.activeElement;
+          // With nothing focused, Gecko may report the root element.
+          if (
+            active &&
+            active !== doc.body &&
+            active !== doc.documentElement &&
+            active !== paperMasteryBtn &&
+            !masterySection.contains(active)
+          ) {
+            return;
+          }
+          control.focus();
+        };
+
+        function renderMasteryConfidence(value: number) {
+          const label = `${Math.round(value * 100)}%`;
+          if (masteryConfidence) {
+            if (Number(masteryConfidence.value) !== value) {
+              masteryConfidence.value = String(value);
+            }
+            masteryConfidence.setAttribute("aria-valuetext", label);
+          }
+          if (masteryConfidenceValue)
+            masteryConfidenceValue.textContent = label;
+        }
+
+        masteryAnswer?.addEventListener("input", () => {
+          const state = getMasteryState(item.id);
+          if (!state?.currentQuestion || state.phase !== "awaiting-answer") {
+            return;
+          }
+          setMasteryAnswerDraft(
+            item.id,
+            state.sessionID,
+            state.currentQuestion,
+            { text: masteryAnswer.value },
+          );
+          renderMasteryPanel();
+        });
+
+        masteryAnswer?.addEventListener("keydown", (event) => {
+          if (event.key !== "Enter" || !(event.ctrlKey || event.metaKey)) {
+            return;
+          }
+          event.preventDefault();
+          if (masterySubmit && !masterySubmit.disabled) masterySubmit.click();
+        });
 
         masteryConfidence?.addEventListener("input", () => {
-          if (masteryConfidenceValue) {
-            masteryConfidenceValue.textContent = `${Math.round(Number(masteryConfidence.value) * 100)}%`;
+          const value = Number(masteryConfidence.value);
+          const state = getMasteryState(item.id);
+          if (state?.currentQuestion) {
+            setMasteryAnswerDraft(
+              item.id,
+              state.sessionID,
+              state.currentQuestion,
+              { confidence: value },
+            );
           }
+          renderMasteryConfidence(value);
         });
 
         function renderMasteryMetrics(
@@ -3024,7 +3535,7 @@ export function registerPaperPilotPaneSection() {
           const nextReview = summary.nextReviewAt
             ? new Date(summary.nextReviewAt).toLocaleDateString()
             : "not scheduled";
-          masteryMetrics.textContent = `Score ${Math.round(summary.averageScore * 100)}% · calibration ${calibration} · next review ${nextReview}`;
+          masteryMetrics.textContent = `Average rubric score ${Math.round(summary.averageScore * 100)}% · confidence calibration ${calibration} · next review ${nextReview}`;
         }
 
         function addHistorySection(
@@ -3044,19 +3555,6 @@ export function registerPaperPilotPaneSection() {
           sectionBody.appendChild(renderMarkdownFragment(markdown, doc));
           section.append(lbl, sectionBody);
           parent.appendChild(section);
-        }
-
-        function clearHistoryDotSelection() {
-          if (!masteryProgress) {
-            return;
-          }
-          selectedHistoryDot = -1;
-          const dots = masteryProgress.querySelectorAll(
-            ".pp-mastery-progress-dot--active",
-          );
-          dots.forEach((d) =>
-            d.classList.remove("pp-mastery-progress-dot--active"),
-          );
         }
 
         function showRoundHistory(
@@ -3117,7 +3615,7 @@ export function registerPaperPilotPaneSection() {
               masteryFeedback,
               "confidence",
               "Calibration input",
-              `Confidence ${Math.round(r.learnerConfidence * 100)}% · score ${Math.round((r.normalizedScore ?? 0) * 100)}%`,
+              `Confidence ${Math.round(r.learnerConfidence * 100)}% · rubric score ${Math.round((r.normalizedScore ?? 0) * 100)}%`,
             );
           }
           if (!r.understood && r.explanation) {
@@ -3128,8 +3626,6 @@ export function registerPaperPilotPaneSection() {
               r.explanation,
             );
           }
-
-          masteryFeedback.style.display = "";
         }
 
         function showCurrentRoundPreview(
@@ -3165,7 +3661,7 @@ export function registerPaperPilotPaneSection() {
             );
           }
 
-          const userText = masteryAnswer?.value?.trim();
+          const userText = getCurrentMasteryDraft(state).text.trim();
           if (userText) {
             addHistorySection(
               masteryFeedback,
@@ -3174,234 +3670,290 @@ export function registerPaperPilotPaneSection() {
               userText,
             );
           }
-
-          masteryFeedback.style.display = "";
         }
 
-        function updateMasteryProgressDots(
+        /** The graded result of one round, kept on screen for review. */
+        function showMasteryResult(
           state: import("./comprehensionCheck/types").ComprehensionCheckState,
+          roundIndex: number,
         ) {
-          if (!masteryProgress) {
-            return;
-          }
-          masteryProgress.replaceChildren();
-          state.rounds.forEach((r, i) => {
-            const dot = body.ownerDocument.createElement("span");
-            dot.className = `pp-mastery-progress-dot pp-mastery-progress-dot--${r.understood ? "correct" : "incorrect"}`;
-            dot.title = `Round ${i + 1}: ${r.understood ? "Understood" : "Needs review"}`;
-            dot.style.cursor = "pointer";
-            dot.setAttribute("tabindex", "0");
-            dot.setAttribute("role", "button");
-            dot.setAttribute(
-              "aria-label",
-              `Round ${i + 1}: ${r.understood ? "Understood" : "Needs review"}`,
-            );
-            const handleDotClick = () => {
-              const currentPhase = getMasteryState(item.id)?.phase;
-              if (
-                currentPhase === "evaluating" ||
-                currentPhase === "generating-question"
-              ) {
-                return;
-              }
-              if (selectedHistoryDot === i) {
-                clearHistoryDotSelection();
-                if (masteryFeedback) {
-                  masteryFeedback.style.display = "none";
-                  masteryFeedback.className = "pp-mastery-feedback";
-                }
-                return;
-              }
-              clearHistoryDotSelection();
-              selectedHistoryDot = i;
-              dot.classList.add("pp-mastery-progress-dot--active");
-              const currentState = getMasteryState(item.id) ?? state;
-              showRoundHistory(currentState, i);
-            };
-            dot.addEventListener("click", handleDotClick);
-            dot.addEventListener("keydown", (e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                handleDotClick();
-              }
-            });
-            if (selectedHistoryDot === i) {
-              dot.classList.add("pp-mastery-progress-dot--active");
-            }
-            masteryProgress.appendChild(dot);
-          });
-          if (state.phase !== "complete") {
-            const currentIndex = state.rounds.length;
-            const current = body.ownerDocument.createElement("span");
-            current.className =
-              "pp-mastery-progress-dot pp-mastery-progress-dot--current";
-            current.title = "Current round";
-            current.style.cursor = "pointer";
-            current.setAttribute("tabindex", "0");
-            current.setAttribute("role", "button");
-            current.setAttribute("aria-label", "Current round");
-            const handleCurrentDotClick = () => {
-              const currentPhase = getMasteryState(item.id)?.phase;
-              if (
-                currentPhase === "evaluating" ||
-                currentPhase === "generating-question"
-              ) {
-                return;
-              }
-              if (selectedHistoryDot === currentIndex) {
-                clearHistoryDotSelection();
-                if (masteryFeedback) {
-                  masteryFeedback.style.display = "none";
-                  masteryFeedback.className = "pp-mastery-feedback";
-                }
-                return;
-              }
-              clearHistoryDotSelection();
-              selectedHistoryDot = currentIndex;
-              current.classList.add("pp-mastery-progress-dot--active");
-              const currentState = getMasteryState(item.id) ?? state;
-              showCurrentRoundPreview(currentState);
-            };
-            current.addEventListener("click", handleCurrentDotClick);
-            current.addEventListener("keydown", (e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                handleCurrentDotClick();
-              }
-            });
-            if (selectedHistoryDot === currentIndex) {
-              current.classList.add("pp-mastery-progress-dot--active");
-            }
-            masteryProgress.appendChild(current);
-          }
-        }
-
-        function showMasteryQuestion(
-          question: string,
-          options: { focus?: boolean; clearAnswer?: boolean } = {},
-        ) {
-          clearHistoryDotSelection();
-          if (masteryQuestion) {
-            masteryQuestion.replaceChildren(
-              renderMarkdownFragment(question, masteryQuestion.ownerDocument!),
-            );
-            masteryQuestion.style.display = "";
-          }
-          if (masteryAnswer) {
-            masteryAnswer.style.display = "";
-            if (options.clearAnswer !== false) masteryAnswer.value = "";
-            if (options.focus !== false) masteryAnswer.focus();
-          }
-          if (masteryConfidenceRow) masteryConfidenceRow.style.display = "";
-          if (masteryConfidence && options.clearAnswer !== false) {
-            masteryConfidence.value = "0.7";
-          }
-          if (masteryConfidenceValue) {
-            masteryConfidenceValue.textContent = `${Math.round(Number(masteryConfidence?.value ?? 0.7) * 100)}%`;
-          }
-          if (masteryActionsDiv) {
-            masteryActionsDiv.style.display = "";
-          }
-          if (masterySubmit) {
-            masterySubmit.disabled = false;
-          }
-          if (masteryFeedback) {
-            masteryFeedback.style.display = "none";
-          }
-        }
-
-        function showMasteryFeedback(
-          evaluation: string,
-          understood: boolean,
-          explanation?: string,
-        ) {
-          if (!masteryFeedback) {
-            return;
-          }
-          masteryFeedback.className = `pp-mastery-feedback pp-mastery-feedback--${understood ? "correct" : "incorrect"}`;
+          const round = state.rounds[roundIndex];
+          if (!masteryFeedback || !round) return;
+          masteryFeedback.className = `pp-mastery-feedback pp-mastery-feedback--${round.understood ? "correct" : "incorrect"}`;
           masteryFeedback.replaceChildren();
-
+          masteryFeedback.setAttribute(
+            "aria-label",
+            `Round ${roundIndex + 1} result`,
+          );
+          addHistorySection(
+            masteryFeedback,
+            "answer",
+            "Your Answer",
+            round.userAnswer,
+          );
           addHistorySection(
             masteryFeedback,
             "feedback",
             "Feedback",
-            evaluation,
+            round.evaluation,
           );
-          if (!understood && explanation) {
+          if (!round.understood && round.explanation) {
             addHistorySection(
               masteryFeedback,
               "explanation",
               "📚 Explanation",
-              explanation,
+              round.explanation,
             );
           }
-
-          masteryFeedback.style.display = "";
         }
 
-        function renderMasteryCompletion(
+        const toggleMasteryRound = (roundIndex: number) => {
+          const phase = getMasteryState(item.id)?.phase;
+          if (phase === "evaluating" || phase === "generating-question") {
+            return;
+          }
+          updateMasteryChoices({
+            selectedRound:
+              getMasteryPanelChoices(item.id).selectedRound === roundIndex
+                ? undefined
+                : roundIndex,
+          });
+          renderMasteryPanel();
+        };
+
+        // Dots are rebuilt only when the rounds change, so a dot keeps keyboard
+        // focus while the reader opens and closes rounds.
+        function updateMasteryProgressDots(
+          state: import("./comprehensionCheck/types").ComprehensionCheckState,
+          interactive: boolean,
+        ) {
+          if (!masteryProgress) {
+            return;
+          }
+          // A failed start (idle) has no current question to open.
+          const showCurrent =
+            state.phase !== "complete" && state.phase !== "idle";
+          const dotsKey = `${state.sessionID}:${state.rounds
+            .map((round) => (round.understood ? "1" : "0"))
+            .join("")}:${showCurrent}`;
+          if (dotsKey !== renderedMasteryDots) {
+            renderedMasteryDots = dotsKey;
+            const doc = body.ownerDocument;
+            const makeDot = (
+              index: number,
+              modifier: string,
+              label: string,
+            ) => {
+              const dot = doc.createElement("span");
+              dot.className = `pp-mastery-progress-dot pp-mastery-progress-dot--${modifier}`;
+              dot.title = label;
+              dot.dataset.round = String(index);
+              dot.setAttribute("tabindex", "0");
+              dot.setAttribute("role", "button");
+              dot.setAttribute("aria-label", label);
+              dot.addEventListener("click", () => toggleMasteryRound(index));
+              dot.addEventListener("keydown", (e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  toggleMasteryRound(index);
+                }
+              });
+              return dot;
+            };
+            masteryProgress.replaceChildren(
+              ...state.rounds.map((r, i) =>
+                makeDot(
+                  i,
+                  r.understood ? "correct" : "incorrect",
+                  `Round ${i + 1}: ${r.understood ? "Understood" : "Needs review"}`,
+                ),
+              ),
+              ...(showCurrent
+                ? [makeDot(state.rounds.length, "current", "Current round")]
+                : []),
+            );
+          }
+          for (const dot of Array.from(
+            masteryProgress.querySelectorAll(".pp-mastery-progress-dot"),
+          ) as HTMLElement[]) {
+            const selected =
+              interactive &&
+              Number(dot.dataset.round) ===
+                getMasteryPanelChoices(item.id).selectedRound;
+            dot.classList.toggle("pp-mastery-progress-dot--active", selected);
+            dot.setAttribute("aria-pressed", String(selected));
+            dot.setAttribute("aria-disabled", String(!interactive));
+          }
+        }
+
+        function renderMasteryReport(
           state: import("./comprehensionCheck/types").ComprehensionCheckState,
         ) {
-          const understood = state.rounds.filter((r) => r.understood).length;
-          const total = state.rounds.length;
-          const score = total > 0 ? Math.round((understood / total) * 100) : 0;
-          if (masteryQuestion) {
-            const scoreContent = `## Session Complete!\n\nGreat work studying this paper.\n\n**Score: ${score}%** (${understood}/${total} questions understood)`;
-            masteryQuestion.replaceChildren(
-              renderMarkdownFragment(
-                scoreContent,
-                masteryQuestion.ownerDocument!,
-              ),
-            );
-            masteryQuestion.style.display = "";
-          }
-          if (masteryFeedback) {
-            masteryFeedback.style.display = "none";
-          }
-          if (masteryAnswer) {
-            masteryAnswer.style.display = "none";
-          }
-          if (masteryConfidenceRow) {
-            masteryConfidenceRow.style.display = "none";
-          }
-          if (masteryActionsDiv) {
-            masteryActionsDiv.style.display = "none";
-          }
-          if (masteryStatus) {
-            masteryStatus.textContent = state.running
-              ? "Generating final report..."
-              : "Complete";
-          }
-          renderMasteryMetrics(state);
-          if (masteryReport) {
-            if (state.finalReport) {
+          if (!masteryReport) return;
+          const report =
+            state.phase !== "complete"
+              ? undefined
+              : state.finalReport
+                ? { markdown: state.finalReport }
+                : state.finalReportError
+                  ? { text: state.finalReportError }
+                  : state.running
+                    ? { text: "Generating final report..." }
+                    : undefined;
+          const key = report ? JSON.stringify(report) : "";
+          if (key !== renderedMasteryReport) {
+            renderedMasteryReport = key;
+            if (report?.markdown) {
               masteryReport.replaceChildren(
                 renderMarkdownFragment(
-                  state.finalReport,
+                  report.markdown,
                   masteryReport.ownerDocument!,
                 ),
               );
-              masteryReport.style.display = "";
-            } else if (state.finalReportError) {
-              masteryReport.textContent = state.finalReportError;
-              masteryReport.style.display = "";
-            } else if (state.running) {
-              masteryReport.textContent = "Generating final report...";
-              masteryReport.style.display = "";
             } else {
-              masteryReport.replaceChildren();
-              masteryReport.style.display = "none";
+              masteryReport.textContent = report?.text ?? "";
             }
           }
+          masteryReport.style.display = report ? "" : "none";
         }
 
+        const applyMasteryButton = (
+          button: HTMLButtonElement | null,
+          view: import("./ui/masteryPanelView").MasteryButtonView,
+        ) => {
+          if (!button) return;
+          button.style.display = view.visible ? "" : "none";
+          button.disabled = view.disabled;
+          if (view.label) button.textContent = view.label;
+          if (view.title) button.title = view.title;
+          else button.removeAttribute("title");
+        };
+
+        /**
+         * The single Mastery renderer. Live handlers and pane re-renders both
+         * call it, so a run event can no longer hide a result being read.
+         */
+        function renderMasteryPanel() {
+          const state = getMasteryState(item.id);
+          const choices = syncMasteryPanelChoices(
+            getMasteryPanelChoices(item.id),
+            state,
+          );
+          setMasteryPanelChoices(item.id, choices);
+          const draft = getCurrentMasteryDraft(state);
+          const view = getMasteryPanelView(state, choices, {
+            answerText: draft.text,
+            busyReason: getMasteryBusyReason(),
+            preparing: isMasteryPreparing(item.id),
+          });
+          applyMasteryButton(paperMasteryBtn, view.start);
+          if (!masterySection) return;
+          masterySection.style.display = view.visible ? "" : "none";
+          if (!view.visible || !state) {
+            if (masteryMetrics) masteryMetrics.textContent = "";
+            return;
+          }
+
+          // Rewriting an unchanged live region would announce it again.
+          if (masteryStatus && masteryStatus.textContent !== view.status) {
+            masteryStatus.textContent = view.status;
+          }
+          renderMasteryMetrics(state);
+          updateMasteryProgressDots(state, view.dotsInteractive);
+
+          if (masteryQuestion) {
+            const questionKey = view.question
+              ? `${view.question.kind}:${view.question.markdown}`
+              : "";
+            if (questionKey !== renderedMasteryQuestion) {
+              renderedMasteryQuestion = questionKey;
+              masteryQuestion.replaceChildren(
+                ...(view.question
+                  ? [
+                      renderMarkdownFragment(
+                        view.question.markdown,
+                        masteryQuestion.ownerDocument!,
+                      ),
+                    ]
+                  : []),
+              );
+            }
+            masteryQuestion.style.display = view.question ? "" : "none";
+          }
+
+          if (masteryFeedback) {
+            const feedback = view.feedback;
+            const feedbackKey = feedback
+              ? [
+                  state.sessionID,
+                  state.rounds.length,
+                  state.currentQuestion,
+                  feedback.kind,
+                  feedback.kind === "current" ? "" : feedback.roundIndex,
+                ].join(":")
+              : "";
+            if (feedbackKey !== renderedMasteryFeedback) {
+              renderedMasteryFeedback = feedbackKey;
+              if (!feedback) {
+                masteryFeedback.replaceChildren();
+                masteryFeedback.className = "pp-mastery-feedback";
+                masteryFeedback.removeAttribute("aria-label");
+              } else if (feedback.kind === "result") {
+                showMasteryResult(state, feedback.roundIndex);
+              } else if (feedback.kind === "history") {
+                showRoundHistory(state, feedback.roundIndex);
+              } else {
+                showCurrentRoundPreview(state);
+              }
+            }
+            masteryFeedback.style.display = feedback ? "" : "none";
+          }
+
+          if (masteryAnswer) {
+            masteryAnswer.style.display = view.answerVisible ? "" : "none";
+            masteryAnswer.readOnly = view.answerReadOnly;
+            if (masteryAnswer.value !== draft.text) {
+              masteryAnswer.value = draft.text;
+            }
+          }
+          if (masteryConfidenceRow) {
+            masteryConfidenceRow.style.display = view.answerVisible
+              ? ""
+              : "none";
+          }
+          if (masteryConfidence) {
+            masteryConfidence.disabled = view.answerReadOnly;
+          }
+          renderMasteryConfidence(draft.confidence);
+
+          applyMasteryButton(masterySubmit, view.submit);
+          applyMasteryButton(masteryNext, view.next);
+          applyMasteryButton(masteryEnd, view.end);
+          applyMasteryButton(masteryReportRetry, view.retryReport);
+          if (masteryActionsDiv) {
+            masteryActionsDiv.style.display =
+              view.submit.visible ||
+              view.next.visible ||
+              view.end.visible ||
+              view.retryReport.visible
+                ? ""
+                : "none";
+          }
+          renderMasteryReport(state);
+        }
+
+        /** Returns false when the engine refused to start the report run. */
         async function showMasteryCompletion(
           state: import("./comprehensionCheck/types").ComprehensionCheckState,
           continuationToken?: ReaderRunToken,
-        ) {
-          if (state.finalReport || state.finalReportError) {
-            renderMasteryCompletion(state);
-            return;
+          options: { regenerate?: boolean } = {},
+        ): Promise<boolean> {
+          if (
+            !options.regenerate &&
+            (state.finalReport || state.finalReportError)
+          ) {
+            renderMasteryPanel();
+            return true;
           }
 
           const masterySessionID = state.sessionID;
@@ -3410,10 +3962,12 @@ export function registerPaperPilotPaneSection() {
             state.phase = "complete";
             state.running = true;
             state.status = "Generating final report...";
+            // A retry clears the old reason only once the run has started.
+            state.finalReportError = undefined;
             setMasteryState(item.id, state);
-            renderMasteryCompletion(state);
+            renderMasteryPanel();
           };
-          await sendMasteryPrompt(
+          return sendMasteryPrompt(
             buildFinalReportPrompt(state.rounds, state.topics),
             async (assistantText) => {
               const s = getMasteryStateForSession(item.id, masterySessionID);
@@ -3423,7 +3977,7 @@ export function registerPaperPilotPaneSection() {
                 s.finalReport = assistantText;
                 s.finalReportError = undefined;
                 setMasteryState(item.id, s);
-                renderMasteryCompletion(s);
+                renderMasteryPanel();
                 await sessionHistoryService.persistActiveSession({
                   itemID: item.id,
                   paperTitle: String(item.getField("title") || ""),
@@ -3437,7 +3991,7 @@ export function registerPaperPilotPaneSection() {
                 s.status = "Complete";
                 s.finalReportError = "Could not generate final report.";
                 setMasteryState(item.id, s);
-                renderMasteryCompletion(s);
+                renderMasteryPanel();
                 await sessionHistoryService.persistActiveSession({
                   itemID: item.id,
                   paperTitle: String(item.getField("title") || ""),
@@ -3447,64 +4001,6 @@ export function registerPaperPilotPaneSection() {
             continuationToken,
             markAdmitted,
           );
-        }
-
-        function hydrateMasteryState() {
-          const state = getMasteryState(item.id);
-          const hasProgress = Boolean(
-            state &&
-              (state.phase !== "idle" ||
-                state.status ||
-                state.rounds.length ||
-                state.currentQuestion),
-          );
-          if (!state || !hasProgress) {
-            if (masterySection) masterySection.style.display = "none";
-            if (paperMasteryBtn) paperMasteryBtn.textContent = "Paper Mastery";
-            if (masteryMetrics) masteryMetrics.textContent = "";
-            return;
-          }
-
-          if (masterySection) masterySection.style.display = "";
-          if (masteryStatus) masteryStatus.textContent = state.status;
-          renderMasteryMetrics(state);
-          updateMasteryProgressDots(state);
-          if (paperMasteryBtn) {
-            paperMasteryBtn.textContent =
-              state.phase === "complete"
-                ? "Restart Paper Mastery"
-                : "Resume Paper Mastery";
-          }
-
-          if (masteryReport) {
-            masteryReport.replaceChildren();
-            masteryReport.style.display = "none";
-          }
-          if (state.phase === "complete") {
-            renderMasteryCompletion(state);
-            return;
-          }
-          if (state.currentQuestion) {
-            showMasteryQuestion(state.currentQuestion, {
-              focus: false,
-              clearAnswer: false,
-            });
-          } else {
-            if (masteryQuestion) masteryQuestion.style.display = "none";
-            if (masteryAnswer) masteryAnswer.style.display = "none";
-            if (masteryConfidenceRow)
-              masteryConfidenceRow.style.display = "none";
-            if (masteryActionsDiv) masteryActionsDiv.style.display = "none";
-          }
-          if (
-            state.phase === "generating-question" ||
-            state.phase === "evaluating"
-          ) {
-            if (masteryAnswer) masteryAnswer.style.display = "none";
-            if (masteryConfidenceRow)
-              masteryConfidenceRow.style.display = "none";
-            if (masteryActionsDiv) masteryActionsDiv.style.display = "none";
-          }
         }
 
         async function sendMasteryPrompt(
@@ -3519,10 +4015,13 @@ export function registerPaperPilotPaneSection() {
           continuationToken?: ReaderRunToken,
           onAdmitted?: () => void,
           outputSchema?: StructuredOutputSchema,
-        ) {
+        ): Promise<boolean> {
           const itemID = item.id;
           const { mode, placeholderResponse } =
             getProviderDescriptorForItem(itemID);
+          // handleUserInput returns without calling back when the engine is
+          // busy, so admission is the only sign that the run started.
+          let admitted = false;
           try {
             await handleUserInput(
               input,
@@ -3540,7 +4039,10 @@ export function registerPaperPilotPaneSection() {
                 profile: "analysis",
                 outputSchema,
                 continuationToken,
-                onAdmitted,
+                onAdmitted: () => {
+                  admitted = true;
+                  onAdmitted?.();
+                },
                 onComplete: async (result) => {
                   if (result.success) {
                     await onSuccess(
@@ -3567,12 +4069,29 @@ export function registerPaperPilotPaneSection() {
             });
             workbenchSection.markUpdated();
           }
+          return admitted;
         }
+
+        const getMasteryBusyReason = () => {
+          const block = getWorkbenchBlockForItem(item.id);
+          return block.blocked
+            ? (block.reason ?? "Wait for the Workbench request to finish.")
+            : undefined;
+        };
+        // A refused run used to leave Mastery unchanged with no message.
+        const reportMasteryRunRefused = () => {
+          showComposerNotice(
+            input,
+            `Paper Mastery could not start a run. ${getMasteryBusyReason() ?? "Another Paper Pilot task is using this paper."}`,
+          );
+          renderMasteryPanel();
+        };
 
         startPaperMastery = async () => {
           if (!masterySection) {
             return;
           }
+          if (isMasteryPreparing(item.id)) return;
           const existingState = getMasteryState(item.id);
           if (
             existingState?.running ||
@@ -3580,7 +4099,7 @@ export function registerPaperPilotPaneSection() {
               existingState.phase !== "idle" &&
               existingState.phase !== "complete")
           ) {
-            hydrateMasteryState();
+            renderMasteryPanel();
             return;
           }
           if (
@@ -3602,6 +4121,10 @@ export function registerPaperPilotPaneSection() {
             {
               itemID: item.id,
             };
+          // First use extracts the PDF, which can take a while. Say so and
+          // ignore repeat clicks until it finishes.
+          setMasteryPreparing(item.id, true);
+          renderMasteryPanel();
           try {
             const { paperWorkspaceContentCache } = await import(
               "./tools/paperWorkspaceContent"
@@ -3619,6 +4142,14 @@ export function registerPaperPilotPaneSection() {
             logReaderPaneError("Paper Mastery source extraction failed", error);
             // The question runner will surface extraction errors. Preserve the
             // stable item identity so a failed preparation cannot bind elsewhere.
+          } finally {
+            setMasteryPreparing(item.id, false);
+            if (isCurrentRender()) renderMasteryPanel();
+          }
+          // Another run may have started while the paper was being read.
+          if (getMasteryBusyReason()) {
+            reportMasteryRunRefused();
+            return;
           }
           const state = buildInitialMasteryState({
             sessionID: activeSession.sessionId,
@@ -3629,30 +4160,34 @@ export function registerPaperPilotPaneSection() {
             if (sessionStore.get(item.id)?.sessionId !== masterySessionID)
               return;
             clearMasteryState(item.id);
-            masterySection.style.display = "";
+            clearMasteryAnswerDraft(item.id);
             state.phase = "generating-question";
             state.running = true;
             state.status = "Generating first question...";
             setMasteryState(item.id, state);
-            if (masteryStatus) {
-              masteryStatus.textContent = state.status;
-            }
-            updateMasteryProgressDots(state);
+            setMasteryPanelChoices(item.id, {
+              runKey: masteryRunKey(getMasteryState(item.id)),
+            });
+            renderMasteryPanel();
+            // Starting from the Critical Read report leaves the reader below
+            // this panel; bring it into view.
+            masterySection.scrollIntoView?.({ block: "nearest" });
           };
 
+          // The status is saved with the state; a pane re-render would
+          // otherwise bring back "Generating first question..." for good.
           const resetOnFail = () => {
             const fs = getMasteryStateForSession(item.id, masterySessionID);
             if (fs) {
               fs.phase = "idle";
               fs.running = false;
+              fs.status =
+                "The first question was not generated. Click Paper Mastery to try again.";
               setMasteryState(item.id, fs);
             }
-            if (masteryStatus) {
-              masteryStatus.textContent =
-                "Failed to generate question. Try again.";
-            }
+            renderMasteryPanel();
           };
-          await sendMasteryPrompt(
+          const started = await sendMasteryPrompt(
             buildInitialMasteryPrompt(),
             (assistantText) => {
               const parsed = parseMasteryQuestionResponse(assistantText);
@@ -3673,17 +4208,15 @@ export function registerPaperPilotPaneSection() {
                 difficulty: parsed.difficulty,
               });
               setMasteryState(item.id, s);
-              if (masteryStatus) {
-                masteryStatus.textContent = s.status;
-              }
-              showMasteryQuestion(parsed.question);
-              updateMasteryProgressDots(s);
+              renderMasteryPanel();
+              focusMasteryControl(masteryAnswer);
             },
             resetOnFail,
             undefined,
             markAdmitted,
             MASTERY_QUESTION_OUTPUT_SCHEMA,
           );
+          if (!started) reportMasteryRunRefused();
         };
         paperMasteryBtn?.addEventListener("click", startPaperMastery);
         const activateCapability = async (
@@ -3698,7 +4231,7 @@ export function registerPaperPilotPaneSection() {
           if (getMasteryState(item.id)?.phase === "complete") {
             // Opening a finished session shows its report. Restarting stays
             // an explicit choice behind the pane's Restart button.
-            hydrateMasteryState();
+            renderMasteryPanel();
           } else {
             await startPaperMastery();
           }
@@ -3744,12 +4277,8 @@ export function registerPaperPilotPaneSection() {
             current.running = true;
             current.status = "Evaluating your answer...";
             setMasteryState(item.id, current);
-            if (masteryStatus) {
-              masteryStatus.textContent = current.status;
-            }
-            if (masterySubmit) {
-              masterySubmit.disabled = true;
-            }
+            updateMasteryChoices({ selectedRound: undefined });
+            renderMasteryPanel();
           };
 
           const question = state.currentQuestion;
@@ -3758,22 +4287,18 @@ export function registerPaperPilotPaneSection() {
             0,
             Math.min(1, Number(masteryConfidence?.value ?? 0.7)),
           );
+          // The unsent draft stays, so submitting again needs no retyping.
           const resetSubmitOnFail = () => {
             const fs = getMasteryStateForSession(item.id, masterySessionID);
             if (fs) {
               fs.phase = "awaiting-answer";
               fs.running = false;
+              fs.status = "Your answer was not graded. Submit it again.";
               setMasteryState(item.id, fs);
             }
-            if (masteryStatus) {
-              masteryStatus.textContent =
-                "Failed to evaluate. Try submitting again.";
-            }
-            if (masterySubmit) {
-              masterySubmit.disabled = false;
-            }
+            renderMasteryPanel();
           };
-          await sendMasteryPrompt(
+          const graded = await sendMasteryPrompt(
             buildEvaluateAnswerPrompt(question, answer, state.rounds),
             async (assistantText, continuationToken) => {
               const evalResult = parseMasteryEvaluationResponse(assistantText);
@@ -3800,14 +4325,13 @@ export function registerPaperPilotPaneSection() {
                 last.confidence = learnerConfidence;
               }
               Object.assign(s, updateCanonicalMasteryAnalytics(s));
-              clearHistoryDotSelection();
-              showMasteryFeedback(
-                evalResult.evaluation,
-                evalResult.understood,
-                evalResult.understood ? undefined : evalResult.explanation,
-              );
-              updateMasteryProgressDots(s);
-              renderMasteryMetrics(s);
+              // The graded answer now lives in the round. Its result stays
+              // on screen until the reader chooses Next question.
+              clearMasteryAnswerDraft(item.id);
+              setMasteryPanelChoices(item.id, {
+                runKey: masteryRunKey(s),
+                reviewRound: s.rounds.length - 1,
+              });
 
               const MIN_ROUNDS = 3;
               const MAX_ROUNDS = 30;
@@ -3822,9 +4346,7 @@ export function registerPaperPilotPaneSection() {
               s.phase = "generating-question";
               s.status = "Generating next question...";
               setMasteryState(item.id, s);
-              if (masteryStatus) {
-                masteryStatus.textContent = s.status;
-              }
+              renderMasteryPanel();
 
               await sendMasteryPrompt(
                 buildFollowUpQuestionPrompt(
@@ -3862,14 +4384,8 @@ export function registerPaperPilotPaneSection() {
                     difficulty: parsed.difficulty,
                   });
                   setMasteryState(item.id, st);
-                  if (masteryStatus) {
-                    masteryStatus.textContent = st.status;
-                  }
-                  showMasteryQuestion(parsed.question);
-                  updateMasteryProgressDots(st);
-                  if (masterySubmit) {
-                    masterySubmit.disabled = false;
-                  }
+                  renderMasteryPanel();
+                  focusMasteryControl(masteryNext);
                 },
                 () => {
                   const fst = getMasteryStateForSession(
@@ -3882,10 +4398,10 @@ export function registerPaperPilotPaneSection() {
                     fst.running = false;
                     fst.status = "Complete";
                     fst.finalReportError =
-                      "Paper Mastery stopped before the next question was generated.";
+                      "The next question was not generated, so the session ended. Generate the final report from the answered rounds, or restart Paper Mastery.";
                     setMasteryState(item.id, fst);
                   }
-                  renderMasteryCompletion(fst ?? s);
+                  renderMasteryPanel();
                 },
                 continuationToken,
                 undefined,
@@ -3897,6 +4413,8 @@ export function registerPaperPilotPaneSection() {
             markAdmitted,
             MASTERY_EVALUATION_OUTPUT_SCHEMA,
           );
+          // The draft stays in the answer box; say why nothing happened.
+          if (!graded) reportMasteryRunRefused();
         });
 
         masteryEnd?.addEventListener("click", async () => {
@@ -3911,14 +4429,64 @@ export function registerPaperPilotPaneSection() {
           ) {
             return;
           }
-          if (state.rounds.length > 0) {
-            await showMasteryCompletion(state);
-          } else {
-            if (masterySection) {
-              masterySection.style.display = "none";
-            }
-            clearMasteryState(item.id);
+          // Ending drops an answer that was typed but never submitted.
+          const unsent = getCurrentMasteryDraft(state).text.trim();
+          if (
+            unsent &&
+            !confirmDestructive(
+              body.ownerDocument,
+              "End Paper Mastery",
+              "End the session now? Your unsent answer will be discarded.",
+            )
+          ) {
+            return;
           }
+          if (state.rounds.length > 0) {
+            // Keep the draft until the report run has actually started.
+            if (await showMasteryCompletion(state)) {
+              clearMasteryAnswerDraft(item.id);
+            } else {
+              reportMasteryRunRefused();
+            }
+          } else {
+            clearMasteryAnswerDraft(item.id);
+            clearMasteryState(item.id);
+            renderMasteryPanel();
+            // Without a save, reopening the session brings Mastery back.
+            await sessionHistoryService.persistActiveSession({
+              itemID: item.id,
+              paperTitle: String(item.getField("title") || ""),
+            });
+          }
+        });
+
+        // The final report had no retry after a failure or a stopped session.
+        masteryReportRetry?.addEventListener("click", async () => {
+          const state = getMasteryState(item.id);
+          if (
+            !state ||
+            state.phase !== "complete" ||
+            state.running ||
+            state.finalReport ||
+            !state.rounds.length
+          ) {
+            return;
+          }
+          // The failure reason stays until the new run has started.
+          const started = await showMasteryCompletion(state, undefined, {
+            regenerate: true,
+          });
+          if (!started) reportMasteryRunRefused();
+        });
+
+        masteryNext?.addEventListener("click", () => {
+          if (getMasteryState(item.id)?.phase !== "awaiting-answer") return;
+          updateMasteryChoices({
+            reviewRound: undefined,
+            selectedRound: undefined,
+          });
+          renderMasteryPanel();
+          masteryAnswer?.focus();
         });
 
         newSessionButton.addEventListener("click", async () => {
@@ -4002,17 +4570,16 @@ export function registerPaperPilotPaneSection() {
         });
 
         modelSaveButton.addEventListener("click", async () => {
-          if (!modelInput.value.trim()) {
+          const savedModel = modelInput.value.trim();
+          if (!savedModel) {
             return;
           }
-          const [savedModel, savedReasoningEffort] =
-            modelInput.value.split("|");
           const activeMode = getCurrentProviderDescriptor(item.id).mode;
           if (activeMode === "claude_code") {
             setPref("claudeDefaultModel", normalizeClaudeModel(savedModel));
             setPref(
               "claudeReasoningEffort",
-              normalizeClaudeReasoningEffort(claudeEffortInput.value),
+              normalizeClaudeReasoningEffort(effortInput.value),
             );
           } else {
             const normalizedCodexModel = normalizeCodexModel(savedModel);
@@ -4020,7 +4587,7 @@ export function registerPaperPilotPaneSection() {
             setPref(
               "codexReasoningEffort",
               normalizeCodexReasoningEffort(
-                savedReasoningEffort || "",
+                effortInput.value,
                 normalizedCodexModel,
               ),
             );
@@ -4030,6 +4597,8 @@ export function registerPaperPilotPaneSection() {
             normalizeModelForMode(activeMode, savedModel),
           );
           paneHeader.markModelSaved();
+          // Saving finishes the task, so the popover closes like Escape does.
+          paneHeader.setOpen(false, true);
           await refreshPaneState({ renderTranscript: false });
         });
 
@@ -4038,22 +4607,8 @@ export function registerPaperPilotPaneSection() {
           await refreshAfterEngineChange();
         });
 
-        const composerHint = body.querySelector(
-          "#chat-composer-hint",
-        ) as HTMLElement | null;
-        let composerHintTimer: ReturnType<typeof setTimeout> | undefined;
-        const showComposerHint = (text: string) => {
-          if (!composerHint) return;
-          composerHint.textContent = text;
-          if (composerHintTimer) clearTimeout(composerHintTimer);
-          composerHintTimer = setTimeout(() => {
-            composerHintTimer = undefined;
-            if (isCurrentRender()) composerHint.textContent = "";
-          }, COMPOSER_HINT_MS);
-        };
-        cleanupTasks.push(() => {
-          if (composerHintTimer) clearTimeout(composerHintTimer);
-        });
+        const showComposerHint = (text: string) =>
+          showComposerNotice(input, text);
         let lastSendClickAt: number | undefined;
 
         const submitCurrentInput = async () => {
@@ -4066,6 +4621,8 @@ export function registerPaperPilotPaneSection() {
             }
             return;
           }
+          // A new question replaces any instruction left from the last run.
+          showComposerNotice(input, "");
           saveInputDraft();
           const descriptor = getCurrentProviderDescriptor(item.id);
           await handleUserInput(
@@ -4173,12 +4730,20 @@ export function registerPaperPilotPaneSection() {
           item.id,
           applyReaderActionToPane,
         );
+        const showPaneNotice = (text: string) =>
+          showComposerNotice(input, text);
+        addon.data.showReaderPaneNotice?.set(item.id, showPaneNotice);
         cleanupTasks.push(() => {
           if (
             addon.data.applyReaderActionToPane?.get(item.id) ===
             applyReaderActionToPane
           ) {
             addon.data.applyReaderActionToPane.delete(item.id);
+          }
+          if (
+            addon.data.showReaderPaneNotice?.get(item.id) === showPaneNotice
+          ) {
+            addon.data.showReaderPaneNotice.delete(item.id);
           }
         });
         void addon.data.applyReaderActionToPane?.get(item.id)?.();
@@ -4299,7 +4864,7 @@ interface PaneElements {
   codexActions: HTMLElement;
   modelRow: HTMLElement;
   modelInput: HTMLSelectElement;
-  claudeEffortInput: HTMLSelectElement;
+  effortInput: HTMLSelectElement;
   codexOptionsRow: HTMLElement;
   codexWebSearchToggle: HTMLInputElement;
   modelHistory: HTMLElement;
@@ -4370,7 +4935,7 @@ async function renderPaneState(options: {
     descriptor.mode,
   );
   renderModelHistory(params.modelHistory, params.modelInput, descriptor.mode);
-  renderClaudeEffortInput(params.claudeEffortInput, descriptor.mode);
+  renderEffortInput(params.effortInput, params.modelInput, descriptor.mode);
   renderEngineSelection(params.modeChip, {
     mode,
     defaultMode,
@@ -4456,13 +5021,50 @@ function renderAutoHighlightState(
   itemID: number,
 ) {
   const state = getAutoHighlightState(itemID);
+  const block = getWorkbenchBlockForItem(itemID);
   const presentation = getAutoHighlightButtonPresentation({
     running: state.running,
     cancelling: isAutoHighlightCancelling(itemID),
+    busyReason: block.blocked
+      ? (block.reason ?? "Wait for the Workbench request to finish.")
+      : undefined,
   });
   button.disabled = presentation.disabled;
   button.textContent = presentation.label;
+  button.title = presentation.title ?? "";
   status.textContent = state.status;
+}
+
+/**
+ * Refreshes only the prior-work button and its note. Busy changes call this
+ * instead of rebuilding the results list, which would close open insights.
+ */
+const REVIEW_INSIGHT_BUSY_REASON =
+  "Wait for the current review analysis to finish.";
+
+function renderDiscoveryEntryButton(button: HTMLButtonElement, itemID: number) {
+  const state = getRelatedRecommendationState(itemID);
+  const discovery = getDiscoveryAvailability(getModeForItem(itemID));
+  const block = getWorkbenchBlockForItem(itemID);
+  const presentation = getDiscoveryButtonPresentation({
+    reviewInsightRunning: Boolean(state.reviewInsightRunningCandidateID),
+    running: state.running,
+    hasResults: state.groups.length > 0,
+    unavailableReason: discovery.available ? undefined : discovery.reason,
+    busyReason: block.blocked
+      ? (block.reason ?? "Wait for the Workbench request to finish.")
+      : undefined,
+  });
+  button.disabled = presentation.disabled;
+  button.textContent = presentation.label;
+  button.title = presentation.note;
+  const availabilityNote = button
+    .closest("#paper-pilot-container")
+    ?.querySelector("#chat-related-availability") as HTMLElement | null;
+  if (availabilityNote) {
+    availabilityNote.textContent = presentation.note;
+    availabilityNote.style.display = presentation.note ? "block" : "none";
+  }
 }
 
 function getCurrentPaperTitle(itemID: number) {
@@ -4509,12 +5111,12 @@ function renderCompareButtonState(
   compareButton.disabled = recommendationState.running || !state.enabled;
   compareButton.textContent = state.label;
   compareButton.title = recommendationState.running
-    ? "Compare unlocks when related paper recommendations finish."
+    ? "Compare unlocks when the prior-work search finishes."
     : state.title;
   compareButton.setAttribute(
     "aria-label",
     recommendationState.running
-      ? "Compare unavailable while related paper recommendations are running"
+      ? "Compare is unavailable while the prior-work search runs"
       : state.ariaLabel,
   );
 }
@@ -4569,23 +5171,7 @@ function renderRelatedRecommendationState(
     "#chat-related-save",
   ) as HTMLButtonElement | null;
   if (saveButton) saveButton.disabled = state.running || !state.discovery;
-  const discovery = getDiscoveryAvailability(getModeForItem(itemID));
-  const presentation = getDiscoveryButtonPresentation({
-    reviewInsightRunning: Boolean(state.reviewInsightRunningCandidateID),
-    running: state.running,
-    hasResults: state.groups.length > 0,
-    unavailableReason: discovery.available ? undefined : discovery.reason,
-  });
-  button.disabled = presentation.disabled;
-  button.textContent = presentation.label;
-  button.title = presentation.note;
-  const availabilityNote = pane?.querySelector(
-    "#chat-related-availability",
-  ) as HTMLElement | null;
-  if (availabilityNote) {
-    availabilityNote.textContent = presentation.note;
-    availabilityNote.style.display = presentation.note ? "block" : "none";
-  }
+  renderDiscoveryEntryButton(button, itemID);
   status.style.display = state.status ? "block" : "none";
   status.textContent = state.status;
   renderCompareButtonState(compareButton, itemID, currentPaperTitle);
@@ -4685,7 +5271,11 @@ function renderRelatedRecommendationState(
             addon.data.criticalReadStates?.get(itemID),
           ),
         reviewInsightRunning:
-          state.reviewInsightRunningCandidateID === paper.candidateID,
+          state.reviewInsightRunningCandidateID ===
+          (paper.candidateID || paper.title),
+        reviewInsightBlockedReason: state.reviewInsightRunningCandidateID
+          ? REVIEW_INSIGHT_BUSY_REASON
+          : undefined,
         actions: {
           onSaveCandidate: async (target) => {
             const home = await loadResearchWorkspaceHome();
@@ -4743,14 +5333,37 @@ function renderRelatedRecommendationState(
             }),
           onOpenURL: (url) => Zotero.launchURL(url),
           onError: setFailure,
-          onAdd: async (target) => {
-            const result = await addRecommendationToCollection({
-              sourceItemID: itemID,
-              paper: target,
-              includeReviewURL: canViewPublicReviewInsights(
-                addon.data.criticalReadStates?.get(itemID),
-              ),
+          // The row already shows the error; keep it in the stored status
+          // without a rebuild, which would remove the row's message.
+          onRowError: (error) => {
+            const message =
+              error instanceof Error
+                ? error.message
+                : "The discovery action could not be completed.";
+            addon.data.relatedRecommendationStates?.set(itemID, {
+              ...getRelatedRecommendationState(itemID),
+              status: message,
             });
+            status.style.display = "block";
+            status.textContent = message;
+          },
+          onAdd: async (target) => {
+            let result: Awaited<
+              ReturnType<typeof addRecommendationToCollection>
+            >;
+            try {
+              result = await addRecommendationToCollection({
+                sourceItemID: itemID,
+                paper: target,
+                includeReviewURL: canViewPublicReviewInsights(
+                  addon.data.criticalReadStates?.get(itemID),
+                ),
+              });
+            } catch (error) {
+              // Dismissing the collection picker is a choice, not a failure.
+              if (isCollectionChoiceCancelled(error)) return;
+              throw error;
+            }
             const current = getRelatedRecommendationState(itemID);
             const patch = { existingItemID: result.itemID };
             addon.data.relatedRecommendationStates?.set(itemID, {
@@ -4773,6 +5386,16 @@ function renderRelatedRecommendationState(
           },
           onReviewInsight: async (target) => {
             const runningController = publicReviewAbortControllers.get(itemID);
+            // Only the running paper's button cancels. Another paper's click
+            // must not stop a run it does not own.
+            if (
+              runningController &&
+              getRelatedRecommendationState(itemID)
+                .reviewInsightRunningCandidateID !==
+                (target.candidateID || target.title)
+            ) {
+              throw new Error(REVIEW_INSIGHT_BUSY_REASON);
+            }
             if (runningController) {
               runningController.abort(
                 new Error("Public-review analysis cancelled."),
@@ -5189,7 +5812,7 @@ async function runPaperArtifactRequest(params: {
   const markAdmitted = () => {
     setPaperArtifactState(params.item.id, {
       running: true,
-      status: `Generating ${request.label.toLowerCase()}…`,
+      status: `Running “${request.label}”…`,
       activeKind: params.kind,
       cards: existing.cards,
     });
@@ -5443,7 +6066,7 @@ async function handleUserInput(
   );
   if (activeRunMessage && !continuingParent) {
     if (!options?.suppressChatMessages)
-      addMessage(chatMessages, activeRunMessage, "ai");
+      showComposerNotice(input, activeRunMessage);
     return;
   }
   const admittedAt = Date.now();
@@ -5499,7 +6122,9 @@ async function handleUserInput(
   try {
     const profile = options?.profile || "chat";
     if (!continuingParent)
-      startRunProgress(itemID, mode, admissionToken, activeSessionID);
+      startRunProgress(itemID, mode, admissionToken, activeSessionID, {
+        quiet: options?.suppressChatMessages,
+      });
     renderChatComposerForItem(input, itemID);
     options?.onAdmitted?.();
     if (!preserveComposer) {
@@ -5510,16 +6135,25 @@ async function handleUserInput(
       );
       if (consumed) {
         input.value = "";
-        input.style.height = `${CHAT_INPUT_MIN_HEIGHT}px`;
-        input.scrollTop = 0;
+        resizeChatComposer(input);
         clearReaderActionDraft(itemID);
       }
     }
     renderStreamingIndicator(streamingIndicator, true);
     // Capture one reader before any preparation; the capture validates its parent.
-    const reader = context?.attachmentID
-      ? undefined
-      : await ztoolkit.Reader.getReader().catch(() => undefined);
+    // The pane records the open PDF when it renders, usually before anything
+    // is selected. A typed question with only that record (or none) reads the
+    // live selection and page now; captureRequestContext ignores a selection
+    // in another PDF. Removed contexts and hidden workflow runs never do.
+    const readLiveSelection = shouldReadLiveSelection({
+      context,
+      visibleChat:
+        !options?.suppressChatMessages && !options?.silentUserMessage,
+    });
+    const reader =
+      context?.attachmentID && !readLiveSelection
+        ? undefined
+        : await ztoolkit.Reader.getReader().catch(() => undefined);
     const executionSettings =
       submission?.request.executionSettings ?? captureExecutionSettings(mode);
     const requestContext =
@@ -5529,10 +6163,10 @@ async function handleUserInput(
         itemID,
         reader,
         attachmentID: context?.attachmentID,
-        selectedText: context?.text ?? "",
+        selectedText: readLiveSelection ? undefined : (context?.text ?? ""),
         annotationIDs: context?.annotationIDs,
-        pageIndex: context?.pageIndex,
-        pageLabel: context?.pageLabel,
+        pageIndex: readLiveSelection ? undefined : context?.pageIndex,
+        pageLabel: readLiveSelection ? undefined : context?.pageLabel,
       }));
     sourceCapturedAt = Date.now();
     if (isChatPreparationCancelled(itemID)) return;
@@ -5632,8 +6266,10 @@ async function handleUserInput(
       !submitted &&
       restoreChatDraft(itemID, activeSessionID, admittedDraft, submission) &&
       sessionStore.get(itemID)?.sessionId === activeSessionID
-    )
+    ) {
       input.value = getChatDraft(itemID, activeSessionID).text;
+      resizeChatComposer(input);
+    }
     const state = failRunProgress({
       itemID,
       engine: mode,
@@ -5655,7 +6291,7 @@ async function handleUserInput(
         errorCategory: "preparation",
       });
     if (!options?.suppressChatMessages)
-      addMessage(chatMessages, assistantText, "ai");
+      showComposerNotice(input, assistantText, { sticky: true });
     await complete({ success: false, assistantText });
   } finally {
     try {
@@ -5670,8 +6306,10 @@ async function handleUserInput(
             submission,
           ) &&
           sessionStore.get(itemID)?.sessionId === activeSessionID
-        )
+        ) {
           input.value = getChatDraft(itemID, activeSessionID).text;
+          resizeChatComposer(input);
+        }
         if (submitted && turnId && attemptId)
           await sessionHistoryService.updateAttempt({
             itemID,

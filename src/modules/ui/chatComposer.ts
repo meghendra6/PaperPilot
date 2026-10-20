@@ -4,6 +4,8 @@ export function getChatComposerPresentation(params: {
   busy: boolean;
   stopping: boolean;
   canStop: boolean;
+  /** False disables Send, which would otherwise do nothing. */
+  hasText?: boolean;
 }) {
   const sendAction: ChatSendAction = params.stopping
     ? "stopping"
@@ -13,17 +15,24 @@ export function getChatComposerPresentation(params: {
   return {
     sendAction,
     inputDisabled: false,
-    buttonDisabled: params.busy && (params.stopping || !params.canStop),
+    buttonDisabled: params.busy
+      ? params.stopping || !params.canStop
+      : params.hasText === false,
     label: params.stopping ? "Stopping…" : params.busy ? "Stop" : "Send",
     ariaLabel: params.stopping
       ? "Stopping response"
       : params.busy
-        ? "Stop response"
+        ? params.canStop
+          ? "Stop response"
+          : "Stop is unavailable while Paper Pilot finishes another task"
         : "Send message",
+    // Do not point at Stop while it is disabled.
     placeholder: params.stopping
       ? "Draft your next question while this request stops."
       : params.busy
-        ? "Draft your next question. Press Stop to cancel the current response."
+        ? params.canStop
+          ? "Draft your next question. Press Stop to cancel the current response."
+          : "Draft your next question. Send returns when Paper Pilot finishes the current task."
         : "Ask a question about this paper or the current selection.",
   };
 }
@@ -35,7 +44,10 @@ export function renderChatComposer(params: {
   stopping: boolean;
   canStop: boolean;
 }) {
-  const presentation = getChatComposerPresentation(params);
+  const presentation = getChatComposerPresentation({
+    ...params,
+    hasText: Boolean(params.input.value?.trim()),
+  });
   params.input.disabled = presentation.inputDisabled;
   params.input.placeholder = presentation.placeholder;
   params.button.disabled = presentation.buttonDisabled;

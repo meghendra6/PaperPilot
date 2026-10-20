@@ -171,7 +171,16 @@ function triggerAction(params: {
     return;
   }
 
-  if (getSelectionActionBlockReason(params.itemID, params.action)) return;
+  const blockReason = getSelectionActionBlockReason(
+    params.itemID,
+    params.action,
+  );
+  if (blockReason) {
+    // A blocked action used to do nothing. Say why in the paper's pane,
+    // where its answer would have appeared.
+    addon.data.showReaderPaneNotice?.get(params.itemID)?.(blockReason);
+    return;
+  }
 
   if (params.action === "find-prior-work" && params.text) {
     addon.data.pendingDiscoveryConcerns?.set(params.itemID, {

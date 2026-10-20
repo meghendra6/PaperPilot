@@ -106,6 +106,8 @@ class Addon {
       }
     >;
     applyReaderActionToPane?: Map<number, () => Promise<void> | void>;
+    /** Shows a short status line in the paper's pane composer. */
+    showReaderPaneNotice?: Map<number, (text: string) => void>;
     activateReaderCapability?: Map<
       number,
       (
@@ -178,6 +180,7 @@ class Addon {
       pendingDiscoveryConcerns: new Map(),
       readerActionDrafts: new Map(),
       applyReaderActionToPane: new Map(),
+      showReaderPaneNotice: new Map(),
       activateReaderCapability: new Map(),
     };
     this.hooks = hooks;

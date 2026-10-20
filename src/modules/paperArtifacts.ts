@@ -51,6 +51,8 @@ export interface PaperArtifactRequest {
 
 export interface PaperArtifactEvidencePresentation {
   label: string;
+  /** Compact chip text; `label` is the full tooltip. */
+  shortLabel: string;
   tone: "neutral" | "grounded" | "caution";
 }
 
@@ -69,21 +71,25 @@ export function getPaperArtifactEvidencePresentation(
     case "explicit":
       return {
         label: "Directly grounded in the paper",
+        shortLabel: "Paper-grounded",
         tone: "grounded",
       };
     case "inference":
       return {
         label: "Model inference / extrapolation",
+        shortLabel: "Inference",
         tone: "caution",
       };
     case "mixed":
       return {
         label: "Mixed evidence: paper-grounded + inference",
+        shortLabel: "Mixed",
         tone: "neutral",
       };
     default:
       return {
         label: "Evidence labeling unavailable",
+        shortLabel: "Unlabeled",
         tone: "neutral",
       };
   }

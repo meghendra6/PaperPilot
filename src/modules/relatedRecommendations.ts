@@ -869,9 +869,7 @@ export async function generateRelatedPaperGroups(params: {
       }
 
       if (!completed) {
-        throw new Error(
-          "Timed out while waiting for related paper recommendations.",
-        );
+        throw new Error("The prior-work search timed out.");
       }
     } catch (error) {
       runError = error;
@@ -1083,7 +1081,24 @@ function buildCollectionOptionLabel(collection: any) {
   return parts.join(" / ");
 }
 
-export async function chooseCollectionForRecommendation(sourceItem: any) {
+/** The reader dismissed the collection picker; callers treat it as a no-op. */
+export class CollectionChoiceCancelledError extends Error {
+  constructor() {
+    super("Collection choice cancelled.");
+    this.name = "CollectionChoiceCancelledError";
+  }
+}
+
+export function isCollectionChoiceCancelled(error: unknown): boolean {
+  return (
+    error instanceof Error && error.name === "CollectionChoiceCancelledError"
+  );
+}
+
+export async function chooseCollectionForRecommendation(
+  sourceItem: any,
+  options: { title?: string } = {},
+) {
   const pane = getMainWindowPane();
   const selectedCollections = getSelectedCollectionsFromPane(pane)
     .map(resolveCollectionReference)
@@ -1120,14 +1135,15 @@ export async function chooseCollectionForRecommendation(sourceItem: any) {
   const selected = { value: 0 };
   const confirmed = promptService.select(
     null,
-    "Add related paper to collection",
+    options.title ?? "Add related paper to collection",
     "Choose a collection",
     collections.length,
     collections.map(buildCollectionOptionLabel),
     selected,
   );
 
-  return confirmed ? collections[selected.value] : undefined;
+  if (!confirmed) throw new CollectionChoiceCancelledError();
+  return collections[selected.value];
 }
 
 export async function addRecommendationToCollection(params: {
