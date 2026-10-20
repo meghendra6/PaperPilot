@@ -87,7 +87,7 @@ Paper Pilot 仍在積極開發中。
 
 在 PDF 中選取單字或短語，點擊 **Naver Dictionary**，即可在 Zotero 的獨立詞典視窗中查看匹配的詞頭、音標、最多三個釋義及詞典來源。詞形變化可能顯示對應的原形詞頭。詞典視窗開啟時可繼續閱讀 PDF；查詢其他詞語會更新同一視窗。按 **Esc** 或 **Close dictionary** 可關閉。只有點擊 **More on Naver** 才會開啟外部瀏覽器。此功能需要連線，只傳送選取的查詢文字，不執行 AI，也不在 Paper Pilot 歷史記錄中儲存結果。按鈕適用於不超過 80 個字元且不超過 8 個單字的選取範圍。此功能使用 Naver 內部搜尋回應，可能受格式變化影響；錯誤和無匹配狀態會在彈窗內顯示，錯誤時可重試。
 
-要解釋圖或表，請點擊 PDF 閱讀器工具列中的 **Explain figure or table**（虛線框內長條圖圖示），然後框選該區域。Paper Pilot 會為這一次選取切換到 Zotero 的 **Select Area**（選取區域）工具。放開滑鼠後，PDF 旁會開啟一個獨立的非模態 Paper Pilot 視窗並開始解釋：該區域呈現的內容、閱讀方式、重點、在論文中的作用與注意事項。每個重點都會標示依據：**Visible**（從影像讀取）、**Paper**（論文內文）或 **Inference**（推論）。之後閱讀器會恢復為先前的工具。再次點擊按鈕或按 **Esc** 可取消，兩分鐘後該模式也會自動結束。對於既有的區域註釋，可點擊左側邊欄卡片上的 **Explain**，或按右鍵選擇 **Explain figure or table**。執行時使用該論文的引擎，並採用唯讀分析模式；Codex CLI 以附件形式接收影像，Claude Code 開啟工作區中的影像副本。如果 Zotero 沒有該區域的快取影像，解釋只根據圖說與頁面文字，並會說明這一點。點擊 **Stop** 或關閉視窗會停止執行。結果僅在目前 Zotero 工作階段的記憶體中保留，不會儲存到歷史記錄或筆記。區域註釋會保留在 Zotero 中，若不需要可照常刪除。
+要解釋圖或表，請點擊 PDF 閱讀器工具列中的 **Explain figure or table**（虛線框內長條圖圖示），然後框選該區域。Paper Pilot 會為這一次選取切換到 Zotero 的 **Select Area**（選取區域）工具。放開滑鼠後，PDF 旁會開啟一個獨立的非模態 Paper Pilot 視窗並開始解釋：該區域呈現的內容、閱讀方式、重點、在論文中的作用與注意事項。每個重點都會標示依據：**Visible**（從影像讀取）、**Paper**（論文內文）或 **Inference**（推論）。之後閱讀器會恢復為先前的工具。該模式開啟期間，PDF 上方會顯示簡短提示。再次點擊按鈕或按 **Esc** 可取消，兩分鐘後該模式也會自動結束，並透過提示說明。對於既有的區域註釋，可點擊左側邊欄卡片上的 **Explain**，或按右鍵選擇 **Explain figure or table**。執行時使用該論文的引擎，並採用唯讀分析模式；Codex CLI 以附件形式接收影像，Claude Code 開啟工作區中的影像副本。如果 Zotero 沒有該區域的快取影像，解釋只根據圖說與頁面文字，並會說明這一點。點擊 **Stop** 或關閉視窗會停止執行。結果僅在目前 Zotero 工作階段的記憶體中保留，不會儲存到歷史記錄或筆記。區域註釋會保留在 Zotero 中，若不需要可照常刪除。
 
 ### 3. 論文工作台工具
 
@@ -127,7 +127,8 @@ Paper Pilot 仍在積極開發中。
 閱讀器面板中包含 **Paper Mastery** 工作流，用於對目前論文進行多輪蘇格拉底式理解度檢查：
 
 - AI 每次產生一個聚焦論文核心貢獻、方法論或關鍵假設的開放式問題。
-- 使用者以自由文字回答，AI 會對每個回答進行評估，並記錄對應主題是否已被理解。
+- 使用者以自由文字回答，AI 會對每個回答進行評估，並記錄對應主題是否已被理解。按 Ctrl+Enter（macOS 上為 Cmd+Enter）送出。尚未送出的回答在面板重繪後仍會保留。
+- 評分後，在準備下一個問題期間，你的回答、回饋以及未掌握主題的說明會保留在畫面上。準備好後點擊 **Next question** 繼續。
 - 會話結束時，系統會產生一份 Markdown 學習報告，包含強項、需加強之處、主要誤解以及建議重讀的內容。
 
 Mastery prompt 會強制問題／評估回應為嚴格 JSON（禁止前置推理或開場白），將使用者回答包覆在 `<user_answer>` 標籤內，並容許 JSON 周圍出現 markdown fence 作為容錯。解析器能辨識字串與跳脫字元，因此引號內的 `}` 不會截斷有效回應。
@@ -180,7 +181,7 @@ Codex 模式更偏向工作區驅動。當前程式碼庫已包含：
 - 可執行檔發現與驗證
 - 登入／狀態檢查
 - 工作區可寫性檢查
-- 目前建議 Codex 模型選擇（預設 `gpt-6-astra`，另含 `gpt-6-sol`、`gpt-6-luna`、`gpt-5.6-sol`、`gpt-5.6-terra`、`gpt-5.6-luna`），reasoning effort 依模型提供（支援時可達 `max`/`ultra`）
+- 目前建議 Codex 模型選擇（預設 `gpt-6-astra`，另含 `gpt-6-sol`、`gpt-6-luna`、`gpt-5.6-sol`、`gpt-5.6-terra`、`gpt-5.6-luna`），模型選擇器旁的 reasoning effort 選擇器只列出所選模型支援的等級（支援時可達 `max`/`ultra`）
 - sandbox 與 approval 設定
 - 可選網頁搜尋切換
 - 與目前論文綁定的可恢復追問執行
@@ -192,7 +193,7 @@ Claude Code 模式使用本地 `claude` CLI 的 print 模式，並基於閱讀�
 - 可設定的可執行檔路徑
 - 可選擇 Claude Code CLI 的模型系列別名（預設 `sonnet`，另含 `opus`、`haiku`、`fable`），已安裝的 CLI 會將其解析為各系列的最新模型（目前為 Sonnet 5.5、Opus 5.5、Haiku 5.5、Fable 5.1）；另提供固定 ID `claude-opus-5-5`、`claude-sonnet-5-5`、`claude-haiku-5-5`、`claude-fable-5-1`、`claude-opus-5`、`claude-sonnet-5`
 - 在設定中手動輸入的其他模型 ID（例如 `claude-opus-5-5[1m]` 或 Bedrock/Vertex 模型 ID）會原樣傳給 CLI；`Opus 5.5`、`claude-opus-5.5` 等手動輸入的名稱會正規化為 `claude-opus-5-5`，並保留 `[1m]` 等脈絡後綴
-- 可選的 effort 等級（`low`、`medium`、`high`、`xhigh`、`max`；設定中的 **Claude Code default** 與模型選擇器旁的 **default effort** 沿用 Claude Code CLI 預設值），可在設定中或模型選擇器旁設定；僅當已安裝 CLI 的 `--help` 列出 `--effort` 時才會傳入
+- 可選的 effort 等級（`low`、`medium`、`high`、`xhigh`、`max`；設定中的 **Claude Code default** 與模型選擇器旁的 **default effort** 沿用 Claude Code CLI 預設值），可在設定中或模型選擇器旁設定；在引擎彈出面板中儲存模型與 effort 後，彈出面板會關閉；僅當已安裝 CLI 的 `--help` 列出 `--effort` 時才會傳入
 - 可設定的 permission mode（僅用於聊天執行）
 - 論文級追問脈絡連續性
 - 面向目前論文的 retrieval/context 組裝

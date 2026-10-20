@@ -19,12 +19,16 @@ export interface AutoHighlightButtonPresentation {
   disabled: boolean;
   /** What a click does in this state. */
   action: "start" | "cancel" | "none";
+  /** Why the button cannot start, when another run holds the engine. */
+  title?: string;
 }
 
 /** The button turns into Cancel while highlighting runs, like discovery. */
 export function getAutoHighlightButtonPresentation(state: {
   running: boolean;
   cancelling?: boolean;
+  /** Why another run holds this paper's engine, if one does. */
+  busyReason?: string;
 }): AutoHighlightButtonPresentation {
   if (state.running && state.cancelling) {
     return {
@@ -35,6 +39,14 @@ export function getAutoHighlightButtonPresentation(state: {
   }
   if (state.running) {
     return { label: "Cancel highlighting", disabled: false, action: "cancel" };
+  }
+  if (state.busyReason) {
+    return {
+      label: "Highlight key passages",
+      disabled: true,
+      action: "none",
+      title: state.busyReason,
+    };
   }
   return { label: "Highlight key passages", disabled: false, action: "start" };
 }

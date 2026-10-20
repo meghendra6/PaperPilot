@@ -92,3 +92,26 @@ test("Highlight key passages turns into a cancel control while it runs", () => {
   );
   assert.equal(AUTO_HIGHLIGHT_CANCELLED_STATUS, "Highlighting cancelled");
 });
+
+test("Highlight key passages says why it cannot start while the engine is busy", () => {
+  assert.deepEqual(
+    getAutoHighlightButtonPresentation({
+      running: false,
+      busyReason: "Wait for the current answer to finish.",
+    }),
+    {
+      label: "Highlight key passages",
+      disabled: true,
+      action: "none",
+      title: "Wait for the current answer to finish.",
+    },
+  );
+  // Its own run stays cancellable even though it holds the engine.
+  assert.equal(
+    getAutoHighlightButtonPresentation({
+      running: true,
+      busyReason: "Wait for highlighting to finish.",
+    }).action,
+    "cancel",
+  );
+});

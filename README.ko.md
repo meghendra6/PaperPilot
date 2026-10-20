@@ -87,7 +87,7 @@ PDF 선택 영역이나 주석에서 다음과 같은 AI 워크플로우를 시�
 
 PDF에서 단어나 짧은 구절을 선택하고 **네이버 사전**을 누르면 Zotero의 별도 사전 창에 표제어·발음기호·최대 세 개의 뜻·사전 출처가 표시됩니다. 활용형은 사전의 원형 표제어로 표시할 수 있습니다. 읽던 PDF를 계속 조작할 수 있고, 다른 단어를 조회하면 같은 사전 창이 갱신됩니다. **Esc** 또는 **사전 닫기**로 닫으며, **네이버에서 더 보기**를 눌렀을 때만 외부 브라우저를 엽니다. 인터넷 연결이 필요하고 선택한 검색어만 전달하며, AI를 실행하거나 Paper Pilot 기록에 결과를 저장하지 않습니다. 사전 버튼은 80자·8단어 이하의 선택 영역에 표시됩니다. 네이버 내부 검색 응답을 사용하므로 형식 변경에 영향을 받을 수 있습니다. 오류와 일치하는 뜻이 없는 상태는 팝업 안에서 알리고 오류 시 다시 시도할 수 있습니다.
 
-표나 그래프를 설명받으려면 PDF reader toolbar의 **Explain figure or table** 버튼(점선 테두리 안의 막대그래프 아이콘)을 누른 뒤 그 영역을 드래그하세요. Paper Pilot이 이 한 번의 선택을 위해 Zotero의 영역 선택(Select Area) 도구를 켭니다. 마우스를 놓으면 PDF 옆에 Paper Pilot의 별도 modeless 창이 열리고 설명을 시작합니다. 설명에는 영역이 보여 주는 내용, 읽는 법, 핵심 내용, 논문에서의 역할, 주의할 점이 들어갑니다. 핵심 내용마다 근거를 **Visible**(이미지에서 읽음), **Paper**(논문 본문), **Inference**(추론)로 표시합니다. 선택이 끝나면 reader는 원래 도구로 돌아갑니다. 버튼을 다시 누르거나 **Esc**를 누르면 취소되고, 2분이 지나면 자동으로 꺼집니다. 이미 만든 영역 annotation은 왼쪽 sidebar 카드의 **Explain**을 누르거나, 오른쪽 클릭 메뉴의 **Explain figure or table**로 설명받을 수 있습니다. 실행은 해당 논문의 엔진을 읽기 전용 분석 모드로 사용합니다. Codex CLI는 이미지를 첨부로 받고, Claude Code는 workspace에 복사한 이미지를 엽니다. Zotero에 영역 이미지가 없으면 caption과 페이지 텍스트만으로 설명하고 그 사실을 밝힙니다. **Stop**을 누르거나 창을 닫으면 실행이 멈춥니다. 결과는 현재 Zotero 세션의 메모리에만 남고 기록이나 노트에 저장하지 않습니다. 그린 영역 annotation은 Zotero에 남으므로 필요 없으면 평소처럼 삭제하세요.
+표나 그래프를 설명받으려면 PDF reader toolbar의 **Explain figure or table** 버튼(점선 테두리 안의 막대그래프 아이콘)을 누른 뒤 그 영역을 드래그하세요. Paper Pilot이 이 한 번의 선택을 위해 Zotero의 영역 선택(Select Area) 도구를 켭니다. 마우스를 놓으면 PDF 옆에 Paper Pilot의 별도 modeless 창이 열리고 설명을 시작합니다. 설명에는 영역이 보여 주는 내용, 읽는 법, 핵심 내용, 논문에서의 역할, 주의할 점이 들어갑니다. 핵심 내용마다 근거를 **Visible**(이미지에서 읽음), **Paper**(논문 본문), **Inference**(추론)로 표시합니다. 선택이 끝나면 reader는 원래 도구로 돌아갑니다. 이 모드가 켜져 있는 동안 PDF 위에 짧은 안내가 표시됩니다. 버튼을 다시 누르거나 **Esc**를 누르면 취소되고, 2분이 지나면 자동으로 꺼지며 안내로 이를 알려 줍니다. 이미 만든 영역 annotation은 왼쪽 sidebar 카드의 **Explain**을 누르거나, 오른쪽 클릭 메뉴의 **Explain figure or table**로 설명받을 수 있습니다. 실행은 해당 논문의 엔진을 읽기 전용 분석 모드로 사용합니다. Codex CLI는 이미지를 첨부로 받고, Claude Code는 workspace에 복사한 이미지를 엽니다. Zotero에 영역 이미지가 없으면 caption과 페이지 텍스트만으로 설명하고 그 사실을 밝힙니다. **Stop**을 누르거나 창을 닫으면 실행이 멈춥니다. 결과는 현재 Zotero 세션의 메모리에만 남고 기록이나 노트에 저장하지 않습니다. 그린 영역 annotation은 Zotero에 남으므로 필요 없으면 평소처럼 삭제하세요.
 
 ### 3. 논문 워크벤치 도구
 
@@ -127,7 +127,8 @@ PDF에서 단어나 짧은 구절을 선택하고 **네이버 사전**을 누르
 리더 패널에는 현재 논문에 대한 다회차 소크라테스식 이해도 점검을 진행하는 **Paper Mastery** 워크플로우가 포함됩니다.
 
 - AI가 논문의 핵심 기여, 방법론, 가정 등에 초점을 맞춘 개방형 질문을 한 번에 하나씩 생성합니다.
-- 사용자는 자유 서술로 답변하고, AI는 각 답변을 평가하여 해당 주제를 이해했는지 기록합니다.
+- 사용자는 자유 서술로 답변하고, AI는 각 답변을 평가하여 해당 주제를 이해했는지 기록합니다. Ctrl+Enter(macOS에서는 Cmd+Enter)로 제출합니다. 아직 제출하지 않은 답변은 패널이 다시 그려져도 유지됩니다.
+- 채점 후에는 다음 질문을 준비하는 동안 내 답변, 피드백, 놓친 주제의 설명이 화면에 남습니다. 준비가 되면 **Next question**을 눌러 계속합니다.
 - 세션을 종료하면 강점, 개선이 필요한 부분, 주요 오개념, 재독 추천을 담은 Markdown 학습 리포트가 생성됩니다.
 
 Mastery 프롬프트는 질문/평가 응답을 엄격한 JSON으로 강제하며(추론/서문 금지), 사용자 답변을 `<user_answer>` 태그로 감싸고, JSON 응답에 markdown 펜스가 오더라도 복구할 수 있도록 파서가 문자열/이스케이프를 인식합니다. 따옴표 안의 `}`가 유효한 JSON을 잘라내지 않도록 처리됩니다.
@@ -182,7 +183,7 @@ Codex 모드는 더 워크스페이스 지향적인 경로입니다. 현재 코�
 - 실행 파일 탐색 및 검증
 - 로그인/상태 확인
 - 워크스페이스 쓰기 가능 여부 확인
-- 현재 권장 Codex 모델 선택(`gpt-6-astra` 기본, `gpt-6-sol`, `gpt-6-luna`, `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`) 및 모델별 reasoning effort 옵션(지원 시 `max`/`ultra`까지)
+- 현재 권장 Codex 모델 선택(`gpt-6-astra` 기본, `gpt-6-sol`, `gpt-6-luna`, `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`) 및 모델 선택기 옆의 reasoning effort 선택기(선택한 모델이 지원하는 수준만 표시, 지원 시 `max`/`ultra`까지)
 - sandbox 및 approval 설정
 - 선택적 웹 검색 토글
 - 현재 논문에 연결된 후속 실행 재개
@@ -194,7 +195,7 @@ Claude Code 모드는 로컬 `claude` CLI의 print 모드를 사용하며, 리�
 - 설정 가능한 실행 파일 경로
 - Claude Code CLI 계열 별칭 모델 선택(`sonnet` 기본, `opus`, `haiku`, `fable`). 설치된 CLI가 각 계열의 최신 모델(현재 Sonnet 5.5, Opus 5.5, Haiku 5.5, Fable 5.1)로 해석하며, 고정 ID `claude-opus-5-5`, `claude-sonnet-5-5`, `claude-haiku-5-5`, `claude-fable-5-1`, `claude-opus-5`, `claude-sonnet-5`도 제공
 - 설정에 직접 입력한 그 밖의 모델 ID(예: `claude-opus-5-5[1m]`, Bedrock/Vertex 모델 ID)는 그대로 CLI에 전달. `Opus 5.5`, `claude-opus-5.5`처럼 직접 입력한 이름은 `claude-opus-5-5`로 정규화되며 `[1m]` 같은 컨텍스트 접미사는 유지
-- 선택적 effort 수준(`low`, `medium`, `high`, `xhigh`, `max`, 설정의 **Claude Code default**와 모델 선택기 옆의 **default effort**는 Claude Code CLI 기본값 사용)을 설정과 모델 선택기 옆에서 지정. 설치된 CLI의 `--help`에 `--effort`가 있을 때만 전달
+- 선택적 effort 수준(`low`, `medium`, `high`, `xhigh`, `max`, 설정의 **Claude Code default**와 모델 선택기 옆의 **default effort**는 Claude Code CLI 기본값 사용)을 설정과 모델 선택기 옆에서 지정. 엔진 팝오버에서 모델과 effort를 저장하면 팝오버가 닫힘. 설치된 CLI의 `--help`에 `--effort`가 있을 때만 전달
 - chat 실행에 적용되는 permission mode 설정
 - 논문 단위 후속 대화 맥락 유지
 - 현재 논문용 retrieval/context 조합

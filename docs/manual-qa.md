@@ -33,7 +33,7 @@ Use this checklist inside real Zotero 7, 8, 9, and 10 runtimes before claiming r
 - [ ] Confirm Workbench starts expanded while Find verified prior work and Past sessions start collapsed on a fresh profile
 - [ ] Toggle all three disclosures with mouse, Enter, and Space; restart Zotero and confirm their state persists
 - [ ] Complete a workbench or related-papers action while its section is collapsed and confirm only its summary/update dot changes—the section must not open itself
-- [ ] Open the engine/model popover, switch each engine, click a model/effort option with the mouse, save it, and confirm the picker stays open long enough to persist the existing preference; repeat with keyboard selection
+- [ ] Open the engine/model popover, switch each engine, click a model/effort option with the mouse, and confirm the popover stays open while you pick; click Save and confirm the preference persists, the popover closes, focus returns to its trigger, and the header chip shows the saved model and effort; repeat with keyboard selection
 - [ ] While a provider run is active, attempt to switch providers and confirm the switch is blocked without clearing the active poller; after completion, switching works normally
 - [ ] During workspace preparation, Retry persistence, a direct Auto Highlight/discovery run, and terminal cleanup, attempt New session and saved-session Open/Delete; confirm session replacement is blocked and no old workflow result appears in a new session
 - [ ] Delay the session-transition cleanup await, then try chat, Retry, Auto Highlight, and Find verified prior work; confirm the transition token blocks every new admission until Open/New/Delete and rerender finish
@@ -56,7 +56,7 @@ Use this checklist inside real Zotero 7, 8, 9, and 10 runtimes before claiming r
 - [ ] Drag the Workbench/chat boundary in both directions; confirm one area grows while the other remains usable, then use Up/Down, Home/End, and Enter on the focused separator
 - [ ] Drag the bottom Paper Pilot handle beyond the old 960px pane cap, then double-click it to restore the responsive default height
 - [ ] Narrow the Zotero item pane below 420px; confirm assistant messages use the available width and recommendation/session actions stack without horizontal clipping
-- [ ] Open or generate a session with more than 48 visible chat messages; confirm only 48 message wrappers are mounted, the earlier-message control reports the suspended count, and the saved-session message count is unchanged
+- [ ] Open or generate a session with more than 48 visible chat messages; confirm only 48 message wrappers are mounted, the earlier-message control reports how many messages are not shown, and the saved-session message count is unchanged
 - [ ] Scroll to the top and bottom boundaries of a long chat; confirm the window advances in both directions without a visible jump, then use the earlier/newer buttons with keyboard focus
 - [ ] While viewing an older chat window, send a new question; confirm the pane returns to the latest window, the new turn remains visible, and older turns stay recoverable by scrolling up
 - [ ] Let a short running placeholder become a long final answer; confirm the chat follows the rendered answer to the bottom instead of returning to its top
@@ -107,9 +107,10 @@ Use this checklist inside real Zotero 7, 8, 9, and 10 runtimes before claiming r
 - [ ] Confirm the mode actions offer only `Claude Code`, `Codex CLI`, and `Use Default`; there is no `Gemini CLI` button
 - [ ] Set `defaultMode` to `gemini_cli` (or any other unknown value) through the Config Editor; confirm a paper without an override opens in Codex CLI mode and the settings select shows a "not recognized" option that names the fallback
 - [ ] Switch to `Claude Code`
-- [ ] Confirm Claude Code model controls and mode messaging update correctly, and that the effort select appears next to the model picker only in Claude mode
+- [ ] Confirm Claude Code model controls and mode messaging update correctly, and that the effort select next to the model picker offers `default effort` plus `low` through `max`
 - [ ] Switch to `Codex CLI`
-- [ ] Confirm the unified run-progress card and Codex model controls offer GPT-6 Astra, Sol, and Luna plus GPT-5.6 Sol, Terra, and Luna; a fresh install, empty preference, or unknown/retired saved model defaults to Astra; with no saved reasoning effort, it uses `medium`
+- [ ] Confirm the unified run-progress card and Codex model controls offer GPT-6 Astra, Sol, and Luna plus GPT-5.6 Sol, Terra, and Luna, each listed once, with a separate effort select next to the model picker; a fresh install, empty preference, or unknown/retired saved model defaults to Astra; with no saved reasoning effort, it uses `medium`
+- [ ] In Codex mode, pick `ultra` on GPT-6 Sol, then switch the model to GPT-6 Luna; confirm the effort select drops `ultra` and selects `medium`. Pick `high` and switch to GPT-6 Astra; confirm `high` stays selected. Close the popover without saving and confirm both selects return to the saved values
 - [ ] Confirm an explicitly saved GPT-5.6 model/effort remains selected after upgrading; selecting each GPT-6 model persists across a pane refresh and starts/resumes a run with its exact model ID (`gpt-6-astra`, `gpt-6-sol`, or `gpt-6-luna`)
 - [ ] Confirm Astra offers `low`, `medium`, `high`, `xhigh`, `max`, and `ultra` as supported by the installed Codex CLI, with invalid effort values falling back to `medium`
 - [ ] Confirm GPT-6 Sol offers `low` through `ultra` and invalid effort values fall back to `low`; GPT-6 Luna offers `low` through `max`, excludes `ultra`, and invalid effort values fall back to `medium`
@@ -699,6 +700,34 @@ and the same fail-closed outcome.
 - [ ] Handoff from the completed Critical Read to Paper Mastery and confirm the active paper/session remains scoped correctly
 - [ ] Run `Highlight key passages` after discovery and Critical Read; confirm all surfaces coexist without making the pane unusable
 
+### Reader pane UX review — 2026-10-20
+
+- [ ] Paper Mastery: submit an answer and confirm your answer, the feedback, and (for a missed topic) the explanation stay visible while the status reads `Round N: … Preparing the next question…`; they stay after the question is ready until you click **Next question**, which then shows the new question and focuses the answer box
+- [ ] Paper Mastery: answer the last round and confirm the completion card shows `Understood X of Y questions`, the last round's result stays below it, and the metrics line says `Average rubric score`
+- [ ] Paper Mastery: type an answer, switch to another reader tab and back, and confirm the draft and confidence are kept; press Ctrl+Enter (Cmd+Enter on macOS) and confirm it submits; with an empty answer, confirm Submit is disabled with a tooltip
+- [ ] Paper Mastery: cancel the first-question run and the evaluation run, then trigger a pane re-render; confirm the status keeps `…Click Paper Mastery to try again` or `Your answer was not graded…` instead of a stale `Generating…`/`Evaluating…`
+- [ ] Paper Mastery: on first use for a paper, click **Paper Mastery** and confirm it shows `Preparing paper…` and ignores repeat clicks; while a chat answer runs, confirm Paper Mastery, Submit Answer, and End Session (with answered rounds) are disabled with the reason in their tooltip
+- [ ] Critical Read: confirm `Start Critical Read` shows `Preparing paper…` during extraction, a finished step opens its result, `Run step N` is disabled with a tooltip while a chat answer runs, and a double-click on `Save report to note` creates one note
+- [ ] Workbench: double-click `Save latest to note` and `Save for collection` and confirm one note each; dismiss the collection picker and confirm no failure status appears; after a collection save, confirm the status names the collection; confirm the picker title says `Save Workbench cards to collection`
+- [ ] While a chat answer runs, confirm `Highlight key passages` and `Find verified prior work` are disabled with the reason as tooltip (and as the inline note under the prior-work button)
+- [ ] While review insights run for one prior-work paper, confirm the other papers' `Review insights` buttons are disabled with `Wait for the current review analysis to finish.`, and the top `Cancel review insights` click shows `Cancelling…` at once
+- [ ] While Paper Pilot finishes a task that Stop cannot cancel, confirm the composer placeholder does not mention Stop; hover a truncated session title in Past sessions and confirm the full name appears
+- [ ] Press Stop, open Login help on a failed run, and try to switch engines or sessions during a run; confirm each notice appears under the composer, not as an assistant bubble, and a later run event does not erase the transcript around it
+- [ ] Click **Summarize chat** after a grounded answer; confirm a Conversation summary panel shows the Markdown summary with a Close button, and a failed summary reports its reason in the tools status
+- [ ] With the pane open, select a passage in the PDF and send a question; confirm the request uses that passage. Insert `/explain` with no selection and confirm the status asks for a passage
+- [ ] Restore a long draft (session switch, failed send) and confirm the composer grows to show it; confirm Send is disabled while the composer is empty
+- [ ] Fail a run with raw logs; confirm Retry and Dismiss sit above **Raw logs**, and pressing Dismiss or Retry by keyboard leaves focus in the card or on the composer. During a Mastery or Workbench run, confirm the card does not say the answer appears in chat
+- [ ] While a chat answer runs, right-click an annotation and choose **Ask about annotation**; confirm the pane shows why nothing started
+- [ ] Arm **Explain figure or table**; confirm a notice over the PDF says what to do, it disappears when the area is drawn or Esc is pressed, and after two minutes a notice says the mode ended. Confirm the dictionary window label reads `Naver Dictionary` (Korean UI: `네이버 사전`)
+- [ ] Critical Read: in Claude Code mode, confirm Step 3's button is disabled with the prior-work reason shown in the step card; confirm Cancel appears next to `Working…` and shows `Cancelling Critical Read step…`; revise Step 2 after completing Step 7 and confirm the dialog names Step 7, and the reopened step shows its `Reopened:` reason; confirm Step 1 lists each caption once and a rejected step output says to run it again
+- [ ] Prior-work results: open a paper's review insights, then trigger a rebuild (another row action or a run event) and confirm the insight stays open and the focused button keeps focus; confirm a paper without official evidence shows a `No official evidence` chip and a failing row action shows its error inside that row
+- [ ] Past sessions: open the ⋯ menu with the keyboard; confirm focus moves to Rename, arrow keys move between items, Escape returns to ⋯, and the menu stays open across a run event. Make a rename or delete fail (for example, read-only profile) and confirm the error appears at the top of Past sessions; confirm Save is disabled for an empty name
+- [ ] Workbench cards show readable evidence chips (`Paper-grounded`, `Inference`, `Mixed`) with full descriptions on hover; new Contributions, Limitations, and Follow-up work cards use those titles; the save buttons explain what they save on hover
+- [ ] Paper Mastery: submit an answer, switch to another reader tab and back while grading or the next question runs, and confirm the result still stays until **Next question**; switch tabs during `Preparing paper…` and confirm a second click does not start a second preparation
+- [ ] Paper Mastery: while a chat answer runs, trigger Start from the Critical Read report, End Session with answered rounds, and **Generate final report**; confirm each explains in the composer hint that it could not start, and that the typed answer or failure reason is kept
+- [ ] Paper Mastery: save a session while the next question is being generated (quit Zotero or switch sessions), reopen it, and confirm it shows as ended with **Generate final report**, not the graded question again; end a session with no answered rounds, reopen it, and confirm Mastery stays closed
+- [ ] Paper Mastery: make the final report fail and confirm **Generate final report** retries it; make the next-question run fail and confirm the card says `Session ended` with the reason; type an answer and click End Session and confirm it asks before discarding the draft
+
 ## 10. Compare / reusable artifact checks
 
 - [ ] `Compare` stays disabled before recommendations exist, then becomes enabled with a compact ready count once related papers are available
@@ -813,7 +842,7 @@ Run these in Zotero 7 and 10, in light and dark themes, with the pane about
 - [ ] Pick a model in the engine popover, then tick "Allow web search when needed" or click Re-check; confirm the pick and the enabled Save stay
 - [ ] With Codex selected, turn web search off in Zotero Settings; confirm "Find prior work" turns disabled with its reason without reopening the paper
 - [ ] Confirm the engine buttons show the pressed engine, the reset reads "Use default (…)", and it is disabled without an override
-- [ ] Change the model and close the popover without saving; confirm the selection reverts. Confirm Save shows "Saved" and a Claude effort change enables Save
+- [ ] Change the model and close the popover without saving; confirm the selection reverts. Confirm Save closes the popover, returns focus to the trigger, and a screen reader announces "Default model saved for all papers."; an effort-only change (Claude or Codex) enables Save
 - [ ] With Codex ready, confirm the auth buttons are hidden; with login required, confirm the instructions appear inside the popover
 - [ ] Clear cards, confirm the prompt, then reopen the session and confirm the cards stay cleared
 - [ ] With a screen reader, confirm "Focus chat" is announced with its pressed state

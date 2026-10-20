@@ -68,7 +68,7 @@ test("the pane button cancels a running task and explains an unavailable engine"
       hasResults: false,
       unavailableReason: "Needs Codex CLI",
     }),
-    { label: "Cancel discovery", disabled: false, note: "" },
+    { label: "Cancel prior-work search", disabled: false, note: "" },
   );
   assert.deepEqual(
     getDiscoveryButtonPresentation({
@@ -101,6 +101,32 @@ test("the pane button cancels a running task and explains an unavailable engine"
   );
 });
 
+test("Find verified prior work says why it waits for another run", () => {
+  assert.deepEqual(
+    getDiscoveryButtonPresentation({
+      reviewInsightRunning: false,
+      running: false,
+      hasResults: false,
+      busyReason: "Wait for the current answer to finish.",
+    }),
+    {
+      label: "Find verified prior work",
+      disabled: true,
+      note: "Wait for the current answer to finish.",
+    },
+  );
+  // A running search stays cancellable.
+  assert.equal(
+    getDiscoveryButtonPresentation({
+      reviewInsightRunning: false,
+      running: true,
+      hasResults: false,
+      busyReason: "Wait for the prior-work search to finish.",
+    }).label,
+    "Cancel prior-work search",
+  );
+});
+
 test("a second Find prior work request never cancels the running search", () => {
   assert.deepEqual(
     resolveDiscoveryRequest({ running: true, unavailableReason: "Needs X" }),
@@ -108,7 +134,7 @@ test("a second Find prior work request never cancels the running search", () => 
   );
   assert.match(
     DISCOVERY_ALREADY_RUNNING_MESSAGE,
-    /^Discovery is already running/,
+    /^The prior-work search is already running/,
   );
   assert.deepEqual(
     resolveDiscoveryRequest({ running: false, unavailableReason: "Needs X" }),

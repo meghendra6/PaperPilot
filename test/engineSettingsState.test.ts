@@ -42,24 +42,38 @@ test("the reset label names the configured default engine", () => {
 test("Save enables only when the picker differs from the saved default", () => {
   assert.equal(
     isModelSelectionDirty({
-      selectedModel: "gpt|high",
-      savedModel: "gpt|high",
-      effortVisible: false,
+      selectedModel: "gpt-6-astra",
+      savedModel: "gpt-6-astra",
+      effortVisible: true,
+      selectedEffort: "high",
+      savedEffort: "high",
     }),
     false,
   );
   assert.equal(
     isModelSelectionDirty({
-      selectedModel: "gpt|low",
-      savedModel: "gpt|high",
-      effortVisible: false,
+      selectedModel: "gpt-6-astra",
+      savedModel: "gpt-6-astra",
+      effortVisible: true,
+      selectedEffort: "low",
+      savedEffort: "high",
     }),
     true,
   );
   assert.equal(
     isModelSelectionDirty({
-      selectedModel: "opus|",
-      savedModel: "opus|",
+      selectedModel: "gpt-6-luna",
+      savedModel: "gpt-6-astra",
+      effortVisible: true,
+      selectedEffort: "high",
+      savedEffort: "high",
+    }),
+    true,
+  );
+  assert.equal(
+    isModelSelectionDirty({
+      selectedModel: "opus",
+      savedModel: "opus",
       effortVisible: true,
       selectedEffort: "high",
       savedEffort: "",
@@ -68,8 +82,8 @@ test("Save enables only when the picker differs from the saved default", () => {
   );
   assert.equal(
     isModelSelectionDirty({
-      selectedModel: "opus|",
-      savedModel: "opus|",
+      selectedModel: "opus",
+      savedModel: "opus",
       effortVisible: false,
       selectedEffort: "high",
       savedEffort: "",

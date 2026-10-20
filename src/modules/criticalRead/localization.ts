@@ -326,6 +326,14 @@ const translations: Record<string, readonly [string, string]> = {
     "비판적 읽기를 완료했습니다. 보고서를 검토하거나 저장하세요.",
     "批判性阅读已完成。请检查或保存报告。",
   ],
+  "Cancelling Critical Read step…": [
+    "비판적 읽기 단계를 취소하는 중…",
+    "正在取消批判性阅读步骤…",
+  ],
+  "Restored output requires fresh validation.": [
+    "복원된 결과는 다시 검증해야 합니다.",
+    "恢复的结果需要重新验证。",
+  ],
   "Cancelling Critical Read prior-work search…": [
     "비판적 읽기의 선행 연구 검색을 취소하는 중…",
     "正在取消批判性阅读的先前研究搜索…",
@@ -388,16 +396,6 @@ const translations: Record<string, readonly [string, string]> = {
       "추출 제한: 구조화된 그림·표 캡션을 찾지 못했습니다. 그림 이미지는 직접 확인하지 않았으므로, 열려 있는 PDF에서 확인하세요.",
       "提取受限：未找到结构化的图表说明。尚未直接查看图像内容，请查阅已打开的 PDF。",
     ],
-  "Replace Step 2 and invalidate its prior-work map? Your unrelated methodology and conclusion work will be preserved.":
-    [
-      "2단계를 수정하고 이에 연결된 선행 연구 지도를 초기화할까요? 관련 없는 방법론 평가와 결론은 유지됩니다.",
-      "要修改第 2 步并重置关联的先前研究图谱吗？不相关的方法评估和结论将予以保留。",
-    ],
-  "Replace Step 5 and invalidate the author comparison? Your other completed work will be preserved.":
-    [
-      "5단계를 수정하고 저자 결론과의 비교를 초기화할까요? 다른 완료된 작업은 유지됩니다.",
-      "要修改第 5 步并重置与作者结论的比较吗？其他已完成的工作将予以保留。",
-    ],
   "This report preserves the reader's independent judgments separately from Paper Pilot synthesis. Public-review insights are not used inside the seven-step analysis; a permitted reviewer perspective may appear afterward as a distinct section.":
     [
       "이 보고서는 독자의 독립적인 판단과 Paper Pilot의 종합 분석을 구분해 보존합니다. 7단계 분석에는 공개 심사 의견을 사용하지 않으며, 허용된 심사자 관점은 이후 별도 섹션에 표시될 수 있습니다.",
@@ -420,9 +418,54 @@ const translations: Record<string, readonly [string, string]> = {
     "{step}단계를 다시 열었습니다. 이 단계에 의존하는 결과만 초기화했습니다.",
     "已重新打开第 {step} 步。仅重置了依赖此步骤的结果。",
   ],
-  "Replace Step {step}? Unrelated completed steps will be preserved.": [
-    "{step}단계를 수정할까요? 관련 없는 완료된 단계는 유지됩니다.",
-    "要修改第 {step} 步吗？不相关的已完成步骤将予以保留。",
+  "Replace Step {step}? Other completed steps are kept.": [
+    "{step}단계를 수정할까요? 다른 완료된 단계는 유지됩니다.",
+    "要修改第 {step} 步吗？其他已完成步骤将予以保留。",
+  ],
+  "Replace Step {step}? Completed Steps {steps} depend on it and will be cleared. Other completed steps are kept.":
+    [
+      "{step}단계를 수정할까요? 이 단계에 의존하는 완료된 {steps}단계도 초기화됩니다. 다른 완료된 단계는 유지됩니다.",
+      "要修改第 {step} 步吗？依赖此步骤的已完成第 {steps} 步也会被重置。其他已完成步骤将予以保留。",
+    ],
+  "Reopened: {reason}": [
+    "다시 열린 이유: {reason}",
+    "重新打开的原因：{reason}",
+  ],
+  "Step {step} is being revised.": [
+    "{step}단계를 수정하고 있습니다.",
+    "正在修改第 {step} 步。",
+  ],
+  "Step 2 changed the prior-work research question.": [
+    "2단계에서 선행 연구의 연구 질문이 바뀌었습니다.",
+    "第 2 步更改了先前研究的研究问题。",
+  ],
+  "Step 2 changed evidence used by the final synthesis.": [
+    "2단계에서 최종 종합에 쓰이는 근거가 바뀌었습니다.",
+    "第 2 步更改了最终综合所用的证据。",
+  ],
+  "Step 3 changed evidence used by the final synthesis.": [
+    "3단계에서 최종 종합에 쓰이는 근거가 바뀌었습니다.",
+    "第 3 步更改了最终综合所用的证据。",
+  ],
+  "Step 4 changed the methodology assessment used by the final synthesis.": [
+    "4단계에서 최종 종합에 쓰이는 방법론 평가가 바뀌었습니다.",
+    "第 4 步更改了最终综合所用的方法评估。",
+  ],
+  "Step 5 changed the independent conclusion.": [
+    "5단계에서 독립적인 결론이 바뀌었습니다.",
+    "第 5 步更改了独立结论。",
+  ],
+  "Step 5 changed evidence used by the final synthesis.": [
+    "5단계에서 최종 종합에 쓰이는 근거가 바뀌었습니다.",
+    "第 5 步更改了最终综合所用的证据。",
+  ],
+  "Step 6 changed the author comparison used by the final synthesis.": [
+    "6단계에서 최종 종합에 쓰이는 저자 결론 비교가 바뀌었습니다.",
+    "第 6 步更改了最终综合所用的作者结论比较。",
+  ],
+  "Step {step} returned an incomplete answer. Run it again.": [
+    "{step}단계의 응답이 불완전합니다. 다시 실행하세요.",
+    "第 {step} 步返回的回答不完整。请重新运行。",
   ],
   "Discovery: {main} verified main · {other} other peer-reviewed · {novelty} novelty signals":
     [
@@ -489,7 +532,27 @@ export function localizeCriticalReadStatus(
     return t("Step {step} reopened. Only dependent outputs were invalidated.", {
       step: reopened[1],
     });
+  const incomplete =
+    /^Step ([1-7]) returned an incomplete answer\. Run it again\.$/.exec(
+      status,
+    );
+  if (incomplete)
+    return t("Step {step} returned an incomplete answer. Run it again.", {
+      step: incomplete[1],
+    });
   if (status.startsWith("Save failed: "))
     return `${t("Save failed")}: ${status.slice("Save failed: ".length)}`;
   return t(status);
+}
+
+/** Why a reopened step must be done again, in the response language. */
+export function localizeCriticalReadStaleReason(
+  reason: string,
+  responseLanguage?: unknown,
+) {
+  const t = createCriticalReadLocalizer(responseLanguage);
+  const revising = /^Step ([1-7]) is being revised\.$/.exec(reason);
+  return revising
+    ? t("Step {step} is being revised.", { step: revising[1] })
+    : t(reason);
 }

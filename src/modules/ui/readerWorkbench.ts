@@ -2,6 +2,7 @@ import { getModeForItem } from "../ai/modeStore";
 import { isReaderChatBusy } from "../ai/readerBusy";
 import { getDiscoveryAvailability } from "../discovery/capabilities";
 import {
+  getPaperArtifactEvidencePresentation,
   type PaperArtifactCard,
   type PaperArtifactKind,
 } from "../paperArtifacts";
@@ -203,8 +204,14 @@ export function buildPaperArtifactCardElement(
     headingRow.appendChild(heading);
 
     if (section.evidence) {
+      // The raw tag ("explicit") read as a code value. Show what it means.
+      const presentation = getPaperArtifactEvidencePresentation(
+        section.evidence,
+      );
       const evidence = doc.createElement("span");
-      evidence.textContent = section.evidence;
+      evidence.textContent = presentation.shortLabel;
+      evidence.title = presentation.label;
+      evidence.dataset.tone = presentation.tone;
       evidence.className = "pp-artifact-card__evidence";
       headingRow.appendChild(evidence);
     }

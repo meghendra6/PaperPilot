@@ -154,7 +154,9 @@ export async function savePaperArtifactToCollection(params: {
     typeof zotero.Items?.getAsync === "function"
       ? ((await zotero.Items.getAsync(params.item.id)) as NoteParentCandidate)
       : params.item;
-  const collection = await chooseCollectionForRecommendation(sourceItem);
+  const collection = await chooseCollectionForRecommendation(sourceItem, {
+    title: "Save Workbench card to collection",
+  });
   if (!collection) {
     throw new Error(
       "Select or create a Zotero collection before saving the artifact.",
@@ -196,7 +198,9 @@ export async function savePaperArtifactSetToCollection(params: {
     typeof zotero.Items?.getAsync === "function"
       ? ((await zotero.Items.getAsync(params.item.id)) as NoteParentCandidate)
       : params.item;
-  const collection = await chooseCollectionForRecommendation(sourceItem);
+  const collection = await chooseCollectionForRecommendation(sourceItem, {
+    title: "Save Workbench cards to collection",
+  });
   if (!collection) {
     throw new Error(
       "Select or create a Zotero collection before saving the artifact.",

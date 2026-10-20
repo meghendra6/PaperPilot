@@ -508,6 +508,12 @@
   color: var(--pp-text-muted);
 }
 
+.pp-session-history__error {
+  margin-bottom: 6px;
+  font-size: var(--pp-font-size-sm);
+  color: var(--pp-error);
+}
+
 .pp-session-history__badge {
   padding: 1px 6px;
   border-radius: var(--pp-radius-pill);
@@ -687,7 +693,7 @@
   min-width: 0;
 }
 
-.pp-model-row #chat-claude-effort {
+.pp-model-row #chat-model-effort {
   flex: 0 0 auto;
 }
 
@@ -1008,7 +1014,10 @@
   color: var(--pp-text-evidence);
   font-size: var(--pp-font-size-xs);
   font-weight: 700;
-  text-transform: uppercase;
+}
+
+.pp-artifact-card__evidence[data-tone="caution"] {
+  color: var(--pp-warning);
 }
 
 .pp-artifact-card__list {
@@ -1133,6 +1142,16 @@
   font-size: var(--pp-font-size-sm);
   color: var(--pp-text-recommendation-meta);
   margin-bottom: 4px;
+}
+
+.pp-recommendation-row__error {
+  margin-top: 4px;
+  font-size: var(--pp-font-size-xs);
+  color: var(--pp-error);
+}
+
+.pp-recommendation-row__error[hidden] {
+  display: none;
 }
 
 .pp-recommendation-row__reason {
@@ -4079,6 +4098,12 @@ button.pprw-render-evidence-link {
   min-height: 76px;
   margin-block: 6px;
   resize: vertical;
+}
+.pp-chat-review__summary {
+  max-height: 220px;
+  overflow-y: auto;
+  margin-block: 6px;
+  overflow-wrap: anywhere;
 }
 #paper-pilot-draft {
   flex-wrap: wrap;

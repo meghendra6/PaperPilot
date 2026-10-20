@@ -23,19 +23,25 @@ export function getChatComposerScrollTop(params: {
   return Math.min(Math.max(0, params.previousScrollTop), maxScrollTop);
 }
 
+/**
+ * Fits the composer to its text. Typing triggers it through the input event;
+ * code that sets `input.value` must call it, or a restored draft stays clipped.
+ */
+export function resizeChatComposer(input: HTMLTextAreaElement) {
+  const previousScrollTop = input.scrollTop;
+  input.style.height = `${CHAT_INPUT_MIN_HEIGHT}px`;
+  const height = getChatComposerHeight(input.scrollHeight);
+  input.style.height = `${height}px`;
+  input.scrollTop = getChatComposerScrollTop({
+    scrollHeight: input.scrollHeight,
+    viewportHeight: input.clientHeight || height,
+    previousScrollTop,
+    caretAtEnd: input.selectionEnd === input.value?.length,
+  });
+}
+
 export function installChatComposerAutosize(input: HTMLTextAreaElement) {
-  const resize = () => {
-    const previousScrollTop = input.scrollTop;
-    input.style.height = `${CHAT_INPUT_MIN_HEIGHT}px`;
-    const height = getChatComposerHeight(input.scrollHeight);
-    input.style.height = `${height}px`;
-    input.scrollTop = getChatComposerScrollTop({
-      scrollHeight: input.scrollHeight,
-      viewportHeight: input.clientHeight || height,
-      previousScrollTop,
-      caretAtEnd: input.selectionEnd === input.value?.length,
-    });
-  };
+  const resize = () => resizeChatComposer(input);
 
   input.addEventListener("input", resize);
   resize();

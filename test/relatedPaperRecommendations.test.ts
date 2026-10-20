@@ -13,6 +13,7 @@ import {
   chooseCollectionForRecommendation,
   findExistingLibraryItem,
   generateRelatedPaperGroups,
+  isCollectionChoiceCancelled,
   normalizeDOI,
   normalizeDiscoveryRunFailure,
   openRecommendedPaper,
@@ -457,6 +458,39 @@ test("chooseCollectionForRecommendation prompts instead of choosing arbitrarily 
       await chooseCollectionForRecommendation({ libraryID: 1 }),
       second,
     );
+  } finally {
+    delete (globalThis as any).Services;
+  }
+});
+
+test("dismissing the collection picker is reported as a cancellation, not a missing collection", async () => {
+  const first = { id: 7, name: "First", parentID: 0, libraryID: 1 };
+  const second = { id: 8, name: "Second", parentID: 0, libraryID: 1 };
+  const titles: string[] = [];
+  (globalThis as any).Zotero = {
+    getMainWindow: () => ({ ZoteroPane: { getSelectedCollections: () => [] } }),
+    Collections: { getByLibrary: () => [first, second] },
+  };
+  (globalThis as any).Services = {
+    prompt: {
+      select: (_parent: unknown, title: string) => {
+        titles.push(title);
+        return false;
+      },
+    },
+  };
+
+  try {
+    await assert.rejects(
+      () =>
+        chooseCollectionForRecommendation(
+          { libraryID: 1 },
+          { title: "Save Workbench cards to collection" },
+        ),
+      (error: unknown) => isCollectionChoiceCancelled(error),
+    );
+    assert.deepEqual(titles, ["Save Workbench cards to collection"]);
+    assert.equal(isCollectionChoiceCancelled(new Error("other")), false);
   } finally {
     delete (globalThis as any).Services;
   }

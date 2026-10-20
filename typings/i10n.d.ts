@@ -16,6 +16,7 @@ export type FluentMessageId =
   | 'figure-explain-tool-armed'
   | 'figure-explain-tool-label'
   | 'figure-explain-tool-read-only'
+  | 'figure-explain-tool-timeout'
   | 'item-section-paperpilot-head-text'
   | 'item-section-paperpilot-sidenav-tooltip'
   | 'item-section-research-workspace-head-text'

@@ -76,7 +76,7 @@ export function classifyRunFailure(params: {
       kind: "unknown",
       engine: params.engine,
       userMessage:
-        "Paper Pilot could not start this request. Try sending it again. See the run status for details.",
+        "Paper Pilot could not start this request. Try sending it again. Expand Raw logs in the run status for details.",
       rawError,
     };
   }

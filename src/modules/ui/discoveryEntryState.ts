@@ -1,5 +1,5 @@
 export const DISCOVERY_ALREADY_RUNNING_MESSAGE =
-  "Discovery is already running. Wait for it to finish or cancel it first.";
+  "The prior-work search is already running. Wait for it to finish or cancel it first.";
 
 export interface DiscoveryButtonPresentation {
   label: string;
@@ -18,18 +18,23 @@ export function getDiscoveryButtonPresentation(params: {
   running: boolean;
   hasResults: boolean;
   unavailableReason?: string;
+  /** Why another run holds this paper's engine, if one does. */
+  busyReason?: string;
 }): DiscoveryButtonPresentation {
   if (params.reviewInsightRunning) {
     return { label: "Cancel review insights", disabled: false, note: "" };
   }
   if (params.running) {
-    return { label: "Cancel discovery", disabled: false, note: "" };
+    return { label: "Cancel prior-work search", disabled: false, note: "" };
   }
   const label = params.hasResults
     ? "Refresh verified prior work"
     : "Find verified prior work";
   if (params.unavailableReason) {
     return { label, disabled: true, note: params.unavailableReason };
+  }
+  if (params.busyReason) {
+    return { label, disabled: true, note: params.busyReason };
   }
   return { label, disabled: false, note: "" };
 }

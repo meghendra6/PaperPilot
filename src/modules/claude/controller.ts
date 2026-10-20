@@ -135,7 +135,9 @@ export async function handleClaudeQuestion(params: {
   }
 
   const runToken = markReaderRunStarted(params.itemID, "claude_code");
-  startRunProgress(params.itemID, "claude_code", runToken, params.sessionId);
+  startRunProgress(params.itemID, "claude_code", runToken, params.sessionId, {
+    quiet: params.suppressChatMessages,
+  });
   let assistantMessage: HTMLElement | null | undefined = null;
   const pendingCompletion = {
     sessionId: params.sessionId,

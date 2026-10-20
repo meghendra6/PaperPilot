@@ -79,7 +79,7 @@ test("parsePaperArtifactCard converts paper-tool output into shared card shape",
   );
 
   assert.equal(card.kind, "extract-limitations");
-  assert.equal(card.title, "Extract limitations");
+  assert.equal(card.title, "Limitations");
   assert.equal(card.sections[1].items[0], "Stable metadata quality");
   assert.equal(card.sections[1].evidence, "inference");
 });
@@ -87,14 +87,17 @@ test("parsePaperArtifactCard converts paper-tool output into shared card shape",
 test("getPaperArtifactEvidencePresentation shapes evidence labels for future card rendering", () => {
   assert.deepEqual(getPaperArtifactEvidencePresentation("explicit"), {
     label: "Directly grounded in the paper",
+    shortLabel: "Paper-grounded",
     tone: "grounded",
   });
   assert.deepEqual(getPaperArtifactEvidencePresentation("inference"), {
     label: "Model inference / extrapolation",
+    shortLabel: "Inference",
     tone: "caution",
   });
   assert.deepEqual(getPaperArtifactEvidencePresentation("mixed"), {
     label: "Mixed evidence: paper-grounded + inference",
+    shortLabel: "Mixed",
     tone: "neutral",
   });
 });

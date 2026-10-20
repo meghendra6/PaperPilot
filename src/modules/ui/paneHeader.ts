@@ -10,6 +10,7 @@ import {
   getClaudeReasoningEfforts,
   getCodexBuiltInModelCatalog,
   getCodexBuiltInModels,
+  getCodexReasoningEffortsForModel,
   mergeModelOptions,
   normalizeClaudeModel,
   normalizeClaudeModelList,
@@ -46,24 +47,23 @@ export interface PaneHeaderHandle {
   codexRecheckButton: HTMLButtonElement;
   modelRow: HTMLElement;
   modelInput: HTMLSelectElement;
-  claudeEffortInput: HTMLSelectElement;
+  effortInput: HTMLSelectElement;
   modelSaveButton: HTMLButtonElement;
   codexOptionsRow: HTMLElement;
   codexWebSearchToggle: HTMLInputElement;
   modelHistory: HTMLElement;
   setOpen(open: boolean, restoreFocus?: boolean): void;
-  /** Confirms a saved default model until the selection changes again. */
+  /** Records the picked model and effort as saved and announces the save. */
   markModelSaved(): void;
   /** Shows Codex authentication guidance inside the popover. */
   setCodexAuthStatus(text: string): void;
   dispose(): void;
 }
 
-const MODEL_SAVE_LABEL = "Save";
-const MODEL_SAVED_LABEL = "Saved";
-
 /** The saved default each picker shows when no unsaved choice is pending. */
 const savedSelectValues = new WeakMap<HTMLSelectElement, string>();
+/** The engine whose options each picker currently lists. */
+const renderedEngines = new WeakMap<HTMLSelectElement, EngineMode>();
 
 function getSavedSelectValue(select: HTMLSelectElement) {
   return savedSelectValues.get(select);
@@ -100,6 +100,46 @@ export function restoreUnsavedSelection(
     (option) => (option as HTMLOptionElement).value,
   );
   if (values.includes(pending)) select.value = pending;
+}
+
+/** An unsaved pick survives a re-render only for the engine it was made in. */
+function takeUnsavedSelection(select: HTMLSelectElement, mode: EngineMode) {
+  const pending =
+    renderedEngines.get(select) === mode
+      ? captureUnsavedSelection(select)
+      : undefined;
+  renderedEngines.set(select, mode);
+  return pending;
+}
+
+function fillEffortOptions(
+  effortInput: HTMLSelectElement,
+  efforts: string[],
+  selectedEffort: string,
+) {
+  const doc = effortInput.ownerDocument;
+  effortInput.replaceChildren(
+    ...efforts.map((effort) => {
+      const option = doc.createElement("option");
+      option.value = effort;
+      option.textContent = effort || "default effort";
+      option.selected = effort === selectedEffort;
+      return option;
+    }),
+  );
+}
+
+/** Codex efforts depend on the model, so the list follows the model picker. */
+function fillCodexEffortOptions(
+  effortInput: HTMLSelectElement,
+  model: string,
+  preferredEffort: string,
+) {
+  fillEffortOptions(
+    effortInput,
+    getCodexReasoningEffortsForModel(model),
+    normalizeCodexReasoningEffort(preferredEffort, model),
+  );
 }
 
 function makeButton(
@@ -186,27 +226,22 @@ export function createPaneHeader(params: {
   const modelSaveButton = makeButton(
     doc,
     "chat-codex-model-save",
-    MODEL_SAVE_LABEL,
+    "Save",
     "pp-btn pp-btn--primary",
   );
   modelSaveButton.title = "Save as the default model for all papers";
   modelSaveButton.disabled = true;
+  // Save closes the popover, so the announcement lives outside it.
   const modelSaveStatus = doc.createElement("span");
   modelSaveStatus.id = "chat-codex-model-save-status";
   modelSaveStatus.className = "pp-visually-hidden";
   modelSaveStatus.setAttribute("role", "status");
   modelSaveStatus.setAttribute("aria-live", "polite");
-  const claudeEffortInput = doc.createElement("select");
-  claudeEffortInput.id = "chat-claude-effort";
-  claudeEffortInput.setAttribute("aria-label", "Claude effort");
-  claudeEffortInput.hidden = true;
-  modelRow.append(
-    modelLabel,
-    modelInput,
-    claudeEffortInput,
-    modelSaveButton,
-    modelSaveStatus,
-  );
+  const effortInput = doc.createElement("select");
+  effortInput.id = "chat-model-effort";
+  effortInput.setAttribute("aria-label", "Effort");
+  effortInput.hidden = true;
+  modelRow.append(modelLabel, modelInput, effortInput, modelSaveButton);
 
   const codexOptionsRow = doc.createElement("div");
   codexOptionsRow.id = "paper-pilot-codex-options";
@@ -268,30 +303,35 @@ export function createPaneHeader(params: {
     modelHistory,
     codexActions,
   );
-  root.append(trigger, newSessionButton, popover);
+  root.append(trigger, newSessionButton, popover, modelSaveStatus);
   params.mount.replaceWith(root);
 
-  const clearModelSavedConfirmation = () => {
-    modelSaveButton.removeAttribute("data-saved");
-    modelSaveButton.textContent = MODEL_SAVE_LABEL;
-    modelSaveStatus.textContent = "";
-  };
+  // A Codex model change keeps the picked effort when the new model supports
+  // it and otherwise selects that model's default effort.
   const onModelSelectionChange = () => {
-    clearModelSavedConfirmation();
+    if (renderedEngines.get(effortInput) === "codex_cli") {
+      fillCodexEffortOptions(effortInput, modelInput.value, effortInput.value);
+    }
     syncModelSaveState(modelInput);
   };
+  const onEffortSelectionChange = () => syncModelSaveState(modelInput);
   // Closing the popover discards a selection that was never saved, so the
   // picker and the header chip always show the saved default.
   const resetUnsavedModelSelection = () => {
     const savedModel = getSavedSelectValue(modelInput);
     if (savedModel !== undefined) modelInput.value = savedModel;
-    const savedEffort = getSavedSelectValue(claudeEffortInput);
-    if (savedEffort !== undefined) claudeEffortInput.value = savedEffort;
-    clearModelSavedConfirmation();
+    const savedEffort = getSavedSelectValue(effortInput);
+    if (savedEffort !== undefined) {
+      if (renderedEngines.get(effortInput) === "codex_cli") {
+        fillCodexEffortOptions(effortInput, modelInput.value, savedEffort);
+      }
+      effortInput.value = savedEffort;
+    }
     syncModelSaveState(modelInput);
   };
   const setOpen = (open: boolean, restoreFocus = false) => {
     if (!open && !popover.hidden) resetUnsavedModelSelection();
+    if (open) modelSaveStatus.textContent = "";
     popover.hidden = !open;
     trigger.setAttribute("aria-expanded", String(open));
     root.classList.toggle("pp-pane-header--open", open);
@@ -304,7 +344,7 @@ export function createPaneHeader(params: {
   const onTrigger = () => setOpen(popover.hidden);
   const nativeSelectClickGuard = createNativeSelectClickGuard([
     modelInput,
-    claudeEffortInput,
+    effortInput,
   ]);
   const onDocumentPointerDown = (event: PointerEvent) => {
     if (popover.hidden) return;
@@ -327,7 +367,7 @@ export function createPaneHeader(params: {
   };
   trigger.addEventListener("click", onTrigger);
   modelInput.addEventListener("change", onModelSelectionChange);
-  claudeEffortInput.addEventListener("change", onModelSelectionChange);
+  effortInput.addEventListener("change", onEffortSelectionChange);
   doc.addEventListener("pointerdown", onDocumentPointerDown, true);
   doc.addEventListener("click", onDocumentClick);
   doc.addEventListener("keydown", onDocumentKeyDown, true);
@@ -348,7 +388,7 @@ export function createPaneHeader(params: {
     codexRecheckButton,
     modelRow,
     modelInput,
-    claudeEffortInput,
+    effortInput,
     modelSaveButton,
     codexOptionsRow,
     codexWebSearchToggle,
@@ -356,12 +396,10 @@ export function createPaneHeader(params: {
     setOpen,
     markModelSaved() {
       setSavedSelectValue(modelInput, modelInput.value);
-      if (!claudeEffortInput.hidden) {
-        setSavedSelectValue(claudeEffortInput, claudeEffortInput.value);
+      if (!effortInput.hidden) {
+        setSavedSelectValue(effortInput, effortInput.value);
       }
       syncModelSaveState(modelInput);
-      modelSaveButton.setAttribute("data-saved", "true");
-      modelSaveButton.textContent = MODEL_SAVED_LABEL;
       modelSaveStatus.textContent = "Default model saved for all papers.";
     },
     setCodexAuthStatus(text: string) {
@@ -372,7 +410,7 @@ export function createPaneHeader(params: {
       disposed = true;
       trigger.removeEventListener("click", onTrigger);
       modelInput.removeEventListener("change", onModelSelectionChange);
-      claudeEffortInput.removeEventListener("change", onModelSelectionChange);
+      effortInput.removeEventListener("change", onEffortSelectionChange);
       doc.removeEventListener("pointerdown", onDocumentPointerDown, true);
       doc.removeEventListener("click", onDocumentClick);
       doc.removeEventListener("keydown", onDocumentKeyDown, true);
@@ -393,14 +431,14 @@ function setTextWithInlineCode(element: HTMLElement, text: string) {
   );
 }
 
-/** Enables Save only for an unsaved selection and keeps a Saved confirmation. */
+/** Enables Save only for an unsaved selection. */
 function syncModelSaveState(rowElement: HTMLElement) {
   const row = rowElement.closest?.(".pp-model-row");
   const modelInput = row?.querySelector(
     "#chat-codex-model",
   ) as HTMLSelectElement | null;
   const effortInput = row?.querySelector(
-    "#chat-claude-effort",
+    "#chat-model-effort",
   ) as HTMLSelectElement | null;
   const saveButton = row?.querySelector(
     "#chat-codex-model-save",
@@ -414,10 +452,6 @@ function syncModelSaveState(rowElement: HTMLElement) {
     savedEffort: effortInput ? getSavedSelectValue(effortInput) : undefined,
   });
   saveButton.disabled = !dirty;
-  if (dirty && saveButton.getAttribute("data-saved") === "true") {
-    saveButton.removeAttribute("data-saved");
-    saveButton.textContent = MODEL_SAVE_LABEL;
-  }
 }
 
 /** Marks the active engine and labels the reset with the real default. */
@@ -493,7 +527,7 @@ export function renderModeHeader(
     : undefined;
   const modelLabel = modelOption?.textContent?.trim();
   const effortInput = root?.querySelector(
-    "#chat-claude-effort",
+    "#chat-model-effort",
   ) as HTMLSelectElement | null;
   const effortValue =
     effortInput && !effortInput.hidden
@@ -572,7 +606,7 @@ export function renderModelHistory(
   modelInput: HTMLSelectElement,
   mode: EngineMode,
 ) {
-  const pending = captureUnsavedSelection(modelInput);
+  const pending = takeUnsavedSelection(modelInput, mode);
   const recentModels = normalizeModelListForMode(mode, getRecentModels(mode));
   const allowedModels = normalizeModelListForMode(
     mode,
@@ -594,13 +628,6 @@ export function renderModelHistory(
           String(getPref("codexAllowedModels") || ""),
         )
       : normalizeModelForMode(mode, currentValue);
-  const currentReasoningEffort =
-    mode === "codex_cli"
-      ? normalizeCodexReasoningEffort(
-          String(getPref("codexReasoningEffort") || "medium"),
-          selectedValue,
-        )
-      : "";
   const optionMap = new Map<string, string>();
 
   if (mode === "codex_cli") {
@@ -610,80 +637,68 @@ export function renderModelHistory(
     for (const model of getCodexBuiltInModelCatalog().filter((entry) =>
       allowed.includes(entry.slug),
     )) {
-      const efforts = model.reasoningEfforts.length
-        ? model.reasoningEfforts
-        : [model.defaultReasoningEffort || "medium"];
-      for (const effort of efforts) {
-        optionMap.set(
-          `${model.slug}|${effort}`,
-          `${model.displayName} (${effort})`,
-        );
-      }
+      optionMap.set(model.slug, model.displayName);
     }
   } else {
     for (const model of options) {
-      optionMap.set(`${model}|`, getClaudeModelLabel(model));
+      optionMap.set(model, getClaudeModelLabel(model));
     }
   }
 
-  const currentKey =
-    mode === "codex_cli"
-      ? `${selectedValue}|${currentReasoningEffort}`
-      : `${selectedValue}|`;
   const doc = modelInput.ownerDocument;
   modelInput.replaceChildren(
     ...[...optionMap.entries()].map(([value, label]) => {
       const option = doc.createElement("option");
       option.value = value;
       option.textContent = label;
-      option.selected = value === currentKey;
+      option.selected = value === selectedValue;
       return option;
     }),
   );
-  if (!optionMap.has(currentKey)) {
+  if (!optionMap.has(selectedValue)) {
     const fallback = doc.createElement("option");
-    fallback.value = currentKey;
+    fallback.value = selectedValue;
     fallback.textContent =
-      mode === "codex_cli" && currentReasoningEffort
-        ? `${selectedValue} (${currentReasoningEffort})`
-        : getClaudeModelLabel(selectedValue);
+      mode === "codex_cli" ? selectedValue : getClaudeModelLabel(selectedValue);
     fallback.selected = true;
     modelInput.appendChild(fallback);
   }
-  setSavedSelectValue(modelInput, currentKey);
+  setSavedSelectValue(modelInput, selectedValue);
   restoreUnsavedSelection(modelInput, pending);
   syncModelSaveState(modelInput);
   modelHistory.style.display = "none";
   modelHistory.replaceChildren();
 }
 
-export function renderClaudeEffortInput(
+/**
+ * Both engines pick an effort next to the model. Claude lists its CLI levels
+ * plus the CLI default; Codex lists the levels the picked model supports.
+ * Render the model picker first: Codex reads its current value.
+ */
+export function renderEffortInput(
   effortInput: HTMLSelectElement,
+  modelInput: HTMLSelectElement,
   mode: EngineMode,
 ) {
-  if (mode !== "claude_code") {
-    effortInput.hidden = true;
-    effortInput.replaceChildren();
-    setSavedSelectValue(effortInput, undefined);
-    syncModelSaveState(effortInput);
-    return;
+  const pending = takeUnsavedSelection(effortInput, mode);
+  if (mode === "claude_code") {
+    const saved = normalizeClaudeReasoningEffort(
+      String(getPref("claudeReasoningEffort") || ""),
+    );
+    fillEffortOptions(effortInput, ["", ...getClaudeReasoningEfforts()], saved);
+    effortInput.setAttribute("aria-label", "Claude effort");
+    setSavedSelectValue(effortInput, saved);
+  } else {
+    // Runs read an empty preference as medium, so the picker does too.
+    const saved = normalizeCodexReasoningEffort(
+      String(getPref("codexReasoningEffort") || "medium"),
+      getSavedSelectValue(modelInput) ?? modelInput.value,
+    );
+    fillCodexEffortOptions(effortInput, modelInput.value, saved);
+    effortInput.setAttribute("aria-label", "Codex reasoning effort");
+    setSavedSelectValue(effortInput, saved);
   }
-  const pending = captureUnsavedSelection(effortInput);
-  const current = normalizeClaudeReasoningEffort(
-    String(getPref("claudeReasoningEffort") || ""),
-  );
-  const doc = effortInput.ownerDocument;
-  effortInput.replaceChildren(
-    ...["", ...getClaudeReasoningEfforts()].map((effort) => {
-      const option = doc.createElement("option");
-      option.value = effort;
-      option.textContent = effort || "default effort";
-      option.selected = effort === current;
-      return option;
-    }),
-  );
   effortInput.hidden = false;
-  setSavedSelectValue(effortInput, current);
   restoreUnsavedSelection(effortInput, pending);
   syncModelSaveState(effortInput);
 }

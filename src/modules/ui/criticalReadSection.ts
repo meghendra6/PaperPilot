@@ -2,6 +2,7 @@ import { renderMarkdownFragment } from "../components/markdownRenderer";
 import {
   createCriticalReadLocalizer,
   getCriticalReadStepCopy,
+  localizeCriticalReadStaleReason,
   localizeCriticalReadStatus,
 } from "../criticalRead/localization";
 import { buildCriticalReadReportMarkdown } from "../criticalRead/report";
@@ -294,6 +295,9 @@ function renderCompletedStep(params: {
   revise.className = "pp-btn pp-btn--ghost";
   revise.textContent = "Revise from here";
   revise.disabled = params.state.running;
+  if (params.state.running) {
+    revise.title = "Cancel the running step before revising.";
+  }
   revise.addEventListener("click", () => void params.actions.onRevise(step.id));
   details.appendChild(revise);
   return details;
@@ -347,6 +351,14 @@ export function renderCriticalReadSection(params: {
   readerInput?: string;
   /** Completed steps the reader left open before this rebuild. */
   expandedStepIDs?: readonly CriticalReadStepID[];
+  /** The paper is being read before the first step. */
+  preparing?: boolean;
+  /** The report is being written to a Zotero note. */
+  saving?: boolean;
+  /** Why another run holds this paper's engine, if one does. */
+  busyReason?: string;
+  /** Why Step 3's prior-work search cannot run with this engine, if so. */
+  discoveryUnavailableReason?: string;
 }) {
   const { root, state } = params;
   const doc = root.ownerDocument;
@@ -376,7 +388,11 @@ export function renderCriticalReadSection(params: {
     );
     const start = doc.createElement("button");
     start.className = "pp-btn pp-btn--secondary";
-    start.textContent = "Start Critical Read";
+    // Reading the paper can take a while on first use.
+    start.textContent = params.preparing
+      ? "Preparing paper…"
+      : "Start Critical Read";
+    start.disabled = Boolean(params.preparing);
     start.addEventListener("click", () => void params.actions.onStart());
     body.append(intro, start);
     return;
@@ -388,13 +404,18 @@ export function renderCriticalReadSection(params: {
     params.responseLanguage,
   );
 
-  if (state.running) {
+  const makeCancel = () => {
     const cancel = doc.createElement("button");
     cancel.className = "pp-btn pp-btn--secondary";
     cancel.textContent = "Cancel Critical Read step";
     cancel.addEventListener("click", () => void params.actions.onCancel());
-    body.appendChild(cancel);
-  }
+    return cancel;
+  };
+  // Cancel sits next to the running step's "Working…" button. Only a run
+  // without a current step card keeps it at the top.
+  const currentStep =
+    state.phase === "complete" ? undefined : getCriticalReadStep(state);
+  if (state.running && !currentStep) body.appendChild(makeCancel());
 
   const expanded = new Set(params.expandedStepIDs ?? []);
   for (const step of state.steps) {
@@ -417,8 +438,10 @@ export function renderCriticalReadSection(params: {
     save.className = "pp-btn pp-btn--secondary";
     save.textContent = state.reportNoteItemID
       ? "Saved to Zotero note"
-      : "Save report to note";
-    save.disabled = Boolean(state.reportNoteItemID);
+      : params.saving
+        ? "Saving…"
+        : "Save report to note";
+    save.disabled = Boolean(state.reportNoteItemID || params.saving);
     save.addEventListener("click", () => void params.actions.onSave());
     const mastery = doc.createElement("button");
     mastery.className = "pp-btn pp-btn--ghost";
@@ -454,6 +477,30 @@ export function renderCriticalReadSection(params: {
   ).instruction;
   card.append(stepTitle, instruction);
 
+  if (step.staleReason) {
+    const reopened = doc.createElement("div");
+    reopened.className = "pp-critical-read__orientation";
+    reopened.textContent = t("Reopened: {reason}", {
+      reason: localizeCriticalReadStaleReason(
+        step.staleReason,
+        params.responseLanguage,
+      ),
+    });
+    card.appendChild(reopened);
+  }
+
+  // The search needs an engine with web search. Say so before the click
+  // instead of failing after it.
+  const unavailableReason =
+    step.id === 3 ? params.discoveryUnavailableReason : undefined;
+  if (unavailableReason) {
+    const unavailable = doc.createElement("div");
+    unavailable.className = "pp-critical-read__orientation";
+    unavailable.setAttribute("role", "note");
+    unavailable.textContent = unavailableReason;
+    card.appendChild(unavailable);
+  }
+
   const readerChecklist = READER_CHECKLISTS[step.id];
   if (readerChecklist?.length) {
     const checklistHeading = doc.createElement("strong");
@@ -478,11 +525,16 @@ export function renderCriticalReadSection(params: {
       abstract.textContent = step.orientation.abstract;
       card.append(abstractHeading, abstract);
     }
-    if (step.orientation.sourceLocations.length) {
+    // Older saved sessions list Step 1 captions in both fields.
+    const captionSet = new Set(step.orientation.captions);
+    const sourceLocations = step.orientation.sourceLocations.filter(
+      (location) => !captionSet.has(location),
+    );
+    if (sourceLocations.length) {
       const sourceHeading = doc.createElement("strong");
       sourceHeading.textContent = t("Relevant source locations");
       card.appendChild(sourceHeading);
-      appendList(doc, card, step.orientation.sourceLocations);
+      appendList(doc, card, sourceLocations);
     }
     if (step.orientation.captions.length) {
       const captionHeading = doc.createElement("strong");
@@ -511,9 +563,16 @@ export function renderCriticalReadSection(params: {
     : step.id === 3
       ? "Find and verify prior work"
       : `Run step ${step.id}`;
+  // Another run would make the click a silent no-op, so say why instead.
+  const blockedReason = state.running
+    ? undefined
+    : (unavailableReason ?? params.busyReason);
+  if (blockedReason) run.title = blockedReason;
   const updateRunAvailability = () => {
     run.disabled =
-      state.running || (step.requiresReaderInput && !answer?.value.trim());
+      state.running ||
+      Boolean(blockedReason) ||
+      (step.requiresReaderInput && !answer?.value.trim());
   };
   updateRunAvailability();
   answer?.addEventListener("input", () => {
@@ -525,6 +584,7 @@ export function renderCriticalReadSection(params: {
     () => void params.actions.onRun(answer?.value || ""),
   );
   card.appendChild(run);
+  if (state.running) card.appendChild(makeCancel());
   body.appendChild(card);
 
   if (selection && answer && !answer.disabled) {

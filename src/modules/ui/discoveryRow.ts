@@ -11,6 +11,11 @@ export interface DiscoveryRowActions {
   onOpenURL(url: string): void;
   onReviewInsight(paper: RecommendedPaper): void | Promise<void>;
   onError(error: unknown): void;
+  /**
+   * Records an error already shown inside its row, so the pane status keeps
+   * it after the next rebuild. It must not rebuild the rows itself.
+   */
+  onRowError?(error: unknown): void;
 }
 
 function publicationBadge(paper: RecommendedPaper) {
@@ -85,11 +90,22 @@ function actionButton(params: {
   className: string;
   onClick(): void | Promise<void>;
   onError(error: unknown): void;
+  /** Keeps the button disabled and explains why in its tooltip. */
+  disabledReason?: string;
+  /** Stable key for focus restore; the label can change between renders. */
+  action?: string;
+  onStart?(): void;
 }) {
   const button = params.doc.createElement("button");
   button.className = params.className;
   button.textContent = params.label;
+  if (params.action) button.dataset.rowAction = params.action;
+  if (params.disabledReason) {
+    button.disabled = true;
+    button.title = params.disabledReason;
+  }
   button.addEventListener("click", async () => {
+    params.onStart?.();
     button.disabled = true;
     try {
       await params.onClick();
@@ -109,11 +125,39 @@ export function buildDiscoveryRow(params: {
   reviewInsightsVisible?: boolean;
   canViewReviewInsights?: () => boolean;
   reviewInsightRunning?: boolean;
+  /** Set while another paper's review insights run. */
+  reviewInsightBlockedReason?: string;
 }) {
   const { doc, paper, actions } = params;
   const row = doc.createElement("div");
   row.setAttribute("role", "group");
   row.className = "pp-recommendation-row";
+  // Focus can fall back to the row after a rebuild; it is not a tab stop.
+  row.tabIndex = -1;
+  // A row action's error shows in its own row; the pane status sits above
+  // every lane and is off screen for a row far down. A row that a rebuild
+  // already replaced falls back to that status.
+  const rowError = doc.createElement("div");
+  rowError.className = "pp-recommendation-row__error";
+  rowError.setAttribute("role", "status");
+  rowError.hidden = true;
+  const onRowError = (error: unknown) => {
+    if (!row.isConnected) {
+      actions.onError(error);
+      return;
+    }
+    rowError.textContent =
+      error instanceof Error
+        ? error.message
+        : "The action could not be completed.";
+    rowError.hidden = false;
+    actions.onRowError?.(error);
+  };
+  // A new action replaces the previous error of this row.
+  const clearRowError = () => {
+    rowError.hidden = true;
+    rowError.textContent = "";
+  };
   const info = doc.createElement("div");
   info.className = "pp-recommendation-row__info";
 
@@ -121,8 +165,10 @@ export function buildDiscoveryRow(params: {
   title.type = "button";
   title.textContent = paper.title;
   title.className = "pp-recommendation-row__title";
+  title.dataset.rowAction = "title";
   title.addEventListener("click", () => {
-    void Promise.resolve(actions.onOpen(paper)).catch(actions.onError);
+    clearRowError();
+    void Promise.resolve(actions.onOpen(paper)).catch(onRowError);
   });
   info.appendChild(title);
 
@@ -173,9 +219,11 @@ export function buildDiscoveryRow(params: {
     actionButton({
       doc,
       label: "Open",
+      action: "open",
       className: "pp-btn pp-btn--ghost",
       onClick: () => actions.onOpen(paper),
-      onError: actions.onError,
+      onError: onRowError,
+      onStart: clearRowError,
     }),
   );
 
@@ -195,6 +243,7 @@ export function buildDiscoveryRow(params: {
     const evidenceButton = actionButton({
       doc,
       label: "Evidence",
+      action: "evidence",
       className: "pp-btn pp-btn--ghost",
       onClick: () => {
         if (
@@ -207,24 +256,19 @@ export function buildDiscoveryRow(params: {
         }
         return actions.onOpenURL(evidence.url);
       },
-      onError: actions.onError,
+      onError: onRowError,
+      onStart: clearRowError,
     });
     evidenceButton.title = `${evidence.sourceName}: ${evidence.supports.join(", ")}`;
     buttons.appendChild(evidenceButton);
   } else {
-    const evidenceStatus = actionButton({
-      doc,
-      label: "Evidence status",
-      className: "pp-btn pp-btn--ghost",
-      onClick: () => {
-        throw new Error(
-          "No direct official publication evidence is available for this result.",
-        );
-      },
-      onError: actions.onError,
-    });
-    evidenceStatus.title = "No direct official publication evidence available";
-    buttons.appendChild(evidenceStatus);
+    // A status, not an action: the old button could only report an error.
+    const noEvidence = doc.createElement("span");
+    noEvidence.className = "pp-chip";
+    noEvidence.textContent = "No official evidence";
+    noEvidence.title =
+      "No direct official publication evidence is available for this result.";
+    buttons.appendChild(noEvidence);
   }
   if (paper.reviewURL && params.reviewInsightsVisible !== false) {
     const requireLiveReviewGate = () => {
@@ -239,18 +283,21 @@ export function buildDiscoveryRow(params: {
         actionButton({
           doc,
           label: "Open reviews",
+          action: "open-reviews",
           className: "pp-btn pp-btn--ghost",
           onClick: () => {
             requireLiveReviewGate();
             return actions.onOpenURL(paper.reviewURL!);
           },
-          onError: actions.onError,
+          onError: onRowError,
+          onStart: clearRowError,
         }),
       );
     }
     buttons.appendChild(
       actionButton({
         doc,
+        action: "review-insight",
         label: params.reviewInsightRunning
           ? "Cancel review insights"
           : paper.reviewInsight
@@ -261,7 +308,11 @@ export function buildDiscoveryRow(params: {
           requireLiveReviewGate();
           return actions.onReviewInsight(paper);
         },
-        onError: actions.onError,
+        onError: onRowError,
+        onStart: clearRowError,
+        disabledReason: params.reviewInsightRunning
+          ? undefined
+          : params.reviewInsightBlockedReason,
       }),
     );
   }
@@ -269,9 +320,11 @@ export function buildDiscoveryRow(params: {
     actionButton({
       doc,
       label: "Add to collection",
+      action: "add-to-collection",
       className: "pp-btn pp-btn--secondary",
       onClick: () => actions.onAdd(paper),
-      onError: actions.onError,
+      onError: onRowError,
+      onStart: clearRowError,
     }),
   );
   if (actions.onSaveCandidate)
@@ -279,11 +332,14 @@ export function buildDiscoveryRow(params: {
       actionButton({
         doc,
         label: "Save candidate",
+        action: "save-candidate",
         className: "pp-btn pp-btn--secondary",
         onClick: () => actions.onSaveCandidate!(paper),
-        onError: actions.onError,
+        onError: onRowError,
+        onStart: clearRowError,
       }),
     );
+  info.appendChild(rowError);
   row.append(info, buttons);
   return row;
 }

@@ -12,6 +12,17 @@ export type ReaderActionName =
   | "annotation-summarize"
   | "annotation-explain";
 
+/** Actions whose question refers to "the selected passage". */
+export function readerActionNeedsPassage(action: ReaderActionName): boolean {
+  return (
+    action === "explain" ||
+    action === "summarize" ||
+    action === "translate" ||
+    action === "annotation-explain" ||
+    action === "annotation-summarize"
+  );
+}
+
 export function buildReaderActionQuestion(
   action: ReaderActionName,
   text?: string,

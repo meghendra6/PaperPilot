@@ -10,6 +10,10 @@ import type { FigureExplainTarget } from "../figureExplain/workflow";
 const HTML_NS = "http://www.w3.org/1999/xhtml";
 const SVG_NS = "http://www.w3.org/2000/svg";
 const TOOL_CLASS = "pp-figure-tool";
+const HINT_CLASS = "pp-figure-tool-hint";
+/** How long the "selection ended" notice stays after the mode times out. */
+const HINT_NOTICE_MS = 6000;
+const hintTimers = new WeakMap<Document, ReturnType<typeof setTimeout>>();
 const OBSERVER_NAME = "paperpilot-figure-explain";
 
 export type FigureToolReader = {
@@ -100,6 +104,67 @@ function syncButtons(reader: FigureToolReader) {
   }
 }
 
+/**
+ * The armed instructions used to live only in the button tooltip, and the
+ * two-minute timeout ended the mode without a word. A small status line over
+ * the PDF says what to do and when the mode ended. No text removes it.
+ */
+function showFigureHint(
+  reader: FigureToolReader,
+  text?: string,
+  durationMs?: number,
+) {
+  const win = reader._iframeWindow;
+  if (!win || win.closed) return;
+  const doc = win.document;
+  const timer = hintTimers.get(doc);
+  if (timer) clearTimeout(timer);
+  hintTimers.delete(doc);
+  let hint = doc.querySelector(`.${HINT_CLASS}`) as HTMLElement | null;
+  if (!text) {
+    hint?.remove();
+    return;
+  }
+  if (!hint) {
+    hint = doc.createElementNS(HTML_NS, "div") as HTMLElement;
+    hint.className = HINT_CLASS;
+    hint.setAttribute("role", "status");
+    hint.setAttribute("aria-live", "polite");
+    Object.assign(hint.style, {
+      position: "fixed",
+      top: "48px",
+      left: "50%",
+      transform: "translateX(-50%)",
+      zIndex: "1000",
+      maxWidth: "80%",
+      padding: "6px 10px",
+      borderRadius: "6px",
+      background: "rgba(0, 0, 0, 0.8)",
+      color: "#fff",
+      font: "12px/1.4 system-ui, sans-serif",
+      textAlign: "center",
+      pointerEvents: "none",
+    });
+    (doc.body ?? doc.documentElement)?.appendChild(hint);
+  }
+  hint.textContent = text;
+  if (durationMs) {
+    const shown = hint;
+    hintTimers.set(
+      doc,
+      setTimeout(() => {
+        hintTimers.delete(doc);
+        // The reader tab may have closed; its document is then dead.
+        try {
+          shown.remove();
+        } catch (error) {
+          logError(error);
+        }
+      }, durationMs),
+    );
+  }
+}
+
 function unregisterObserver() {
   const id = addon.data.figureExplainObserverID;
   addon.data.figureExplainObserverID = undefined;
@@ -170,6 +235,7 @@ export function disarmFigureMode(id: string, restoreTool = true) {
     if (restoreTool && currentTool(entry.reader) === "image")
       setReaderTool(entry.reader, entry.previousTool);
     syncButtons(entry.reader);
+    showFigureHint(entry.reader);
   } catch (error) {
     // A closed reader throws "dead object"; the mode is already removed.
     logError(error);
@@ -203,7 +269,18 @@ export function armFigureMode(
     onArea,
     onKeyDown,
     onUnload,
-    timer: setTimeout(() => disarmFigureMode(id), EXPLAIN_MODE_TIMEOUT_MS),
+    timer: setTimeout(() => {
+      disarmFigureMode(id);
+      try {
+        showFigureHint(
+          reader,
+          getString("figure-explain-tool-timeout"),
+          HINT_NOTICE_MS,
+        );
+      } catch (error) {
+        logError(error);
+      }
+    }, EXPLAIN_MODE_TIMEOUT_MS),
   };
   entries().set(id, entry);
   ensureObserver();
@@ -211,6 +288,7 @@ export function armFigureMode(
   reader._iframeWindow?.addEventListener("unload", onUnload, { once: true });
   setReaderTool(reader, "image");
   syncButtons(reader);
+  showFigureHint(reader, getString("figure-explain-tool-armed"));
 }
 
 export function disarmAllFigureModes() {

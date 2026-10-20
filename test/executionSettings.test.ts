@@ -6,11 +6,13 @@ import {
 } from "../src/modules/ai/executionSettings";
 import {
   getAllowedCodexModels,
+  getCodexReasoningEffortsForModel,
   resolveCodexModel,
 } from "../src/modules/codex/modelOptions";
 import { rememberRecentModel } from "../src/modules/codex/modelHistory";
 import {
   captureUnsavedSelection,
+  renderEffortInput,
   renderModelHistory,
   restoreUnsavedSelection,
 } from "../src/modules/ui/paneHeader";
@@ -48,26 +50,14 @@ test("Codex allowed models determine both effective selection and picker options
   try {
     renderModelHistory(container as any, input as any, "codex_cli");
     assert.deepEqual(
-      [...new Set(options.map((entry) => entry.value.split("|")[0]))],
+      options.map((entry) => entry.value),
       ["gpt-5.6-luna"],
     );
     allowedModels = "gpt-6-sol,gpt-6-luna";
     renderModelHistory(container as any, input as any, "codex_cli");
     assert.deepEqual(
       options.map((entry) => entry.value),
-      [
-        "gpt-6-sol|low",
-        "gpt-6-sol|medium",
-        "gpt-6-sol|high",
-        "gpt-6-sol|xhigh",
-        "gpt-6-sol|max",
-        "gpt-6-sol|ultra",
-        "gpt-6-luna|low",
-        "gpt-6-luna|medium",
-        "gpt-6-luna|high",
-        "gpt-6-luna|xhigh",
-        "gpt-6-luna|max",
-      ],
+      ["gpt-6-sol", "gpt-6-luna"],
     );
     for (const model of ["gpt-6-sol", "gpt-6-luna"]) {
       const prefs: Record<string, string> = {
@@ -89,7 +79,7 @@ test("Codex allowed models determine both effective selection and picker options
     rememberRecentModel("claude_code", "sonnet");
     renderModelHistory(container as any, input as any, "claude_code");
     assert(!options.some((entry) => entry.value.startsWith("gpt-")));
-    assert(options.some((entry) => entry.value === "claude-opus-5-5|"));
+    assert(options.some((entry) => entry.value === "claude-opus-5-5"));
     renderModelHistory(container as any, input as any, "codex_cli");
     assert(!options.some((entry) => /^(sonnet|claude-)/.test(entry.value)));
   } finally {
@@ -171,17 +161,139 @@ test("a re-render keeps the reader's unsaved model choice", () => {
   const container = { style: {}, replaceChildren() {} };
   try {
     renderModelHistory(container as any, select as any, "claude_code");
-    assert.equal(select.value, "sonnet|");
-    select.value = "opus|";
-    assert.equal(captureUnsavedSelection(select as any), "opus|");
+    assert.equal(select.value, "sonnet");
+    select.value = "opus";
+    assert.equal(captureUnsavedSelection(select as any), "opus");
     renderModelHistory(container as any, select as any, "claude_code");
-    assert.equal(select.value, "opus|");
+    assert.equal(select.value, "opus");
 
-    select.value = "sonnet|";
+    select.value = "sonnet";
     assert.equal(captureUnsavedSelection(select as any), undefined);
-    restoreUnsavedSelection(select as any, "not-an-option|");
-    assert.equal(select.value, "sonnet|");
+    restoreUnsavedSelection(select as any, "not-an-option");
+    assert.equal(select.value, "sonnet");
   } finally {
     Object.assign(globals, previous);
   }
+});
+
+function makeFakeSelect() {
+  const select = {
+    value: "",
+    hidden: true,
+    options: [] as { value: string; selected?: boolean }[],
+    ownerDocument: { createElement: () => ({}) },
+    setAttribute() {},
+    replaceChildren(...entries: { value: string; selected?: boolean }[]) {
+      select.options = entries;
+      select.value = entries.find((entry) => entry.selected)?.value ?? "";
+    },
+    appendChild(entry: { value: string }) {
+      select.options.push(entry);
+    },
+  };
+  return select;
+}
+
+function withEnginePrefs(prefs: Record<string, string>, run: () => void) {
+  const globals = globalThis as any;
+  const previous = { Zotero: globals.Zotero, addon: globals.addon };
+  globals.addon = { data: {} };
+  globals.Zotero = {
+    Prefs: {
+      get: (key: string) => prefs[key.slice(key.lastIndexOf(".") + 1)],
+    },
+  };
+  try {
+    run();
+  } finally {
+    Object.assign(globals, previous);
+  }
+}
+
+test("the Codex effort picker lists only the efforts of the picked model", () => {
+  assert.deepEqual(getCodexReasoningEffortsForModel("gpt-6-luna"), [
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max",
+  ]);
+  assert.deepEqual(
+    getCodexReasoningEffortsForModel("retired-model"),
+    getCodexReasoningEffortsForModel("gpt-6-astra"),
+  );
+
+  const prefs = {
+    codexDefaultModel: "gpt-6-sol",
+    codexReasoningEffort: "ultra",
+  };
+  withEnginePrefs(prefs, () => {
+    const container = { style: {}, replaceChildren() {} };
+    const model = makeFakeSelect();
+    const effort = makeFakeSelect();
+    const render = () => {
+      renderModelHistory(container as any, model as any, "codex_cli");
+      renderEffortInput(effort as any, model as any, "codex_cli");
+    };
+    render();
+    assert.equal(model.value, "gpt-6-sol");
+    assert.equal(effort.hidden, false);
+    assert.equal(effort.value, "ultra");
+    assert.deepEqual(
+      effort.options.map((entry) => entry.value),
+      ["low", "medium", "high", "xhigh", "max", "ultra"],
+    );
+
+    // An unsaved Luna pick lists Luna's efforts after a re-render. Luna has no
+    // ultra, so the picker falls back to Luna's default effort.
+    model.value = "gpt-6-luna";
+    render();
+    assert.equal(model.value, "gpt-6-luna");
+    assert.deepEqual(
+      effort.options.map((entry) => entry.value),
+      ["low", "medium", "high", "xhigh", "max"],
+    );
+    assert.equal(effort.value, "medium");
+  });
+
+  // Runs read an empty preference as medium; the picker shows the same.
+  withEnginePrefs(
+    { codexDefaultModel: "gpt-6-sol", codexReasoningEffort: "" },
+    () => {
+      const model = makeFakeSelect();
+      const effort = makeFakeSelect();
+      renderModelHistory(
+        { style: {}, replaceChildren() {} } as any,
+        model as any,
+        "codex_cli",
+      );
+      renderEffortInput(effort as any, model as any, "codex_cli");
+      assert.equal(effort.value, "medium");
+    },
+  );
+});
+
+test("an unsaved effort does not carry over to the other engine", () => {
+  withEnginePrefs(
+    {
+      claudeReasoningEffort: "",
+      codexDefaultModel: "gpt-6-astra",
+      codexReasoningEffort: "low",
+    },
+    () => {
+      const container = { style: {}, replaceChildren() {} };
+      const model = makeFakeSelect();
+      const effort = makeFakeSelect();
+      renderModelHistory(container as any, model as any, "claude_code");
+      renderEffortInput(effort as any, model as any, "claude_code");
+      assert.equal(effort.value, "");
+      assert.equal(effort.options[0].value, "");
+
+      effort.value = "high";
+      renderModelHistory(container as any, model as any, "codex_cli");
+      renderEffortInput(effort as any, model as any, "codex_cli");
+      assert.equal(model.value, "gpt-6-astra");
+      assert.equal(effort.value, "low");
+    },
+  );
 });

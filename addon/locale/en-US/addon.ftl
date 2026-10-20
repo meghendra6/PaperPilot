@@ -24,3 +24,4 @@ figure-explain-tool-label = Explain figure or table
 figure-explain-tool = Explain a figure or table: click, then drag around it
 figure-explain-tool-armed = Drag around a figure or table to explain it. Click again or press Esc to cancel.
 figure-explain-tool-read-only = Area selection is unavailable for this read-only PDF
+figure-explain-tool-timeout = Figure selection ended after 2 minutes. Click Explain figure or table to try again.
