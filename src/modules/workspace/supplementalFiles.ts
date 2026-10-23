@@ -48,12 +48,17 @@ export function isWorkspaceSymlink(path: string): boolean {
  * links inside its writable workspace, and Paper Pilot writes and removes with
  * full user rights, so going through a planted link would reach files outside
  * the sandbox. Atomic writes also use a fixed `<path>.tmp` sibling.
+ *
+ * Paper Pilot creates the allocated workspace directory itself, so a link in
+ * its place was planted too and is reported as ".". The configured workspace
+ * root above it may legitimately be a link and is not checked.
  */
 export async function findWorkspaceSymlink(
   workspacePath: string,
   relativePath: string,
   isSymlink: WorkspaceSymlinkProbe = isWorkspaceSymlink,
 ): Promise<string | undefined> {
+  if (await isSymlink(workspacePath.replace(/[\\/]+$/, ""))) return ".";
   const segments = relativePath.split("/");
   for (let depth = 1; depth <= segments.length; depth++) {
     const candidate = segments.slice(0, depth).join("/");

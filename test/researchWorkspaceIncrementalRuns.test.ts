@@ -562,6 +562,26 @@ test("review panels pick the newest version that is not superseded", () => {
     2,
   );
   assert.equal(latestCurrentArtifact(history, "evidence-matrix"), undefined);
+
+  // Versions count per source scope: the newer A+B+C report is v1.
+  const scopes = [
+    {
+      type: "citation-health",
+      status: "stale",
+      version: 2,
+      createdAt: "2026-10-01T00:00:00.000Z",
+    },
+    {
+      type: "citation-health",
+      status: "complete",
+      version: 1,
+      createdAt: "2026-10-02T00:00:00.000Z",
+    },
+  ];
+  assert.equal(
+    latestCurrentArtifact(scopes, "citation-health")?.createdAt,
+    "2026-10-02T00:00:00.000Z",
+  );
 });
 
 test("a failed or cancelled rerun keeps the complete earlier version current", async () => {

@@ -81,6 +81,53 @@ test("findWorkspaceSymlink checks every component and the atomic-write sibling",
     "paper.md.tmp",
   );
   assert.equal(await findWorkspaceSymlink("/w", "notes.md", probe), undefined);
+  // The allocated workspace directory itself must not be a link.
+  assert.equal(
+    await findWorkspaceSymlink("/w2/", "notes.md", (path) => path === "/w2"),
+    ".",
+  );
+});
+
+test("a workspace directory replaced by a link is neither written nor cleaned", async () => {
+  const restore = installFileShims();
+  const { root, workspace, victimDir, victim } = fixture();
+  try {
+    // The victim directory holds a valid-looking ownership manifest.
+    writeFileSync(
+      join(victimDir, "paperpilot-input-manifest.json"),
+      JSON.stringify({
+        version: 1,
+        runID: "forged",
+        scopeFingerprint: "scope",
+        sourceIDs: [],
+        artifactIDs: [],
+        files: [
+          {
+            path: "thesis.txt",
+            contentFingerprint:
+              workspaceInputContentFingerprint("my only copy"),
+          },
+        ],
+      }),
+    );
+    rmSync(workspace, { recursive: true, force: true });
+    symlinkSync(victimDir, workspace);
+    await assert.rejects(
+      writeOwnedWorkspaceInputs({
+        workspacePath: workspace,
+        files: { "thesis.txt": "overwritten" },
+        runID: "turn-2",
+        scopeFingerprint: "scope",
+        sourceIDs: ["A"],
+      }),
+      /symbolic link/,
+    );
+    assert.equal(await cleanupWorkspaceDirectory(workspace), false);
+    assert.equal(readFileSync(victim, "utf-8"), "my only copy");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+    restore();
+  }
 });
 
 test("input writes refuse a planted .tmp link instead of overwriting its target", async () => {

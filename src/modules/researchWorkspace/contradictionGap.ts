@@ -89,6 +89,11 @@ export interface ContradictionGapReviewEvent {
   eventID: string;
   submissionID: string;
   relationshipID: string;
+  /**
+   * The compared positions, evidence atoms, and comparability the reviewer
+   * saw. A refresh carries the review forward only while they are unchanged.
+   */
+  relationshipFingerprint?: string;
   action: "confirm" | "reclassify" | "dismiss";
   fromClassification: ContradictionClassification;
   toClassification?: ContradictionClassification;
@@ -1188,6 +1193,7 @@ export function applyContradictionGapReview(params: {
     eventID: params.eventID,
     submissionID: params.input.submissionID,
     relationshipID: params.input.relationshipID,
+    relationshipFingerprint: contradictionRelationshipFingerprint(relationship),
     action: params.input.action,
     fromClassification:
       relationship.userClassification ?? relationship.classification,
@@ -1210,6 +1216,27 @@ export function applyContradictionGapReview(params: {
   };
 }
 
+/**
+ * The reviewed content of a relationship. Relationship IDs hash only the
+ * column and source IDs, so changed claims or evidence keep the same ID.
+ */
+export function contradictionRelationshipFingerprint(
+  relationship: ContradictionRelationship,
+) {
+  return `relationship-content-${stableHash(
+    JSON.stringify({
+      topic: relationship.topic,
+      classification: relationship.classification,
+      sides: relationship.sides.map((side) => ({
+        position: side.position,
+        atomIDs: [...side.atomIDs].sort(),
+        sourceIDs: [...side.sourceIDs].sort(),
+      })),
+      comparability: relationship.comparability,
+    }),
+  )}`;
+}
+
 function withReviewEvent(
   relationship: ContradictionRelationship,
   event: ContradictionGapReviewEvent,
@@ -1229,11 +1256,11 @@ function withReviewEvent(
 }
 
 /**
- * Re-applies the reviews of the dashboard that a refresh replaces.
- * Relationship IDs are stable hashes of the compared column and sources, so a
- * review still applies when the same relationship is rebuilt with the same
- * rule-detected classification. A review of a relationship that disappeared
- * or changed classification is dropped and counted in the limitations.
+ * Re-applies the reviews of the dashboard that a refresh replaces. A review
+ * still applies when the same relationship is rebuilt with the same
+ * rule-detected classification and the same compared content
+ * (contradictionRelationshipFingerprint). A review of a relationship that
+ * disappeared or changed is dropped and counted in the limitations.
  */
 export function carryForwardContradictionGapReviews(
   dashboard: ContradictionGapDashboard,
@@ -1256,7 +1283,13 @@ export function carryForwardContradictionGapReviews(
   const relationships = dashboard.relationships.map((relationship) => {
     const events = eventsByRelationship.get(relationship.relationshipID);
     if (!events?.length) return relationship;
-    if (events[0].fromClassification !== relationship.classification) {
+    // A review applies only to the evidence it judged. Changed positions or
+    // atoms, or a review without a recorded fingerprint, start unreviewed.
+    const fingerprint = contradictionRelationshipFingerprint(relationship);
+    if (
+      events[0].fromClassification !== relationship.classification ||
+      events.some((event) => event.relationshipFingerprint !== fingerprint)
+    ) {
       return relationship;
     }
     for (const event of events) carriedEventIDs.add(event.eventID);

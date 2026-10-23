@@ -136,14 +136,28 @@ export function admittedProjectArtifacts(
  * Superseding rewrites `updatedAt`, so the old version sorts first in the
  * updated-time history list and a plain `find` returns it.
  */
+/**
+ * The newest artifact of a type that is not superseded. Versions count per
+ * source scope, so a new A+B+C report can be v1 while an older A+B report
+ * is v2; creation time orders across scopes and the version breaks ties.
+ */
 export function latestCurrentArtifact<
-  T extends { type: string; status: string; version: number },
+  T extends {
+    type: string;
+    status: string;
+    version: number;
+    createdAt?: string;
+  },
 >(artifacts: readonly T[], type: T["type"]): T | undefined {
   return artifacts
     .filter(
       (artifact) => artifact.type === type && artifact.status !== "superseded",
     )
-    .sort((left, right) => right.version - left.version)[0];
+    .sort(
+      (left, right) =>
+        (right.createdAt ?? "").localeCompare(left.createdAt ?? "") ||
+        right.version - left.version,
+    )[0];
 }
 
 export function createProjectOperationAdmission(

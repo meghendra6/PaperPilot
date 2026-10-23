@@ -552,6 +552,21 @@ test("refreshing the dashboard keeps reviews of relationships it still detects",
     "no review was dropped",
   );
 
+  // Reviews of the same relationship ID over changed evidence do not carry.
+  const changedEvidence = {
+    ...reviewed,
+    reviewEvents: reviewed.reviewEvents.map((event) => ({
+      ...event,
+      relationshipFingerprint: "relationship-content-old-evidence",
+    })),
+  };
+  const notCarried = carryForwardContradictionGapReviews(
+    buildContradictionGapDashboard({ details: fixture(), generatedAt: NOW }),
+    changedEvidence,
+  );
+  assert.equal(notCarried.relationships[0].reviewState, "unreviewed");
+  assert.deepEqual(notCarried.reviewEvents, []);
+
   const changed = {
     ...reviewed,
     reviewEvents: reviewed.reviewEvents.map((event) => ({

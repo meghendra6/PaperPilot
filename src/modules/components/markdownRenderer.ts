@@ -27,20 +27,24 @@ function renderKatex(tex: string, displayMode: boolean): string {
 // quotes, and markup must not join the link target.
 const BARE_URL_PATTERN = /https?:\/\/[A-Za-z0-9\-._~:/?#[\]@!$&'()*+,;=%]+/g;
 
-function countOf(text: string, character: string) {
-  return text.split(character).length - 1;
-}
-
-/** Drops trailing punctuation and unbalanced closing brackets. */
+/**
+ * Drops trailing punctuation and unbalanced closing brackets. Bracket counts
+ * are taken once and updated while trimming, so a URL followed by thousands
+ * of brackets stays linear.
+ */
 function trimBareURL(url: string) {
+  const counts = { "(": 0, ")": 0, "[": 0, "]": 0 };
+  for (const character of url) {
+    if (character in counts) counts[character as keyof typeof counts] += 1;
+  }
   let end = url.length;
   while (end > 0) {
     const character = url[end - 1];
-    const head = url.slice(0, end);
     const unbalanced =
-      (character === ")" && countOf(head, ")") > countOf(head, "(")) ||
-      (character === "]" && countOf(head, "]") > countOf(head, "["));
+      (character === ")" && counts[")"] > counts["("]) ||
+      (character === "]" && counts["]"] > counts["["]);
     if (!unbalanced && !/[.,;:!?*_'"]/.test(character)) break;
+    if (character in counts) counts[character as keyof typeof counts] -= 1;
     end -= 1;
   }
   return url.slice(0, end);

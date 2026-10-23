@@ -608,11 +608,24 @@ const dirtyTrackedRoots = new WeakSet<HTMLElement>();
 function trackDirtyInputs(root: HTMLElement) {
   if (dirtyTrackedRoots.has(root)) return;
   dirtyTrackedRoots.add(root);
-  root.addEventListener("input", (event) => {
+  // Text fields, selects (a screening decision), and checkboxes (the
+  // analysis scope) all hold unsaved choices.
+  const markDirty = (event: Event) => {
     const target = event.target as HTMLElement | null;
-    if (target?.tagName === "TEXTAREA" || target?.tagName === "INPUT")
+    if (
+      target?.tagName === "TEXTAREA" ||
+      target?.tagName === "INPUT" ||
+      target?.tagName === "SELECT"
+    )
       target.dataset.dirty = "true";
-  });
+  };
+  root.addEventListener("input", markDirty);
+  root.addEventListener("change", markDirty);
+}
+
+function isToggle(node: HTMLElement) {
+  const type = (node as HTMLInputElement).type;
+  return node.tagName === "INPUT" && (type === "checkbox" || type === "radio");
 }
 
 interface KeyedControl {
@@ -633,10 +646,13 @@ function keyedControls(root: HTMLElement, operations: HTMLElement) {
   ) as HTMLElement[];
   for (const node of nodes) {
     if (operations.contains(node)) continue;
+    // A checkbox is named by its wrapping label; a select by its aria-label.
     const label =
       node.getAttribute("aria-label") ||
       (node as HTMLInputElement).placeholder ||
-      node.textContent?.trim() ||
+      (isToggle(node)
+        ? node.closest("label")?.textContent?.trim()
+        : node.textContent?.trim()) ||
       "";
     if (!label) continue;
     const heading =
@@ -660,11 +676,17 @@ function captureSurfaceState(root: HTMLElement, operations: HTMLElement) {
       active && root.contains(active) && !operations.contains(active),
     ),
     dirty: controls
-      .filter((entry) => entry.node.dataset.dirty === "true")
+      .filter(
+        (entry) =>
+          entry.node.dataset.dirty === "true" &&
+          (entry.node as HTMLInputElement).type !== "file",
+      )
       .map((entry) => ({
         key: entry.key,
         index: entry.index,
+        toggle: isToggle(entry.node),
         value: (entry.node as HTMLInputElement).value,
+        checked: Boolean((entry.node as HTMLInputElement).checked),
       })),
   };
 }
@@ -677,10 +699,28 @@ function restoreSurfaceState(
   const controls = keyedControls(root, operations);
   const find = (key: string, index: number) =>
     controls.find((entry) => entry.key === key && entry.index === index)?.node;
+  // Values are restored without events, so no change handler (such as an
+  // autosave) runs for a choice the reader has not confirmed.
   for (const entry of state.dirty) {
-    const node = find(entry.key, entry.index) as HTMLInputElement | undefined;
-    if (!node || node.value === entry.value) continue;
-    node.value = entry.value;
+    const node = find(entry.key, entry.index) as
+      | HTMLInputElement
+      | HTMLSelectElement
+      | undefined;
+    if (!node) continue;
+    if (entry.toggle) {
+      if (isToggle(node) && !(node as HTMLInputElement).disabled)
+        (node as HTMLInputElement).checked = entry.checked;
+    } else if (node.tagName === "SELECT") {
+      const select = node as HTMLSelectElement;
+      if (
+        (Array.from(select.options) as HTMLOptionElement[]).some(
+          (option) => option.value === entry.value,
+        )
+      )
+        select.value = entry.value;
+    } else if (node.value !== entry.value) {
+      node.value = entry.value;
+    }
     node.dataset.dirty = "true";
   }
   if (!state.focusWasInPanels) return;

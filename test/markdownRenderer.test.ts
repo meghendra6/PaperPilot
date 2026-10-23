@@ -281,3 +281,16 @@ test("every rendered public link opens externally on click, once", () => {
     globals.Zotero = previous;
   }
 });
+
+test("a bare URL followed by thousands of brackets renders in linear time", () => {
+  const started = Date.now();
+  const html = renderInlineMarkdown(
+    `https://example.org/${")".repeat(32_000)}`,
+  );
+  assert.ok(Date.now() - started < 500, "trimming must stay linear");
+  assert.match(html, /href="https:\/\/example\.org\/"/);
+  assert.match(
+    renderInlineMarkdown("See (https://example.org/a_(b)) now."),
+    /href="https:\/\/example\.org\/a_\(b\)"/,
+  );
+});

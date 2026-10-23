@@ -35,6 +35,9 @@ export async function cleanupWorkspaceDirectory(
   const zotero = (globalThis as any).Zotero;
   if (!io?.remove || !io?.exists || !zotero?.File?.getContentsAsync)
     return false;
+  // A workspace directory replaced by a link points outside the workspace
+  // root; nothing beneath it is Paper Pilot's to remove.
+  if (await isSymlink(workspacePath.replace(/[\\/]+$/, ""))) return false;
   const manifestPath = `${workspacePath}/paperpilot-input-manifest.json`;
   if (!(await io.exists(manifestPath))) return false;
   let manifest;
