@@ -49,6 +49,26 @@ test("OpenDataLoader extraction stops its recorded pid on timeout", async () => 
   assert.deepEqual(stopped, ["4242"]);
 });
 
+test("OpenDataLoader cancellation stops the owned process before reporting canceled", async () => {
+  const controller = new AbortController();
+  controller.abort();
+  const stopped: string[] = [];
+  await assert.rejects(
+    waitForExtractorCompletion({
+      exitCodePath: "/owned/exit",
+      pidPath: "/owned/pid",
+      stderrPath: "/owned/stderr",
+      signal: controller.signal,
+      read: async (path) => (path.endsWith("pid") ? "4242" : ""),
+      stop: async (pid) => {
+        stopped.push(String(pid));
+      },
+    }),
+    /canceled/,
+  );
+  assert.deepEqual(stopped, ["4242"]);
+});
+
 test("OpenDataLoader output cleanup runs on success and failure", async () => {
   const removed: string[] = [];
   const remove = async (path: string) => {
@@ -271,6 +291,25 @@ test("profile JAR cache upgrades old versions, repairs corruption, and coalesces
     assert.equal(writes, 2);
     assert.deepEqual(files.get(paths[0]), bundled);
     assert(files.has("/profile/paperpilot-tools/opendataloader-pdf-cli.jar"));
+    let requested = "";
+    globals.Zotero.HTTP = {
+      request: async (
+        _method: string,
+        url: string,
+        options: { responseType: string },
+      ) => {
+        requested = url;
+        assert.equal(options.responseType, "arraybuffer");
+        return { response: bundled.buffer };
+      },
+    };
+    await resolveOpenDataLoaderJarPath({
+      rootUri: "jar:file:///profile/extensions/plugin.xpi!/",
+    });
+    assert.equal(
+      requested,
+      "chrome://paperpilot/content/vendor/opendataloader/opendataloader-pdf-cli.jar",
+    );
   } finally {
     Object.assign(globals, previous);
   }

@@ -34,6 +34,10 @@ declare namespace _ZoteroTypes {
       "privacySavePromptsOnly": boolean;
       "privacySaveResponses": boolean;
       "privacyRedactLocalFilePaths": boolean;
+      "studioPythonPath": string;
+      "studioTectonicPath": string;
+      "studioTypstPath": string;
+      "studioMystPath": string;
     };
   }
 }

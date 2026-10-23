@@ -103,3 +103,21 @@ pref-privacy-history-mode-prompts-only = Save prompts only
 pref-privacy-history-mode-disabled = Do not save session history
 pref-privacy-history-mode-help = Paper Pilot keeps session history for each paper in your Zotero profile on this computer.
 pref-privacy-redact-paths = Redact local file paths
+
+pref-studio-title = Research Studio
+pref-studio-description = Notebooks use a local Python environment with jupyter-client and ipykernel. R also needs an installed IRkernel. Code runs only when you choose Run, with your account permissions.
+pref-studio-python = Python executable
+pref-studio-python-input =
+    .placeholder = /path/to/venv/bin/python
+
+pref-studio-tectonic = Tectonic (LaTeX) executable
+pref-studio-tectonic-input =
+    .placeholder = tectonic
+
+pref-studio-typst = Typst executable
+pref-studio-typst-input =
+    .placeholder = typst
+
+pref-studio-myst = MyST executable
+pref-studio-myst-input =
+    .placeholder = myst

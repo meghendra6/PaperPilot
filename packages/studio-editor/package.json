@@ -1,0 +1,14 @@
+{
+  "name": "@paperpilot/studio-editor",
+  "version": "0.0.0",
+  "private": true,
+  "license": "AGPL-3.0-or-later",
+  "type": "module",
+  "exports": {
+    ".": "./index.ts"
+  },
+  "dependencies": {
+    "pdfjs-dist": "5.4.624",
+    "superdoc": "1.47.2"
+  }
+}

@@ -1,3 +1,4 @@
+import { joinPath, researchProjectDirectory } from "./paths";
 import { parseResearchWorkspaceCandidates } from "./candidates";
 import { projectScopeFingerprint } from "../operationInputs";
 import { stableHash } from "../identity";
@@ -60,19 +61,6 @@ function zoteroSyncReceiptContract() {
 
 function parseResearchWorkspaceZoteroSyncReceiptFile(value: unknown) {
   return zoteroSyncReceiptContract().parse(value);
-}
-
-function joinPath(...parts: string[]) {
-  const separator = parts.some((part) => part.includes("\\")) ? "\\" : "/";
-  return parts
-    .filter(Boolean)
-    .map((part, index) =>
-      index === 0
-        ? part.replace(/[\\/]+$/g, "")
-        : part.replace(/^[\\/]+|[\\/]+$/g, ""),
-    )
-    .filter(Boolean)
-    .join(separator);
 }
 
 function fileName(path: string) {
@@ -224,10 +212,7 @@ export class ResearchWorkspaceProjectRepository {
   }
 
   getProjectRoot(projectID: string) {
-    return joinPath(
-      this.projectsRoot,
-      `project-${assertResearchWorkspaceID(projectID, "projectID")}`,
-    );
+    return researchProjectDirectory(this.rootDir, projectID);
   }
 
   getProjectPath(projectID: string) {

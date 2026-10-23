@@ -6,7 +6,27 @@
 
 Paper Pilot is an AI reading workbench for the Zotero 7-10 PDF reader. It adds a paper-scoped chat pane, structured paper tools, agent-led verified research discovery, and local CLI-based AI execution directly inside Zotero.
 
-![Zotero 7-10](https://img.shields.io/badge/Zotero-7--10-cc2936) ![Node 20+](https://img.shields.io/badge/Node-20%2B-339933) ![Java 11+](https://img.shields.io/badge/Java-11%2B-007396) ![License](https://img.shields.io/badge/License-AGPL--3.0--or--later-blue) ![Engines](https://img.shields.io/badge/Engines-Codex%20CLI%20%7C%20Claude%20Code-6f42c1)
+![Zotero 7-10](https://img.shields.io/badge/Zotero-7--10-cc2936) ![Node 22.18+](https://img.shields.io/badge/Node-22.18%2B-339933) ![Java 11+](https://img.shields.io/badge/Java-11%2B-007396) ![License](https://img.shields.io/badge/License-AGPL--3.0--or--later-blue) ![Engines](https://img.shields.io/badge/Engines-Codex%20CLI%20%7C%20Claude%20Code-6f42c1)
+
+## Research Studio (in development)
+
+A project's **Write & run** window adds local original-format documents, a DOCX
+editor, Markdown/source editing, data tables and executable notebooks. The project
+assistant captures selected file revisions and presents changes for individual
+review. It offers Codex/Claude CLIs and a loopback model endpoint;
+network inference is explicit and API keys stay in the open window. Notebook
+execution requires a Python environment with `jupyter-client` and `ipykernel`
+(and `IRkernel` for R), configured in Paper Pilot settings. Code runs with your
+local account permissions only when you choose Run.
+
+This is an implementation in progress, not complete Papers AI feature parity.
+Browser/Codex/Python checks do not replace native Zotero or Word validation. See
+the [full scope and verification contract](./docs/research-studio-spec.md) and
+[runtime checklist](./docs/manual-qa.md).
+
+Local compilation uses installed Tectonic (`.tex`), Typst (`.typ`), or MyST plus Typst (Markdown). Configure executable paths in settings. Missing packages/templates may require downloads. Local project bundles include document versions, conversations and historical research snapshots; restore into a new project and explicitly reconnect Zotero sources. Zotero attachment bytes and runtime environments are separate. DOCX supports Word citation fields with explicit CSL refresh; Word uses its own formatting engine when refreshing. Cloud collaboration and synchronization are deferred.
+
+Studio also provides Word footnotes/endnotes, contents/caption fields, editable AI proposals, notebook output provenance, and a project links view. Supported literal paths are repaired atomically on rename; dynamic code paths are not inferred. Output inspection flags changes to the recorded cell/output or captured inputs. Zotero reference snapshots can open currently verified supporting passages through Research Workspace.
 
 ## Chat workflow
 
@@ -227,7 +247,7 @@ See [`docs/prompt-contracts.md`](./docs/prompt-contracts.md) for the exact outpu
 ## Requirements
 
 - **Zotero 7, 8, 9, or 10**
-- **Node.js 20+** for development
+- **Node.js 22.18+** for development
 - **npm** for dependency and build workflows
 - **Java 11+** at runtime for OpenDataLoader PDF extraction
 - At least one local AI CLI:

@@ -1,0 +1,226 @@
+import { assertStudioID } from "./contracts";
+import {
+  assertExecutionReceipt,
+  type ExecutionReceipt,
+} from "./outputProvenance";
+
+export interface KernelResult {
+  execution?: ExecutionReceipt;
+  status: "ok" | "error";
+  execution_count: number | null;
+  outputs: Array<Record<string, any>>;
+  displayIDs?: Record<string, string>;
+  displayUpdates?: Array<{
+    displayID: string;
+    data: Record<string, unknown>;
+    metadata: Record<string, unknown>;
+  }>;
+}
+
+export interface KernelPorts {
+  createJob(documentID: string, kernel: "python3" | "ir"): Promise<string>;
+  read(path: string): Promise<string | undefined>;
+  write(path: string, contents: string): Promise<void>;
+  launch(directory: string, kernel: "python3" | "ir"): Promise<void>;
+  kill(directory: string): Promise<void>;
+  id(): string;
+  delay(ms: number): Promise<void>;
+}
+
+interface Session {
+  id: string;
+  inputs: ExecutionReceipt["inputs"];
+  directory: string;
+  kernel: "python3" | "ir";
+  busy: boolean;
+  requestID?: string;
+  failed?: boolean;
+  heartbeat: ReturnType<typeof setInterval>;
+}
+
+/** Kernels belong to documents, independently of paper/CLI run reservations. */
+export class KernelBroker {
+  private sessions = new Map<string, Session>();
+  private starting = new Map<string, Promise<Session>>();
+  private executionEpochs = new Map<string, number>();
+  private closed = false;
+  constructor(private ports: KernelPorts) {}
+
+  private async poll(directory: string, name: string, timeout: number) {
+    const deadline = Date.now() + timeout;
+    while (Date.now() < deadline) {
+      const text = await this.ports.read(`${directory}/${name}`);
+      if (text !== undefined) return JSON.parse(text);
+      const exit = await this.ports.read(`${directory}/exit-code`);
+      if (exit !== undefined)
+        throw new Error(
+          `The notebook worker exited (${exit.trim()}). Check the configured Python environment and its Jupyter packages.`,
+        );
+      if (
+        name !== "ready.json" &&
+        (await this.ports.read(`${directory}/stopped.json`))
+      )
+        throw new Error("The kernel stopped. Restart it before continuing.");
+      await this.ports.delay(200);
+    }
+    throw new Error(
+      "The kernel did not confirm the operation. Interrupt or restart it before continuing.",
+    );
+  }
+
+  private start(
+    documentID: string,
+    kernel: "python3" | "ir",
+  ): Promise<Session> {
+    assertStudioID(documentID);
+    if (this.closed) throw new Error("This project window is closed.");
+    if (kernel !== "python3" && kernel !== "ir")
+      throw new Error("Choose a Python or R kernel.");
+    const current = this.sessions.get(documentID);
+    if (current) {
+      if (current.kernel !== kernel)
+        throw new Error("Restart the kernel after changing language.");
+      return Promise.resolve(current);
+    }
+    const pending = this.starting.get(documentID);
+    if (pending) return pending;
+    const promise = (async () => {
+      const directory = await this.ports.createJob(documentID, kernel);
+      await this.ports.write(`${directory}/heartbeat`, "alive");
+      const session: Session = {
+        id: this.ports.id(),
+        inputs: JSON.parse(
+          (await this.ports.read(`${directory}/inputs.json`)) ?? "[]",
+        ),
+        directory,
+        kernel,
+        busy: false,
+        heartbeat: setInterval(() => {
+          void this.ports
+            .write(`${directory}/heartbeat`, "alive")
+            .catch(() => clearInterval(session.heartbeat));
+        }, 5000),
+      };
+      try {
+        await this.ports.launch(directory, kernel);
+        const ready = await this.poll(directory, "ready.json", 40000);
+        if (!ready.ok)
+          throw new Error(
+            `Kernel unavailable: ${ready.error}. Configure the Studio Python environment in Paper Pilot settings.`,
+          );
+        if (this.closed)
+          throw new Error(
+            "This project window closed while starting its kernel.",
+          );
+        this.sessions.set(documentID, session);
+        return session;
+      } catch (error) {
+        clearInterval(session.heartbeat);
+        try {
+          await this.ports.kill(directory);
+        } catch (cleanup) {
+          throw new Error(
+            `${String(error)} Cleanup could not be confirmed: ${String(cleanup)}`,
+          );
+        }
+        throw error;
+      }
+    })().finally(() => this.starting.delete(documentID));
+    this.starting.set(documentID, promise);
+    return promise;
+  }
+
+  async execute(
+    documentID: string,
+    kernel: "python3" | "ir",
+    code: string,
+  ): Promise<KernelResult> {
+    if (
+      typeof code !== "string" ||
+      new TextEncoder().encode(code).length > 1024 * 1024
+    )
+      throw new Error("A cell must contain at most 1 MiB of source.");
+    const epoch = this.executionEpochs.get(documentID) ?? 0;
+    const session = await this.start(documentID, kernel);
+    if ((this.executionEpochs.get(documentID) ?? 0) !== epoch)
+      throw new Error("Cell execution canceled before it started.");
+    if (this.closed || this.sessions.get(documentID) !== session)
+      throw new Error("This kernel session has closed.");
+    if (session.kernel !== kernel)
+      throw new Error("Restart the kernel after changing language.");
+    if (session.failed)
+      throw new Error(
+        "Restart this kernel before continuing after an unconfirmed execution.",
+      );
+    if (session.busy)
+      throw new Error("A cell is already running in this notebook.");
+    session.busy = true;
+    const id = this.ports.id();
+    const startedAt = new Date().toISOString();
+    assertStudioID(id);
+    session.requestID = id;
+    try {
+      await this.ports.write(
+        `${session.directory}/request.json`,
+        JSON.stringify({ id, code }),
+      );
+      const result: KernelResult = await this.poll(
+        session.directory,
+        `response-${id}.json`,
+        130000,
+      );
+      const execution: ExecutionReceipt = {
+        schemaVersion: 1,
+        id,
+        sessionID: session.id,
+        notebookID: documentID,
+        kernel,
+        code,
+        startedAt,
+        completedAt: new Date().toISOString(),
+        inputs: session.inputs,
+      };
+      assertExecutionReceipt(execution);
+      return { ...result, execution };
+    } catch (error) {
+      session.failed = true;
+      throw error;
+    } finally {
+      session.busy = false;
+      session.requestID = undefined;
+    }
+  }
+
+  async interrupt(documentID: string) {
+    this.executionEpochs.set(
+      documentID,
+      (this.executionEpochs.get(documentID) ?? 0) + 1,
+    );
+    const session = this.sessions.get(documentID);
+    if (session?.requestID)
+      await this.ports.write(
+        `${session.directory}/interrupt`,
+        JSON.stringify({ id: session.requestID }),
+      );
+  }
+
+  async restart(documentID: string) {
+    this.executionEpochs.set(
+      documentID,
+      (this.executionEpochs.get(documentID) ?? 0) + 1,
+    );
+    await this.starting.get(documentID);
+    const session = this.sessions.get(documentID);
+    if (!session) return;
+    session.failed = true;
+    clearInterval(session.heartbeat);
+    await this.ports.kill(session.directory);
+    this.sessions.delete(documentID);
+  }
+
+  async close() {
+    this.closed = true;
+    await Promise.allSettled([...this.starting.values()]);
+    await Promise.all([...this.sessions.keys()].map((id) => this.restart(id)));
+  }
+}

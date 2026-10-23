@@ -1,4 +1,5 @@
 import { version as openDataLoaderVersion } from "../../../node_modules/@opendataloader/pdf/package.json";
+import { config } from "../../../package.json";
 import { getZoteroProfilePath } from "../../utils/zoteroProfile";
 import { launchDetachedShellScript } from "../ai/launchScript";
 import { stopDetachedRunProcess } from "../ai/runCompletion";
@@ -308,16 +309,28 @@ async function fetchBundledJarToProfile(rootUri: string): Promise<string> {
   const pending = jarCopies.get(key);
   if (pending) return pending;
   const copy = (async () => {
-    const bundledJarUrl = new URL(
-      "chrome/content/vendor/opendataloader/opendataloader-pdf-cli.jar",
-      rootUri.endsWith("/") ? rootUri : `${rootUri}/`,
-    ).href;
-    const response = await fetch(bundledJarUrl);
-    if (!response.ok)
-      throw new Error(
-        `Could not read the bundled OpenDataLoader asset (${response.status}).`,
+    // Packed XPIs use jar:file: roots, which WHATWG URL cannot use as a base.
+    const bundledJarUrl = rootUri.startsWith("jar:")
+      ? `chrome://${config.addonRef}/content/vendor/opendataloader/opendataloader-pdf-cli.jar`
+      : `${rootUri.replace(/\/$/, "")}/chrome/content/vendor/opendataloader/opendataloader-pdf-cli.jar`;
+    let bundled: Uint8Array<ArrayBuffer>;
+    const http = (globalThis as any).Zotero?.HTTP;
+    if (http?.request) {
+      bundled = new Uint8Array(
+        (
+          await http.request("GET", bundledJarUrl, {
+            responseType: "arraybuffer",
+          })
+        ).response,
       );
-    const bundled = new Uint8Array(await response.arrayBuffer());
+    } else {
+      const response = await fetch(bundledJarUrl);
+      if (!response.ok)
+        throw new Error(
+          `Could not read the bundled OpenDataLoader asset (${response.status}).`,
+        );
+      bundled = new Uint8Array(await response.arrayBuffer());
+    }
     if (!bundled.length)
       throw new Error("The bundled OpenDataLoader asset is empty.");
     // Compare against the installed bundle, including same-version replacements.
@@ -354,8 +367,11 @@ export async function resolveOpenDataLoaderJarPath(options?: {
   const exists = options?.exists ?? pathExists;
   const rootUri =
     options?.rootUri ??
-    ((globalThis as typeof globalThis & { rootURI?: string }).rootURI || "");
+    ((typeof _globalThis !== "undefined" && _globalThis.rootURI) ||
+      (globalThis as typeof globalThis & { rootURI?: string }).rootURI ||
+      "");
   const candidates: string[] = [];
+  let bundleError: unknown;
 
   if (rootUri) {
     try {
@@ -363,7 +379,8 @@ export async function resolveOpenDataLoaderJarPath(options?: {
       if (await exists(bundledPath)) {
         return bundledPath;
       }
-    } catch {
+    } catch (error) {
+      bundleError = error;
       // Fall back to the development-time node_modules lookup below.
     }
   }
@@ -396,7 +413,7 @@ export async function resolveOpenDataLoaderJarPath(options?: {
   }
 
   throw new Error(
-    "Could not locate the OpenDataLoader PDF runtime assets in the bundled addon or node_modules.",
+    `Could not locate the OpenDataLoader PDF runtime assets in the bundled addon or node_modules.${bundleError ? ` Bundled asset: ${String(bundleError)}` : !rootUri ? " The addon resource URI is unavailable." : ""}`,
   );
 }
 
@@ -511,6 +528,7 @@ export async function waitForExtractorCompletion(params: {
   read?: (path: string) => Promise<string>;
   stop?: typeof stopDetachedRunProcess;
   delay?: (milliseconds: number) => Promise<void>;
+  signal?: AbortSignal;
 }) {
   const read = params.read ?? readTextFile;
   const stop = params.stop ?? stopDetachedRunProcess;
@@ -521,6 +539,11 @@ export async function waitForExtractorCompletion(params: {
   const deadline =
     Date.now() + (params.timeoutMs ?? STRUCTURED_EXTRACTION_TIMEOUT_MS);
   while (Date.now() < deadline) {
+    if (params.signal?.aborted) {
+      const processId = await read(params.pidPath).catch(() => "");
+      await stop(processId.trim(), { requireProcessId: true });
+      throw new Error("PDF extraction canceled.");
+    }
     let exitCode = "";
     try {
       exitCode = (await read(params.exitCodePath)).trim();
@@ -548,9 +571,11 @@ export async function waitForExtractorCompletion(params: {
   );
 }
 
-async function extractStructuredPdf(
+export async function extractStructuredPdf(
   filePath: string,
+  signal?: AbortSignal,
 ): Promise<StructuredExtractionResult> {
+  if (signal?.aborted) throw new Error("PDF extraction canceled.");
   if (!(await probeJavaRuntime())) throw new Error("java-missing");
   const jarPath = await resolveOpenDataLoaderJarPath();
   const outputDir = await IOUtils.createUniqueDirectory(
@@ -577,7 +602,12 @@ async function extractStructuredPdf(
       if (!launch.ok) {
         throw new Error(launch.error);
       }
-      await waitForExtractorCompletion({ exitCodePath, pidPath, stderrPath });
+      await waitForExtractorCompletion({
+        exitCodePath,
+        pidPath,
+        stderrPath,
+        signal,
+      });
     } catch (error) {
       throw new Error(String(error));
     }

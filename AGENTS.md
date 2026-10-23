@@ -7,7 +7,7 @@ It is the source of truth; [`CLAUDE.md`](./CLAUDE.md) points here rather than du
 
 Paper Pilot is a Zotero 7-10 plugin that turns the PDF reader into an AI-assisted paper workbench. The repo mixes reader-pane UI code, local CLI provider integration, paper-context/workspace generation, and structured prompt/parsing logic.
 
-There is no server and no network model client: every AI run shells out to a local CLI (Codex CLI or Claude Code) that the user already installed and authenticated.
+Reader and evidence-workspace AI runs shell out to a local CLI (Codex CLI or Claude Code) that the user already installed and authenticated. Research Studio additionally has explicit loopback model providers in its project-bound host bridge. Keep that opt-in boundary separate from reader engines; local editing must not require a hosted service.
 
 Default goal: make small, verifiable changes that keep the reader experience compact, paper-grounded, and honest about runtime limitations.
 
@@ -62,7 +62,7 @@ Local-only, not tracked: `.github/` except `workflows/` and `FUNDING.yml`, `docs
 - `npx eslint <paths>` / `npx prettier --check <paths>`: focused read-only checks while iterating
 - `npm run lint:fix`: intentional repository-wide formatting and lint fixes
 
-Development baseline: Node 20+, npm, Zotero 7-10, Java 11+ for OpenDataLoader extraction at runtime, and at least one local CLI if you want to exercise a real engine path.
+Development baseline: Node 22.18+, npm, Zotero 7-10, Java 11+ for OpenDataLoader extraction at runtime, and at least one local CLI if you want to exercise a real engine path.
 
 Set `PAPERPILOT_CODEX_BIN` to an explicit Codex CLI executable to opt into the
 CLI flag-ordering integration test. When unset, the test uses `codex` from

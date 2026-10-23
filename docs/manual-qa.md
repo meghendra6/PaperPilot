@@ -989,3 +989,193 @@ See [the evaluation report](./chat-context-evaluation.md) for the synthetic mode
 - [ ] Search wrapped Korean and long unbroken text in a narrow pane. Confirm result buttons grow, remain separated, scroll, and can be activated using the keyboard.
 
 See the [native repair specification](./chat-runtime-followup-spec.md) for the observed v0.1.5 failures, acceptance criteria and runtime coverage.
+
+## Research Studio verification
+
+This surface is under implementation. Browser preview, native Zotero, actual Word,
+model providers and kernel languages are separate evidence layers.
+
+- Open an existing project → **Write & run** twice; confirm a single window and
+  project isolation. Close/reopen while an AI cancellation is finishing.
+- Import DOCX with tables, images, comments, tracked changes, headers/footers and
+  citations. Edit, save, reopen and export; compare in Word, including formatting
+  and untouched XML relationships. Do not call the conversion lossless from text
+  matching alone. Check the toolbar with Assistant open and a narrow window.
+- Edit during saving, navigate, rename, archive/restore and restore an old version.
+  A failed save must retain the draft; stale revisions must fail visibly.
+- Select context files, ask the project assistant, inspect its captured revisions,
+  apply/reject proposals, reload and inspect history. Repeat an apply after a
+  storage failure and confirm only one new document version. Test a manual edit
+  made after proposal generation. Confirm keys never enter persisted project files.
+- Exercise Codex, Claude and a local endpoint independently. Stop a
+  run, close its window, and verify the process/request stops. Unknown models and
+  missing capabilities must fail without fallback or hidden retries.
+- Run two Python notebook cells sharing a variable, render a figure, save it as a
+  project file, export IPYNB and reopen in Jupyter. Repeat with an installed R
+  kernel. Test errors, infinite-loop interrupt, restart and project isolation.
+- Test CSV quoted newlines/leading zeros, TSV, typed JSONL, malformed input and
+  invalid edits across pages. Unsupported formats must remain exportable.
+
+Recorded local evidence on 2026-10-22: packaged browser DOCX editing and export;
+actual Codex proposal/review/apply with bold runs and an existing tracked insertion
+retained in exported XML; persistent Python cells, Matplotlib output, PNG save and
+IPYNB export; Python worker interrupt/recovery integration. Actual Word, R,
+Claude and local-model inference remain unverified.
+
+Additional Studio checks:
+
+- Build saved `.tex`, `.typ`, and MyST Markdown documents. Verify the source
+  revision in the report, separate output PDF, compiler error logs and cancel.
+  Test missing executables and a build while the source is edited. Compilers may
+  download packages/templates; test offline separately with dependencies cached.
+- Open a two-page built PDF, navigate pages and read extracted page text. Verify
+  the packaged worker loads in Zotero's sandbox as well as the browser harness.
+- Open an imported DOCX with tracked changes without editing; revision must stay
+  unchanged. Then edit/comment, save and confirm the new change is retained.
+- Add/delete data rows and columns while sorted/filtered. Invalid JSON edits must
+  remain visible and block save even after paging or removing another row.
+- Back up documents including archived files and multiple versions. Restore into
+  an empty project. Confirm occupied projects and bad checksums reject without
+  overwriting data. Evidence records and conversations are outside this backup.
+- Archive/resume an AI conversation. Preserve the conversation being replaced,
+  and reject proposals whose target revision changed since their original turn.
+- Import manual Unicode BibTeX and insert APA text. Native Zotero snapshots and
+  installed CSL styles require separate native validation. Insert Word citation
+  fields from multiple files, repeat and reorder sources, then refresh with APA
+  and Vancouver. Reopen/export and verify fields and bibliography sources in Word.
+  Numeric text snapshots remain independent of the Word-field workflow.
+
+Additional browser evidence on 2026-10-22: local Typst 0.15.1, Tectonic 0.17.0 and
+MyST 1.11.0 produced PDFs from saved Studio sources. Bundled PDF.js rendered two
+pages with extracted text. Opening a tracked-change DOCX no longer causes a new
+version. Manual Unicode BibTeX/APA insertion and Kanban document links were
+exercised. The latest bundle restore and data-column UI still need runtime QA.
+
+Additional evidence on 2026-10-23 in a separate Zotero QA profile: native DOCX
+create/edit/save/reopen with bold text; Typst compilation to a two-page PDF;
+packaged PDF worker completion and page text; local OpenDataLoader extraction
+followed by a real Codex answer citing the second page; conversation archive and
+resume; Python execution, HTML-table-to-CSV export and table insertion into DOCX.
+Saved DOCX XML contains the table and retained formatting. Native Studio screen
+captures are white despite functioning accessibility controls and saved outputs;
+actual visual painting remains unresolved and is not counted as passed.
+
+Browser evidence on 2026-10-23: saved notebook PNG embedded in DOCX and visible
+after copying through a custom template; Word citation and bibliography fields
+survive reopening and refresh from APA to Vancouver. Exported DOCX contains
+`CITATION`, `BIBLIOGRAPHY` and bibliography custom XML. This is structural/browser
+proof; actual Microsoft Word refresh and rendering remain separate checks.
+
+- Back up a local project with active/archived conversations and research records.
+  Restore into a new project, resume imported history and inspect historical
+  evidence. Confirm existing project files/history block restoration, source
+  bindings are not created implicitly, and failed writes do not publish context.
+- Run a cell using `clear_output(wait=True)`, update a display handle in the same
+  and a later cell, export IPYNB, and verify only final outputs are persisted.
+  Edit/run/undo a cell and confirm its source editor retains undo history.
+- Create from each starter template; save/reuse a custom DOCX template with a
+  figure, table, comment and tracked insertion. Verify originals stay unchanged.
+
+Additional evidence on 2026-10-23: Ollama qwen3:8b answered from the selected
+Typst document through the Studio loopback path. Claude Code started but reported
+the account's session limit, so a successful Claude workload is not verified.
+Browser CSV row/column add/remove, sort/filter and source view preserved `001`
+and original row order. Python cell execution retained CodeMirror undo history.
+DOCX comments were saved, reopened and found in `word/comments.xml`. Selection
+events are excluded from autosave mutations.
+
+MyST template reuse passed an actual warm build followed by a fresh build under
+macOS `sandbox-exec` network denial. Only the owning project's templates were
+reused; other project files were freshly snapshotted. Runtime installation and
+additional packages/assets still determine whether a particular document builds
+offline. The latest native app/Word attempts could not obtain a native window
+from the UI tool, and browser restore file chooser detection also failed. These
+are unverified UI gates, not passing results.
+
+Studio follow-up checks (2026-10-23):
+
+- Insert footnote 1 and endnote 1, edit only the endnote, save and reopen. Remove
+  the endnote and verify that the footnote remains. Inspect both the document
+  reference elements and note-body XML. Browser and OOXML checks passed.
+- Insert a figure caption and caption list, refresh, save and reopen. Verify
+  `SEQ Figure` and `TOC \c "Figure"` instructions and matching rendered text.
+  Browser and OOXML checks passed; caption-list page numbers are omitted.
+- Edit a pending AI replacement, apply and reopen. Verify the saved file uses the
+  reviewed wording and conversation history retains the original model wording.
+- Save a notebook figure/table after an actual run. Inspect its code/run/input
+  receipt; rerun its source cell and confirm the old output is flagged for review.
+  Repeat after code/input changes and after bundle export/restore. Editing a saved
+  output manually must not inherit its original execution claim.
+- Rename a linked image and move a Markdown/TeX/Typst draft. Check references and
+  old versions, failed atomic publication, stale editors and the project graph.
+  Dynamic code paths and arbitrary binary links are outside automatic repair.
+- Import Zotero reference snapshots and open a supporting passage. Reject stale,
+  excluded, unavailable, mismatched or historical-only sources. Native passage
+  navigation in Studio remains a separate runtime gate.
+
+Further browser evidence on 2026-10-23: Ollama `qwen3:8b` proposed a Markdown
+replacement; the review textarea changed the wording before Apply, the saved
+file used the reviewed text, and original model wording remained in history.
+A real Python run produced a saved figure with code/session/input hashes. The
+inspector first matched current inputs, then flagged a source rerun. Inserting
+that figure into DOCX persisted an insertion receipt; the draft's insertion
+history reached the same stale execution record. Renaming the figure updated a
+linked Markdown file and its graph endpoint. Selecting an imported DOCX comment
+did not advance revision 15. PDF.js 5.4.624 rendered and extracted both pages after
+the worker was packaged as a classic script for the opaque browser sandbox.
+
+Native capture/control remains blocked by the computer-use service reporting no
+available QA window. Actual Word round-trip, native final-build visual QA,
+Studio reference-to-PDF navigation and R execution remain unverified. Claude's
+workload remains blocked by its account session limit. Browser bundle restoration
+remains blocked by the extension's file-upload setting; repository restore tests
+are not reported as a successful UI restore.
+
+Studio navigation and editing ergonomics:
+
+- Start without an active file: show a useful empty state, with no disabled document toolbar.
+- Search by filename or folder, clear the search, and toggle archived files. Long names
+  stay on one line while the full path remains available to accessibility and hover.
+- Create a Markdown file without typing its extension, save with Cmd/Ctrl+S, rename
+  through More, and reopen. A duplicate-name error stays in the creation dialog.
+- Open DOCX with Assistant: formatting tools adapt to the actual editor width.
+  Open Insert & review for comments, output insertion, notes and contents.
+- Switch Assistant to References and back: only one panel is visible; an unsent
+  question and unsubmitted proposal edits survive closing/reopening the assistant.
+- Escape closes the focused side panel and returns focus to its header button.
+  More and History also support keyboard dismissal. Cmd/Ctrl+P focuses file search;
+  Hide files makes more room without closing or reloading the editor.
+- At 900px and 720px widths, verify toolbar/menu access, the panel close control,
+  document scrolling and saved-state visibility. Repeat in native Zotero; browser
+  checks do not establish native rendering or screen-reader compliance.
+
+Studio UX browser checks on 2026-10-23: format selection and extension completion,
+Markdown create/edit/save, filename/path search, rename/move, DOCX container-sized
+toolbar, mutually exclusive panels, close-button focus return, and 900px/720px
+layouts were exercised. Keyboard shortcut validation remains incomplete: browser
+automation did not deliver keydown events into the sandboxed frame, and the native
+browser was in active use. Do not treat an autosave after attempted Cmd+S as proof
+of the shortcut. Native final-build Studio painting remains a separate gate.
+
+PR review regression checks:
+
+- Move a Markdown draft with relative image links into a folder. Verify the editor
+  immediately shows the repaired paths, then edit/save and reopen: repaired paths
+  must remain intact. Repeat with a structured document in source view.
+- Build a renamed source with another renamed file in the project. Metadata-only
+  revisions must not make the immutable build snapshot unavailable.
+- Try runtime snapshots with `data.csv` and `Data.csv`, canonically equivalent
+  Unicode names, and a file whose name is also another file's parent directory.
+  Build/Run must reject ambiguous paths before launch and preserve all originals.
+- Press Stop while the first notebook kernel is still starting. The pending cell
+  must not execute; a subsequent explicit Run must remain usable. Repeat just
+  after Run while the request is queued: Stop must target that request, including
+  when a late interrupt arrives after it has completed.
+- Switch reference files rapidly while reads are pending. Only the selected file's
+  records may become available for insertion.
+- Close Studio while project authority is loading for a Build or AI request. No
+  new run may begin after the window is disposed.
+
+The Python worker integration suite is a separate CI step:
+`python test/studio_kernel_worker_test.py`, using `jupyter-client`, `ipykernel`
+and `matplotlib`. Node unit tests alone do not exercise a real kernel process.

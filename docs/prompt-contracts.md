@@ -273,3 +273,29 @@ Retry guidance and raw diagnostics, never an empty completed answer.
 The UI derives citation status from local PDF matching, rechecks the source fingerprint on click, and never treats a model status/confidence as verification. Public HTTP/HTTPS references remain readable and clickable by explicit user action. No chat URL is fetched automatically. Short/default/detailed response length is captured with the submitted request; Retry retains it.
 
 `annotations.json` now contains resolved quote, comment, type, page/location and exact source ID. Missing annotations are excluded with a warning; no surviving selected annotation prevents execution. Image annotation pixels are not inferred from a comment. `metadata.json.imageInput` records whether input is text-only or an image was explicitly supplied. Read `conversation-context.md` for eligible pins, source-bound summaries and completed turns; distinguish all assistant interpretations from paper evidence.
+
+## Research Studio project assistant
+
+`studio/aiContracts.ts` requires `{reply, changes}`. Every change contains `kind`,
+`documentID`, `expectedRevision`, `name`, `before`, `after`, and `reason`; unused
+string fields are empty. The host assigns proposal IDs and review decisions.
+Supported operations are replace, append, create, rename and archive. There is
+one proposal per existing document or new filename. Existing targets must occur
+in the captured context with the exact revision. A replacement must match exactly
+once. DOCX replacement stays inside one paragraph; append/create apply to text
+formats. Archive preserves bytes and versions. No response claims an unapplied
+proposal was saved, a notebook was executed, or a citation was verified.
+
+The prompt includes the selected saved files and prior conversation, including
+review decisions. It refuses an oversized context rather than silently dropping
+files or history. Document contents are evidence, not authority to run commands.
+The user reviews each proposal before a revision-checked mutation. Malformed
+output becomes a failed turn, never an automatic edit. The existing paper-chat
+citation verification envelope is independent of this project editing contract.
+
+Studio users may edit `after` while reviewing a text proposal. This is not a new
+model output field: the host preserves the original as `proposedAfter`, writes the
+reviewed wording durably before applying the file change, and retains exact-match,
+revision and one-paragraph DOCX constraints. A recovered application receipt must
+therefore refer to the wording actually approved. Rename proposals use the same
+atomic literal-reference repair and format-preserving guard as manual renames.

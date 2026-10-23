@@ -13,9 +13,12 @@ Related notes:
 
 ## Runtime shape
 
-Paper Pilot is a Zotero 7-10 bootstrapped add-on. There is no server and no
-network client for model calls: every AI run shells out to a **local CLI**
-already installed and authenticated on the user's machine.
+Paper Pilot is a Zotero 7-10 bootstrapped add-on. Reader and evidence-workspace
+AI runs use an authenticated **local CLI**. The separate Research Studio window
+also offers explicit loopback OpenAI-compatible requests; these
+do not change the reader's engine registry. No hosted service is required for
+local document editing. Studio is under implementation; its full target and
+verification boundaries are in [research-studio-spec.md](./research-studio-spec.md).
 
 ```text
 Zotero item panes
@@ -38,6 +41,103 @@ Workspace section.
 Because state lives on `addon.data` keyed by `itemID`, **almost everything is
 paper-scoped**. Preserve that when adding features: leaking state across papers
 is the most common regression in this codebase.
+
+### Research Studio project documents
+
+`studio/window.ts` opens one modeless **Write & run** window per existing project.
+Its packaged browser surface runs in an opaque-origin sandbox with a local CSP.
+The host transfers a project-bound MessagePort only after the exact packaged
+iframe URL finishes loading. Requests validate the channel nonce and live project
+existence. A separate chrome namespace exposes static editor assets, keeping the
+privileged bootstrap private. Document operations never invent a Zotero `itemID` or occupy a
+paper run reservation. A separate npm workspace pins the AGPL SuperDoc 1.47.2
+editor and its PDF.js peer, keeping the reader's PDF.js dependency independent.
+
+`StudioRepository` stores a revisioned `documents/manifest-v1.json` and immutable
+base64 blobs beneath the existing project directory. The manifest is the commit
+point. Save, rename, archive, restore and reviewed AI writes are serialized and
+check the caller's revision. Restore appends history. AI receipts and document
+versions share the same atomic manifest write, so retry after a conversation
+write failure cannot apply the change twice. `SaveCoordinator` drains edits made
+during a save and lets navigation wait for the same confirmed operation.
+The shared `researchProjectDirectory` helper keeps Studio data under the existing
+Research Workspace directory naming contract.
+
+The browser mounts SuperDoc for DOCX, CodeMirror for source documents, typed
+CSV/TSV/JSONL grids, and nbformat-preserving notebook cells. Unknown files retain
+their original bytes for export. Markdown previews are sanitized and do not
+automatically load external media. DOCX AI replacements must match one paragraph;
+the host verifies the resulting document text before committing exported bytes.
+Starter and user-saved templates create original-format copies. Saved notebook
+figures/tables can be embedded in DOCX or inserted into source documents. HTML
+table previews are sanitized; merged or irregular tables require explicit repair
+before CSV extraction.
+
+`StudioAIService` owns project conversation records, captured context revisions,
+review decisions and cancellation. Its operation reservation survives window
+replacement until the old operation finishes. Codex/Claude use separate owned
+file jobs and the existing command/parser/launch infrastructure, with 800 ms
+completion polling and a four-minute deadline. Codex uses read-only mode with
+host/browser/connector/delegation tools disabled; Claude uses safe mode with no
+tools. CLI capability checks fail visibly instead of weakening these settings.
+loopback calls are privileged-host requests with redirects disabled,
+bounded responses and no automatic retries. API keys remain in the window and
+are excluded from conversation, document, and job files.
+PDF context is extracted by the bundled local OpenDataLoader runtime, with
+process cancellation and temporary-file cleanup. PDF bytes remain read-only for
+AI proposals. Selected passages are explicitly added to the next question.
+
+`StudioCompilerService` snapshots saved project revisions, runs Tectonic, Typst
+or MyST (Typst output) in an owned build directory, polls completion every 800 ms,
+and adds a distinct PDF only after a successful exit and PDF signature check.
+Builds have a four-minute deadline and cancellation; diagnostics and input
+revisions are retained. MyST does not receive `--execute`. Project plugins and
+notebook code run with local account permissions; runtime directories are not an
+OS security sandbox. Tectonic uses untrusted mode. Compilers can download missing
+packages/templates. A separate, bundled PDF.js worker renders local PDFs without
+executing PDF scripts, links, forms or attachments.
+
+Document versions now carry SHA-256 digests of their original bytes. Older versions
+remain readable and gain checksums when exported. Document backups include all
+versions, archive state and stable document identities; restoration validates all
+bytes before atomically publishing into an empty document catalog. These backups
+exclude evidence-workspace records, conversations and runtime environments. The
+existing evidence export remains separate. Conversation archives can be selected
+and resumed; resuming archives the current conversation first.
+The separate local-project bundle adds active/archived conversations and research
+record snapshots. Restore publishes original document history and an immutable
+context-document pointer in one manifest commit. Imported conversations can
+resume; edits to the visible context document cannot rewrite their original
+snapshot. Imported research records do not establish current Zotero bindings.
+Runtime environments, model credentials and Zotero attachment bytes are not
+bundled; PDFs imported as Studio documents are included.
+
+`references.ts` uses bundled Citation.js BibTeX and CSL plugins without DOI
+resolution or network lookups. Manual and project-Zotero snapshots become local
+BibTeX files. DOCX citation insertion uses SuperDoc's Word `CITATION` fields and
+bibliography sources. Explicit refresh applies CSL to all citation clusters in
+document order and updates a `BIBLIOGRAPHY` field, including numeric numbering.
+Supported source metadata and rendered field results round-trip through DOCX;
+refreshing in Word uses Word's style engine. Full metadata remains in the source
+reference file. Independent formatted-text insertion remains available, with
+selection-only numbering. These are Word fields, not Zotero integration fields. The Kanban
+surface stores explicit card-to-document links and preserves unknown metadata;
+its graph visualizes those links, independently of research screening state.
+
+`KernelBroker` owns one persistent Python or R kernel per notebook. The bundled
+Python worker uses `jupyter-client` with file requests, a heartbeat, interrupt and
+shutdown signals. It snapshots project files into an owned runtime workspace,
+retains state between cells, and saves notebook outputs only after explicit Run.
+The Python environment is user-configured; R requires an installed `IRkernel`.
+This code executes with the local user's permissions. Runtime snapshots and
+exported files are separate from authoritative document versions.
+Jupyter `clear_output(wait)` and display-handle updates are applied to output
+snapshots. Display handles are session-only and excluded from nbformat export.
+Output rendering reuses cell editors so running a cell retains its undo history.
+
+The local preview script uses the packaged browser assets and the same repository,
+AI service/runner and kernel broker with Node I/O. Preview proof does not establish
+the privileged Zotero bridge, installed XPI behavior, or Word interoperability.
 
 The pane itself uses a bounded flex column. `ui/paneHeader.ts` owns the compact
 engine/model header and its settings popover, while `ui/collapsibleSection.ts`
@@ -880,3 +980,41 @@ Projects can reopen and choose a batch from their saved members without a curren
 Screening decisions, reading progress and understanding are independent. Screening events remain immutable; legacy states are preserved without inventing reading progress. Shared admission helpers exclude screened-out members across model and derived operations.
 
 Run reuse includes an operation-input fingerprint over the question, columns, screening protocol, scope, schema/parser version and supplied upstream artifacts. Every supplied artifact participates in lineage. A semantic change invalidates reuse; reading progress alone does not. Membership and source fingerprints are checked at admission and before saving current results. Context coverage reports source characters separately from serialization overhead and redistributes spare quota from short papers.
+
+Research Studio's MyST build cache points to the template directory of the last
+successful immutable build for that project. A fresh build copies only those
+templates before writing current document snapshots. Failed builds do not advance
+the cache pointer; package/font dependencies remain the compiler's responsibility.
+
+Research Studio keeps execution provenance on saved output versions and in
+nbformat cell metadata. The kernel broker captures the exact code/run identity;
+its native adapter records hashes of the project files copied at kernel startup.
+The output inspector compares current code/output and captured inputs without
+claiming to capture arbitrary host dependencies. A restored original output
+retains its origin; a manual output edit does not inherit an execution claim.
+
+Studio rename commits include new versions for affected literal text links.
+`projectLinks.ts` bounds supported Markdown/TeX/Typst path syntax and
+`projectGraph.ts` combines those references with board and output relationships.
+Stable document IDs remain the target for cards and recorded execution sources.
+The reference panel uses `referenceEvidence.ts` to reuse existing workspace
+admission gates; click-time PDF verification remains in `evidenceNavigation.ts`.
+
+The pinned DOCX engine's endnote export router receives a narrow build-time patch
+from `scripts/studio-editor-compat.mjs`. Build failure on a nonunique match prevents
+silently shipping an unpatched or twice-patched engine. Notes and contents stay in
+OOXML, and all source modifications are identified in the bundled license notice.
+
+The PDF preview packages its worker as a self-contained classic script and passes
+it through the fixed host asset bridge into a Blob worker. This preserves the
+opaque iframe sandbox in both Gecko and Chromium; Chromium rejects a Blob module
+worker in that context. Startup waits for PDF.js's ready handshake, reports worker
+errors, and bounds initial loading to 30 seconds. No document-supplied script or
+PDF action is executed.
+
+Draft versions retain insertion receipts pointing to the exact saved figure/table
+version. Bytes and new receipts publish together. The insertion-history inspector
+can follow those snapshots to their original notebook execution and current
+freshness check. These are historical actions, not claims that a figure remains
+embedded after later manual deletion. Project bundle export rejects a document
+revision change while assembling conversation/research context.

@@ -39,3 +39,10 @@ pref("__prefsPrefix__.privacyStoreLocalHistory", true);
 pref("__prefsPrefix__.privacySavePromptsOnly", false);
 pref("__prefsPrefix__.privacySaveResponses", true);
 pref("__prefsPrefix__.privacyRedactLocalFilePaths", true);
+
+// Research Studio local Jupyter environment
+pref("__prefsPrefix__.studioPythonPath", "");
+
+pref("__prefsPrefix__.studioTectonicPath", "");
+pref("__prefsPrefix__.studioTypstPath", "");
+pref("__prefsPrefix__.studioMystPath", "");

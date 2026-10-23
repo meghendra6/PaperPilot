@@ -1,5 +1,8 @@
 import { defineConfig } from "zotero-plugin-scaffold";
 import pkg from "./package.json";
+import { writeStudioLicenseNotices } from "./scripts/studio-license-notices.mjs";
+import { patchStudioEditor } from "./scripts/studio-editor-compat.mjs";
+import { readFile } from "node:fs/promises";
 
 export default defineConfig({
   source: ["src", "addon"],
@@ -28,7 +31,101 @@ export default defineConfig({
     },
     esbuildOptions: [
       {
+        entryPoints: ["packages/studio-editor/pdf-worker.ts"],
+        bundle: true,
+        format: "iife",
+        define: { "import.meta.url": "self.location.href" },
+        platform: "browser",
+        target: "firefox115",
+        legalComments: "linked",
+        outfile: "build/addon/chrome/content/studio/pdf-worker.js",
+      },
+      {
+        entryPoints: ["src/modules/studio/client.ts"],
+        define: { "process.env.NODE_ENV": '"production"' },
+        bundle: true,
+        format: "iife",
+        platform: "browser",
+        legalComments: "linked",
+        plugins: [
+          {
+            name: "studio-editor-endnote-export",
+            setup(build) {
+              let patched = 0;
+              build.onStart(() => {
+                patched = 0;
+              });
+              build.onLoad(
+                {
+                  filter:
+                    /superdoc[\\/]dist[\\/](?:superdoc\.min|chunks[\\/]SuperConverter-[^/\\]+\.es)\.js$/,
+                },
+                async ({ path }) => {
+                  const contents = patchStudioEditor(
+                    await readFile(path, "utf8"),
+                  );
+                  patched++;
+                  return { contents, loader: "js" };
+                },
+              );
+              build.onEnd(() =>
+                patched === 1
+                  ? undefined
+                  : {
+                      errors: [
+                        {
+                          text: "The Studio endnote export patch was not applied exactly once.",
+                        },
+                      ],
+                    },
+              );
+            },
+          },
+          {
+            name: "studio-license-notices",
+            setup(build) {
+              build.onEnd(async (result) => {
+                if (!result.errors.length)
+                  await writeStudioLicenseNotices(
+                    "build/addon/chrome/content/studio/licenses",
+                  );
+              });
+            },
+          },
+        ],
+        inject: ["src/modules/studio/browserStorage.ts"],
+        target: "firefox115",
+        outfile: "build/addon/chrome/content/studio/client.js",
+        loader: { ".woff2": "file", ".woff": "file", ".ttf": "file" },
+      },
+      {
         entryPoints: ["src/index.ts"],
+        metafile: true,
+        plugins: [
+          {
+            name: "studio-host-boundary",
+            setup(build) {
+              build.onEnd((result) => {
+                const browserOnly = Object.keys(
+                  result.metafile?.inputs ?? {},
+                ).filter((path) =>
+                  /node_modules\/(?:@citation-js\/|superdoc\/|@codemirror\/|codemirror\/)/.test(
+                    path,
+                  ),
+                );
+                if (browserOnly.length)
+                  return {
+                    errors: [
+                      {
+                        text: `Browser-only editor libraries entered the Zotero bootstrap bundle: ${browserOnly.join(", ")}`,
+                      },
+                    ],
+                  };
+                return undefined;
+              });
+            },
+          },
+        ],
         define: {
           __env__: `"${process.env.NODE_ENV}"`,
         },

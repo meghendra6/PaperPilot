@@ -6,7 +6,26 @@
 
 Paper Pilot는 Zotero 7-10 PDF 리더를 위한 AI 읽기 워크벤치입니다. Zotero 안에서 논문별 채팅 패널, 구조화된 논문 도구, 에이전트 주도 검증형 선행연구 탐색, 로컬 CLI 기반 AI 실행 기능을 제공합니다.
 
-![Zotero 7-10](https://img.shields.io/badge/Zotero-7--10-cc2936) ![Node 20+](https://img.shields.io/badge/Node-20%2B-339933) ![Java 11+](https://img.shields.io/badge/Java-11%2B-007396) ![License](https://img.shields.io/badge/License-AGPL--3.0--or--later-blue) ![Engines](https://img.shields.io/badge/Engines-Codex%20CLI%20%7C%20Claude%20Code-6f42c1)
+![Zotero 7-10](https://img.shields.io/badge/Zotero-7--10-cc2936) ![Node 22.18+](https://img.shields.io/badge/Node-22.18%2B-339933) ![Java 11+](https://img.shields.io/badge/Java-11%2B-007396) ![License](https://img.shields.io/badge/License-AGPL--3.0--or--later-blue) ![Engines](https://img.shields.io/badge/Engines-Codex%20CLI%20%7C%20Claude%20Code-6f42c1)
+
+## Research Studio (개발 중)
+
+프로젝트의 **Write & run** 창에서 원본 형식 문서, DOCX 편집기, Markdown·소스
+편집, 데이터 표와 실행 가능한 노트북을 다룹니다. 프로젝트 AI는 선택한 파일의
+버전을 기록하고 변경 제안을 개별 검토 후 적용합니다. Codex·Claude CLI,
+로컬 루프백 모델 엔드포인트를 선택할 수 있으며, 네트워크 추론은
+명시적으로 실행되고 API 키는 열린 창에만 유지됩니다. 노트북은 `jupyter-client`,
+`ipykernel`이 설치된 Python 환경을 설정해야 하며 R은 `IRkernel`도 필요합니다.
+코드는 Run을 선택했을 때 로컬 계정 권한으로 실행됩니다.
+
+아직 개발 중이며 Papers AI의 모든 기능을 구현한 상태가 아닙니다. 브라우저·
+Codex·Python 검증과 실제 Zotero·Word 검증은 구분합니다.
+[전체 범위와 검증 계약](./docs/research-studio-spec.md),
+[런타임 점검표](./docs/manual-qa.md)를 참고하세요.
+
+로컬 PDF 빌드는 Tectonic(`.tex`), Typst(`.typ`), MyST와 Typst(Markdown)를 사용하며 설정에서 실행 파일 경로를 지정합니다. 없는 패키지·템플릿은 다운로드가 필요할 수 있습니다. 로컬 프로젝트 묶음은 문서 버전·대화·과거 연구 기록을 포함하며 새 프로젝트로 복원한 뒤 Zotero 소스를 명시적으로 다시 연결합니다. Zotero 첨부파일 원본과 실행 환경은 별도입니다. DOCX는 Word 인용 필드와 명시적인 CSL 갱신을 지원하며, Word에서 갱신하면 Word의 서식 엔진을 사용합니다. 클라우드 협업·동기화는 보류합니다.
+
+Studio는 Word 각주·미주·목차·캡션 필드, 적용 전 AI 제안 수정, 노트북 결과 출처 확인, 프로젝트 연결 보기도 제공합니다. 이름을 바꾸면 지원하는 리터럴 참조 경로를 함께 갱신하며 코드가 동적으로 만드는 경로는 추측하지 않습니다. 결과 출처 화면에서 실행한 셀·출력·캡처한 입력의 변경을 확인할 수 있습니다. Zotero 참고문헌은 Research Workspace에서 현재 검증된 근거 구절로 연결됩니다.
 
 ## Chat 사용 흐름
 
@@ -228,7 +247,7 @@ Claude Code 모드는 로컬 `claude` CLI의 print 모드를 사용하며, 리�
 ## 요구 사항
 
 - **Zotero 7, 8, 9, 10**
-- 개발용 **Node.js 20+**
+- 개발용 **Node.js 22.18+**
 - 의존성/빌드용 **npm**
 - OpenDataLoader PDF 추출을 위한 런타임 **Java 11+**
 - 다음 중 하나 이상의 로컬 AI CLI:

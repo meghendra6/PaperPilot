@@ -6,7 +6,24 @@
 
 Paper Pilot 是一个面向 Zotero 7-10 PDF 阅读器的 AI 阅读工作台。它直接在 Zotero 中提供按论文作用域组织的聊天面板、结构化论文工具、由代理主导并验证出版状态的先行研究发现，以及基于本地 CLI 的 AI 执行能力。
 
-![Zotero 7-10](https://img.shields.io/badge/Zotero-7--10-cc2936) ![Node 20+](https://img.shields.io/badge/Node-20%2B-339933) ![Java 11+](https://img.shields.io/badge/Java-11%2B-007396) ![License](https://img.shields.io/badge/License-AGPL--3.0--or--later-blue) ![Engines](https://img.shields.io/badge/Engines-Codex%20CLI%20%7C%20Claude%20Code-6f42c1)
+![Zotero 7-10](https://img.shields.io/badge/Zotero-7--10-cc2936) ![Node 22.18+](https://img.shields.io/badge/Node-22.18%2B-339933) ![Java 11+](https://img.shields.io/badge/Java-11%2B-007396) ![License](https://img.shields.io/badge/License-AGPL--3.0--or--later-blue) ![Engines](https://img.shields.io/badge/Engines-Codex%20CLI%20%7C%20Claude%20Code-6f42c1)
+
+## Research Studio（开发中）
+
+项目的 **Write & run** 窗口提供本地原格式文档、DOCX 编辑器、Markdown/源码、
+数据表和可执行笔记本。项目助手记录所选文件的版本，并逐项审核修改建议。
+可选择 Codex/Claude CLI、本地回环模型端点；网络推理需要明确
+执行，API 密钥仅保留在打开的窗口中。笔记本需要在设置中指定安装了
+`jupyter-client` 和 `ipykernel` 的 Python 环境；R 还需要 `IRkernel`。
+代码仅在点击 Run 后以本地账户权限运行。
+
+此功能仍在开发，尚未完整覆盖 Papers AI。浏览器、Codex 和 Python 验证不能
+替代原生 Zotero 或 Word 验证。参见[完整范围与验证约定](./docs/research-studio-spec.md)
+及[运行时检查清单](./docs/manual-qa.md)。
+
+本地 PDF 构建使用已安装的 Tectonic（`.tex`）、Typst（`.typ`）或 MyST 加 Typst（Markdown），可在设置中指定路径。缺失的包或模板可能需要下载。本地项目包包含文档版本、会话和历史研究快照；恢复到新项目后须明确重新关联 Zotero 来源。Zotero 附件原件和运行环境另行管理。DOCX 支持 Word 引用字段及显式 CSL 刷新；在 Word 中刷新时使用 Word 的格式引擎。云协作与同步暂缓实现。
+
+Studio 还提供 Word 脚注、尾注、目录和题注字段、应用前修改 AI 建议、笔记本输出来源检查及项目链接视图。重命名会原子更新支持的字面路径，不推测代码动态生成的路径。输出检查显示来源单元、输出或捕获输入的变化。Zotero 参考文献可通过 Research Workspace 打开当前已验证的支持段落。
 
 ## 聊天工作流
 
@@ -224,7 +241,7 @@ Claude Code 模式使用本地 `claude` CLI 的 print 模式，并基于阅读�
 ## 环境要求
 
 - **Zotero 7、8、9 或 10**
-- 开发用 **Node.js 20+**
+- 开发用 **Node.js 22.18+**
 - 用于依赖与构建的 **npm**
 - 运行时 **Java 11+**（用于 OpenDataLoader 结构化 PDF 抽取）
 - 至少安装一个本地 AI CLI：

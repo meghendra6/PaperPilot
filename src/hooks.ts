@@ -36,6 +36,7 @@ import {
   unregisterResearchWorkspacePaneSection,
 } from "./modules/researchWorkspace/view";
 import { closeResearchWorkspaceWindow } from "./modules/researchWorkspace/window";
+import { closeStudioWindows } from "./modules/studio/window";
 import { clearCriticalReadViewState } from "./modules/ui/criticalReadDraft";
 import { PAPER_PILOT_PREF_PANE_ID } from "./modules/ui/runProgressCard";
 import { getString, initLocale } from "./utils/locale";
@@ -160,6 +161,7 @@ async function onShutdown(): Promise<void> {
   unregisterResearchWorkspacePaneSection();
   unregisterResearchWorkspaceLaunchers();
   closeResearchWorkspaceWindow();
+  closeStudioWindows();
   clearResearchWorkspaceHybridIndexCache();
   ztoolkit.unregisterAll();
   // Remove plugin stylesheet from all windows
