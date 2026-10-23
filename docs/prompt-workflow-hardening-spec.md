@@ -101,8 +101,8 @@ be carried into another prompt.
   language, not copies of retrieval chunks or recent turns
 - `selection.json` owns selected text, actual nearby context, page data,
   annotations, and retrieved chunks
-- `recent-turns.json` is the only workspace file containing recent visible chat
-  turns
+- `conversation-context.md` is the only workspace file containing recent visible
+  chat turns (it replaced the earlier `recent-turns.json`)
 - `selection.json` does not embed `promptPreview` or recent turns
 - reader popup actions describe the task; the attached selection is carried in
   `selection.json` rather than repeated inside the task text

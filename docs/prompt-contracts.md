@@ -122,6 +122,7 @@ language; existing Zotero notes and verbatim source material remain unchanged.
   - serialized reports are rebuilt from validated step state on reopen instead of being displayed as authority after migration
   - each step requests only its own response fields rather than the union of all seven step shapes
   - later steps receive a bounded JSON projection of validated prior outputs, including Step 3 discovery lanes and limitations; public-review insight is excluded
+  - a step's prompt includes only completed steps with a lower step number, so re-running a revised earlier step never reads later outputs built on its old version
 
 ### Paper tools
 
@@ -131,7 +132,7 @@ language; existing Zotero notes and verbatim source material remain unchanged.
 - Guardrails:
   - use the full current-paper workspace content when available, with metadata/abstract as fallback context
   - call out abstract-only fallback when full paper content is unavailable and that affects the card
-  - headings should match the expected preset headings
+  - headings use the preset headings verbatim, in English, even when the response language is Korean or Chinese; each preset's native schema makes them an enum, and the parser also accepts a titled variant such as `Idea 1: …`
   - evidence labels should distinguish direct claims from inference
   - cite section, page, figure, or table support when available; never invent source locations
   - sections should stay short and pane-safe
@@ -145,6 +146,7 @@ language; existing Zotero notes and verbatim source material remain unchanged.
   - use the full current-paper workspace content when available for the active paper
   - use only supplied metadata/abstracts for comparison papers
   - only discuss the supplied papers
+  - `papers[]` contains every supplied paper exactly once (the current paper first) with each title copied verbatim; the per-request native schema fixes the count and lists the titles as an enum, and the parser rejects any other set
   - keep strengths, tradeoffs, and synthesis compact
   - call out inference instead of presenting it as fact
 
@@ -209,7 +211,7 @@ language; existing Zotero notes and verbatim source material remain unchanged.
   - keep answers compact for the reader-pane environment
   - follow any requested output schema exactly
   - the prompt preview contains only the explicit request and response language; `selection.json` is the sole owner of selected text, actual nearby context, page/annotation data, and retrieved chunks
-  - `recent-turns.json` is the sole workspace owner of recent visible chat turns
+  - `conversation-context.md` is the sole workspace owner of recent visible chat turns, pins, and the conversation summary; chat runs write it and `CONTEXT_INDEX.md` names it
   - popup actions describe the task without duplicating attached selection text
 
 ### Run profiles and native schemas
