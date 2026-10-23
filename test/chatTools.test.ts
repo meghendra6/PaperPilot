@@ -108,6 +108,7 @@ function setup(options: {
     onResult: options.onResult ?? (async () => {}),
     onSearchClose: options.onSearchClose ?? (() => true),
     onSummary: async () => {},
+    searchDelayMs: 0,
   });
   const root = tools.root as unknown as TestElement;
   const [bar, commands, search] = root.children;
@@ -249,6 +250,32 @@ test("actions collapse consistently after selection and Escape from their contro
   assert.equal(ui.actionButton.getAttribute("aria-expanded"), "false");
   assert.equal(ui.doc.activeElement, ui.input);
   assert.equal(escape.defaultPrevented, true);
+});
+
+test("search results are not a live region; a status reports the count", async () => {
+  const ui = setup({ onSearch: async () => [result] });
+  ui.searchButton.click();
+  ui.enterQuery("matching");
+  await settle();
+  assert.equal(ui.results.getAttribute("aria-live"), undefined);
+  const status = ui.search.children[4];
+  assert.equal(status.getAttribute("role"), "status");
+  assert.equal(status.textContent, "1 matching message.");
+});
+
+test("an unchanged query and scope do not search again", async () => {
+  let searches = 0;
+  const ui = setup({
+    onSearch: async () => {
+      searches += 1;
+      return [result];
+    },
+  });
+  ui.searchButton.click();
+  ui.enterQuery("same");
+  ui.enterQuery("same ");
+  await settle();
+  assert.equal(searches, 1);
 });
 
 test("slash command parsing accepts only a bare /word draft", () => {

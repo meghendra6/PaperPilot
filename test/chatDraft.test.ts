@@ -9,6 +9,7 @@ import {
   createChatDraftSubmission,
   formatDraftAnnotationNotice,
   formatDraftSourceLabel,
+  recordedContextForRun,
   shouldReadLiveSelection,
 } from "../src/modules/ui/chatDraft";
 
@@ -119,4 +120,50 @@ test("only a typed question with the pane's own record reads the live selection"
     }),
     false,
   );
+});
+
+test("hidden workflow runs keep only the bound PDF from a recorded context", () => {
+  const leftover = {
+    text: "Leftover highlighted sentence from page 9",
+    annotationIDs: ["ANNOT1"],
+    attachmentID: 7,
+    pageIndex: 8,
+    pageLabel: "9",
+  };
+  assert.deepEqual(
+    recordedContextForRun({ context: leftover, visibleChat: false }),
+    { attachmentID: 7 },
+  );
+  assert.deepEqual(
+    recordedContextForRun({ context: leftover, visibleChat: true }),
+    leftover,
+  );
+  assert.equal(
+    recordedContextForRun({ context: { text: "x" }, visibleChat: false }),
+    undefined,
+  );
+});
+
+test("a preparation failure restores the question after pane-owned draft writes", () => {
+  const itemID = 9001;
+  const sessionId = "session-restore";
+  const admitted = updateChatDraft(itemID, sessionId, {
+    text: "Why does the method need a warm-up phase?",
+  });
+  assert.equal(consumeChatDraft(itemID, sessionId, admitted.revision), true);
+  // The pane re-renders and records the open PDF; the reader changes length.
+  updateChatDraft(itemID, sessionId, {
+    context: { attachmentID: 12, origin: "pane-open" },
+  });
+  updateChatDraft(itemID, sessionId, { responseLength: "short" });
+  assert.equal(restoreChatDraft(itemID, sessionId, admitted), true);
+  const restored = getChatDraft(itemID, sessionId);
+  assert.equal(restored.text, "Why does the method need a warm-up phase?");
+  assert.equal(restored.responseLength, "short");
+
+  // Typing a next question still wins over the restore.
+  const second = getChatDraft(itemID, sessionId);
+  assert.equal(consumeChatDraft(itemID, sessionId, second.revision), true);
+  updateChatDraft(itemID, sessionId, { text: "A new question" });
+  assert.equal(restoreChatDraft(itemID, sessionId, second), false);
 });

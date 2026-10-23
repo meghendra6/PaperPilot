@@ -1,19 +1,19 @@
 import type { CodexExecOptions, CodexResumeOptions } from "./types";
 
+// Codex CLI 0.163 rejects "untrusted" and "on-failure" during argument
+// parsing, which failed every run. Saved values that asked for approval keep
+// that intent as "on-request", the remaining accepted asking policy.
 const LEGACY_APPROVAL_MODE_MAP = new Map<string, string>([
   ["suggested", "never"],
   ["auto-edit", "never"],
   ["autoedit", "never"],
-  ["manual", "untrusted"],
+  ["manual", "on-request"],
+  ["untrusted", "on-request"],
+  ["on-failure", "on-request"],
 ]);
 
 /** Values accepted by `codex --ask-for-approval`, in settings display order. */
-export const CODEX_APPROVAL_MODES = [
-  "never",
-  "on-request",
-  "untrusted",
-  "on-failure",
-] as const;
+export const CODEX_APPROVAL_MODES = ["never", "on-request"] as const;
 
 const SUPPORTED_APPROVAL_MODES = new Set<string>(CODEX_APPROVAL_MODES);
 

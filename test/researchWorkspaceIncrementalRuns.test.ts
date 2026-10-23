@@ -15,13 +15,17 @@ import { researchWorkspaceArtifactPayloadFingerprint } from "../src/modules/rese
 import {
   admittedProjectArtifacts,
   createProjectOperationAdmission,
+  latestCurrentArtifact,
 } from "../src/modules/researchWorkspace/operationInputs";
 import { researchWorkspaceOutputSchemaForPurpose } from "../src/modules/researchWorkspace/outputSchemas";
 import type { ResearchWorkspacePaper } from "../src/modules/researchWorkspace/paperSource";
 import type { ResearchWorkspaceFileOps } from "../src/modules/researchWorkspace/persistence/contracts";
 import { ResearchWorkspaceProjectRepository } from "../src/modules/researchWorkspace/persistence/projectRepository";
 import { ResearchWorkspaceProjectController } from "../src/modules/researchWorkspace/projectController";
-import { buildResearchWorkspaceProjectWorkspace } from "../src/modules/researchWorkspace/projectWorkspaceBuilder";
+import {
+  buildCitationStanceWorkspaceFiles,
+  buildResearchWorkspaceProjectWorkspace,
+} from "../src/modules/researchWorkspace/projectWorkspaceBuilder";
 import { ResearchWorkspaceService } from "../src/modules/researchWorkspace/service";
 import { validateWorkspaceSupplementalFilePath } from "../src/modules/workspace/supplementalFiles";
 
@@ -107,6 +111,36 @@ function paper(
     extractionQuality: "zotero_text",
   };
 }
+
+test("citation stance stages no paper text beyond the approved snippets", () => {
+  const files = buildCitationStanceWorkspaceFiles();
+  assert.deepEqual(Object.keys(files), ["PROJECT_INDEX.md"]);
+  assert.match(files["PROJECT_INDEX.md"], /No paper text is staged/);
+});
+
+test("context projection keeps document order and early sections when relevance ties", () => {
+  const base = paper("A");
+  const structured: ResearchWorkspacePaper = {
+    ...base,
+    structuredChunks: Array.from({ length: 12 }, (_, index) => ({
+      id: `${base.sourceID}:element-${index + 1}`,
+      text: `PARA${String(index + 1).padStart(2, "0")}`,
+      attachmentKey: base.attachmentKey,
+      pageIndex: 0,
+      metadata: { paperKey: base.paperKey },
+    })),
+  };
+  const plan = planResearchWorkspaceContext({
+    papers: [structured],
+    operation: "evidence-matrix",
+    totalCharacters: 40,
+    minimumCharactersPerSource: 40,
+  });
+  const [projection] = plan.projections;
+  // Lexicographic IDs once picked element-1, then 10, 11, 12 before element-2.
+  assert.equal(projection.includedText.split("\n\n")[0], "PARA01");
+  assert.match(projection.includedText, /^PARA01\n\nPARA02\n\nPARA03/);
+});
 
 test("total context planning is deterministic, bounded, and keeps every source", () => {
   const papers = [paper("B"), paper("A")];
@@ -276,6 +310,46 @@ test("relationship graph verification requires qualifying local provenance", () 
       }),
     /without qualifying provenance/,
   );
+  // A model-claimed Zotero relation is not checked locally, so it stays an
+  // unverified candidate even when the model marks the edge verified.
+  const asserted = validateAndAnnotateRelationshipGraph({
+    graph: {
+      ...base,
+      edges: [
+        {
+          ...base.edges[0],
+          evidence: [],
+          bibliographicProvenance: {
+            kind: "zotero-relation",
+            sourceID: papers[0].sourceID,
+            identifier: "made-up",
+          },
+        },
+      ],
+    },
+    papers,
+    operationVersion: "relationship-graph-v1",
+  });
+  assert.equal(asserted.edges[0].provenance, "model-asserted");
+  assert.equal(asserted.edges[0].verified, false);
+  assert.equal(asserted.edges[0].verificationState, "inferred");
+  // An unrecognized provenance object is not persisted.
+  const unrecognized = validateAndAnnotateRelationshipGraph({
+    graph: {
+      ...base,
+      edges: [
+        {
+          ...base.edges[0],
+          verified: false,
+          evidence: [],
+          bibliographicProvenance: { kind: "rumor", sourceID: "elsewhere" },
+        },
+      ],
+    },
+    papers,
+    operationVersion: "relationship-graph-v1",
+  });
+  assert.equal("bibliographicProvenance" in unrecognized.edges[0], false);
 });
 
 test("project workspace pack has bounded per-paper files and no absolute paths", () => {
@@ -432,31 +506,39 @@ test("cancellation checkpoints completed units and blocks late completion", asyn
     sourceID: entry.sourceID,
   }));
   const controller = new AbortController();
-  await assert.rejects(
-    coordinator.runIncremental({
-      projectID: details.project.projectID,
-      papers,
-      operation: "evidence-matrix",
-      operationVersion: "evidence-matrix-v1",
-      artifactType: "evidence-matrix",
-      artifactTitle: "Evidence Matrix",
-      providerMode: "codex_cli",
-      initialPayload: { rows: [] as string[] },
-      units,
-      sourcesPrepared: true,
-      signal: controller.signal,
-      executeUnit: async (unit) => {
-        if (unit.sourceID === papers[1].sourceID) controller.abort();
-        return unit.sourceID;
-      },
-      mergeUnit: (payload, _unit, result) => ({
-        rows: [...payload.rows, result],
+  // The add-on sandbox has no DOMException; cancellation must not need it.
+  const sandboxDOMException = globalThis.DOMException;
+  delete (globalThis as { DOMException?: unknown }).DOMException;
+  try {
+    await assert.rejects(
+      coordinator.runIncremental({
+        projectID: details.project.projectID,
+        papers,
+        operation: "evidence-matrix",
+        operationVersion: "evidence-matrix-v1",
+        artifactType: "evidence-matrix",
+        artifactTitle: "Evidence Matrix",
+        providerMode: "codex_cli",
+        initialPayload: { rows: [] as string[] },
+        units,
+        sourcesPrepared: true,
+        signal: controller.signal,
+        executeUnit: async (unit) => {
+          if (unit.sourceID === papers[1].sourceID) controller.abort();
+          return unit.sourceID;
+        },
+        mergeUnit: (payload, _unit, result) => ({
+          rows: [...payload.rows, result],
+        }),
+        reusableUnit: (payload, unit) =>
+          payload.rows.find((sourceID) => sourceID === unit.sourceID),
       }),
-      reusableUnit: (payload, unit) =>
-        payload.rows.find((sourceID) => sourceID === unit.sourceID),
-    }),
-    /Cancelled/,
-  );
+      (error: Error) =>
+        error.name === "AbortError" && error.message === "Cancelled",
+    );
+  } finally {
+    globalThis.DOMException = sandboxDOMException;
+  }
   const artifacts = await repository.listArtifacts(details.project.projectID);
   const partial = artifacts.artifacts.find(
     (artifact) => artifact.status === "partial",
@@ -466,6 +548,110 @@ test("cancellation checkpoints completed units and blocks late completion", asyn
   assert.deepEqual(partial.checkpoint?.pendingUnits, [papers[1].sourceID]);
   const runs = await repository.listRuns(details.project.projectID);
   assert.equal(runs.runs[0].status, "cancelled");
+});
+
+test("review panels pick the newest version that is not superseded", () => {
+  // Superseding rewrites updatedAt, so the history list shows it first.
+  const history = [
+    { type: "contradiction-gap-dashboard", status: "superseded", version: 1 },
+    { type: "contradiction-gap-dashboard", status: "complete", version: 2 },
+    { type: "citation-health", status: "complete", version: 4 },
+  ];
+  assert.equal(
+    latestCurrentArtifact(history, "contradiction-gap-dashboard")?.version,
+    2,
+  );
+  assert.equal(latestCurrentArtifact(history, "evidence-matrix"), undefined);
+
+  // Versions count per source scope: the newer A+B+C report is v1.
+  const scopes = [
+    {
+      type: "citation-health",
+      status: "stale",
+      version: 2,
+      createdAt: "2026-10-01T00:00:00.000Z",
+    },
+    {
+      type: "citation-health",
+      status: "complete",
+      version: 1,
+      createdAt: "2026-10-02T00:00:00.000Z",
+    },
+  ];
+  assert.equal(
+    latestCurrentArtifact(scopes, "citation-health")?.createdAt,
+    "2026-10-02T00:00:00.000Z",
+  );
+});
+
+test("a failed or cancelled rerun keeps the complete earlier version current", async () => {
+  const { repository } = createRepository();
+  const projects = new ResearchWorkspaceProjectController(repository);
+  const coordinator = new ResearchWorkspaceOperationCoordinator(repository);
+  const papers = [paper("A"), paper("B")];
+  const details = await projects.createProject({ name: "Rerun" }, papers);
+  const projectID = details.project.projectID;
+  const units = papers.map((entry) => ({
+    unitID: entry.sourceID,
+    sourceID: entry.sourceID,
+  }));
+  const matrix = (
+    executeUnit: (unit: { sourceID: string }) => Promise<string>,
+    signal?: AbortSignal,
+  ) =>
+    coordinator.runIncremental({
+      projectID,
+      papers,
+      operation: "evidence-matrix",
+      operationVersion: "evidence-matrix-v1",
+      artifactType: "evidence-matrix",
+      artifactTitle: "Evidence Matrix",
+      providerMode: "codex_cli",
+      initialPayload: { rows: [] as string[] },
+      units,
+      sourcesPrepared: true,
+      signal,
+      executeUnit,
+      mergeUnit: (payload, _unit, result) => ({
+        rows: [...payload.rows, result],
+      }),
+      reusableUnit: (payload, unit) =>
+        payload.rows.find((sourceID) => sourceID === unit.sourceID),
+    });
+  const statusOf = async (version: number) =>
+    (await repository.listArtifacts(projectID)).artifacts.find(
+      (artifact) => artifact.version === version,
+    )?.status;
+
+  await matrix(async (unit) => unit.sourceID);
+  assert.equal(await statusOf(1), "complete");
+
+  // Every row fails, for example after the CLI login expired.
+  await matrix(async () => {
+    throw new Error("Codex CLI is not logged in.");
+  });
+  assert.equal(await statusOf(1), "complete");
+  assert.equal(await statusOf(2), "partial");
+
+  // Cancelled during its first row.
+  const controller = new AbortController();
+  await assert.rejects(
+    matrix(async (unit) => {
+      controller.abort();
+      return unit.sourceID;
+    }, controller.signal),
+    /Cancelled/,
+  );
+  assert.equal(await statusOf(1), "complete");
+
+  // A complete rerun supersedes every earlier version.
+  await matrix(async (unit) => unit.sourceID);
+  const artifacts = (await repository.listArtifacts(projectID)).artifacts;
+  const current = artifacts.filter(
+    (artifact) => artifact.status !== "superseded",
+  );
+  assert.equal(current.length, 1);
+  assert.equal(current[0].status, "complete");
 });
 
 test("project ownership rejects concurrency and ignores an aborted late result", async () => {

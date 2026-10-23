@@ -83,10 +83,15 @@ function fakeZotero(options: { withTransaction?: boolean } = {}) {
     addTag(tagName: string) {
       if (!state.tags.includes(tagName)) state.tags.push(tagName);
     },
-    removeTag(tagName: string) {
+    // Real Zotero.Item methods read their receiver; a detached call throws.
+    removeTag(this: { key?: string } | undefined, tagName: string) {
+      if (this?.key !== state.key)
+        throw new TypeError("removeTag was called without its Zotero item");
       state.tags = state.tags.filter((tag) => tag !== tagName);
     },
-    async save(saveOptions: unknown) {
+    async save(this: { key?: string } | undefined, saveOptions: unknown) {
+      if (this?.key !== state.key)
+        throw new TypeError("save was called without its Zotero item");
       state.saveOptions.push(saveOptions);
       state.version += 1;
     },
@@ -127,12 +132,14 @@ function fakeZotero(options: { withTransaction?: boolean } = {}) {
     name: "Preexisting collection",
     version: 1,
   };
+  // A subcollection: Zotero lists it only for getByLibrary(id, true).
   const laterCollection = {
     id: laterCollectionID,
     libraryID: 1,
     key: "LATER-COLLECTION",
     name: "Later collection",
     version: 1,
+    parentKey: "PREEXISTING-COLLECTION",
   };
   const collectionsByID = new Map<number, { key: string }>([
     [collection.id, collection],
@@ -171,10 +178,11 @@ function fakeZotero(options: { withTransaction?: boolean } = {}) {
           ? collection
           : undefined;
       },
-      getByLibrary(libraryID: number) {
-        return libraryID === 1
+      getByLibrary(libraryID: number, recursive?: boolean) {
+        if (libraryID !== 1) return [];
+        return recursive
           ? [collection, preexistingCollection, laterCollection]
-          : [];
+          : [collection, preexistingCollection];
       },
     },
     Tags: {
@@ -263,6 +271,14 @@ test("runtime apply and undo use transactions, notifier data, and only receipt-o
     assert.equal(
       targets.libraries[0].collections[0].collectionKey,
       "COLLECTION-A",
+    );
+    assert.ok(
+      targets.libraries[0].collections.some(
+        (entry) =>
+          entry.collectionKey === "LATER-COLLECTION" &&
+          entry.name === "Preexisting collection / Later collection",
+      ),
+      JSON.stringify(targets.libraries[0].collections),
     );
     assert.deepEqual(targets.libraries[0].tagNames, [
       "preexisting-tag",
@@ -426,7 +442,15 @@ test("a previously settled receipt item never removes a later user re-add", asyn
       undoneAt: "2026-08-30T04:04:00.000Z",
     };
 
-    const retried = await runtime.undo(settledReceipt);
+    // The add-on sandbox has no structuredClone.
+    const sandboxClone = globalThis.structuredClone;
+    let retried: Awaited<ReturnType<typeof runtime.undo>>;
+    try {
+      (globalThis as { structuredClone?: unknown }).structuredClone = undefined;
+      retried = await runtime.undo(settledReceipt);
+    } finally {
+      globalThis.structuredClone = sandboxClone;
+    }
     assert.deepEqual(retried, firstUndo);
     assert(fake.regular.collections.includes(fake.selectedCollectionID));
     assert(fake.regular.tags.includes("reviewed"));

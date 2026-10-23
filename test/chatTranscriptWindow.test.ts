@@ -3,6 +3,7 @@ import { test } from "node:test";
 import {
   CHAT_TRANSCRIPT_WINDOW_SIZE,
   CHAT_TRANSCRIPT_WINDOW_STEP,
+  captureChatPosition,
   clearChatNewResponse,
   getLatestChatTranscriptWindow,
   hasChatNewResponse,
@@ -471,4 +472,52 @@ test("the new response prompt can be detected and cleared", () => {
   clearChatNewResponse(container as unknown as Element);
   assert.equal(hasChatNewResponse(container as unknown as Element), false);
   handle.dispose();
+});
+
+test("a window rebuild keeps the live answer bubble of a running request", () => {
+  const doc = new FakeDocument();
+  const container = new FakeElement("div", doc);
+  const items = ["question-1", "answer-1", "question-2"];
+  const handle = renderChatTranscriptWindow({
+    container: container as unknown as HTMLElement,
+    getItems: () => items,
+    getKey: (item) => item,
+    renderItem: () => {
+      const wrapper = new FakeElement("div", doc);
+      wrapper.className = "pp-message-wrapper";
+      container.append(wrapper);
+      return wrapper as unknown as HTMLElement;
+    },
+  });
+  // The engine controller adds the answer bubble; it is stored only later.
+  prepareChatTranscriptAppend(container as unknown as HTMLElement);
+  const live = new FakeElement("div", doc);
+  live.className = "pp-message-wrapper pp-message-wrapper--ai";
+  container.append(live);
+  notifyChatTranscriptAppend(
+    container as unknown as HTMLElement,
+    live as unknown as HTMLElement,
+  );
+  handle.showLatest();
+  assert.equal(container.children.includes(live), true);
+  assert.equal(container.children.at(-1), live);
+  handle.dispose();
+});
+
+test("a reading position inside a live answer anchors on the stored message above", () => {
+  const doc = new FakeDocument();
+  const container = new FakeElement("div", doc);
+  const stored = new FakeElement("div", doc);
+  stored.className = "pp-message-wrapper";
+  stored.dataset.ppTranscriptKey = "question-2";
+  const live = new FakeElement("div", doc);
+  live.className = "pp-message-wrapper pp-message-wrapper--ai";
+  live.dataset.ppTranscriptKey = "live-0";
+  container.append(stored, live);
+  // The container top sits inside the live answer (the second wrapper).
+  container.getBoundingClientRect = () => ({ top: 15, bottom: 115 });
+  assert.deepEqual(captureChatPosition(container as unknown as HTMLElement), {
+    key: "question-2",
+    offset: -15,
+  });
 });

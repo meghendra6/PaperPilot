@@ -44,7 +44,10 @@ import {
   parseCrossPaperGradeResponse,
   parseCrossPaperQuestionResponse,
 } from "../src/modules/researchWorkspace/core/crossPaperMastery/parser";
-import { parseCitationStanceResponse } from "../src/modules/researchWorkspace/core/citationStance/parser";
+import {
+  isMissingStanceOutput,
+  parseCitationStanceResponse,
+} from "../src/modules/researchWorkspace/core/citationStance/parser";
 import {
   RESEARCH_WORKSPACE_SCHEMA_VERSION,
   migrateResearchWorkspaceState,
@@ -412,16 +415,49 @@ test("evidence matrix reports extraction and evidence coverage", () => {
       columnId: "method",
       value: "Method A",
       status: "extracted",
-      evidence: [{ attachmentKey: "A1", pageIndex: 1 }],
+      evidence: [
+        {
+          attachmentKey: "A1",
+          pageIndex: 1,
+          verification: { status: "verified" },
+        } as never,
+      ],
       confidence: 0.9,
+    },
+    {
+      paperKey: "P2",
+      columnId: "method",
+      value: "Method B",
+      status: "extracted",
+      // The verifier did not find this quote, so it is not coverage.
+      evidence: [
+        {
+          attachmentKey: "A2",
+          pageIndex: 3,
+          verification: { status: "not-found" },
+        } as never,
+      ],
+      confidence: 0.8,
     },
   ]);
   const coverage = calculateEvidenceMatrixCoverage(matrix);
   assert.equal(coverage.cellCount, 2);
-  assert.equal(coverage.filledCount, 1);
+  assert.equal(coverage.filledCount, 2);
   assert.equal(coverage.evidencedCount, 1);
-  assert.equal(coverage.extractionCoverage, 0.5);
+  assert.equal(coverage.extractionCoverage, 1);
+  assert.equal(coverage.evidenceCoverage, 0.5);
   assert.equal(coverage.requiredEvidenceCoverage, 0.5);
+});
+
+test("profile signals match whole words, not fragments of other words", () => {
+  const economics = detectCriticalReadProfile(
+    "Title: Labor Market Frictions. We study how input costs and a little regulation affect wages while preserving welfare.",
+  );
+  assert.equal(economics.primary, "general");
+  const systems = detectCriticalReadProfile(
+    "We report throughput and p99 latency on NPUs while serving requests.",
+  );
+  assert.notEqual(systems.primary, "general");
 });
 
 test("literature graph validates evidence edges and finds undirected paths", () => {
@@ -647,6 +683,43 @@ test("missing claim confidence remains absent", () => {
   assert.equal("confidence" in ledger.claims[0], false);
 });
 
+test("claim extraction rejects reused claim IDs instead of merging their support", () => {
+  const claim = (id: string | undefined, text: string) => ({
+    ...(id ? { id } : {}),
+    text,
+    kind: "author_claim",
+    support: [],
+    contradictions: [],
+    verificationStatus: "unverified",
+  });
+  assert.throws(
+    () =>
+      parseClaimExtractionResponse({
+        response: JSON.stringify({
+          claims: [claim("claim-1", "First"), claim("claim-1", "Second")],
+        }),
+        paperKey: "P1",
+        attachmentKey: "A1",
+      }),
+    /Duplicate claim ID claim-1/,
+  );
+  // A claim without an ID never takes an ID that another claim names.
+  const ledger = parseClaimExtractionResponse({
+    response: JSON.stringify({
+      claims: [claim(undefined, "First"), claim("claim-1", "Second")],
+    }),
+    paperKey: "P1",
+    attachmentKey: "A1",
+  });
+  assert.deepEqual(
+    ledger.claims.map((entry) => [entry.id, entry.text]),
+    [
+      ["claim-2", "First"],
+      ["claim-1", "Second"],
+    ],
+  );
+});
+
 test("citation stance drops model evidence outside supplied attachments", () => {
   const contexts = [
     {
@@ -673,6 +746,36 @@ test("citation stance drops model evidence outside supplied attachments", () => 
     allowedAttachments: [],
   });
   assert.deepEqual(results[0].evidence, []);
+});
+
+test("citation stance marks contexts the model skipped as not analyzed", () => {
+  const contexts = ["c1", "c2", "c3"].map((id) => ({
+    id,
+    citingPaperKey: "P1",
+    citedPaperKey: "P2",
+    context: `Context ${id}.`,
+    evidence: [],
+  }));
+  const results = (parseCitationStanceResponse as any)({
+    response: JSON.stringify({
+      results: [
+        {
+          contextId: "c2",
+          stance: "supporting",
+          confidence: 0.8,
+          rationale: "support",
+          evidence: [],
+        },
+      ],
+    }),
+    contexts,
+    allowedAttachments: [],
+  });
+  assert.equal(results.length, 3);
+  assert.deepEqual(
+    results.map((result: any) => isMissingStanceOutput(result)),
+    [true, false, true],
+  );
 });
 
 test("citation stance preserves mentioning and migrates only legacy unclear", () => {

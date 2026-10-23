@@ -31,6 +31,12 @@ test("every statically referenced Fluent key exists in en-US", () => {
     )) {
       referenced.add(match[1]);
     }
+    // Runtime messages that setFluentMessage() prefixes with getLocaleID().
+    for (const match of source.matchAll(
+      /\b(?:l10nId|unrecognizedL10nId):\s*["']([^"']+)["']/g,
+    )) {
+      referenced.add(match[1]);
+    }
   }
 
   assert.deepEqual(

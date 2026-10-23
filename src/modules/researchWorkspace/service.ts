@@ -912,6 +912,10 @@ class ResearchWorkspaceService {
           evidence: [],
         })),
     ];
+    // Placeholders for contexts the model skipped are not analyzed.
+    const classifiedCount = verifiedResults.filter(
+      (result) => !parser_7.isMissingStanceOutput(result),
+    ).length;
     await this.env.repository.update((next) => {
       next.citationContexts.push(...admittedContexts);
       next.citationResults.push(...results);
@@ -926,10 +930,10 @@ class ResearchWorkspaceService {
         ...(extraction?.coverage ?? {}),
         eligibleContexts: admittedContexts.length,
         submittedToModel: submittedContexts.length,
-        analyzedContexts: verifiedResults.length,
+        analyzedContexts: classifiedCount,
         truncatedContexts: admittedContexts.length - submittedContexts.length,
         analysisCoverage: admittedContexts.length
-          ? verifiedResults.length / admittedContexts.length
+          ? classifiedCount / admittedContexts.length
           : null,
       },
       sourceSnapshot: extraction?.sourceSnapshot,

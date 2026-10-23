@@ -71,7 +71,7 @@ export function parseClaudeOutput(stdout: string) {
   }
   return {
     text: structuredOutput
-      ? finalText || [...messages, streamed].filter(Boolean).join("\n")
+      ? finalText || streamed || messages.at(-1) || ""
       : stdout.trim(),
     sessionID,
     structuredOutput,

@@ -12,6 +12,7 @@ import { inferDiscoveryIntent } from "../src/modules/discovery/prompt";
 import {
   areLikelySamePaper,
   deduplicateDiscoveredPapers,
+  normalizeDiscoveryTitle,
 } from "../src/modules/discovery/normalize";
 import {
   reconstructOfficialEvidence,
@@ -671,6 +672,13 @@ test("live evidence verification requires the official page to match the paper",
     }),
   });
   assert.equal(matched.verifiedMain.length, 1);
+  assert.deepEqual(
+    matched.excluded.filter((entry) => entry.title === "Published Peer"),
+    [{ title: "Published Peer", reason: "unsupported_claim" }],
+  );
+  assert.ok(
+    !matched.parseWarnings.some((warning) => /were omitted/.test(warning)),
+  );
 
   await assert.rejects(
     verifyDiscoveryEvidenceLive({
@@ -682,7 +690,10 @@ test("live evidence verification requires the official page to match the paper",
         venue: "Example Conference Main Conference",
       }),
     }),
-    /did not include any usable papers/,
+    (error: Error) =>
+      /verified against official sources/.test(error.message) &&
+      /did not include any usable papers/.test(error.message) &&
+      !/Invalid discovery JSON/.test(error.message),
   );
 });
 
@@ -3716,4 +3727,160 @@ test("versioned raw agent capture is scored against independent cross-field gold
       gold.temptingNegative.verifiedClass,
   ).length;
   assert.equal(negativeClassMatches, 1);
+});
+
+function anthologyPaper(venueName: string, venueAcronym: string) {
+  return paper({
+    title: "Named Entity Recognition Under Domain Shift via Metric Learning",
+    authors: ["Hongyi Liu", "Qingyun Wang"],
+    year: 2024,
+    venueName,
+    venueAcronym,
+    leadingVenueAssessment: {
+      venueName,
+      venueAcronym,
+      fields: ["natural language processing"],
+      judgment: "leading",
+      confidence: "high",
+      basis: "Flagship archival NLP venue.",
+    },
+  }) as Parameters<typeof reconstructOfficialEvidence>[0];
+}
+
+function anthologyPage(url: string, proceedings: string) {
+  return {
+    url,
+    hostname: "aclanthology.org",
+    sourceFamily: "acl-anthology",
+    pageTitle:
+      "Named Entity Recognition Under Domain Shift via Metric Learning - ACL Anthology",
+    searchableText: `Named Entity Recognition Under Domain Shift via Metric Learning Hongyi Liu, Qingyun Wang Anthology ID: x Volume: ${proceedings} Year: 2024 ACL materials are Copyright © 1963–2024 ACL`,
+    linkedHostnames: [],
+    contentType: "text/html",
+    checkedAt: "2026-10-22T00:00:00.000Z",
+    bodyInspected: true,
+  };
+}
+
+test("an ACL Anthology page from another series cannot verify a claimed ACL venue", () => {
+  const naaclPage = anthologyPage(
+    "https://aclanthology.org/2024.naacl-long.1/",
+    "Proceedings of the 2024 Conference of the North American Chapter of the Association for Computational Linguistics (Volume 1: Long Papers)",
+  );
+  assert.equal(
+    reconstructOfficialEvidence(
+      anthologyPaper(
+        "Annual Meeting of the Association for Computational Linguistics",
+        "ACL",
+      ),
+      naaclPage,
+    ),
+    undefined,
+  );
+  const naacl = reconstructOfficialEvidence(
+    anthologyPaper(
+      "Conference of the North American Chapter of the Association for Computational Linguistics",
+      "NAACL",
+    ),
+    naaclPage,
+  );
+  assert.ok(naacl?.supports.includes("main_track"));
+});
+
+test("ACL Anthology -main volumes count as the main conference", () => {
+  const evidence = reconstructOfficialEvidence(
+    anthologyPaper(
+      "Conference on Empirical Methods in Natural Language Processing",
+      "EMNLP",
+    ),
+    anthologyPage(
+      "https://aclanthology.org/2023.emnlp-main.1/",
+      "Proceedings of the 2023 Conference on Empirical Methods in Natural Language Processing",
+    ),
+  );
+  assert.ok(evidence?.supports.includes("main_track"));
+});
+
+test("a paper about rejection is not reconstructed as a rejected paper", () => {
+  const candidate = paper({
+    title:
+      "Classification with Rejection Based on Cost-sensitive Classification",
+    authors: ["Nontawat Charoenphakdee"],
+    year: 2024,
+    venueName: "Conference on Empirical Methods in Natural Language Processing",
+    venueAcronym: "EMNLP",
+    leadingVenueAssessment: {
+      venueName:
+        "Conference on Empirical Methods in Natural Language Processing",
+      venueAcronym: "EMNLP",
+      fields: ["natural language processing"],
+      judgment: "leading",
+      confidence: "high",
+      basis: "Flagship archival NLP venue.",
+    },
+  }) as Parameters<typeof reconstructOfficialEvidence>[0];
+  const evidence = reconstructOfficialEvidence(candidate, {
+    url: "https://aclanthology.org/2024.emnlp-main.7/",
+    hostname: "aclanthology.org",
+    sourceFamily: "acl-anthology",
+    pageTitle:
+      "Classification with Rejection Based on Cost-sensitive Classification - ACL Anthology",
+    searchableText:
+      "Classification with Rejection Based on Cost-sensitive Classification Nontawat Charoenphakdee Abstract: The goal of classification with rejection is to avoid risky misclassification. Volume: Proceedings of the 2024 Conference on Empirical Methods in Natural Language Processing Year: 2024",
+    linkedHostnames: [],
+    contentType: "text/html",
+    checkedAt: "2026-10-22T00:00:00.000Z",
+    bodyInspected: true,
+  });
+  assert.ok(evidence);
+  assert.notEqual(evidence.observedDecision, "Rejected or withdrawn");
+});
+
+test("CVF open-access pages verify by the body title, not the fixed site title", () => {
+  const candidate = paper({
+    title: "Deep Residual Learning for Image Recognition",
+    authors: ["Kaiming He", "Xiangyu Zhang", "Shaoqing Ren", "Jian Sun"],
+    year: 2016,
+    venueName: "Conference on Computer Vision and Pattern Recognition",
+    venueAcronym: "CVPR",
+    leadingVenueAssessment: {
+      venueName: "Conference on Computer Vision and Pattern Recognition",
+      venueAcronym: "CVPR",
+      fields: ["computer vision"],
+      judgment: "leading",
+      confidence: "high",
+      basis: "Flagship archival vision venue.",
+    },
+  }) as Parameters<typeof reconstructOfficialEvidence>[0];
+  const evidence = reconstructOfficialEvidence(candidate, {
+    url: "https://openaccess.thecvf.com/content_cvpr_2016/html/He_Deep_Residual_Learning_CVPR_2016_paper.html",
+    hostname: "openaccess.thecvf.com",
+    sourceFamily: "cvf",
+    pageTitle: "CVPR 2016 Open Access Repository",
+    searchableText:
+      "Deep Residual Learning for Image Recognition Kaiming He, Xiangyu Zhang, Shaoqing Ren, Jian Sun; Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR), 2016, pp. 770-778",
+    linkedHostnames: [],
+    contentType: "text/html",
+    checkedAt: "2026-10-22T00:00:00.000Z",
+    bodyInspected: true,
+  });
+  assert.ok(evidence?.supports.includes("published"));
+});
+
+test("accented and ASCII author spellings are the same discovery identity", () => {
+  assert.equal(normalizeDiscoveryTitle("García"), "garcia");
+  assert.equal(normalizeDiscoveryTitle("Ekin Akyürek"), "ekin akyurek");
+  const paper = {
+    title: "What learning algorithm is in-context learning?",
+    year: 2023,
+    doi: "10.18653/v1/2023.acl-long.38",
+    providerIDs: {},
+  };
+  assert.equal(
+    areLikelySamePaper(
+      { ...paper, authors: ["Ekin Akyürek", "Jacob Andreas"] },
+      { ...paper, authors: ["Ekin Akyurek", "Jacob Andreas"] },
+    ),
+    true,
+  );
 });

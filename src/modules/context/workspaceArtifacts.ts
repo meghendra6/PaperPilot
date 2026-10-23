@@ -16,7 +16,6 @@ export function buildWorkspaceArtifacts(params: {
   annotations?: Array<
     string | import("./requestContext").RequestAnnotationSnapshot
   >;
-  recentTurns: Array<{ role: string; text: string; createdAt: string }>;
   requestText?: string;
 }) {
   const discoveryRequest = params.requestText?.includes(
@@ -112,8 +111,7 @@ export function buildWorkspaceArtifacts(params: {
       "- paper.md — structured Markdown extracted from the PDF when available",
       "- paper.json — structured PDF extraction with layout metadata when available",
       "- paper.txt — compatibility text snapshot with metadata and extracted content",
-      "- selection.json — current question context, selected text, page number, retrieved chunks",
-      "- recent-turns.json — recent conversation turns for follow-up continuity",
+      "- selection.json — current question context, selected text, page (pageIndex is zero-based; pageNumber counts from 1), retrieved chunks",
       "- annotations.json — captured annotation quotes, comments and source locations",
       "- metadata.json — structured bibliographic metadata",
       "- figures/ — place image assets here when needed",
@@ -136,7 +134,7 @@ export function buildWorkspaceArtifacts(params: {
       "3. paper.json",
       "4. paper.txt",
       "5. selection.json",
-      "6. recent-turns.json",
+      "6. conversation-context.md when present (chat follow-ups)",
       "7. metadata.json / annotations.json as needed",
     ]
       .filter(Boolean)
@@ -159,7 +157,6 @@ export function buildWorkspaceArtifacts(params: {
       retrievedChunks: params.payload.retrievedChunks,
     },
     annotations: params.annotations ?? [],
-    recentTurns: params.recentTurns,
     discoveryArtifacts: discoveryRequest
       ? {
           request: discoveryRequest,

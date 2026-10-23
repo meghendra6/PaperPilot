@@ -421,3 +421,21 @@ test("chat and workspace selects keep Zotero's arrow image", () => {
     /background-image/,
   );
 });
+
+test("answer links, inference borders, and the empty analysis area are visible states", () => {
+  // Links are underlined at rest, so they do not rely on color alone.
+  assert.match(rule(".pp-message--ai a"), /text-decoration: underline;/);
+  assert.match(
+    rule(".pp-critical-read__block--agent"),
+    /var\(--pp-border-inference\)/,
+  );
+  assert.match(
+    rule(".pp-critical-read__block--external"),
+    /var\(--pp-border-external\)/,
+  );
+  assert.match(rule(".pprw-project-operations:empty"), /display: none;/);
+  assert.match(
+    rule(".pp-collapsible-section__trigger:hover"),
+    /--pp-fill-hover/,
+  );
+});

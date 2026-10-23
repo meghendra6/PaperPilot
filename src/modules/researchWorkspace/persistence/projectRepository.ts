@@ -1056,14 +1056,11 @@ export class ResearchWorkspaceProjectRepository {
     input: CreateResearchWorkspaceArtifactInput<T>,
   ) {
     const bundle = await this.getProject(projectID);
-    const history = await this.listArtifacts(projectID);
-    const inputScope = [...input.sourceIDs].sort().join("\n");
-    const sameType = history.artifacts.filter(
-      (artifact) =>
-        artifact.type === input.type &&
-        [...artifact.sourceIDs].sort().join("\n") === inputScope &&
-        artifact.lineage.operation === input.lineage.operation,
-    );
+    const sameType = await this.listSameScopeArtifacts(projectID, {
+      type: input.type,
+      sourceIDs: input.sourceIDs,
+      operation: input.lineage.operation,
+    });
     const previous = sameType
       .filter((artifact) => artifact.status !== "superseded")
       .sort((left, right) => right.version - left.version)[0];
@@ -1169,6 +1166,47 @@ export class ResearchWorkspaceProjectRepository {
     await this.pruneArtifactHistory(projectID, artifact);
     await this.syncCatalogEntry(projectID);
     return created;
+  }
+
+  /** Artifacts of one type, source scope, and operation, in any status. */
+  async listSameScopeArtifacts(
+    projectID: string,
+    scope: { type: string; sourceIDs: readonly string[]; operation: string },
+  ) {
+    const history = await this.listArtifacts(projectID);
+    const key = [...scope.sourceIDs].sort().join("\n");
+    return history.artifacts.filter(
+      (artifact) =>
+        artifact.type === scope.type &&
+        [...artifact.sourceIDs].sort().join("\n") === key &&
+        artifact.lineage.operation === scope.operation,
+    );
+  }
+
+  /**
+   * Marks earlier versions superseded and their dependents stale, as
+   * createArtifact does by default. Incremental runs call this only after the
+   * new version finishes, so a cancelled or failed rerun keeps the old one.
+   */
+  async supersedeArtifacts(projectID: string, artifactIDs: readonly string[]) {
+    const timestamp = this.timestamp();
+    for (const artifactID of artifactIDs) {
+      const file = await this.getArtifact(projectID, artifactID);
+      if (!file || file.artifact.status === "superseded") continue;
+      await this.updateArtifact(
+        projectID,
+        artifactID,
+        file.revision,
+        (current) => ({
+          ...current,
+          status: "superseded",
+          updatedAt: timestamp,
+        }),
+        false,
+      );
+      await this.markArtifactsStaleForArtifact({ projectID, artifactID });
+    }
+    await this.syncCatalogEntry(projectID);
   }
 
   private async pruneArtifactHistory(
@@ -1812,11 +1850,15 @@ export class ResearchWorkspaceProjectRepository {
   }
 
   async recoverStartup() {
-    let warnings: string[] = [];
+    const warnings: string[] = [];
     let repairedCatalog = false;
     const repositoryPaths = await this.files.listDirectory(this.rootDir);
-    const temporaryPaths = repositoryPaths.filter((path) =>
-      /\.tmp-[^/]+$/i.test(path),
+    // Only the exact names storage.writeTextAtomic creates, and never the
+    // user-facing exports, whose names come from project names.
+    const exportsRoot = `${joinPath(this.rootDir, "exports")}/`;
+    const temporaryPaths = repositoryPaths.filter(
+      (path) =>
+        /\.tmp-\d+-[a-z0-9]*$/.test(path) && !path.startsWith(exportsRoot),
     );
     for (const path of temporaryPaths) {
       try {
@@ -1838,7 +1880,7 @@ export class ResearchWorkspaceProjectRepository {
     ) {
       const repair = await this.repairCatalog();
       repairedCatalog = repair.changed;
-      warnings = repair.warnings;
+      warnings.push(...repair.warnings);
     }
     for (const project of await this.listProjects({ includeArchived: true })) {
       try {
@@ -1909,6 +1951,19 @@ export class ResearchWorkspaceProjectRepository {
           parseResearchWorkspaceProjectFile,
         );
         if (!file) continue;
+        // A copied project directory repeats another project's ID. Index
+        // only the file at its own path, once, so the catalog stays valid.
+        if (this.getProjectPath(file.project.projectID) !== path) {
+          warnings.push(
+            `Project file ${path} was skipped because its ID belongs to another directory.`,
+          );
+          continue;
+        }
+        if (
+          projects.some((entry) => entry.projectID === file.project.projectID)
+        ) {
+          continue;
+        }
         const repaired = await this.repairProjectReferences(
           file.project.projectID,
         );

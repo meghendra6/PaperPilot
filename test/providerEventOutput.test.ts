@@ -131,3 +131,30 @@ test("native terminal failures remain failures even with partial assistant conte
     true,
   );
 });
+
+test("Claude progress shows the latest assistant message, not commentary joined to the answer", () => {
+  const events = [
+    {
+      type: "assistant",
+      message: {
+        content: [{ type: "text", text: "I'll read the context index first." }],
+      },
+    },
+    {
+      type: "assistant",
+      message: {
+        content: [
+          {
+            type: "text",
+            text: '{"paperpilotChatVersion":1,"answerMarkdown":"The method improves recall."}',
+          },
+        ],
+      },
+    },
+  ];
+  const parsed = parseClaudeOutput(
+    events.map((event) => JSON.stringify(event)).join("\n"),
+  );
+  assert.doesNotMatch(parsed.text, /context index first/);
+  assert.match(parsed.text, /The method improves recall/);
+});

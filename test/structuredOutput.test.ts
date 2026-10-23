@@ -22,6 +22,17 @@ test("helpSupportsFlag detects exact CLI capability flags", () => {
     ),
     false,
   );
+  // Claude Code 2.1.308 help lists stream-json partial messages but omits
+  // --verbose; event output is detected from the partial-messages flag.
+  const claudeHelp = [
+    "  --include-partial-messages            Include partial message chunks as they",
+    "                                        arrive (only works with --print and",
+    "                                        --output-format=stream-json)",
+  ].join("\n");
+  assert.equal(
+    helpSupportsFlag(claudeHelp, "--include-partial-messages"),
+    true,
+  );
 });
 
 test("native structured output validation enforces closed, fully-required objects", () => {

@@ -893,6 +893,52 @@ Run these in Zotero 7 and 10, in light and dark themes, with the pane about
 - [ ] Add a discovery result to a collection; confirm the lanes keep their open state
 - [ ] With a screen reader, confirm the window announces only the short status, not the whole matrix
 
+## 15. Codebase audit fixes (2026-10-24)
+
+These need real Zotero. Run them in Zotero 7 and 10 where the item says so.
+
+### Reader pane and chat
+
+- [ ] Open a PDF in a standalone reader window (not a tab); confirm the selection popup actions and the annotation menu items are disabled and say to open the PDF in a Zotero tab. The dictionary still works
+- [ ] In an EPUB or web-snapshot reader, confirm only the dictionary button appears in the selection popup
+- [ ] Close the item pane in a reader tab, click Explain, wait more than two minutes, then open the pane; confirm no run starts and the composer explains that the action expired
+- [ ] With a screen reader, ask a question; confirm the streaming answer is announced once when it finishes, not on every update
+- [ ] Pin a message; confirm the menu then offers "Unpin" and the message shows a "Pinned" marker. Confirm "Save to note" is offered only on finished answers
+- [ ] Open chat search; confirm typing does not announce every result, a short count is announced, and Escape on a review panel returns focus to the composer
+- [ ] Open two reader tabs for different papers; confirm each tab's engine popover and section toggles control their own pane
+- [ ] Scroll the transcript up until "Jump to latest" appears, then scroll back to the bottom; confirm the prompt disappears
+- [ ] Press Arrow keys on a section resize handle; confirm each step changes the height by the same amount in both directions
+- [ ] Tab out of the open engine popover; confirm it closes
+- [ ] Open Past sessions, Delete a session and cancel; confirm focus returns to its ⋯ button. Open a session; confirm focus lands in the composer
+- [ ] Click Explain in the dictionary or figure window from a reader iframe several times; confirm Zotero does not crash
+
+### Critical Read, Mastery, and figures
+
+- [ ] Complete Critical Read steps; confirm each completed card lists Source locations and Limits and uncertainty, and the report nests labelled lists under their labels
+- [ ] Press Run, Revise, or a step summary, then let a status update arrive; confirm keyboard focus stays on the same control (Run hands focus to Cancel)
+- [ ] Save the report to a note, delete the note, then reopen the paper; confirm "Save report to note" is enabled again
+- [ ] During Paper Mastery, choose "Resume Paper Mastery"; confirm the section scrolls into view with focus on the answer box or Next question
+- [ ] Arm the figure tool, click into the PDF page, and press Escape; confirm the tool is cancelled
+- [ ] Close the figure window during a run and explain again at once; confirm the new run waits instead of failing with "already active"
+
+### Discovery and engines
+
+- [ ] Turn on a system proxy (or Charles/ClashX); run verified discovery and confirm failures name the proxy instead of a non-public address
+- [ ] Search for an author with an accented name; confirm the accented and ASCII spellings of the same paper merge and an existing library item is found
+- [ ] Edit the PDF during a Codex and a Claude chat run; confirm the run card reports the changed PDF, not a sign-in problem
+
+### Research Workspace
+
+- [ ] Select a paper in the library; confirm the Research Workspace section shows "Prepare paper" and does not start extraction until clicked
+- [ ] In a reader tab of a parent with several PDFs, confirm the section uses the open PDF
+- [ ] Corrupt `change-inbox.json` for a project; confirm the project still opens and only Living Review shows a warning
+- [ ] Save reading progress, then record a screening decision without reopening the project; confirm the decision saves
+- [ ] Run Evidence Matrix while the first paper chats in the reader; confirm the other rows still run and the progress line names each paper
+- [ ] Finish an analysis in a project; confirm prerequisite-gated panels (for example Contradictions) enable without reopening, and typed panel text survives
+- [ ] In a read-only group library, confirm sync preview marks items blocked and Auto Highlight refuses before starting
+- [ ] Sync with a subcollection target; confirm it is listed as "Parent / Child"
+- [ ] Rename a project to `analysis.tmp`, export it, restart Zotero; confirm the export files remain
+
 ## Session history and silent-turn QA (2026-04-16)
 
 After running mastery and one or more workbench tools (research brief, contributions, limitations, follow-ups, paper compare) on a paper, then opening "Past sessions":

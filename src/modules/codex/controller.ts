@@ -1,3 +1,5 @@
+import { isWorkspacePreparationError } from "../workspace/preparationError";
+import { redactAbsolutePaths } from "../workspace/redaction";
 import {
   assertRequestContextCurrent,
   type RequestContextSnapshot,
@@ -36,10 +38,10 @@ import {
   settleLatePreparedRun,
   stopDetachedRunProcess,
 } from "../ai/runCompletion";
-import { sanitizeAssistantText } from "../message/assistantOutput";
+import { presentRunAnswer } from "../message/assistantOutput";
 import { sessionHistoryService } from "../session/sessionHistoryService";
 import { cleanupWorkspaceIfEnabled } from "../workspace/cleanup";
-import { clearCodexPollerForItem } from "./poller";
+import { clearCodexPollerForItem, clearCodexPollerIfOwned } from "./poller";
 import {
   buildCodexRunState,
   clearCodexRunStateForItem,
@@ -55,6 +57,9 @@ import {
 } from "../ai/workspaceRun";
 import type { RunProfile } from "../ai/runProfile";
 import type { StructuredOutputSchema } from "../ai/structuredOutput";
+
+const SOURCE_CHANGED_MESSAGE =
+  "The PDF changed while this answer was generated. Its evidence needs review.";
 
 declare const addon: any;
 export { stopCodexRunSilently } from "./stopRun";
@@ -215,6 +220,7 @@ export async function handleCodexQuestion(params: {
       executionSettings: params.executionSettings,
       responseLength: params.responseLength,
       shouldContinue: () =>
+        !addon.data.shuttingDown &&
         isReaderRunTokenActive(params.itemID, runToken) &&
         !getPendingEngineCompletion(params.itemID)?.terminalClaim,
       onWorkspaceAllocated: (path) => {
@@ -249,6 +255,9 @@ export async function handleCodexQuestion(params: {
       token: runToken,
       rawError: detail,
       source: "workspace",
+      recoveryMessage: isWorkspacePreparationError(error)
+        ? redactAbsolutePaths(error.message)
+        : undefined,
       canRetry: !params.suppressChatMessages,
     });
     const assistantText =
@@ -425,14 +434,35 @@ export async function handleCodexQuestion(params: {
     type: "spawned",
     processId: result.processId,
   });
+  // A slow read must not overlap the next tick: a tick that resumes after
+  // another tick completed the run would write a stale running state.
+  let progressReadInFlight = false;
   const poller = setInterval(async () => {
-    const progress = await readCodexRunProgress({
-      outputPath: result.outputPath,
-      stderrPath: result.stderrPath,
-      exitCodePath: result.exitCodePath,
-    });
+    if (progressReadInFlight) return;
+    progressReadInFlight = true;
+    let progress: Awaited<ReturnType<typeof readCodexRunProgress>>;
+    try {
+      progress = await readCodexRunProgress({
+        outputPath: result.outputPath,
+        stderrPath: result.stderrPath,
+        exitCodePath: result.exitCodePath,
+      });
+    } finally {
+      progressReadInFlight = false;
+    }
 
-    if (!isReaderRunTokenActive(params.itemID, runToken)) return;
+    // Shutdown clears pending completions; a poller whose run lost both its
+    // token and its pending entry can never finish, so it stops itself.
+    if (!isReaderRunTokenActive(params.itemID, runToken)) {
+      if (!isPendingEngineCompletionCurrent(params.itemID, runToken))
+        clearCodexPollerIfOwned(params.itemID, poller);
+      return;
+    }
+    // Completion, Stop, and shutdown unregister the poller first.
+    if (addon.data.codexRunPollers?.get(params.itemID) !== poller) {
+      clearInterval(poller);
+      return;
+    }
 
     if (!progress.completed) {
       if (assistantMessage) {
@@ -449,6 +479,7 @@ export async function handleCodexQuestion(params: {
           assistantMessage,
           partial || "Running Codex CLI…",
           "ai",
+          { streaming: true },
         );
       }
       setCodexRunStateForItem(params.itemID, {
@@ -466,6 +497,8 @@ export async function handleCodexQuestion(params: {
     }
 
     if (!claimPendingEngineCompletion(params.itemID, runToken, "controller")) {
+      if (!isPendingEngineCompletionCurrent(params.itemID, runToken))
+        clearCodexPollerIfOwned(params.itemID, poller);
       return;
     }
 
@@ -500,18 +533,25 @@ export async function handleCodexQuestion(params: {
       if (progress.parsedOutput && !result.timings.firstAssistantAt)
         result.timings.firstAssistantAt = result.timings.finishedAt;
     }
-    let assistantText = sanitizeAssistantText(parsedAnswer.answerMarkdown);
+    let assistantText = presentRunAnswer(parsedAnswer.answerMarkdown, profile);
     const terminalFailure = success
       ? undefined
-      : classifyRunFailure({
-          engine: "codex_cli",
-          rawError: progress.diagnosticOutput || rawAssistantText,
-          source: parsedAnswer.invalidAnswer ? "response" : "process_exit",
-        });
+      : sourceChanged
+        ? classifyRunFailure({
+            engine: "codex_cli",
+            rawError: progress.diagnosticOutput || "",
+            source: "workspace",
+            recoveryMessage: SOURCE_CHANGED_MESSAGE,
+          })
+        : classifyRunFailure({
+            engine: "codex_cli",
+            rawError: progress.diagnosticOutput || rawAssistantText,
+            source: parsedAnswer.invalidAnswer ? "response" : "process_exit",
+          });
     if (terminalFailure) assistantText = terminalFailure.userMessage;
 
     if (sourceChanged)
-      assistantText = `${sanitizeAssistantText(parsedAnswer.answerMarkdown)}\n\nThe PDF changed while this answer was generated. Its evidence needs review.`;
+      assistantText = `${presentRunAnswer(parsedAnswer.answerMarkdown, profile)}\n\n${SOURCE_CHANGED_MESSAGE}`;
     if (assistantMessage) {
       setMessageContent(assistantMessage, assistantText, "ai");
     }
@@ -558,7 +598,6 @@ export async function handleCodexQuestion(params: {
               assistantText,
               success: true,
               citationCandidates: parsedAnswer.citationCandidates,
-              rawEvent: progress.rawOutput,
               resumeSessionId: resumedThreadId,
               suppressMessage: params.suppressChatMessages,
               updateResumeMetadata: profile === "chat",

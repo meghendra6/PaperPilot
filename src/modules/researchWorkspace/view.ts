@@ -47,6 +47,7 @@ interface ViewRuntime {
   itemID?: number;
   generation: symbol;
   busy: boolean;
+  onRunSettled?: () => void;
   paper?: ResearchWorkspacePaper;
   crossSessionID?: string;
   crossSessionRevision?: number;
@@ -68,11 +69,19 @@ export interface ResearchWorkspaceViewOptions {
   standalone?: boolean;
   projectID?: string;
   recommendedCapabilityIDs?: readonly string[];
+  /** Item pane: show a Prepare button instead of loading the paper. */
+  deferPaperLoad?: boolean;
+  /** Called after an analysis finished, fully or partly. */
+  onRunSettled?: () => void;
 }
 
 const runtime = new WeakMap<HTMLElement, ViewRuntime>();
 const activeAbortControllers = new Set<AbortController>();
 let registered = false;
+/** The namespaced key registerSection returned; unregister needs it. */
+let registeredPaneKey: string | undefined;
+/** Items whose paper was prepared in this session load without asking. */
+const preparedItemIDs = new Set<number>();
 
 const CAPABILITY_BUTTON_LABELS = new Map<string, string>([
   ["Extract claims", "claim-ledger"],
@@ -252,6 +261,7 @@ async function guarded(
   setBusy(root, true, generation);
   setResume(root, undefined, generation);
   setStatus(root, `${label}…`, "info", generation);
+  let settled = false;
   try {
     const summary = await action({
       generation,
@@ -266,15 +276,26 @@ async function guarded(
       generation,
     );
     if (summary?.resumable && resume) setResume(root, resume, generation);
+    settled = true;
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    setStatus(root, message, "error", generation);
-    Zotero.logError?.(error);
+    // A cancellation is the user's choice, not a failure. Window-realm
+    // abort reasons are not instances of this sandbox's Error class.
+    if (
+      abortController.signal.aborted ||
+      (error as { name?: unknown } | null)?.name === "AbortError"
+    ) {
+      setStatus(root, `${label} cancelled.`, "info", generation);
+    } else {
+      const message = error instanceof Error ? error.message : String(error);
+      setStatus(root, message, "error", generation);
+      Zotero.logError?.(error);
+    }
   } finally {
     if (isCurrent(root, generation)) {
       const latest = runtime.get(root);
       if (latest) latest.abortController = undefined;
       setBusy(root, false, generation);
+      if (settled) latest?.onRunSettled?.();
     }
     activeAbortControllers.delete(abortController);
   }
@@ -298,17 +319,94 @@ function renderOutput(
   panel.append(
     renderResearchWorkspaceArtifactValue(root.ownerDocument, value, {
       artifactType,
+      sourceTitle: (sourceID) => {
+        const current = runtime.get(root);
+        return [current?.paper, ...(current?.selectedPapers ?? [])].find(
+          (paper) => paper?.sourceID === sourceID,
+        )?.title;
+      },
       failedSourceIDs,
       responseLanguage: String(getPref("responseLanguage") || "English"),
       onCopyText: (text) => copyTextToClipboard(text, root.ownerDocument),
-      onOpenEvidence: (reference) =>
-        guarded(root, "Opening evidence", async () => {
+      // Opening evidence keeps the run status and Resume of the last
+      // analysis. Only a failure to open is reported.
+      onOpenEvidence: async (reference) => {
+        try {
           await openVerifiedResearchWorkspaceEvidence(
             reference as unknown as EvidenceReferenceV2,
           );
-        }),
+        } catch (error) {
+          setStatus(
+            root,
+            error instanceof Error ? error.message : String(error),
+            "error",
+            generation,
+          );
+        }
+      },
     }),
   );
+}
+
+/**
+ * Local hybrid search hits: section, page, passage, and matched terms. The
+ * hits are index matches, not verified evidence, and say so.
+ */
+function renderSearchHits(
+  root: HTMLElement,
+  title: string,
+  hits: Array<{
+    section: string;
+    pageIndex?: number;
+    text: string;
+    matchedTerms: string[];
+  }>,
+  generation: symbol,
+) {
+  if (!isCurrent(root, generation)) return;
+  const panel = root.querySelector<HTMLElement>(".pprw-result");
+  if (!panel) return;
+  const doc = root.ownerDocument;
+  panel.replaceChildren(element(doc, "h3", "pprw-result-title", title));
+  if (!hits.length) {
+    panel.append(element(doc, "p", "pprw-muted", "No matching passages."));
+    return;
+  }
+  panel.append(
+    element(
+      doc,
+      "p",
+      "pprw-muted",
+      "Local index matches. Verify a passage before citing it.",
+    ),
+  );
+  const list = element(doc, "ol", "pprw-search-hits");
+  for (const hit of hits) {
+    const item = element(doc, "li", "pprw-search-hit");
+    const page =
+      typeof hit.pageIndex === "number" ? `Page ${hit.pageIndex + 1}` : "";
+    item.append(
+      element(
+        doc,
+        "strong",
+        "",
+        [hit.section, page].filter(Boolean).join(" · ") || "Passage",
+      ),
+      element(doc, "p", "", hit.text),
+    );
+    if (hit.matchedTerms.length) {
+      item.append(
+        element(
+          doc,
+          "p",
+          "pprw-muted",
+          `Matched: ${hit.matchedTerms.join(", ")}`,
+        ),
+      );
+    }
+    list.append(item);
+  }
+  panel.append(list);
 }
 
 /** Renders a short plain message without exposing internal fields. */
@@ -348,12 +446,20 @@ export async function renderResearchWorkspaceView(
 ) {
   runtime.get(root)?.abortController?.abort();
   const generation = Symbol("research-workspace-render");
-  runtime.set(root, { itemID: item?.id, generation, busy: false });
+  runtime.set(root, {
+    itemID: item?.id,
+    generation,
+    busy: false,
+    onRunSettled: options.onRunSettled,
+  });
   const doc = root.ownerDocument;
   const recommendedCapabilityIDs = new Set(
     options.recommendedCapabilityIDs ?? [],
   );
-  root.className = "paperpilot-research-workspace";
+  // Add the class so a host class such as .pprw-project-operations keeps
+  // its frame and focus rule.
+  root.classList.add("paperpilot-research-workspace");
+  root.classList.remove("is-busy");
   root.replaceChildren();
 
   const title = element(doc, "div", "pprw-title");
@@ -416,6 +522,37 @@ export async function renderResearchWorkspaceView(
   result.setAttribute("aria-label", "Analysis result");
   root.append(result);
 
+  // Preparing a paper can run the local PDF extractor. The item pane
+  // renders on every selection, so it waits for the reader to ask.
+  if (
+    options.deferPaperLoad &&
+    !options.preloadedPaper &&
+    !(typeof item?.id === "number" && preparedItemIDs.has(item.id))
+  ) {
+    setStatus(
+      root,
+      "Prepare this paper to use the tools. Preparing reads the PDF locally.",
+      "info",
+      generation,
+    );
+    const prepare = button(
+      doc,
+      "Prepare paper",
+      () => {
+        if (typeof item?.id === "number") preparedItemIDs.add(item.id);
+        void renderResearchWorkspaceView(root, item, {
+          ...options,
+          deferPaperLoad: false,
+        }).then(() => {
+          root.querySelector<HTMLElement>(".pprw-status")?.focus?.();
+        });
+      },
+      "pprw-button pp-btn pp-btn--secondary",
+    );
+    statusRow.insertBefore(prepare, resumeButton);
+    return;
+  }
+
   let paper: ResearchWorkspacePaper;
   let state: any;
   try {
@@ -461,34 +598,19 @@ export async function renderResearchWorkspaceView(
           paper,
           query: searchInput.value,
         });
-        renderOutput(
+        renderSearchHits(
           root,
           `Search · ${searchInput.value}`,
           matches.map((entry: any) => ({
-            score: entry.score,
-            section: entry.chunk.sectionPath,
-            sourceID: paper.sourceID,
-            libraryID: paper.libraryID,
+            section: Array.isArray(entry.chunk.sectionPath)
+              ? entry.chunk.sectionPath.join(" › ")
+              : "",
             pageIndex: entry.chunk.pageIndex,
-            attachmentKey: entry.chunk.attachmentKey,
-            elementId: entry.chunk.metadata?.elementId,
-            elementType: entry.chunk.metadata?.elementType,
-            text: entry.chunk.text.slice(0, 900),
-            matchedTerms: entry.matchedTerms,
-            verification: entry.chunk.metadata?.elementId
-              ? {
-                  status: "unverified",
-                  method: "local-index-hit",
-                  detail:
-                    "Located by local hybrid search; use evidence verification before treating this as verified.",
-                }
-              : {
-                  status: "unverified",
-                  method: "metadata-only",
-                  detail: "No page-level structured element is available.",
-                },
+            text: String(entry.chunk.text || "").slice(0, 900),
+            matchedTerms: Array.isArray(entry.matchedTerms)
+              ? entry.matchedTerms
+              : [],
           })),
-          paper.attachmentID,
           generation,
         );
       }),
@@ -595,7 +717,7 @@ export async function renderResearchWorkspaceView(
       "pprw-muted",
       options.capturedPapers
         ? `${options.capturedPapers.length} readable paper${options.capturedPapers.length === 1 ? " was" : "s were"} captured for this workspace. Start a new selection to change them.`
-        : "Select two or more Zotero items before running these tools.",
+        : "Use Open Workspace to capture two or more papers before running these tools.",
     ),
   );
   const crossQuestion = element(
@@ -611,6 +733,7 @@ export async function renderResearchWorkspaceView(
   crossConfidence.max = "1";
   crossConfidence.step = "0.05";
   crossConfidence.value = "0.7";
+  crossConfidence.setAttribute("aria-label", "Confidence before grading");
   const crossConfidenceLabel = element(
     doc,
     "span",
@@ -779,7 +902,7 @@ export async function renderResearchWorkspaceView(
       ),
     ),
   );
-  if (options.capturedPapers && options.capturedPapers.length < 2) {
+  if (!options.capturedPapers || options.capturedPapers.length < 2) {
     for (const node of Array.from(
       collectionRow.querySelectorAll("button"),
     ) as HTMLButtonElement[]) {
@@ -821,6 +944,7 @@ export async function renderResearchWorkspaceView(
   const correctionContext = select(doc, [
     { value: "", label: "Run stance analysis before correcting" },
   ]);
+  correctionContext.setAttribute("aria-label", "Citation context to correct");
   const correctionStance = select(doc, [
     { value: "supporting", label: "Supporting" },
     { value: "contrasting", label: "Contrasting" },
@@ -829,6 +953,7 @@ export async function renderResearchWorkspaceView(
     { value: "background", label: "Background" },
     { value: "uncertain", label: "Uncertain" },
   ]);
+  correctionStance.setAttribute("aria-label", "Corrected stance");
   const correctionReason = input(doc, "Why should this stance change?");
   const analyzeCitationsButton = button(doc, "Analyze approved snippets", () =>
     guarded(
@@ -1046,7 +1171,7 @@ export async function renderResearchWorkspaceView(
 
 export function registerResearchWorkspacePaneSection() {
   if (registered || !Zotero.ItemPaneManager?.registerSection) return;
-  Zotero.ItemPaneManager.registerSection({
+  const key = Zotero.ItemPaneManager.registerSection({
     paneID: PANE_ID,
     pluginID: config.addonID,
     header: {
@@ -1066,11 +1191,42 @@ export function registerResearchWorkspacePaneSection() {
       );
       return true;
     },
-    onRender: async ({ body, item }: any) => {
-      if (item) await renderResearchWorkspaceView(body, item);
+    onRender: async ({ body, item, tabType }: any) => {
+      if (!item) return;
+      // A reader tab shows its parent item; analyse the PDF that is open.
+      const target =
+        (tabType === "reader" && readerTabAttachment(body)) || item;
+      await renderResearchWorkspaceView(body, target, {
+        deferPaperLoad: true,
+      });
     },
   });
+  if (!key) {
+    Zotero.logError?.(
+      new Error("The Research Workspace item pane section was not registered."),
+    );
+    return;
+  }
+  registeredPaneKey = typeof key === "string" ? key : undefined;
   registered = true;
+}
+
+/** The PDF attachment open in the selected reader tab, if any. */
+function readerTabAttachment(body: HTMLElement) {
+  try {
+    const win = body.ownerDocument?.defaultView as
+      | { Zotero_Tabs?: { selectedID?: string } }
+      | null
+      | undefined;
+    const tabID = win?.Zotero_Tabs?.selectedID;
+    const reader = tabID ? Zotero.Reader?.getByTabID?.(tabID) : undefined;
+    const attachment = reader?.itemID
+      ? Zotero.Items?.get?.(reader.itemID)
+      : undefined;
+    return attachment?.isPDFAttachment?.() ? attachment : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 export function supportsResearchWorkspacePaneItem(item: any) {
@@ -1095,11 +1251,12 @@ export function unregisterResearchWorkspacePaneSection() {
   activeAbortControllers.clear();
   if (!registered) return;
   try {
-    Zotero.ItemPaneManager?.unregisterSection?.(PANE_ID);
+    Zotero.ItemPaneManager?.unregisterSection?.(registeredPaneKey ?? PANE_ID);
   } catch (error) {
     Zotero.logError?.(error);
   }
   registered = false;
+  registeredPaneKey = undefined;
 }
 
 /** True while an operation in this view can still be cancelled. */

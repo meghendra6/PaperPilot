@@ -1,3 +1,5 @@
+import { isPdfFileAttachment } from "../../utils/pdfAttachment";
+import { WorkspacePreparationError } from "../workspace/preparationError";
 import {
   buildPaperContentFingerprint,
   paperWorkspaceContentCache,
@@ -33,6 +35,41 @@ export interface RequestContextSnapshot {
   warnings: string[];
 }
 
+/**
+ * What a request presents as its selection. The reader's annotation comments
+ * are their own notes, not paper text, so they never enter `selectedText` or
+ * the nearby-context search; they only widen the retrieval query. Nearby
+ * context is searched per annotation quote on that annotation's page, and a
+ * single annotation supplies the page when no explicit page was captured.
+ */
+export function buildRequestSelection(context: RequestContextSnapshot) {
+  const quoted = context.annotations.filter((entry) => entry.quote.trim());
+  const single =
+    context.annotations.length === 1 ? context.annotations[0] : undefined;
+  const pageIndex = context.pageIndex ?? single?.pageIndex;
+  const pageLabel = context.pageLabel ?? (single?.pageLabel || undefined);
+  const selectedText =
+    context.selectedText ||
+    quoted.map((entry) => entry.quote).join("\n\n") ||
+    undefined;
+  const nearbyQueries = context.selectedText
+    ? [{ text: context.selectedText, pageIndex }]
+    : quoted.map((entry) => ({
+        text: entry.quote,
+        pageIndex: entry.pageIndex,
+      }));
+  const comments = context.annotations
+    .map((entry) => entry.comment.trim())
+    .filter(Boolean);
+  return {
+    selectedText,
+    pageIndex,
+    pageLabel,
+    nearbyQueries,
+    retrievalQueryText: [selectedText, ...comments].filter(Boolean).join("\n"),
+  };
+}
+
 export interface PrebuiltWorkspaceInput {
   files: WorkspaceSupplementalFiles;
   sourceIDs: readonly string[];
@@ -41,10 +78,7 @@ export interface PrebuiltWorkspaceInput {
 }
 
 function isPDF(item: any) {
-  return (
-    Boolean(item?.isAttachment?.()) &&
-    ["application/pdf", ""].includes(String(item.attachmentContentType ?? ""))
-  );
+  return Boolean(item?.isAttachment?.()) && isPdfFileAttachment(item);
 }
 
 function pageIndex(value: unknown): number | undefined {
@@ -239,7 +273,7 @@ async function resolveSnapshotItems(snapshot: RequestContextSnapshot) {
     (Number(attachment.parentItemID) || Number(attachment.id)) !==
       Number(item.id)
   )
-    throw new Error(
+    throw new WorkspacePreparationError(
       "The original PDF source is no longer available. Select the source again.",
     );
   const fingerprint = await buildPaperContentFingerprint(
@@ -252,7 +286,7 @@ async function resolveSnapshotItems(snapshot: RequestContextSnapshot) {
       snapshot.contentFingerprint,
     )
   )
-    throw new Error(
+    throw new WorkspacePreparationError(
       "The PDF changed since this question was prepared. Capture its context again.",
     );
   return { item, attachment };
@@ -379,25 +413,27 @@ export async function prepareRunInput(params: {
   const { getIndexedChunks } = await import("./indexStore");
   const { selectRelevantChunksFromChunks } = await import("./retriever");
   const { resolveRetrievalChunking } = await import("./retrievalSettings");
-  const selectionText =
-    context.selectedText ||
-    context.annotations
-      .map((entry) => [entry.quote, entry.comment].filter(Boolean).join("\n"))
-      .join("\n\n") ||
-    undefined;
+  const selection = buildRequestSelection(context);
   const payload = buildContextPayload({
     question: params.question,
     responseLanguage: params.settings.responseLanguage,
-    selectedText: selectionText,
-    pageNumber: context.pageIndex,
+    selectedText: selection.selectedText,
+    // pageIndex is zero-based; pageNumber counts pages from 1.
+    pageNumber:
+      selection.pageIndex === undefined ? undefined : selection.pageIndex + 1,
     annotationIDs: context.annotations.map((entry) => entry.key),
   });
   payload.surroundingText = getPref("retrievalIncludeNearbyContext")
-    ? findNearbyContext({
-        fullText: content.fullText,
-        selectedText: selectionText,
-        pageIndex: context.pageIndex,
-      })
+    ? selection.nearbyQueries
+        .map((query) =>
+          findNearbyContext({
+            fullText: content.fullText,
+            selectedText: query.text,
+            pageIndex: query.pageIndex,
+          }),
+        )
+        .filter(Boolean)
+        .join("\n\n") || undefined
     : undefined;
   const chunking = resolveRetrievalChunking({
     chunkSize: getPref("retrievalChunkSize"),
@@ -411,14 +447,13 @@ export async function prepareRunInput(params: {
       chunkSize: chunking.chunkSize,
       overlapSize: chunking.overlapSize,
     }),
-    [params.question, selectionText].filter(Boolean).join("\n"),
+    [params.question, selection.retrievalQueryText].filter(Boolean).join("\n"),
     Number(getPref("retrievalTopK") || 5),
   );
   const authors = (item.getCreators?.() ?? []).map(
     (creator: { firstName?: string; lastName?: string }) =>
       [creator.firstName, creator.lastName].filter(Boolean).join(" "),
   );
-  const { messageStore } = await import("../message/messageStore");
   const artifacts = buildWorkspaceArtifacts({
     title: context.paperTitle,
     authors,
@@ -435,12 +470,6 @@ export async function prepareRunInput(params: {
     extractionNotes: content.extractionNotes,
     payload,
     annotations: context.annotations,
-    recentTurns:
-      params.includeConversation === false
-        ? []
-        : messageStore
-            .recentForWorkspace(params.sessionId, 3)
-            .map(({ role, text, createdAt }) => ({ role, text, createdAt })),
     requestText: params.question,
   });
   if (params.includeConversation !== false) {
@@ -467,14 +496,13 @@ export async function prepareRunInput(params: {
       {
         ...artifacts.selection,
         sourceID: context.sourceID,
-        pageIndex: context.pageIndex,
-        pageLabel: context.pageLabel,
+        pageIndex: selection.pageIndex,
+        pageLabel: selection.pageLabel,
       },
       null,
       2,
     ),
     "annotations.json": JSON.stringify(context.annotations, null, 2),
-    "recent-turns.json": "[]",
     "CONTEXT_INDEX.md": artifacts.contextIndexText,
   };
   if (params.includeConversation !== false) {

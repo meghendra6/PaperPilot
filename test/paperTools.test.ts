@@ -1,9 +1,11 @@
 import { test } from "node:test";
 import * as assert from "node:assert/strict";
 
+import { nativeStructuredOutputSchemaIssue } from "../src/modules/ai/structuredOutput";
 import {
   PAPER_TOOL_PRESETS,
   buildPaperToolQuestion,
+  getPaperToolOutputSchema,
   getPaperToolPreset,
   parsePaperToolResponse,
 } from "../src/modules/paperTools";
@@ -58,7 +60,10 @@ test("buildPaperToolQuestion adds strict JSON instructions and paper metadata", 
     /omit the bullet instead of filling with generic advice/i,
   );
   assert.match(prompt, /reader-pane-safe/i);
-  assert.match(prompt, /keep each section heading aligned with one of:/i);
+  assert.match(
+    prompt,
+    /use these section headings exactly as written, in English, even when writing in another language:/i,
+  );
   assert.match(prompt, /include at most 5 sections/i);
   assert.match(prompt, /include at most 4 bullets per section/i);
   assert.match(prompt, /use the full current-paper workspace content/i);
@@ -132,6 +137,44 @@ test("parsePaperToolResponse rejects outputs without expected sections", () => {
       ),
     /expected sections/i,
   );
+});
+
+test("paper tool headings accept titled variants and are schema literals", () => {
+  const result = parsePaperToolResponse(
+    JSON.stringify({
+      overview: "Three follow-ups.",
+      sections: [
+        {
+          heading: "Idea 1: Cross-lingual evaluation",
+          bullets: ["Test the method on non-English corpora."],
+          evidence: "inference",
+        },
+      ],
+    }),
+    "suggest-follow-ups",
+  );
+  assert.equal(result.sections[0].heading, "Idea 1: Cross-lingual evaluation");
+  assert.throws(
+    () =>
+      parsePaperToolResponse(
+        JSON.stringify({
+          overview: "Overview",
+          sections: [
+            { heading: "Idea 10", bullets: ["x"], evidence: "inference" },
+          ],
+        }),
+        "suggest-follow-ups",
+      ),
+    /expected sections/i,
+  );
+
+  for (const preset of PAPER_TOOL_PRESETS) {
+    const schema = getPaperToolOutputSchema(preset.id);
+    assert.equal(nativeStructuredOutputSchemaIssue(schema), undefined);
+    const heading = (schema.properties as Record<string, any>).sections.items
+      .properties.heading;
+    assert.deepEqual(heading.enum, preset.responseSections, preset.id);
+  }
 });
 
 test("parsePaperToolResponse normalizes unsupported evidence labels to mixed", () => {

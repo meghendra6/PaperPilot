@@ -191,6 +191,51 @@ test("Living Review baselines silently, ignores annotation-only staleness, and i
   );
 });
 
+test("Mark reviewed and Dismiss still apply after a background scan bumps the inbox revision", async () => {
+  const setupState = setup();
+  const sourcePaper = paper("A");
+  const created = await setupState.projects.createProject(
+    { projectID: "project-living-resolve", name: "Living resolve" },
+    [sourcePaper],
+  );
+  await setupState.service.checkProject(created.project.projectID);
+  setupState.observed.set(sourcePaper.sourceID, {
+    sourceID: sourcePaper.sourceID,
+    observedAt: "2026-08-29T12:01:00.000Z",
+    availability: "ready",
+    contentFingerprint: "pdf-A-v1",
+    annotationFingerprint: "annotations-v2",
+    annotation: {
+      algorithm: "zotero-annotation-keys-version-date-v1",
+      value: "annotations-v2",
+      count: 1,
+    },
+  });
+  const displayed = await setupState.service.checkProject(
+    created.project.projectID,
+  );
+  const change = displayed.changes.at(-1);
+  assert.ok(change);
+  // A Zotero item event triggers another scan after the panel rendered.
+  const background = await setupState.service.checkProject(
+    created.project.projectID,
+  );
+  assert.ok(background.revision > displayed.revision);
+
+  const resolved = await setupState.service.resolveChange({
+    projectID: created.project.projectID,
+    changeID: change.changeID,
+    action: "dismissed",
+    submissionID: "submission-dismiss-1",
+    expectedRevision: displayed.revision,
+  });
+  assert.equal(
+    resolved.changes.find((entry) => entry.changeID === change.changeID)
+      ?.resolution?.action,
+    "dismissed",
+  );
+});
+
 test("source unavailable and restored transitions preserve same-PDF extraction lineage", async () => {
   const setupState = setup();
   const sourcePaper = paper("B");

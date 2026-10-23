@@ -1,7 +1,10 @@
 import { test } from "node:test";
 import * as assert from "node:assert/strict";
 
-import { sanitizeAssistantText } from "../src/modules/message/assistantOutput";
+import {
+  presentRunAnswer,
+  sanitizeAssistantText,
+} from "../src/modules/message/assistantOutput";
 
 test("sanitizeAssistantText preserves requested public sources and URLs", () => {
   const sanitized = sanitizeAssistantText(
@@ -53,4 +56,25 @@ test("sanitizeAssistantText preserves indented lists and Markdown tables", () =>
 test("sanitizeAssistantText preserves DOI text", () => {
   const source = "DOI: 10.1145/3290605.3300233";
   assert.equal(sanitizeAssistantText(source), source);
+});
+
+test("a private URL ending a JSON string does not take the closing quote", () => {
+  const json =
+    '{"summary":"Extensions can read local files via file:///etc/passwd","items":[]}';
+  const sanitized = sanitizeAssistantText(json);
+  assert.doesNotMatch(sanitized, /file:/);
+  assert.deepEqual(JSON.parse(sanitized), {
+    summary: "Extensions can read local files via ",
+    items: [],
+  });
+});
+
+test("structured workflow output reaches its parser verbatim", () => {
+  const output =
+    '{"quote":"We release prompt.txt and metadata.json with the benchmark."}';
+  assert.equal(presentRunAnswer(output, "analysis"), output);
+  assert.match(
+    presentRunAnswer("See prompt.txt for details.", "chat"),
+    /See the prompt for details\./,
+  );
 });

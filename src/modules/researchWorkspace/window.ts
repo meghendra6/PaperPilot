@@ -237,7 +237,14 @@ async function initializeResearchWorkspaceDialog(
   try {
     // Saved projects and results are available before any PDF extraction.
     await renderResearchWorkspaceProjectSurface(initialBody);
-    if (addon.data.dialog !== dialog || dialog.window.closed) return;
+    // A newer selection may have re-initialized this window meanwhile.
+    if (
+      addon.data.dialog !== dialog ||
+      dialog.window.closed ||
+      addon.data.researchWorkspaceWindowState?.snapshot.id !== snapshot.id ||
+      !initialBody.isConnected
+    )
+      return;
     updateWindowState(snapshot, {
       status: "ready",
       loadedSourceIDs: Object.freeze([]),
@@ -335,11 +342,19 @@ async function useResearchWorkspaceSnapshot(
 async function addSnapshotToOpenProject(
   dialog: DialogHelper,
   snapshot: ResearchWorkspaceSelectionSnapshot,
+  offeredProject?: { projectID: string; projectName: string },
 ) {
   const body = windowBody(dialog.window.document);
   const project = body && getResearchWorkspaceSurfaceProject(body);
   if (!body || !project) {
     throw new Error("Open a project first, then add the selection to it.");
+  }
+  // The banner survives navigation. Add only to the project its button
+  // named, never to a project opened after the offer appeared.
+  if (offeredProject && offeredProject.projectID !== project.projectID) {
+    throw new Error(
+      `The button adds to “${offeredProject.projectName}”, but “${project.projectName}” is open now. Open “${offeredProject.projectName}” again to add the selection.`,
+    );
   }
   // New members would change the scope under the running analysis.
   if (hasRunningOperation(body)) {
@@ -396,15 +411,18 @@ function showSelectionOffer(
     pendingSelectionOffer = { dialog, snapshot };
     return;
   }
+  const offeredProject = body
+    ? getResearchWorkspaceSurfaceProject(body)
+    : undefined;
   const offer = planResearchWorkspaceSelectionOffer({
     current: addon.data.researchWorkspaceWindowState?.snapshot,
     next: snapshot,
-    currentProjectName: body
-      ? getResearchWorkspaceSurfaceProject(body)?.projectName
-      : undefined,
+    currentProjectName: offeredProject?.projectName,
   });
-  doc.getElementById(SELECTION_OFFER_ID)?.remove();
+  // An empty or unchanged relaunch keeps a pending offer; only a new offer
+  // replaces it.
   if (!offer) return;
+  doc.getElementById(SELECTION_OFFER_ID)?.remove();
   const banner = element(doc, "section", "pprw-selection-offer");
   banner.id = SELECTION_OFFER_ID;
   banner.setAttribute("role", "region");
@@ -431,7 +449,16 @@ function showSelectionOffer(
         doc,
         offer.addLabel,
         async () => {
-          await addSnapshotToOpenProject(dialog, snapshot);
+          await addSnapshotToOpenProject(
+            dialog,
+            snapshot,
+            offeredProject
+              ? {
+                  projectID: offeredProject.projectID,
+                  projectName: offeredProject.projectName,
+                }
+              : undefined,
+          );
           banner.remove();
         },
         "secondary",

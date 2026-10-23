@@ -4,6 +4,7 @@ import * as assert from "node:assert/strict";
 import {
   applyContradictionGapReview,
   buildContradictionGapDashboard,
+  carryForwardContradictionGapReviews,
   classifyMetricDirection,
 } from "../src/modules/researchWorkspace/contradictionGap";
 import { EVIDENCE_VERIFIER_VERSION } from "../src/modules/researchWorkspace/evidenceVerification";
@@ -494,6 +495,147 @@ test("dashboard reviews are append-only, revision guarded, and idempotent", () =
         reviewedAt: NOW,
       }),
     /idempotency conflict/,
+  );
+});
+
+test("refreshing the dashboard keeps reviews of relationships it still detects", () => {
+  const dashboard = buildContradictionGapDashboard({
+    details: fixture(),
+    generatedAt: NOW,
+  });
+  const relationship = dashboard.relationships[0];
+  const reclassified = applyContradictionGapReview({
+    dashboard,
+    input: {
+      relationshipID: relationship.relationshipID,
+      action: "reclassify",
+      toClassification: "uncertain",
+      reason: "Design detail needs manual review.",
+      submissionID: "submission-1",
+      expectedDashboardRevision: 0,
+    },
+    eventID: "event-1",
+    reviewedAt: NOW,
+  });
+  const reviewed = applyContradictionGapReview({
+    dashboard: reclassified,
+    input: {
+      relationshipID: relationship.relationshipID,
+      action: "confirm",
+      submissionID: "submission-2",
+      expectedDashboardRevision: 1,
+    },
+    eventID: "event-2",
+    reviewedAt: NOW,
+  });
+
+  const refreshed = carryForwardContradictionGapReviews(
+    buildContradictionGapDashboard({
+      details: fixture(),
+      generatedAt: "2026-08-31T12:00:00.000Z",
+    }),
+    reviewed,
+  );
+  const carried = refreshed.relationships.find(
+    (entry) => entry.relationshipID === relationship.relationshipID,
+  );
+  assert.equal(carried?.reviewState, "confirmed");
+  assert.equal(carried?.userClassification, "uncertain");
+  assert.deepEqual(
+    refreshed.reviewEvents.map((event) => event.eventID),
+    ["event-1", "event-2"],
+  );
+  assert.equal(refreshed.revision, 0);
+  assert.equal(
+    refreshed.limitations.length,
+    dashboard.limitations.length,
+    "no review was dropped",
+  );
+
+  // Reviews of the same relationship ID over changed evidence do not carry.
+  const changedEvidence = {
+    ...reviewed,
+    reviewEvents: reviewed.reviewEvents.map((event) => ({
+      ...event,
+      relationshipFingerprint: "relationship-content-old-evidence",
+    })),
+  };
+  const notCarried = carryForwardContradictionGapReviews(
+    buildContradictionGapDashboard({ details: fixture(), generatedAt: NOW }),
+    changedEvidence,
+  );
+  assert.equal(notCarried.relationships[0].reviewState, "unreviewed");
+  assert.deepEqual(notCarried.reviewEvents, []);
+
+  const changed = {
+    ...reviewed,
+    reviewEvents: reviewed.reviewEvents.map((event) => ({
+      ...event,
+      fromClassification:
+        relationship.classification === "uncertain"
+          ? ("non-comparable" as const)
+          : ("uncertain" as const),
+    })),
+  };
+  const dropped = carryForwardContradictionGapReviews(
+    buildContradictionGapDashboard({ details: fixture(), generatedAt: NOW }),
+    changed,
+  );
+  assert.equal(dropped.relationships[0].reviewState, "unreviewed");
+  assert.deepEqual(dropped.reviewEvents, []);
+  assert.match(
+    dropped.limitations.at(-1) ?? "",
+    /2 earlier reviews no longer apply/,
+  );
+});
+
+test("a review does not carry onto changed evidence under the same atom ID", () => {
+  const dashboard = buildContradictionGapDashboard({
+    details: fixture(),
+    generatedAt: NOW,
+  });
+  const relationship = dashboard.relationships[0];
+  const reviewed = applyContradictionGapReview({
+    dashboard,
+    input: {
+      relationshipID: relationship.relationshipID,
+      action: "confirm",
+      submissionID: "submission-evidence",
+      expectedDashboardRevision: 0,
+    },
+    eventID: "event-evidence",
+    reviewedAt: NOW,
+  });
+  const rebuilt = buildContradictionGapDashboard({
+    details: fixture(),
+    generatedAt: NOW,
+  });
+  // Identical content keeps the review.
+  assert.equal(
+    carryForwardContradictionGapReviews(rebuilt, reviewed).relationships[0]
+      .reviewState,
+    "confirmed",
+  );
+  // The same atom ID with a different quote is new evidence.
+  const comparedAtomID = relationship.sides[0].atomIDs[0];
+  const changed = {
+    ...rebuilt,
+    atoms: rebuilt.atoms.map((atom) =>
+      atom.atomID === comparedAtomID
+        ? {
+            ...atom,
+            evidence: atom.evidence.map((reference) => ({
+              ...reference,
+              exactQuote: "A corrected quote from a revised PDF.",
+            })),
+          }
+        : atom,
+    ),
+  };
+  assert.equal(
+    carryForwardContradictionGapReviews(changed, reviewed).relationships[0]
+      .reviewState,
+    "unreviewed",
   );
 });
 

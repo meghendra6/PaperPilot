@@ -1,3 +1,5 @@
+import { WorkspacePreparationError } from "./preparationError";
+
 declare const Zotero: any;
 
 export type WorkspaceSupplementalFiles = Readonly<Record<string, string>>;
@@ -26,6 +28,75 @@ export function validateWorkspaceSupplementalFilePath(path: string) {
     throw new Error(`Unsafe supplemental workspace path: ${path}`);
   }
   return path;
+}
+
+export type WorkspaceSymlinkProbe = (
+  path: string,
+) => boolean | Promise<boolean>;
+
+/** True when the entry itself is a symbolic link; the link is not followed. */
+export function isWorkspaceSymlink(path: string): boolean {
+  try {
+    return Boolean(Zotero.File.pathToFile(path).isSymlink());
+  } catch {
+    return false; // A missing entry is not a link.
+  }
+}
+
+/**
+ * Finds a symbolic link on the way to a workspace entry. The agent can create
+ * links inside its writable workspace, and Paper Pilot writes and removes with
+ * full user rights, so going through a planted link would reach files outside
+ * the sandbox. Atomic writes also use a fixed `<path>.tmp` sibling.
+ *
+ * Paper Pilot creates the allocated workspace directory itself, so a link in
+ * its place was planted too and is reported as ".". The configured workspace
+ * root above it may legitimately be a link and is not checked.
+ */
+export async function findWorkspaceSymlink(
+  workspacePath: string,
+  relativePath: string,
+  isSymlink: WorkspaceSymlinkProbe = isWorkspaceSymlink,
+): Promise<string | undefined> {
+  if (await isSymlink(workspacePath.replace(/[\\/]+$/, ""))) return ".";
+  const segments = relativePath.split("/");
+  for (let depth = 1; depth <= segments.length; depth++) {
+    const candidate = segments.slice(0, depth).join("/");
+    if (await isSymlink(`${workspacePath}/${candidate}`)) return candidate;
+  }
+  const tmpSibling = `${relativePath}.tmp`;
+  if (await isSymlink(`${workspacePath}/${tmpSibling}`)) return tmpSibling;
+  return undefined;
+}
+
+export async function assertNoWorkspaceSymlink(
+  workspacePath: string,
+  relativePath: string,
+  isSymlink?: WorkspaceSymlinkProbe,
+) {
+  const link = await findWorkspaceSymlink(
+    workspacePath,
+    relativePath,
+    isSymlink,
+  );
+  if (link)
+    throw new WorkspacePreparationError(
+      `Workspace entry "${link}" is a symbolic link, so Paper Pilot will not write through it. Remove the link from "${workspacePath}" or start a new conversation.`,
+    );
+}
+
+/** Writes one workspace text file after refusing symbolic links on its path. */
+export async function writeWorkspaceTextFile(
+  workspacePath: string,
+  relativePath: string,
+  contents: string,
+) {
+  await assertNoWorkspaceSymlink(workspacePath, relativePath);
+  await Zotero.File.putContentsAsync(
+    `${workspacePath}/${relativePath}`,
+    contents,
+    "utf-8",
+  );
 }
 
 function validatedWorkspaceEntries(files: WorkspaceSupplementalFiles) {
@@ -69,6 +140,7 @@ export async function writeWorkspaceSupplementalFiles(
   for (const [relativePath, contents] of validatedWorkspaceEntries(files)) {
     const absolutePath = `${workspacePath}/${relativePath}`;
     const separator = absolutePath.lastIndexOf("/");
+    await assertNoWorkspaceSymlink(workspacePath, relativePath);
     if (separator > workspacePath.length) {
       await Zotero.File.createDirectoryIfMissingAsync(
         absolutePath.slice(0, separator),
@@ -176,6 +248,7 @@ export async function stageWorkspaceImageInput(
   if (info?.type !== "regular" || Number(info.size) > MAX_WORKSPACE_IMAGE_BYTES)
     throw new Error("The selected image is missing or too large to attach.");
   const destination = `${workspacePath}/${WORKSPACE_IMAGE_INPUT_PATH}`;
+  await assertNoWorkspaceSymlink(workspacePath, WORKSPACE_IMAGE_INPUT_PATH);
   await Zotero.File.createDirectoryIfMissingAsync(
     destination.slice(0, destination.lastIndexOf("/")),
   );
@@ -212,8 +285,8 @@ export async function writeOwnedWorkspaceInputs(params: {
       const text = await Zotero.File.getContentsAsync(manifestPath);
       previous = parseWorkspaceInputManifest(JSON.parse(String(text)));
     } catch {
-      throw new Error(
-        "The previous workspace input manifest is unreadable; its files were preserved.",
+      throw new WorkspacePreparationError(
+        "The previous workspace input manifest is unreadable; its files were preserved. Start a new conversation to continue.",
       );
     }
   }
@@ -227,7 +300,7 @@ export async function writeOwnedWorkspaceInputs(params: {
       !ownedPaths.has(path) &&
       (await io.exists(`${params.workspacePath}/${path}`))
     ) {
-      throw new Error(
+      throw new WorkspacePreparationError(
         `Workspace file "${path}" is not owned by Paper Pilot. Its files were preserved; move the conflicting file from "${params.workspacePath}" before retrying, or start a new conversation.`,
       );
     }
@@ -245,10 +318,17 @@ export async function writeOwnedWorkspaceInputs(params: {
       ),
     );
     if (workspaceInputContentFingerprint(current) !== entry.contentFingerprint)
-      throw new Error(
+      throw new WorkspacePreparationError(
         `Workspace input "${entry.path}" was changed outside this run. Its files were preserved; move the edited file from "${params.workspacePath}" before retrying, or start a new conversation.`,
       );
   }
+  // Check every path this run removes or writes before changing anything.
+  for (const path of new Set([
+    "paperpilot-input-manifest.json",
+    ...(previous?.files.map((entry) => entry.path) ?? []),
+    ...Object.keys(params.files),
+  ]))
+    await assertNoWorkspaceSymlink(params.workspacePath, path);
   for (const entry of previous?.files ?? []) {
     validateWorkspaceSupplementalFilePath(entry.path);
     if (!io?.remove)

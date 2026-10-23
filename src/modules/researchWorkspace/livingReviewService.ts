@@ -305,17 +305,32 @@ export class ResearchWorkspaceLivingReviewService {
   }
 
   async resolveChange(params: ResolveResearchWorkspaceChangeParams) {
-    return this.repository.updateChangeInbox(
-      params.projectID,
-      params.expectedRevision,
-      (inbox) =>
-        resolveResearchWorkspaceLivingReviewChange(inbox, {
-          changeID: params.changeID,
-          action: params.action,
-          submissionID: params.submissionID,
-          actedAt: this.now().toISOString(),
-        }),
-    );
+    const resolve = (inbox: ResearchWorkspaceChangeInboxFile) =>
+      resolveResearchWorkspaceLivingReviewChange(inbox, {
+        changeID: params.changeID,
+        action: params.action,
+        submissionID: params.submissionID,
+        actedAt: this.now().toISOString(),
+      });
+    try {
+      return await this.repository.updateChangeInbox(
+        params.projectID,
+        params.expectedRevision,
+        resolve,
+      );
+    } catch (error) {
+      if (!(error instanceof ResearchWorkspaceRevisionConflictError)) {
+        throw error;
+      }
+      // Background scans bump the inbox revision without touching existing
+      // changes. The resolution checks its target change on the current
+      // inbox and is idempotent by submission ID, so it applies there.
+      return this.repository.updateChangeInbox(
+        params.projectID,
+        undefined,
+        resolve,
+      );
+    }
   }
 
   async refreshSource(projectID: string, sourceID: string) {

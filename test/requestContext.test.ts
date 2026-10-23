@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import * as assert from "node:assert/strict";
 import {
+  buildRequestSelection,
   captureRequestContext,
   readRequestPaperContent,
   assertRequestContextCurrent,
@@ -271,4 +272,48 @@ test("removed PDF fails source revalidation even when metadata fingerprint is un
     runtime.IOUtils = oldIO;
     env.restore();
   }
+});
+
+test("annotation comments stay out of the selected text and nearby search", () => {
+  const base = {
+    sourceID: "zotero:1:ITEM:PDF",
+    source: {} as never,
+    itemID: 1,
+    attachmentID: 2,
+    paperTitle: "Paper",
+    contentFingerprint: "fp",
+    capturedAt: "2026-10-24T00:00:00.000Z",
+    warnings: [],
+  };
+  const annotation = {
+    key: "ANNOT1",
+    quote: "The proposed gating unit reduces latency by 31% on the benchmark.",
+    comment: "Is this measured on GPU or CPU?",
+    pageIndex: 2,
+    pageLabel: "3",
+    sourceID: base.sourceID,
+    kind: "highlight",
+  };
+  const selection = buildRequestSelection({
+    ...base,
+    annotations: [annotation],
+  });
+  assert.equal(selection.selectedText, annotation.quote);
+  assert.deepEqual(selection.nearbyQueries, [
+    { text: annotation.quote, pageIndex: 2 },
+  ]);
+  assert.equal(selection.pageIndex, 2);
+  assert.equal(selection.pageLabel, "3");
+  assert.match(selection.retrievalQueryText, /GPU or CPU/);
+
+  const typed = buildRequestSelection({
+    ...base,
+    selectedText: "A real selection",
+    pageIndex: 5,
+    annotations: [annotation],
+  });
+  assert.equal(typed.selectedText, "A real selection");
+  assert.deepEqual(typed.nearbyQueries, [
+    { text: "A real selection", pageIndex: 5 },
+  ]);
 });

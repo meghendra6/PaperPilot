@@ -14,8 +14,14 @@ export function buildDictionaryLookup(
 ): DictionaryLookup | undefined {
   const term = (text || "")
     .replace(/\u00ad/g, "")
+    // Join a word hyphenated across a line break ("atten-\ntion").
+    .replace(/(\p{L})-\s*\n\s*(\p{L})/gu, "$1$2")
     .replace(/\s+/gu, " ")
-    .trim();
+    .trim()
+    // Drop sentence punctuation and brackets around the selection
+    // ("attention," "(attention)"). Symbols that belong to a term, such as
+    // "C++", and apostrophes inside it stay.
+    .replace(/^[\s("“‘[{«¿¡]+|[\s.,;:!?)"”’\]}»…]+$/gu, "");
   if (
     !/[\p{L}\p{N}]/u.test(term) ||
     term.length > 80 ||

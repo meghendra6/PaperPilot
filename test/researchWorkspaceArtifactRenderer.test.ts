@@ -962,3 +962,115 @@ test("Evidence Matrix rows of failed papers say Failed instead of Pending", () =
     ["Pending", "Pending"],
   );
 });
+
+test("an Evidence Matrix without finished rows lists every paper and no fake coverage", () => {
+  const view = createResearchWorkspaceArtifactView(
+    {
+      matrix: {
+        columns: [{ id: "method", label: "Method" }],
+        papers: [
+          { paperKey: "P1", title: "One" },
+          { paperKey: "P2", title: "Two" },
+        ],
+        rows: [],
+        cells: [],
+      },
+      coverage: {
+        filledCount: 0,
+        extractionCoverage: 0,
+        evidenceCoverage: 1,
+        requiredEvidenceCoverage: 1,
+      },
+    },
+    "evidence-matrix",
+  );
+  assert.equal(view.kind, "matrix");
+  if (view.kind !== "matrix") return;
+  assert.deepEqual(
+    view.rows.map((row) => [row.title, row.cells[0]?.status]),
+    [
+      ["One", "pending"],
+      ["Two", "pending"],
+    ],
+  );
+  assert.equal(view.coverage?.evidence, undefined);
+  assert.equal(view.coverage?.requiredEvidence, undefined);
+});
+
+test("a claim counts verified contradictions as checked evidence", () => {
+  const verified = (page: number) => ({
+    schemaVersion: 2,
+    sourceID: "zotero:1:A:PA",
+    libraryID: 1,
+    attachmentKey: "PA",
+    pageIndex: page,
+    exactQuote: `Quote on page ${page}`,
+    verification: {
+      status: "verified",
+      verifierVersion: "paperpilot-evidence-v2",
+      method: "pdf-exact-quote",
+      verifiedAt: "2026-08-30T00:00:00.000Z",
+    },
+  });
+  const view = createResearchWorkspaceArtifactView(
+    {
+      paperKey: "A",
+      claims: [
+        {
+          id: "c1",
+          text: "The method improves accuracy.",
+          kind: "author_claim",
+          support: [verified(2)],
+          contradictions: [verified(5)],
+        },
+      ],
+    },
+    "claim-ledger",
+  );
+  assert.equal(view.kind, "claim-ledger");
+  if (view.kind !== "claim-ledger") return;
+  assert.equal(view.claims[0].verifiedSupport, 1);
+  assert.equal(view.claims[0].verifiedEvidence, 2);
+  assert.equal(view.claims[0].evidenceTotal, 2);
+});
+
+test("legacy Paper Mastery and imported cross-paper payloads hide unanswered answer keys", () => {
+  const legacy = createResearchWorkspacePublicPayload(
+    {
+      session: {
+        pendingQuestion: {
+          prompt: "Why does the method need a warm-up phase?",
+          expectedClaims: [{ text: "HIDDEN EXPECTED CLAIM" }],
+          rubric: [{ description: "HIDDEN RUBRIC" }],
+        },
+      },
+      question: {
+        prompt: "Why does the method need a warm-up phase?",
+        expectedClaims: [{ text: "HIDDEN EXPECTED CLAIM" }],
+      },
+    },
+    "paper-mastery",
+  );
+  const imported = createResearchWorkspacePublicPayload(
+    {
+      sessions: [
+        {
+          id: "s1",
+          questions: [{ id: "q1", rubric: [{ description: "HIDDEN RUBRIC" }] }],
+        },
+      ],
+      questions: [
+        { id: "q1", rubric: [{ description: "HIDDEN RUBRIC" }] },
+        { id: "q2", rubric: [{ description: "KEPT AFTER ANSWER" }] },
+      ],
+      attempts: [{ questionId: "q2" }],
+    },
+    "cross-paper-mastery",
+  );
+  const legacyText = JSON.stringify(legacy);
+  assert.doesNotMatch(legacyText, /HIDDEN/);
+  assert.match(legacyText, /warm-up phase/);
+  const importedText = JSON.stringify(imported);
+  assert.doesNotMatch(importedText, /HIDDEN/);
+  assert.match(importedText, /KEPT AFTER ANSWER/);
+});

@@ -1,10 +1,15 @@
+import { isPdfFileAttachment } from "../../utils/pdfAttachment";
 import { version as openDataLoaderVersion } from "../../../node_modules/@opendataloader/pdf/package.json";
 import { config } from "../../../package.json";
 import { getZoteroProfilePath } from "../../utils/zoteroProfile";
 import { launchDetachedShellScript } from "../ai/launchScript";
 import { stopDetachedRunProcess } from "../ai/runCompletion";
+import {
+  parseExitStatusMarker,
+  withExitStatusMarker,
+} from "../ai/subprocessStatus";
 import { buildCodexCommandEnvironment } from "../codex/environment";
-import { shellEscape } from "../codex/shell";
+import { shellEscape, shellExportLine } from "../codex/shell";
 
 declare const Zotero: any;
 declare const IOUtils: any;
@@ -258,25 +263,14 @@ export async function buildPaperContentFingerprint(
 
 export async function resolvePdfAttachment(item: any) {
   if (item.isAttachment()) {
-    if (
-      item.attachmentContentType === "application/pdf" ||
-      item.attachmentContentType === ""
-    ) {
-      return item;
-    }
+    if (isPdfFileAttachment(item)) return item;
     throw new Error("Attachment is not a PDF");
   }
 
   const attachments = item.getAttachments();
   for (const attachmentID of attachments) {
     const attachment = Zotero.Items.get(attachmentID);
-    if (
-      attachment &&
-      (attachment.attachmentContentType === "application/pdf" ||
-        attachment.attachmentContentType === "")
-    ) {
-      return attachment;
-    }
+    if (isPdfFileAttachment(attachment)) return attachment;
   }
 
   return undefined;
@@ -428,7 +422,7 @@ export function buildOpenDataLoaderScript(params: {
   const environment = buildCodexCommandEnvironment("java");
   const exports = Object.entries(environment)
     .filter((entry): entry is [string, string] => Boolean(entry[0] && entry[1]))
-    .map(([key, value]) => `export ${key}=${shellEscape(value)}`);
+    .map(([key, value]) => shellExportLine(key, value));
   const command = [
     "java",
     "-jar",
@@ -479,12 +473,24 @@ async function readTextFile(path: string) {
 let javaRuntimeAvailable: boolean | undefined;
 let javaFailureLogged = false;
 
-export async function probeJavaRuntime(
-  probe: () => Promise<unknown> = () =>
-    Zotero.Utilities.Internal.subprocess("/bin/zsh", [
+async function probeJavaWithExitStatus() {
+  // subprocess() resolves even when the script fails, so read the status.
+  const result = parseExitStatusMarker(
+    await Zotero.Utilities.Internal.subprocess("/bin/zsh", [
       "-lc",
-      "command -v java >/dev/null 2>&1 && java -version >/dev/null 2>&1",
+      withExitStatusMarker(
+        "command -v java >/dev/null 2>&1 && java -version >/dev/null 2>&1",
+      ),
     ]),
+  );
+  if (result.exitCode !== 0)
+    throw new Error(
+      `Java runtime probe exited with status ${result.exitCode ?? "unknown"}.`,
+    );
+}
+
+export async function probeJavaRuntime(
+  probe: () => Promise<unknown> = probeJavaWithExitStatus,
 ) {
   if (javaRuntimeAvailable !== undefined) return javaRuntimeAvailable;
   try {

@@ -10,6 +10,7 @@ import {
   buildCodexExecCommand,
   buildCodexLoginStatusCommand,
   buildCodexResumeCommand,
+  CODEX_APPROVAL_MODES,
   normalizeCodexApprovalMode,
 } from "../src/modules/codex/commandBuilder";
 import {
@@ -222,8 +223,14 @@ test("buildCodexExecCommand normalizes legacy approval mode labels", () => {
 
 test("normalizeCodexApprovalMode drops unsupported approval labels", () => {
   assert.equal(normalizeCodexApprovalMode("unsupported-mode"), undefined);
-  assert.equal(normalizeCodexApprovalMode("manual"), "untrusted");
   assert.equal(normalizeCodexApprovalMode("auto-edit"), "never");
+});
+
+test("normalizeCodexApprovalMode migrates policies the Codex CLI rejects", () => {
+  assert.deepEqual([...CODEX_APPROVAL_MODES], ["never", "on-request"]);
+  for (const saved of ["manual", "untrusted", "on-failure", "On Failure"]) {
+    assert.equal(normalizeCodexApprovalMode(saved), "on-request");
+  }
 });
 
 test("buildCodexExecCommand includes image flag when provided", () => {
@@ -698,9 +705,6 @@ test("buildWorkspaceArtifacts assembles paper and context files", () => {
       retrievedChunks: [],
       promptPreview: "Question: Summarize",
     },
-    recentTurns: [
-      { role: "user", text: "Summarize this paper", createdAt: "now" },
-    ],
   });
 
   assert.equal(artifacts.metadata.title, "Attention Is All You Need");
@@ -720,7 +724,6 @@ test("buildWorkspaceArtifacts assembles paper and context files", () => {
   assert.deepEqual(artifacts.paperJson.document, [
     { type: "heading", content: "Attention Is All You Need" },
   ]);
-  assert.equal(artifacts.recentTurns.length, 1);
 });
 
 test("buildWorkspaceArtifacts stages discovery source-data files", () => {
@@ -728,7 +731,6 @@ test("buildWorkspaceArtifacts stages discovery source-data files", () => {
     title: "Paper",
     authors: [],
     payload: { retrievedChunks: [], promptPreview: "Question" },
-    recentTurns: [],
     requestText: [
       "Run Agent-led Verified Research Discovery for the currently open paper.",
       "Discovery intent: novelty_check",

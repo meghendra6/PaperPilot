@@ -516,8 +516,9 @@ that document boundary.
      blocking the run
    - builds the CLI argv and wraps it in a **detached background shell script**;
      first and resumed Codex turns carry the same configured approval and
-     sandbox modes, and every engine prepends its executable directory to PATH
-     (`codex/shell.ts` for Codex; inline in the runner for Claude)
+     sandbox modes, and every engine prepends its fixed CLI directories to the
+     login shell's own PATH (`shellExportLine` in `codex/shell.ts`, shared by
+     both runners, the CLI probes, and the OpenDataLoader script)
    - runs `Zotero.Utilities.Internal.exec("/bin/zsh", ["-lc", script])`
 4. The script writes stdout and stderr to separate files, writes the exit code
    when done, and records the detached shell pid. `exec` returns as soon as the
@@ -554,7 +555,10 @@ that document boundary.
 6. On completion the controller sanitizes the text
    (`message/assistantOutput.ts`), persists the turn via
    `session/sessionHistoryService.ts`, updates run state, and calls
-   `workspace/cleanup.ts`. `ai/runCompletion.ts` guarantees that cleanup
+   `workspace/cleanup.ts`. Workspace writes and removals refuse a path with a
+   symbolic link in any component, and cleanup skips linked entries, so a link
+   planted in the agent's working directory cannot redirect a write or a
+   delete outside it. `ai/runCompletion.ts` guarantees that cleanup
    finishes before a workflow callback can launch a nested run in the same
    stable per-paper workspace. The controller also closes the item-scoped
    activity in `ai/runPresentation.ts`; the currently mounted pane then
@@ -618,8 +622,10 @@ Per-engine file names inside the workspace:
 
 Codex emits JSONL events, so `outputParser.ts` extracts assistant text and
 `codex/controller.ts` extracts the resumable `thread_id`. Claude runs in print
-mode (`claude -p`). When the installed CLI's help lists `stream-json`,
-`--verbose`, and `--include-partial-messages`, it writes stream-json events that
+mode (`claude -p`). When the installed CLI's help lists
+`--include-partial-messages` (checked with the runner's own environment), it
+passes `--output-format stream-json --verbose --include-partial-messages` and
+writes stream-json events that
 `claude/outputParser.ts` parses for assistant text, provider session identity
 and terminal provider errors; otherwise `--output-format text` output is read
 directly. The command passes the normalized model id through `--model` and adds
@@ -646,7 +652,7 @@ runtime until those process-control assumptions have a platform adapter.
 | `paper.txt`                   | all engines                     | compatibility snapshot: metadata header plus text                                |
 | `metadata.json`               | all engines                     | title, authors, year, item/attachment key, abstract, extraction method and notes |
 | `selection.json`              | all engines                     | selected text, actual nearby context, page, annotations, retrieved chunks        |
-| `recent-turns.json`           | all engines                     | last 3 privacy-eligible turns for follow-up continuity                           |
+| `conversation-context.md`     | chat runs                       | privacy-eligible pinned context, summary, and completed turns                    |
 | `annotations.json`            | all engines                     | annotation ids tied to this request                                              |
 | `CONTEXT_INDEX.md`            | all engines                     | reading-order file map                                                           |
 | `discovery-request.json`      | discovery runs                  | normalized research concern and current-paper context                            |
@@ -667,9 +673,12 @@ applicable runner _and_ to the prompt that tells the model to read it.
 
 The prompt preview owns only the explicit request and response-language
 instruction. Selection, retrieval, and annotation data appear once in
-`selection.json`; visible conversation context appears once in
-`recent-turns.json`. Prompts-only persistence omits assistant turns from that
-file. Disabling history persistence forces workspace cleanup after the run even
+`selection.json`. Its `selectedText` holds only highlighted quotes; annotation
+comments widen retrieval but are not quoted as paper text. `pageIndex` is
+zero-based and `pageNumber` is `pageIndex + 1`. Visible conversation context
+appears once in `conversation-context.md`, which chat runs write and
+`CONTEXT_INDEX.md` names. Prompts-only persistence omits assistant turns from
+that file. Disabling history persistence forces workspace cleanup after the run even
 when the general auto-clean preference is off. When nearby context is enabled,
 the runner finds the
 selection inside extracted full text and writes bounded text before and after
@@ -695,6 +704,13 @@ can still receive a blind GET before Paper Pilot aborts it. Response content is
 withheld in that case, preventing response-body exfiltration, but the residual
 request-delivery risk remains. Address pinning is not exposed by the Zotero
 HTTP API used here.
+
+Verification cannot run through a network proxy. With an HTTP or SOCKS proxy
+(a system proxy, Charles, ClashX, a corporate proxy) the connected peer is the
+proxy, so the public-address check cannot confirm the official server. Paper
+Pilot detects a proxied channel and fails closed with a proxy-specific reason
+instead of relaxing the check. Fake-IP DNS modes that answer in 198.18.0.0/15
+fail the DNS check for the same reason.
 
 The fetched page is authoritative only as inspected source data: Paper Pilot
 reconstructs title, venue, track, decision, and review availability from that

@@ -53,6 +53,8 @@ export interface ChatSearchResult {
   text: string;
   role: string;
 }
+const SEARCH_DEBOUNCE_MS = 250;
+
 export function createChatTools(params: {
   doc: Document;
   input: HTMLTextAreaElement;
@@ -66,6 +68,8 @@ export function createChatTools(params: {
   onResult(result: ChatSearchResult): Promise<void>;
   onSearchClose(): boolean | void | Promise<boolean | void>;
   onSummary(): Promise<void>;
+  /** Wait after the last keystroke before searching. Tests pass 0. */
+  searchDelayMs?: number;
 }) {
   const doc = params.doc;
   const root = doc.createElement("div");
@@ -157,7 +161,11 @@ export function createChatTools(params: {
   }
   const results = doc.createElement("div");
   results.className = "pp-chat-search__results";
-  results.setAttribute("aria-live", "polite");
+  // The result list is not a live region: rebuilding it would announce
+  // every result button. A short status reports the count instead.
+  const resultStatus = doc.createElement("div");
+  resultStatus.className = "pp-chat-search__status";
+  resultStatus.setAttribute("role", "status");
   let searchRevision = 0;
   let disposed = false;
   let closingSearch = false;
@@ -171,11 +179,19 @@ export function createChatTools(params: {
         ? await params.onSearch(query.value, scope.value as "current" | "saved")
         : [];
     } catch (error) {
-      if (ownsSearch(revision)) results.textContent = errorText(error);
+      if (ownsSearch(revision)) {
+        results.textContent = errorText(error);
+        resultStatus.textContent = results.textContent;
+      }
       return;
     }
     if (!ownsSearch(revision)) return;
     results.replaceChildren();
+    resultStatus.textContent = found.length
+      ? `${found.length} matching message${found.length === 1 ? "" : "s"}.`
+      : query.value.trim()
+        ? "No matching messages."
+        : "";
     if (!found.length) {
       results.textContent = query.value.trim()
         ? "No matching messages."
@@ -201,14 +217,37 @@ export function createChatTools(params: {
         ),
       );
   };
+  // Saved-conversation search reads every saved snapshot, so wait for a
+  // pause in typing and skip a search identical to the previous one.
+  const searchDelayMs = params.searchDelayMs ?? SEARCH_DEBOUNCE_MS;
+  let searchTimer: ReturnType<typeof setTimeout> | undefined;
+  let lastSearchKey: string | undefined;
+  const cancelPendingSearch = () => {
+    if (searchTimer !== undefined) clearTimeout(searchTimer);
+    searchTimer = undefined;
+    lastSearchKey = undefined;
+  };
   const onSearchInput = () => {
     if (closingSearch) return;
-    void runSearch();
+    const key = `${scope.value}\u0000${query.value.trim()}`;
+    if (key === lastSearchKey) return;
+    lastSearchKey = key;
+    if (searchTimer !== undefined) clearTimeout(searchTimer);
+    searchTimer = undefined;
+    if (searchDelayMs <= 0) {
+      void runSearch();
+      return;
+    }
+    searchTimer = setTimeout(() => {
+      searchTimer = undefined;
+      void runSearch();
+    }, searchDelayMs);
   };
   query.addEventListener("input", onSearchInput);
   scope.addEventListener("change", onSearchInput);
   const closeSearch = () => {
     if (closingSearch) return;
+    cancelPendingSearch();
     closingSearch = true;
     query.disabled = true;
     scope.disabled = true;
@@ -238,6 +277,7 @@ export function createChatTools(params: {
     scope,
     button("Return to reading", closeSearch),
     results,
+    resultStatus,
   );
   search.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
@@ -321,6 +361,7 @@ export function createChatTools(params: {
     },
     dispose() {
       disposed = true;
+      cancelPendingSearch();
       searchRevision++;
       root.removeEventListener("keydown", onKey);
       params.input.removeEventListener("input", onInput);
@@ -345,6 +386,8 @@ export function showChatReviewPanel(params: {
   onConfirm?(): Promise<string | void>;
   /** False leaves focus where it is, for a panel that opens on its own. */
   focus?: boolean;
+  /** Receives focus when the panel closes, such as the composer. */
+  returnFocus?: HTMLElement;
 }) {
   const readOnly = !params.confirmLabel || !params.onConfirm;
   const kind = readOnly ? "info" : "confirm";
@@ -372,7 +415,18 @@ export function showChatReviewPanel(params: {
   cancel.type = "button";
   cancel.className = "pp-btn pp-btn--ghost";
   cancel.textContent = "Close";
-  cancel.addEventListener("click", () => panel.remove());
+  const closePanel = () => {
+    const hadFocus = panel.contains?.(doc.activeElement ?? null) ?? false;
+    panel.remove();
+    if (hadFocus) params.returnFocus?.focus();
+  };
+  cancel.addEventListener("click", closePanel);
+  panel.addEventListener("keydown", (event: KeyboardEvent) => {
+    if (event.key !== "Escape") return;
+    event.preventDefault();
+    event.stopPropagation();
+    closePanel();
+  });
   const onConfirm = params.onConfirm;
   if (!params.confirmLabel || !onConfirm) {
     panel.append(title, body, ...(params.fields ?? []), cancel, status);

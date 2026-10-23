@@ -1236,6 +1236,104 @@ test("SessionHistoryService persists the active session snapshot with mixed-mode
   }
 });
 
+test("a save during a Workbench refresh keeps the completed cards", async () => {
+  const { globals, service } = createService({
+    saveDocumentSessions: true,
+    privacyStoreLocalHistory: true,
+    privacySavePromptsOnly: false,
+    privacySaveResponses: true,
+  });
+  try {
+    const session = service.ensureDraftSession({
+      itemID: 504,
+      mode: "codex_cli",
+    });
+    messageStore.append(session.sessionId, {
+      role: "user",
+      text: "Keep my brief while the next card runs.",
+      sourceMode: "codex_cli",
+      status: "done",
+    });
+    const card = {
+      kind: "research-brief",
+      title: "Research brief",
+      summary: "Summary",
+      sections: [],
+      sourceLabel: "Grounded",
+      updatedAt: "2026-04-14T09:35:00.000Z",
+    };
+    (
+      globalThis as {
+        addon?: { data?: { paperArtifactStates?: Map<number, unknown> } };
+      }
+    ).addon?.data?.paperArtifactStates?.set(504, {
+      running: true,
+      status: "Generating limitations…",
+      activeKind: "limitations",
+      cards: [card],
+    });
+    const persisted = await service.persistActiveSession({
+      itemID: 504,
+      paperTitle: "Refresh paper",
+    });
+    assert.deepEqual(persisted?.paperArtifacts, {
+      running: false,
+      status: "",
+      cards: [card],
+    });
+
+    messageStore.clear(session.sessionId);
+    sessionStore.reset(504, "codex_cli");
+  } finally {
+    globals.restore();
+  }
+});
+
+test("a session snapshot never saves another session's Critical Read", async () => {
+  const { globals, service } = createService({
+    saveDocumentSessions: true,
+    privacyStoreLocalHistory: true,
+    privacySavePromptsOnly: false,
+    privacySaveResponses: true,
+  });
+  try {
+    const session = service.ensureDraftSession({
+      itemID: 503,
+      mode: "codex_cli",
+    });
+    messageStore.append(session.sessionId, {
+      role: "user",
+      text: "Which session owns this Critical Read?",
+      sourceMode: "codex_cli",
+      status: "done",
+    });
+    // A Start that resumed after the reader switched sessions left this.
+    const stale = startCriticalRead(
+      buildInitialCriticalReadState(undefined, {
+        itemID: 503,
+        sessionID: "an-earlier-session",
+      }),
+    );
+    (
+      globalThis as {
+        addon?: { data?: { criticalReadStates?: Map<number, unknown> } };
+      }
+    ).addon?.data?.criticalReadStates?.set(503, stale);
+
+    const persisted = await service.persistActiveSession({
+      itemID: 503,
+      paperTitle: "Session ownership",
+    });
+    assert.ok(persisted);
+    assert.equal(persisted?.criticalRead, undefined);
+
+    messageStore.clear(session.sessionId);
+    sessionStore.reset(503, "codex_cli");
+  } finally {
+    globals.restore();
+  }
+});
+
 test("pre-gate snapshots never persist public-review URLs or reviewer content", async () => {
   const { globals, service } = createService({
     saveDocumentSessions: true,
@@ -2134,6 +2232,50 @@ test("SessionHistoryService redacts local paths from persisted raw diagnostics",
 
     messageStore.clear(session.sessionId);
     sessionStore.reset(603, "claude_code");
+  } finally {
+    globals.restore();
+  }
+});
+
+test("history keeps a bounded failure diagnostic and no stream for successful turns", async () => {
+  const { globals, repository, service } = createService({
+    saveDocumentSessions: true,
+    privacyStoreLocalHistory: true,
+    privacySavePromptsOnly: false,
+    privacySaveResponses: true,
+  });
+  try {
+    const session = service.ensureDraftSession({
+      itemID: 605,
+      mode: "claude_code",
+    });
+    const stream = `${'{"type":"stream_event","delta":"paper text"}\n'.repeat(500)}`;
+    await service.persistAssistantTurn({
+      itemID: 605,
+      sessionId: session.sessionId,
+      mode: "claude_code",
+      paperTitle: "Stream paper",
+      assistantText: "A grounded answer.",
+      success: true,
+      rawEvent: stream,
+    });
+    await service.persistAssistantTurn({
+      itemID: 605,
+      sessionId: session.sessionId,
+      mode: "claude_code",
+      paperTitle: "Stream paper",
+      assistantText: "Claude Code could not complete this request.",
+      success: false,
+      rawEvent: `${"x".repeat(10_000)}final stderr line`,
+    });
+    const saved = await repository.readSessionSnapshot(605, session.sessionId);
+    const [answer, failure] = saved?.messages?.slice(-2) ?? [];
+    assert.equal(answer?.rawEvent, undefined);
+    assert.ok((failure?.rawEvent?.length ?? 0) <= 4_001);
+    assert.match(failure?.rawEvent || "", /final stderr line$/);
+
+    messageStore.clear(session.sessionId);
+    sessionStore.reset(605, "claude_code");
   } finally {
     globals.restore();
   }

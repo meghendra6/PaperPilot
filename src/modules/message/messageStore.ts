@@ -1,6 +1,5 @@
 import { sanitizeAssistantText } from "./assistantOutput";
 import type { MessageRecord } from "./types";
-import { resolveSessionHistoryPrefs } from "../session/historyPrefs";
 import {
   cloneChatValue,
   immutableChatRequest,
@@ -46,17 +45,6 @@ class MessageStore {
 
   recentRaw(sessionId: string, count: number) {
     return this.listRaw(sessionId).slice(-count);
-  }
-
-  recentForWorkspace(sessionId: string, count: number) {
-    const prefs = resolveSessionHistoryPrefs();
-    return this.listRaw(sessionId)
-      .filter(
-        (message) =>
-          message.status === "done" &&
-          (message.role === "user" || prefs.persistAssistantMessages),
-      )
-      .slice(-count);
   }
 
   get(sessionId: string, messageId: string) {

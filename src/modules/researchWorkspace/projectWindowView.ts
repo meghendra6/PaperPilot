@@ -19,7 +19,11 @@ import {
   updateResearchWorkspaceProject,
 } from "./facade";
 import type { ResearchWorkspacePaper } from "./paperSource";
-import type { ResearchWorkspaceArtifact } from "./persistence/contracts";
+import {
+  RESEARCH_WORKSPACE_CHANGE_INBOX_SCHEMA_VERSION,
+  type ResearchWorkspaceArtifact,
+  type ResearchWorkspaceChangeInboxFile,
+} from "./persistence/contracts";
 import type {
   ResearchWorkspaceProjectDetails,
   ResearchWorkspaceProjectHome,
@@ -123,9 +127,23 @@ async function renderProject(
   if (!keepOperations && !releaseOperations(root, "Opening another project"))
     return;
   generations.set(root, generation);
-  const [details, changeInbox, syncReceiptResult] = await Promise.all([
+  const [details, changeInboxResult, syncReceiptResult] = await Promise.all([
     loadResearchWorkspaceProject(projectID),
-    loadResearchWorkspaceChangeInbox(projectID),
+    // Only the Living Review panel needs the inbox. An unreadable file (for
+    // example after a downgrade) must not keep the whole project closed.
+    loadResearchWorkspaceChangeInbox(projectID)
+      .then((inbox) => ({ inbox, warning: undefined as string | undefined }))
+      .catch(() => ({
+        inbox: {
+          schemaVersion: RESEARCH_WORKSPACE_CHANGE_INBOX_SCHEMA_VERSION,
+          revision: 0,
+          projectID,
+          snapshots: [],
+          changes: [],
+        } satisfies ResearchWorkspaceChangeInboxFile,
+        warning:
+          "The Living Review change inbox could not be read. The file was preserved; Living Review stays unavailable until it is repaired.",
+      })),
     listResearchWorkspaceZoteroSyncReceipts(projectID)
       .then((receipts) => ({
         receipts,
@@ -139,6 +157,9 @@ async function renderProject(
   ]);
   if (!isCurrent(root, generation)) return;
   const doc = root.ownerDocument;
+  // A rebuild of the same project keeps unsaved panel choices, whether or
+  // not an analysis has been prepared.
+  const sameProject = projectContexts.get(root)?.projectID === projectID;
   projectContexts.set(root, {
     projectID,
     projectName: details.project.name,
@@ -161,7 +182,22 @@ async function renderProject(
   message.dataset.kind = "success";
   message.setAttribute("role", "status");
   message.setAttribute("aria-live", "polite");
+  message.tabIndex = -1;
   content.append(message);
+  // F232: unreadable artifacts and missing sources are listed, not hidden.
+  if (details.warnings.length) {
+    const warnings = element(doc, "ul", "pprw-project-warning");
+    warnings.setAttribute("aria-label", "Project warnings");
+    for (const warning of details.warnings.slice(0, 10)) {
+      warnings.append(element(doc, "li", "", warning));
+    }
+    if (details.warnings.length > 10) {
+      warnings.append(
+        element(doc, "li", "", `and ${details.warnings.length - 10} more`),
+      );
+    }
+    content.append(warnings);
+  }
   const archived = archiveNotice(
     doc,
     root,
@@ -192,6 +228,7 @@ async function renderProject(
             researchQuestion: question.value || undefined,
           });
           await renderProject(root, projectID, capturedPapers, generation);
+          setMessage(root, "Project saved.", "success");
         } catch (error) {
           setMessage(
             root,
@@ -206,10 +243,15 @@ async function renderProject(
       try {
         setMessage(root, "Exporting this project…");
         const result = await exportIntegratedResearchWorkspace({ projectID });
+        const warnings = result.warnings ?? [];
         setMessage(
           root,
-          `Exported to ${result.jsonPath} and ${result.markdownPath}.`,
-          "success",
+          `Exported to ${result.jsonPath} and ${result.markdownPath}.${
+            warnings.length
+              ? ` ${warnings.length} warning${warnings.length === 1 ? "" : "s"}: ${warnings.slice(0, 3).join(" ")}`
+              : ""
+          }`,
+          warnings.length ? "warning" : "success",
         );
       } catch (error) {
         setMessage(
@@ -316,10 +358,11 @@ async function renderProject(
       doc,
       root,
       details,
-      changeInbox,
+      changeInboxResult.inbox,
       capturedPapers,
       generation,
       navigation,
+      changeInboxResult.warning,
     ),
   );
   content.append(
@@ -380,6 +423,7 @@ async function renderProject(
       "aria-label",
       `Analyze ${source?.title ?? member.sourceID}`,
     );
+    input.dataset.restoreKey = `scope:${member.sourceID}`;
     label.append(
       input,
       element(
@@ -419,6 +463,8 @@ async function renderProject(
       projectQuestion: details.project.researchQuestion,
       scopeLabel,
       recommendedCapabilityIDs: details.project.capabilityPresetIDs,
+      // New artifacts unlock prerequisite-gated panels.
+      onRunSettled: () => void refreshResearchWorkspaceProject(root),
     });
     // The analysis panel sits below the project panels. Bring it into view
     // and move focus there so keyboard and screen-reader users follow.
@@ -527,6 +573,9 @@ async function renderProject(
           ),
         );
         await activate(papers, "Captured PDFs");
+        // New members change the revisions and the member lists. The
+        // re-render keeps the analysis area for the same project.
+        await refreshResearchWorkspaceProject(root);
       }),
     );
   if (details.project.comparisonQuestions?.length) {
@@ -542,6 +591,10 @@ async function renderProject(
       );
   }
   content.append(scope);
+  trackDirtyInputs(root);
+  const surfaceState = sameProject
+    ? captureSurfaceState(root, previousOperations ?? operations)
+    : undefined;
   if (keepOperations) {
     for (const child of Array.from(root.children)) {
       if (child !== operations) child.remove();
@@ -550,6 +603,153 @@ async function renderProject(
   } else {
     root.replaceChildren(content, operations);
   }
+  if (surfaceState) restoreSurfaceState(root, operations, surfaceState);
+}
+
+const dirtyTrackedRoots = new WeakSet<HTMLElement>();
+
+/** Marks text a reader typed, so a panel rebuild can keep it. */
+function trackDirtyInputs(root: HTMLElement) {
+  if (dirtyTrackedRoots.has(root)) return;
+  dirtyTrackedRoots.add(root);
+  // Text fields, selects (a screening decision), and checkboxes (the
+  // analysis scope) all hold unsaved choices.
+  const markDirty = (event: Event) => {
+    const target = event.target as HTMLElement | null;
+    if (
+      target?.tagName === "TEXTAREA" ||
+      target?.tagName === "INPUT" ||
+      target?.tagName === "SELECT"
+    )
+      target.dataset.dirty = "true";
+  };
+  root.addEventListener("input", markDirty);
+  root.addEventListener("change", markDirty);
+}
+
+function isToggle(node: HTMLElement) {
+  const type = (node as HTMLInputElement).type;
+  return node.tagName === "INPUT" && (type === "checkbox" || type === "radio");
+}
+
+interface KeyedControl {
+  node: HTMLElement;
+  key: string;
+  index: number;
+}
+
+/**
+ * Panel controls with a stable key: panel heading, tag, and label, plus
+ * the position among equal keys (one "Record decision" per paper row).
+ */
+function keyedControls(root: HTMLElement, operations: HTMLElement) {
+  const counts = new Map<string, number>();
+  const controls: KeyedControl[] = [];
+  const nodes = Array.from(
+    root.querySelectorAll("button, input, textarea, select, summary"),
+  ) as HTMLElement[];
+  for (const node of nodes) {
+    if (operations.contains(node)) continue;
+    // A source control carries a stable key of source ID and purpose.
+    if (node.dataset.restoreKey) {
+      controls.push({ node, key: `key:${node.dataset.restoreKey}`, index: 0 });
+      continue;
+    }
+    // A checkbox is named by its wrapping label; a select by its aria-label.
+    const label =
+      node.getAttribute("aria-label") ||
+      (node as HTMLInputElement).placeholder ||
+      (isToggle(node)
+        ? node.closest("label")?.textContent?.trim()
+        : node.textContent?.trim()) ||
+      "";
+    if (!label) continue;
+    const heading =
+      node.closest("section")?.querySelector("h3, h2")?.textContent?.trim() ??
+      "";
+    const key = `${heading}|${node.tagName}|${label}`;
+    const index = counts.get(key) ?? 0;
+    counts.set(key, index + 1);
+    controls.push({ node, key, index });
+  }
+  return controls;
+}
+
+function captureSurfaceState(root: HTMLElement, operations: HTMLElement) {
+  const active = root.ownerDocument.activeElement;
+  const controls = keyedControls(root, operations);
+  const focused = controls.find((entry) => entry.node === active);
+  return {
+    focused: focused && { key: focused.key, index: focused.index },
+    focusWasInPanels: Boolean(
+      active && root.contains(active) && !operations.contains(active),
+    ),
+    dirty: controls
+      .filter(
+        (entry) =>
+          entry.node.dataset.dirty === "true" &&
+          (entry.node as HTMLInputElement).type !== "file",
+      )
+      .map((entry) => ({
+        key: entry.key,
+        index: entry.index,
+        toggle: isToggle(entry.node),
+        value: (entry.node as HTMLInputElement).value,
+        checked: Boolean((entry.node as HTMLInputElement).checked),
+      })),
+  };
+}
+
+function restoreSurfaceState(
+  root: HTMLElement,
+  operations: HTMLElement,
+  state: ReturnType<typeof captureSurfaceState>,
+) {
+  const controls = keyedControls(root, operations);
+  const find = (key: string, index: number) =>
+    controls.find((entry) => entry.key === key && entry.index === index)?.node;
+  // Values are restored without events, so no change handler (such as an
+  // autosave) runs for a choice the reader has not confirmed.
+  for (const entry of state.dirty) {
+    const node = find(entry.key, entry.index) as
+      | HTMLInputElement
+      | HTMLSelectElement
+      | undefined;
+    if (!node) continue;
+    if (entry.toggle) {
+      if (isToggle(node) && !(node as HTMLInputElement).disabled)
+        (node as HTMLInputElement).checked = entry.checked;
+    } else if (node.tagName === "SELECT") {
+      const select = node as HTMLSelectElement;
+      if (
+        (Array.from(select.options) as HTMLOptionElement[]).some(
+          (option) => option.value === entry.value,
+        )
+      ) {
+        select.value = entry.value;
+        // Filters render their result in the change handler, which has no
+        // side effects, so it runs again for the restored value.
+        const EventClass = root.ownerDocument.defaultView?.Event;
+        if (select.dataset.restoreRefresh === "true" && EventClass)
+          select.dispatchEvent(new EventClass("change"));
+      }
+    } else if (node.value !== entry.value) {
+      node.value = entry.value;
+    }
+    node.dataset.dirty = "true";
+  }
+  if (!state.focusWasInPanels) return;
+  const target = state.focused
+    ? (find(state.focused.key, state.focused.index) as
+        | HTMLButtonElement
+        | undefined)
+    : undefined;
+  if (target && !target.disabled) {
+    target.focus();
+    return;
+  }
+  // The control is gone (a row was resolved), so focus the status line.
+  root.querySelector<HTMLElement>("[data-project-message]")?.focus();
 }
 
 function renderHomeCards(

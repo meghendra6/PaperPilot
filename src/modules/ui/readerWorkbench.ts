@@ -74,6 +74,25 @@ export function getWorkbenchBlockForItem(itemID: number) {
   });
 }
 
+/**
+ * Card "Find prior work" buttons follow the same block as the request
+ * buttons, so a click on a busy paper cannot replace the typed concern.
+ */
+function applyCardPriorWorkAvailability(
+  cardsElement: HTMLElement,
+  itemID: number,
+) {
+  const block = getWorkbenchBlockForItem(itemID);
+  for (const button of Array.from(
+    cardsElement.querySelectorAll?.("button[data-card-prior-work]") ?? [],
+  ) as HTMLButtonElement[]) {
+    const unavailable = button.dataset.unavailableReason;
+    const reason = unavailable || (block.blocked ? block.reason : undefined);
+    button.disabled = Boolean(reason);
+    button.title = reason ?? "";
+  }
+}
+
 function applyWorkbenchRequestAvailability(
   buttons: HTMLButtonElement[],
   statusElement: HTMLElement,
@@ -109,6 +128,7 @@ export function renderWorkbenchBusyState(
     elements.statusElement,
     itemID,
   );
+  applyCardPriorWorkAvailability(elements.cardsElement, itemID);
 }
 
 export function renderPaperArtifactState(
@@ -227,11 +247,19 @@ export function buildPaperArtifactCardElement(
         const findPriorWork = doc.createElement("button");
         findPriorWork.className = "pp-btn pp-btn--ghost";
         findPriorWork.textContent = "Find prior work";
+        findPriorWork.dataset.cardPriorWork = "true";
         if (options.discoveryUnavailableReason) {
-          findPriorWork.disabled = true;
-          findPriorWork.title = options.discoveryUnavailableReason;
+          findPriorWork.dataset.unavailableReason =
+            options.discoveryUnavailableReason;
         }
+        const block = getWorkbenchBlockForItem(itemID);
+        const reason =
+          options.discoveryUnavailableReason ??
+          (block.blocked ? block.reason : undefined);
+        findPriorWork.disabled = Boolean(reason);
+        if (reason) findPriorWork.title = reason;
         findPriorWork.addEventListener("click", () => {
+          if (getWorkbenchBlockForItem(itemID).blocked) return;
           addon.data.pendingDiscoveryConcerns?.set(itemID, {
             sessionId: sessionStore.getOrCreate(itemID, getModeForItem(itemID))
               .sessionId,

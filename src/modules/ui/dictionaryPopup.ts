@@ -282,18 +282,26 @@ export function buildDictionaryButton(doc: Document, text?: string) {
   button.title = dictionaryString("dictionary-lookup-hint");
   button.setAttribute("aria-haspopup", "dialog");
   button.addEventListener("click", () => {
-    try {
-      openDictionaryPopup(lookup);
-    } catch (error) {
-      Zotero.logError(
-        error instanceof Error ? error : new Error(String(error)),
-      );
-      Zotero.alert(
-        Zotero.getMainWindow(),
-        dictionaryString("reader-action-dictionary"),
-        dictionaryString("dictionary-error"),
-      );
-    }
+    const openSafely = () => {
+      try {
+        openDictionaryPopup(lookup);
+      } catch (error) {
+        Zotero.logError(
+          error instanceof Error ? error : new Error(String(error)),
+        );
+        Zotero.alert(
+          Zotero.getMainWindow(),
+          dictionaryString("reader-action-dictionary"),
+          dictionaryString("dictionary-error"),
+        );
+      }
+    };
+    // Open from a fresh main-thread task. Opening a chrome window inside a
+    // reader-iframe event crashed Zotero 10.0.6 for the figure window.
+    const threads = (globalThis as { Services?: any }).Services?.tm;
+    if (typeof threads?.dispatchToMainThread === "function")
+      threads.dispatchToMainThread(openSafely);
+    else setTimeout(openSafely, 0);
   });
   return button;
 }

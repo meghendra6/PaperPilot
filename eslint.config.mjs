@@ -32,6 +32,32 @@ export default tseslint.config(
     },
   },
   {
+    // Zotero's add-on sandbox does not define these globals, while Node and
+    // the test runner do, so only a static check catches a bare use.
+    // Type-only references stay allowed; only value uses are reported.
+    files: ["src/**/*.ts"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "NewExpression[callee.name='AbortController']",
+          message:
+            "AbortController is not defined in the Zotero add-on sandbox. Create it from a window (new win.AbortController()).",
+        },
+        {
+          selector: "NewExpression[callee.name='DOMException']",
+          message:
+            "DOMException is not defined in the Zotero add-on sandbox. Throw Object.assign(new Error(message), { name: 'AbortError' }).",
+        },
+        {
+          selector: "CallExpression[callee.name='structuredClone']",
+          message:
+            "structuredClone is not defined in the Zotero add-on sandbox. Copy the data explicitly or through JSON.",
+        },
+      ],
+    },
+  },
+  {
     files: ["scripts/**/*.mjs"],
     languageOptions: {
       globals: {

@@ -14,6 +14,8 @@ export interface PDFPageText {
   pageIndex: number;
   pageLabel: string;
   spans: PDFTextSpan[];
+  /** Page view height in PDF units, when the extractor knows it. */
+  height?: number;
 }
 
 export interface MatchedHighlight {

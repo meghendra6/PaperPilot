@@ -1,3 +1,4 @@
+import { openPublicURL } from "./message/publicLinks";
 import { getModeForItem } from "./ai/modeStore";
 import {
   claimWorkspaceRunReservation,
@@ -1064,7 +1065,8 @@ export async function openRecommendedPaper(
     return;
   }
 
-  Zotero.launchURL(target.url);
+  // Model- and provider-supplied links get the same public-host check as chat.
+  openPublicURL(target.url);
 }
 
 function buildCollectionOptionLabel(collection: any) {

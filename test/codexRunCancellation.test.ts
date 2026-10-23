@@ -182,3 +182,47 @@ test("stopCodexRunSilently clears terminal state without signaling its stale pid
     (globalThis as { Zotero?: unknown }).Zotero = previousZotero;
   }
 });
+
+test("stopCodexRunSilently succeeds during preparation after an earlier run on the paper", async () => {
+  const previousAddon = (globalThis as { addon?: unknown }).addon;
+  const previousZotero = (globalThis as { Zotero?: unknown }).Zotero;
+  let execCalled = false;
+  (globalThis as { addon?: unknown }).addon = {
+    data: {
+      codexRunStates: new Map([
+        [
+          79,
+          {
+            workspacePath: "/tmp/paperpilot/79",
+            model: "gpt-5.6-sol",
+            loginState: "ready",
+            runStatus: "completed",
+            latestEventType: "completed",
+          },
+        ],
+      ]),
+      codexRunPollers: new Map(),
+    },
+  };
+  (globalThis as { Zotero?: unknown }).Zotero = {
+    Utilities: {
+      Internal: {
+        exec: async () => {
+          execCalled = true;
+        },
+      },
+    },
+  };
+
+  try {
+    // The next run on the paper registers its token before any process exists.
+    const runToken = markReaderRunStarted(79, "codex_cli");
+    await stopCodexRunSilently({ itemID: 79 });
+    assert.equal(execCalled, false);
+    assert.equal(isReaderRunTokenActive(79, runToken), false);
+  } finally {
+    clearCodexRunStateForItem(79);
+    (globalThis as { addon?: unknown }).addon = previousAddon;
+    (globalThis as { Zotero?: unknown }).Zotero = previousZotero;
+  }
+});

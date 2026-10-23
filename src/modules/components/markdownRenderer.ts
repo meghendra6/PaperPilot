@@ -1,5 +1,5 @@
 import * as katex from "katex";
-import { safePublicURL } from "../message/publicLinks";
+import { openPublicURL, safePublicURL } from "../message/publicLinks";
 
 function escapeHtml(value: string) {
   return value
@@ -23,6 +23,33 @@ function renderKatex(tex: string, displayMode: boolean): string {
   }
 }
 
+// RFC 3986 characters only: CJK or Hangul text written right after a URL,
+// quotes, and markup must not join the link target.
+const BARE_URL_PATTERN = /https?:\/\/[A-Za-z0-9\-._~:/?#[\]@!$&'()*+,;=%]+/g;
+
+/**
+ * Drops trailing punctuation and unbalanced closing brackets. Bracket counts
+ * are taken once and updated while trimming, so a URL followed by thousands
+ * of brackets stays linear.
+ */
+function trimBareURL(url: string) {
+  const counts = { "(": 0, ")": 0, "[": 0, "]": 0 };
+  for (const character of url) {
+    if (character in counts) counts[character as keyof typeof counts] += 1;
+  }
+  let end = url.length;
+  while (end > 0) {
+    const character = url[end - 1];
+    const unbalanced =
+      (character === ")" && counts[")"] > counts["("]) ||
+      (character === "]" && counts["]"] > counts["["]);
+    if (!unbalanced && !/[.,;:!?*_'"]/.test(character)) break;
+    if (character in counts) counts[character as keyof typeof counts] -= 1;
+    end -= 1;
+  }
+  return url.slice(0, end);
+}
+
 export function renderInlineMarkdown(value: string) {
   const safeValue = Array.from(value)
     .filter((character) => {
@@ -41,12 +68,25 @@ export function renderInlineMarkdown(value: string) {
   const mathPlaceholders: string[] = [];
   let placeholderPrefix = "PP_MATH_PLACEHOLDER_";
   while (safeValue.includes(placeholderPrefix)) placeholderPrefix += "_";
-  // Extract \(...\) inline math first
-  let withMathExtracted = safeValue.replace(/\\\((.+?)\\\)/g, (_match, tex) => {
-    const placeholder = `${placeholderPrefix}${mathPlaceholders.length}__`;
-    mathPlaceholders.push(renderKatex(tex, false));
-    return placeholder;
+  const linkPlaceholders: string[] = [];
+  const codePlaceholders: string[] = [];
+  const linkPrefix = `${placeholderPrefix}LINK_`;
+  const codePrefix = `${placeholderPrefix}CODE_`;
+  // Code spans come first so math syntax inside backticks stays literal.
+  let withMathExtracted = safeValue.replace(/`([^`]+)`/g, (_match, code) => {
+    const token = `${codePrefix}${codePlaceholders.length}__`;
+    codePlaceholders.push(`<code>${escapeHtml(code)}</code>`);
+    return token;
   });
+  // Extract \(...\) inline math first
+  withMathExtracted = withMathExtracted.replace(
+    /\\\((.+?)\\\)/g,
+    (_match, tex) => {
+      const placeholder = `${placeholderPrefix}${mathPlaceholders.length}__`;
+      mathPlaceholders.push(renderKatex(tex, false));
+      return placeholder;
+    },
+  );
   // Then extract $...$ inline math
   withMathExtracted = withMathExtracted.replace(
     /(?<!\$)\$(?![\s$])([^$\n]*?\S)\$(?![$\d])/g,
@@ -57,18 +97,6 @@ export function renderInlineMarkdown(value: string) {
     },
   );
 
-  const linkPlaceholders: string[] = [];
-  const codePlaceholders: string[] = [];
-  const linkPrefix = `${placeholderPrefix}LINK_`;
-  const codePrefix = `${placeholderPrefix}CODE_`;
-  withMathExtracted = withMathExtracted.replace(
-    /`([^`]+)`/g,
-    (_match, code) => {
-      const token = `${codePrefix}${codePlaceholders.length}__`;
-      codePlaceholders.push(`<code>${escapeHtml(code)}</code>`);
-      return token;
-    },
-  );
   const link = (label: string, value: string) => {
     const url = safePublicURL(value);
     if (!url) return label;
@@ -78,14 +106,22 @@ export function renderInlineMarkdown(value: string) {
     );
     return token;
   };
+  // A math or code placeholder restored inside href would put markup into
+  // an attribute, which the XHTML pane's parser rejects.
   withMathExtracted = withMathExtracted
-    .replace(/\[([^\]]+)\]\(([^\s)]+)\)/g, (_match, label, url) =>
-      link(label, url),
+    .replace(
+      /\[([^\]]+)\]\(((?:[^\s()]|\([^\s()]*\))+)\)/g,
+      (match, label, url) =>
+        url.includes(placeholderPrefix) ? match : link(label, url),
     )
-    .replace(/<(https?:\/\/[^<>\s]+)>/g, (_match, url) => link(url, url))
-    .replace(/https?:\/\/[^\s<>]+/g, (url) => {
-      const trimmed = url.replace(/[.,;!?]+$/, "");
-      return link(trimmed, trimmed) + url.slice(trimmed.length);
+    .replace(/<(https?:\/\/[^<>\s]+)>/g, (match, url) =>
+      url.includes(placeholderPrefix) ? match : link(url, url),
+    )
+    .replace(BARE_URL_PATTERN, (match) => {
+      const cut = match.indexOf(placeholderPrefix);
+      const candidate = cut >= 0 ? match.slice(0, cut) : match;
+      const trimmed = trimBareURL(candidate);
+      return link(trimmed, trimmed) + match.slice(trimmed.length);
     });
   // 2. Escape HTML on the non-math content
   let rendered = escapeHtml(withMathExtracted);
@@ -112,27 +148,57 @@ export function renderInlineMarkdown(value: string) {
   return rendered;
 }
 
+/**
+ * The pane is an XHTML document, where innerHTML throws on markup that is not
+ * well-formed XML. Model output must never throw out of the renderer, so a
+ * failure falls back to the source text.
+ */
+function setRenderedHTML(element: Element, html: string, sourceText: string) {
+  try {
+    element.innerHTML = html;
+  } catch {
+    element.textContent = sourceText;
+  }
+}
+
 function appendHtmlBlock(
   doc: Document,
   fragment: DocumentFragment,
   tagName: string,
   html: string,
+  sourceText = "",
 ) {
   const element = doc.createElement(tagName);
-  element.innerHTML = html;
+  setRenderedHTML(element, html, sourceText);
   fragment.appendChild(element);
+}
+
+interface ListItem {
+  text: string;
+  children: string[];
 }
 
 function appendList(
   doc: Document,
   fragment: DocumentFragment,
-  items: string[],
+  items: ListItem[],
   ordered: boolean,
+  start = 1,
 ) {
   const list = doc.createElement(ordered ? "ol" : "ul");
+  if (ordered && start !== 1) list.setAttribute("start", String(start));
   for (const item of items) {
     const li = doc.createElement("li");
-    li.innerHTML = renderInlineMarkdown(item);
+    setRenderedHTML(li, renderInlineMarkdown(item.text), item.text);
+    if (item.children.length) {
+      const nested = doc.createElement("ul");
+      for (const child of item.children) {
+        const childItem = doc.createElement("li");
+        setRenderedHTML(childItem, renderInlineMarkdown(child), child);
+        nested.appendChild(childItem);
+      }
+      li.appendChild(nested);
+    }
     list.appendChild(li);
   }
   fragment.appendChild(list);
@@ -153,7 +219,31 @@ function isFenceCloser(
   );
 }
 
+/**
+ * Every rendered public link opens externally on an explicit click. The pane
+ * is a privileged document, so Gecko's default link activation must never run,
+ * whichever view shows the Markdown.
+ */
+function guardPublicLinks(fragment: DocumentFragment, doc: Document) {
+  for (const node of Array.from(
+    fragment.querySelectorAll?.("a.pp-public-source") ?? [],
+  )) {
+    const anchor = node as HTMLAnchorElement;
+    anchor.addEventListener("click", (event) => {
+      event.preventDefault();
+      const url = anchor.getAttribute("href");
+      if (url) openPublicURL(url, doc);
+    });
+  }
+}
+
 export function renderMarkdownFragment(text: string, doc: Document) {
+  const fragment = buildMarkdownFragment(text, doc);
+  guardPublicLinks(fragment, doc);
+  return fragment;
+}
+
+function buildMarkdownFragment(text: string, doc: Document) {
   const fragment = doc.createDocumentFragment();
   const lines = text.replace(/\r\n/g, "\n").split("\n");
   let index = 0;
@@ -184,7 +274,11 @@ export function renderMarkdownFragment(text: string, doc: Document) {
         index += 1;
         const mathDiv = doc.createElement("div");
         mathDiv.className = "pp-math-block";
-        mathDiv.innerHTML = renderKatex(mathLines.join("\n"), true);
+        setRenderedHTML(
+          mathDiv,
+          renderKatex(mathLines.join("\n"), true),
+          mathLines.join("\n"),
+        );
         fragment.appendChild(mathDiv);
         continue;
       }
@@ -196,7 +290,11 @@ export function renderMarkdownFragment(text: string, doc: Document) {
     if (bracketMath) {
       const mathDiv = doc.createElement("div");
       mathDiv.className = "pp-math-block";
-      mathDiv.innerHTML = renderKatex(bracketMath[1].trim(), true);
+      setRenderedHTML(
+        mathDiv,
+        renderKatex(bracketMath[1].trim(), true),
+        trimmed,
+      );
       fragment.appendChild(mathDiv);
       index += 1;
       continue;
@@ -209,7 +307,7 @@ export function renderMarkdownFragment(text: string, doc: Document) {
         const tex = trimmed.slice(2, -2).trim();
         const mathDiv = doc.createElement("div");
         mathDiv.className = "pp-math-block";
-        mathDiv.innerHTML = renderKatex(tex, true);
+        setRenderedHTML(mathDiv, renderKatex(tex, true), trimmed);
         fragment.appendChild(mathDiv);
         index += 1;
         continue;
@@ -219,19 +317,29 @@ export function renderMarkdownFragment(text: string, doc: Document) {
     if (trimmed === "$$") {
       // Multi-line display math
       const mathLines: string[] = [];
+      const mathStart = index;
       index += 1;
       while (index < lines.length && !lines[index].trim().startsWith("$$")) {
         mathLines.push(lines[index]);
         index += 1;
       }
       if (index < lines.length) {
-        index += 1;
+        // Text after the closing $$ stays visible as the next block.
+        const rest = lines[index].trim().slice(2).trim();
+        if (rest) lines[index] = rest;
+        else index += 1;
+        const mathDiv = doc.createElement("div");
+        mathDiv.className = "pp-math-block";
+        setRenderedHTML(
+          mathDiv,
+          renderKatex(mathLines.join("\n"), true),
+          mathLines.join("\n"),
+        );
+        fragment.appendChild(mathDiv);
+        continue;
       }
-      const mathDiv = doc.createElement("div");
-      mathDiv.className = "pp-math-block";
-      mathDiv.innerHTML = renderKatex(mathLines.join("\n"), true);
-      fragment.appendChild(mathDiv);
-      continue;
+      // Unclosed $$ (for example a cut-off answer): show it as text.
+      index = mathStart;
     }
 
     const fence = parseFenceOpener(trimmed);
@@ -260,6 +368,7 @@ export function renderMarkdownFragment(text: string, doc: Document) {
         fragment,
         `h${heading[1].length}`,
         renderInlineMarkdown(heading[2]),
+        heading[2],
       );
       index += 1;
       continue;
@@ -276,6 +385,7 @@ export function renderMarkdownFragment(text: string, doc: Document) {
         fragment,
         "blockquote",
         quoteLines.map(renderInlineMarkdown).join("<br />"),
+        quoteLines.join("\n"),
       );
       continue;
     }
@@ -288,31 +398,52 @@ export function renderMarkdownFragment(text: string, doc: Document) {
 
     const unordered = trimmed.match(/^[-*+]\s+(.*)$/);
     if (unordered) {
-      const items: string[] = [];
+      const items: ListItem[] = [];
       while (index < lines.length) {
         const match = lines[index].trim().match(/^[-*+]\s+(.*)$/);
         if (!match) {
           break;
         }
-        items.push(match[1]);
+        items.push({ text: match[1], children: [] });
         index += 1;
       }
       appendList(doc, fragment, items, false);
       continue;
     }
 
-    const ordered = trimmed.match(/^\d+\.\s+(.*)$/);
+    const ordered = trimmed.match(/^(\d+)\.\s+(.*)$/);
     if (ordered) {
-      const items: string[] = [];
+      const items: ListItem[] = [];
       while (index < lines.length) {
-        const match = lines[index].trim().match(/^\d+\.\s+(.*)$/);
-        if (!match) {
+        const current = lines[index];
+        const match = current.trim().match(/^\d+\.\s+(.*)$/);
+        const last = items.at(-1);
+        if (match) {
+          items.push({ text: match[1], children: [] });
+        } else if (last && /^\s{2,}[-*+]\s+/.test(current)) {
+          // An indented bullet belongs to the numbered item above it.
+          last.children.push(current.trim().replace(/^[-*+]\s+/, ""));
+        } else if (last && /^\s{2,}\S/.test(current)) {
+          last.text = `${last.text} ${current.trim()}`;
+        } else if (!current.trim()) {
+          // A blank line ends the list unless another item or an indented
+          // continuation follows it.
+          let next = index + 1;
+          while (next < lines.length && !lines[next].trim()) next += 1;
+          if (
+            next >= lines.length ||
+            !(
+              /^\d+\.\s+/.test(lines[next].trim()) ||
+              /^\s{2,}\S/.test(lines[next])
+            )
+          )
+            break;
+        } else {
           break;
         }
-        items.push(match[1]);
         index += 1;
       }
-      appendList(doc, fragment, items, true);
+      appendList(doc, fragment, items, true, Number(ordered[1]));
       continue;
     }
 
@@ -361,6 +492,7 @@ export function renderMarkdownFragment(text: string, doc: Document) {
       fragment,
       "p",
       paragraphLines.map(renderInlineMarkdown).join("<br />"),
+      paragraphLines.join("\n"),
     );
   }
 
@@ -368,10 +500,37 @@ export function renderMarkdownFragment(text: string, doc: Document) {
 }
 
 function parseTableCells(row: string): string[] {
-  return row
-    .slice(1, -1)
-    .split("|")
-    .map((cell) => cell.trim());
+  const body = row.slice(1, -1);
+  const cells: string[] = [];
+  let cell = "";
+  let inCode = false;
+  let inMath = false;
+  for (let index = 0; index < body.length; index++) {
+    const character = body[index];
+    if (character === "\\" && body[index + 1] === "|") {
+      // An escaped pipe is a literal; math keeps it for KaTeX (a norm).
+      cell += inMath ? "\\|" : "|";
+      index += 1;
+      continue;
+    }
+    if (character === "`" && !inMath) inCode = !inCode;
+    else if (
+      character === "$" &&
+      !inCode &&
+      (inMath ||
+        (/\S/.test(body[index + 1] ?? "") &&
+          body.indexOf("$", index + 1) > index))
+    )
+      inMath = !inMath;
+    if (character === "|" && !inCode && !inMath) {
+      cells.push(cell.trim());
+      cell = "";
+      continue;
+    }
+    cell += character;
+  }
+  cells.push(cell.trim());
+  return cells;
 }
 
 function isSeparatorRow(row: string): boolean {
@@ -395,7 +554,7 @@ function appendTable(
     const tr = doc.createElement("tr");
     for (const cell of headerCells) {
       const th = doc.createElement("th");
-      th.innerHTML = renderInlineMarkdown(cell);
+      setRenderedHTML(th, renderInlineMarkdown(cell), cell);
       tr.appendChild(th);
     }
     thead.appendChild(tr);
@@ -410,7 +569,7 @@ function appendTable(
     const tr = doc.createElement("tr");
     for (const cell of cells) {
       const td = doc.createElement("td");
-      td.innerHTML = renderInlineMarkdown(cell);
+      setRenderedHTML(td, renderInlineMarkdown(cell), cell);
       tr.appendChild(td);
     }
     tbody.appendChild(tr);

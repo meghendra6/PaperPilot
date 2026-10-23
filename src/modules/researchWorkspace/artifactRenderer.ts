@@ -16,6 +16,7 @@ import {
   ResearchWorkspaceSynthesisView,
   UnknownRecord,
   createResearchWorkspaceArtifactView,
+  createResearchWorkspacePublicPayload,
   evidenceViews,
   humanize,
   isEvidence,
@@ -45,16 +46,29 @@ function renderEvidence(
   options: ResearchWorkspaceArtifactRendererOptions,
 ) {
   const group = element(doc, "div", "pprw-render-evidence");
+  const sourceOf = (item: ResearchWorkspaceEvidenceView) =>
+    typeof item.reference.sourceID === "string"
+      ? item.reference.sourceID
+      : undefined;
+  // Chips from several papers name their paper; one paper needs no label.
+  const multiSource = new Set(evidence.map(sourceOf).filter(Boolean)).size > 1;
   for (const item of evidence) {
     const verified = item.status === "verified";
     if (verified && options.onOpenEvidence) {
+      const sourceID = sourceOf(item);
+      const title = sourceID ? options.sourceTitle?.(sourceID) : undefined;
+      const shortTitle =
+        title && title.length > 28 ? `${title.slice(0, 27)}…` : title;
       const control = element(
         doc,
         "button",
         "pprw-render-evidence-link",
-        `Verified · ${item.locator}`,
+        `Verified · ${item.locator}${multiSource && shortTitle ? ` · ${shortTitle}` : ""}`,
       );
       control.type = "button";
+      const name = `Open verified passage in the PDF: ${item.locator}${title ? `, ${title}` : ""}`;
+      control.setAttribute("aria-label", name);
+      control.title = name;
       control.addEventListener("click", () => {
         void options.onOpenEvidence?.(item.reference);
       });
@@ -369,7 +383,7 @@ function claimLedgerMarkdown(
       "",
       `- ${localizedClaimKind(claim.claimKind, labels)}`,
       `- ${localizedClaimStatus(claim.reviewStatus, labels)}`,
-      `- ${labels.evidenceSummary(claim.verifiedSupport, claim.evidenceTotal)}`,
+      `- ${labels.evidenceSummary(claim.verifiedEvidence, claim.evidenceTotal)}`,
     );
     appendEvidence(labels.supportingEvidence, claim.support);
     if (claim.contradictions.length) {
@@ -419,7 +433,10 @@ function renderClaimEvidenceGroup(
     );
     row.append(header);
     if (item.quote) {
-      row.append(element(doc, "blockquote", "pprw-claim-quote", item.quote));
+      const quote = element(doc, "blockquote", "pprw-claim-quote", item.quote);
+      // The quote keeps the paper's own language, not the UI label language.
+      quote.setAttribute("lang", "");
+      row.append(quote);
     } else if (!item.detail) {
       row.append(element(doc, "p", "pprw-claim-no-quote", labels.noQuote));
     }
@@ -585,7 +602,7 @@ function renderClaimLedger(
         doc,
         "p",
         `pprw-claim-meta pprw-claim-meta--${claim.reviewStatus}`,
-        `${localizedClaimKind(claim.claimKind, labels)} · ${localizedClaimStatus(claim.reviewStatus, labels)} · ${labels.evidenceSummary(claim.verifiedSupport, claim.evidenceTotal)}`,
+        `${localizedClaimKind(claim.claimKind, labels)} · ${localizedClaimStatus(claim.reviewStatus, labels)} · ${labels.evidenceSummary(claim.verifiedEvidence, claim.evidenceTotal)}`,
       ),
     );
     summary.append(
@@ -776,8 +793,12 @@ function renderReproducibility(
     metric(doc, "Partial", String(view.availability.partial)),
     metric(doc, "Missing", String(view.availability.missing)),
     metric(doc, "Blockers", String(view.blockers.length)),
-    metric(doc, "Estimated effort", humanize(view.estimatedEffort)),
   );
+  if (view.estimatedEffort && view.estimatedEffort !== "unknown") {
+    metrics.append(
+      metric(doc, "Estimated effort", humanize(view.estimatedEffort)),
+    );
+  }
   root.append(
     metrics,
     element(doc, "p", "pprw-synthesis-answer", view.summary),
@@ -1229,7 +1250,11 @@ function renderGraph(
       badge(
         doc,
         humanize(edge.provenance),
-        edge.provenance === "inferred" ? "warning" : "success",
+        ["local-evidence", "verified", "bibliographic"].includes(
+          edge.provenance,
+        )
+          ? "success"
+          : "warning",
       ),
     );
     if (edge.confidence !== undefined) {
@@ -2166,13 +2191,18 @@ export function renderResearchWorkspaceArtifactEnvelope(
     root.append(progress);
   }
   root.append(
-    renderResearchWorkspaceArtifactValue(doc, artifact.payload, {
-      ...options,
-      artifactType: artifact.type,
-      failedSourceIDs: artifact.checkpoint?.failedUnits.map(
-        (unit) => unit.unitID,
-      ),
-    }),
+    // The Artifacts list shows the public part only (no hidden answer key).
+    renderResearchWorkspaceArtifactValue(
+      doc,
+      createResearchWorkspacePublicPayload(artifact.payload, artifact.type),
+      {
+        ...options,
+        artifactType: artifact.type,
+        failedSourceIDs: artifact.checkpoint?.failedUnits.map(
+          (unit) => unit.unitID,
+        ),
+      },
+    ),
   );
   return root;
 }

@@ -1,4 +1,17 @@
 import * as profiles_1 from "./profiles";
+
+/**
+ * Whole-word or whole-phrase match (a plural "s" is allowed), so "npu"
+ * does not match "input" and "serving" does not match "preserving".
+ */
+function containsSignal(normalized: string, signal: string) {
+  const escaped = signal.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(
+    `(?<![\\p{L}\\p{N}])${escaped}(?:e?s)?(?![\\p{L}\\p{N}])`,
+    "u",
+  ).test(normalized);
+}
+
 function detectCriticalReadProfile(text: string) {
   const normalized = String(text || "").toLowerCase();
   const scores: Record<string, number> = {};
@@ -10,7 +23,7 @@ function detectCriticalReadProfile(text: string) {
       continue;
     }
     const matched = profile.signals.filter((signal) =>
-      normalized.includes(signal.toLowerCase()),
+      containsSignal(normalized, signal),
     );
     hits[profile.id] = matched;
     scores[profile.id] = matched.reduce(

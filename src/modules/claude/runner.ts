@@ -23,7 +23,7 @@ import {
   compatibleNativeOutputSchema,
   type StructuredOutputSchema,
 } from "../ai/structuredOutput";
-import { shellEscape } from "../codex/shell";
+import { exitCodeWriter, shellEscape, shellExportLine } from "../codex/shell";
 import { buildClaudeWorkspacePrompt } from "../context/promptPreviewBuilder";
 import {
   buildRunWorkspacePath,
@@ -33,6 +33,7 @@ import {
 import {
   stageWorkspaceImageInput,
   writeOwnedWorkspaceInputs,
+  writeWorkspaceTextFile,
   type WorkspaceSupplementalFiles,
 } from "../workspace/supplementalFiles";
 
@@ -88,7 +89,7 @@ export function buildClaudeCommand(params: {
   const env = buildCliCommandEnvironment(params.executablePath);
   const environmentLines = Object.entries(env)
     .filter(([, value]) => Boolean(value))
-    .map(([key, value]) => `export ${key}=${shellEscape(String(value))}`);
+    .map(([key, value]) => shellExportLine(key, String(value)));
 
   const outputDir = params.outputPath.replace(/\/[^/]+$/, "");
   const resumePart =
@@ -111,7 +112,7 @@ export function buildClaudeCommand(params: {
     `(` +
       `cd ${shellEscape(params.workspacePath)} && ` +
       `cat ${shellEscape(params.promptPath)} | ${shellEscape(params.executablePath)} -p --output-format ${params.eventOutput ? "stream-json --verbose --include-partial-messages" : "text"} --model ${shellEscape(params.model)} ${effortPart} ${resumePart} ${outputSchemaPart} --permission-mode ${shellEscape(permissionMode)} --setting-sources project,local > ${shellEscape(params.outputPath)} 2> ${shellEscape(params.stderrPath)}; ` +
-      `printf '%s' $? > ${shellEscape(params.exitCodePath)}` +
+      exitCodeWriter(params.exitCodePath) +
       `) & echo $! > ${shellEscape(params.pidPath)}`,
   ].join(" && ");
 }
@@ -200,7 +201,11 @@ export async function startClaudeRunForQuestion(params: {
     sourceIDs: prepared.sourceIDs,
     artifactIDs: prepared.artifactIDs,
   });
-  await Zotero.File.putContentsAsync(promptPath, claudePrompt, "utf-8");
+  await writeWorkspaceTextFile(
+    workspacePath,
+    "claude-prompt.txt",
+    claudePrompt,
+  );
   // Claude Code has no image flag. The prompt names this workspace copy, and
   // the read-only analysis profile can open it with its file-reading tool.
   if (params.imagePath && !params.prebuiltInput)
@@ -229,7 +234,15 @@ export async function startClaudeRunForQuestion(params: {
       ? settings.reasoningEffort
       : undefined;
 
-  const eventOutput = await supportsClaudeEventOutput(executablePath);
+  // --include-partial-messages exists only with stream-json output. Some CLI
+  // releases omit --verbose from --help, although stream-json in print mode
+  // still requires it, so the command always passes it.
+  const eventOutput = await cliSupportsFlag({
+    executablePath,
+    helpArgs: ["--help"],
+    flag: "--include-partial-messages",
+    environment: buildCliCommandEnvironment(executablePath),
+  });
   const script = buildClaudeCommand({
     eventOutput,
     promptPath,
@@ -308,28 +321,4 @@ export async function readClaudeRunProgress(paths: {
     completed: exitCodeText === undefined || exitCode.length > 0,
     exitCode,
   };
-}
-
-const eventCapabilityCache = new Map<string, boolean>();
-async function supportsClaudeEventOutput(executablePath: string) {
-  const cached = eventCapabilityCache.get(executablePath);
-  if (cached !== undefined) return cached;
-  try {
-    const internal = Zotero.Utilities?.Internal;
-    if (typeof internal?.subprocess !== "function") return false;
-    const help = String(
-      await internal.subprocess("/bin/zsh", [
-        "-lc",
-        `${shellEscape(executablePath)} --help 2>&1`,
-      ]),
-    );
-    const supported =
-      help.includes("stream-json") &&
-      help.includes("--include-partial-messages") &&
-      help.includes("--verbose");
-    if (supported) eventCapabilityCache.set(executablePath, true);
-    return supported;
-  } catch {
-    return false;
-  }
 }

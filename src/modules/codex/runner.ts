@@ -29,6 +29,7 @@ import {
 import {
   stageWorkspaceImageInput,
   writeOwnedWorkspaceInputs,
+  writeWorkspaceTextFile,
   type WorkspaceSupplementalFiles,
 } from "../workspace/supplementalFiles";
 import {
@@ -193,7 +194,7 @@ export async function startCodexRunForQuestion(params: {
     sourceIDs: prepared.sourceIDs,
     artifactIDs: prepared.artifactIDs,
   });
-  await Zotero.File.putContentsAsync(promptPath, codexPrompt, "utf-8");
+  await writeWorkspaceTextFile(workspacePath, "prompt.txt", codexPrompt);
   if (!params.prebuiltInput)
     await Zotero.File.createDirectoryIfMissingAsync(`${workspacePath}/figures`);
   // The manifest already owns this path, so cleanup removes the copy.

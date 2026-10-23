@@ -53,9 +53,18 @@ class FakeElement {
       this.className = existing.join(" ");
     },
   };
+  attributes = new Map<string, string>();
   private _textContent = "";
   private _innerHTML = "";
   private listeners = new Map<string, Array<() => unknown>>();
+
+  setAttribute(name: string, value: string) {
+    this.attributes.set(name, value);
+  }
+
+  removeAttribute(name: string) {
+    this.attributes.delete(name);
+  }
 
   constructor(tagName = "div", ownerDocument = new FakeDocument()) {
     this.tagName = tagName;
@@ -241,6 +250,21 @@ test("setMessageContent preserves assistant markdown on updates", () => {
     assert.equal(fake.children[0]?.tagName, "h1");
     assert.equal(fake.children[1]?.tagName, "p");
     assert.match(fake.children[1]?.innerHTML, /<strong>bold<\/strong>/);
+  });
+});
+
+test("a streaming answer stays busy until its final update", () => {
+  withFakeDocument(() => {
+    const message = new FakeElement() as unknown as HTMLElement;
+    const fake = message as unknown as FakeElement;
+    setMessageContent(message, "Partial answer", "ai", { streaming: true });
+    assert.equal(fake.attributes.get("aria-busy"), "true");
+    setMessageContent(message, "Partial answer, longer", "ai", {
+      streaming: true,
+    });
+    assert.equal(fake.attributes.get("aria-busy"), "true");
+    setMessageContent(message, "Final answer.", "ai");
+    assert.equal(fake.attributes.has("aria-busy"), false);
   });
 });
 

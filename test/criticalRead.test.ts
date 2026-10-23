@@ -76,6 +76,32 @@ test("revising an earlier Critical Read step invalidates only dependent work", (
   assert.equal(revised.reportMarkdown, undefined);
 });
 
+test("a revised step reads only the completed steps before it", () => {
+  const completed = {
+    ...buildInitialCriticalReadState(),
+    phase: "complete" as const,
+    currentStep: 7 as const,
+    steps: buildInitialCriticalReadState().steps.map((step) => ({
+      ...step,
+      status: "complete" as const,
+      output: { ...output, summary: `STEP-${step.id}-OUTPUT` },
+    })),
+  };
+  const revised = reviseCriticalReadStep(completed, 1);
+  const scanPrompt = buildCriticalReadStepPrompt({
+    state: revised,
+    stepID: 1,
+  });
+  for (const later of [2, 3, 4, 5, 6]) {
+    assert.doesNotMatch(scanPrompt, new RegExp(`STEP-${later}-OUTPUT`));
+  }
+  const finalPrompt = buildCriticalReadStepPrompt({
+    state: reviseCriticalReadStep(completed, 6),
+    stepID: 7,
+  });
+  assert.match(finalPrompt, /STEP-5-OUTPUT/);
+});
+
 test("revising evidence-bearing steps always invalidates the final synthesis", () => {
   const completed = {
     ...buildInitialCriticalReadState(),
@@ -628,4 +654,36 @@ test("Critical Read caption orientation is truthful about degraded visual access
   assert.equal(orientation[1]?.extractionMode, "text-only");
   assert.match(orientation[1]?.notice || "", /not visually inspected/i);
   assert.equal(orientation[1]?.abstract, "A compact abstract.");
+});
+
+test("report lists under a label stay nested under that label", () => {
+  const initial = buildInitialCriticalReadState();
+  const state = {
+    ...initial,
+    steps: initial.steps.map((step) =>
+      step.id === 1
+        ? {
+            ...step,
+            status: "complete" as const,
+            output: {
+              ...output,
+              scanObservations: {
+                abstractSignal: "Strong claim",
+                figureTableSignals: ["Figure 1 signal", "Table 2 signal"],
+                openQuestions: ["Q1", "Q2"],
+              },
+            },
+          }
+        : step,
+    ),
+  };
+  const markdown = buildCriticalReadReportMarkdown({
+    paperTitle: "Paper",
+    state,
+  });
+  assert.match(
+    markdown,
+    /- Figure\/table signals:\n {2}- Figure 1 signal\n {2}- Table 2 signal/,
+  );
+  assert.match(markdown, /- Open questions:\n {2}- Q1\n {2}- Q2/);
 });

@@ -89,7 +89,7 @@ function hasCards(value: unknown): value is PersistedPaperArtifactState {
     isPlainObject(value) &&
     Array.isArray(value.cards) &&
     value.cards.length > 0 &&
-    value.running === false
+    typeof value.running === "boolean"
   );
 }
 
@@ -98,8 +98,24 @@ function hasGroups(value: unknown): value is PersistedRecommendationState {
     isPlainObject(value) &&
     Array.isArray(value.groups) &&
     value.groups.length > 0 &&
-    value.running === false
+    typeof value.running === "boolean"
   );
+}
+
+/**
+ * A Workbench or prior-work refresh keeps the previous cards or results with
+ * `running: true`. A save in that window keeps that completed data as a
+ * settled copy, as Mastery and Critical Read do, instead of dropping it.
+ */
+function settledCopy<T extends { running: boolean; status: string }>(
+  value: T,
+): T {
+  const copy = cloneValue(value);
+  if (!copy.running) return copy;
+  const { activeKind: _activeKind, ...rest } = copy as T & {
+    activeKind?: unknown;
+  };
+  return { ...rest, running: false, status: "" } as unknown as T;
 }
 
 function migrateRecommendationState(value: unknown) {
@@ -481,7 +497,12 @@ function getPersistedMessages(sessionId: string) {
     .filter(
       (message) => message.role === "user" || prefs.persistAssistantMessages,
     )
-    .map((message) => cloneValue(message));
+    .map((message) => {
+      const copy = cloneValue(message);
+      // Older successful turns stored the whole CLI event stream here.
+      if (copy.status === "done") delete copy.rawEvent;
+      return copy;
+    });
 }
 
 function getSnapshotTitle(
@@ -516,30 +537,33 @@ export function captureSessionSnapshot(params: {
   const now = params.now || new Date();
   const messages = getPersistedMessages(params.session.sessionId);
   const data = getAddonData();
-  const paperArtifacts = prefs.persistAssistantDerivedState
-    ? cloneValue(
-        hasCards(data.paperArtifactStates?.get(params.session.itemID))
-          ? data.paperArtifactStates?.get(params.session.itemID)
-          : undefined,
-      )
-    : undefined;
-  const relatedRecommendations = prefs.persistAssistantDerivedState
-    ? cloneValue(
-        hasGroups(data.relatedRecommendationStates?.get(params.session.itemID))
-          ? data.relatedRecommendationStates?.get(params.session.itemID)
-          : undefined,
-      )
-    : undefined;
+  const liveCards = data.paperArtifactStates?.get(params.session.itemID);
+  const paperArtifacts =
+    prefs.persistAssistantDerivedState && hasCards(liveCards)
+      ? settledCopy(liveCards)
+      : undefined;
+  const liveGroups = data.relatedRecommendationStates?.get(
+    params.session.itemID,
+  );
+  const relatedRecommendations =
+    prefs.persistAssistantDerivedState && hasGroups(liveGroups)
+      ? settledCopy(liveGroups)
+      : undefined;
   const mastery = prefs.persistAssistantDerivedState
     ? persistedMasteryState(
         data.comprehensionCheckStates?.get(params.session.itemID),
       )
     : undefined;
-  const criticalRead = prefs.persistAssistantDerivedState
-    ? persistedCriticalReadState(
-        data.criticalReadStates?.get(params.session.itemID),
-      )
-    : undefined;
+  // A Critical Read started in another session belongs to that session.
+  const storedCriticalRead = data.criticalReadStates?.get(
+    params.session.itemID,
+  ) as { sessionID?: unknown } | undefined;
+  const criticalRead =
+    prefs.persistAssistantDerivedState &&
+    (!storedCriticalRead?.sessionID ||
+      storedCriticalRead.sessionID === params.session.sessionId)
+      ? persistedCriticalReadState(storedCriticalRead)
+      : undefined;
   const liveCriticalRead = data.criticalReadStates?.get(params.session.itemID);
   if (
     !canViewPublicReviewInsights(

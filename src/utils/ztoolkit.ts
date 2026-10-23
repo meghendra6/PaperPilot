@@ -1,24 +1,27 @@
-import { ZoteroToolkit } from "zotero-plugin-toolkit";
+import { BasicTool, ReaderTool, unregister } from "zotero-plugin-toolkit";
 import { config } from "../../package.json";
 
 export { createZToolkit };
 
-function createZToolkit() {
-  const _ztoolkit = new ZoteroToolkit();
-  initZToolkit(_ztoolkit);
-  return _ztoolkit;
+/**
+ * Only the toolkit parts Paper Pilot uses. The aggregate ZoteroToolkit also
+ * builds a PromptManager, whose setup installs the toolkit's zotero://plugin
+ * and zotero://ztoolkit-debug URL handlers (add-on install and script
+ * execution from a link), and FieldHooks and Keyboard managers that patch
+ * Zotero.Item and leave reader listeners behind after shutdown.
+ */
+class PaperPilotToolkit extends BasicTool {
+  Reader = new ReaderTool(this);
+
+  unregisterAll() {
+    unregister(this);
+  }
 }
 
-function initZToolkit(_ztoolkit: ReturnType<typeof createZToolkit>) {
-  const env = __env__;
+function createZToolkit() {
+  const _ztoolkit = new PaperPilotToolkit();
   _ztoolkit.basicOptions.log.prefix = `[${config.addonName}]`;
-  _ztoolkit.basicOptions.log.disableConsole = env === "production";
-  _ztoolkit.UI.basicOptions.ui.enableElementJSONLog = __env__ === "development";
-  _ztoolkit.UI.basicOptions.ui.enableElementDOMLog = __env__ === "development";
-  // Avoid touching deprecated debug bridge options under newer toolkit versions
+  _ztoolkit.basicOptions.log.disableConsole = __env__ === "production";
   _ztoolkit.basicOptions.api.pluginID = config.addonID;
-  _ztoolkit.ProgressWindow.setIconURI(
-    "default",
-    `chrome://${config.addonRef}/content/icons/favicon.png`,
-  );
+  return _ztoolkit;
 }

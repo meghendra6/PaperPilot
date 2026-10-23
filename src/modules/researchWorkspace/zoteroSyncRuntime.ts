@@ -38,6 +38,7 @@ interface ZoteroSyncCollection {
   key?: unknown;
   name?: unknown;
   version?: unknown;
+  parentKey?: unknown;
   addItem?: (itemID: number, options?: Record<string, unknown>) => unknown;
   addItems?: (itemIDs: number[], options?: Record<string, unknown>) => unknown;
   removeItem?: (itemID: number, options?: Record<string, unknown>) => unknown;
@@ -48,6 +49,7 @@ interface ZoteroSyncCollection {
 }
 
 interface ZoteroSyncRuntimeGlobals {
+  Libraries?: { get?: (libraryID: number) => unknown };
   DB?: {
     executeTransaction?: <T>(action: () => Promise<T>) => Promise<T>;
   };
@@ -64,7 +66,10 @@ interface ZoteroSyncRuntimeGlobals {
       collectionKey: string,
     ) => Promise<unknown>;
     getByLibraryAndKey?: (libraryID: number, collectionKey: string) => unknown;
-    getByLibrary?: (libraryID: number) => Promise<unknown> | unknown;
+    getByLibrary?: (
+      libraryID: number,
+      recursive?: boolean,
+    ) => Promise<unknown> | unknown;
     get?: (id: number) => unknown;
   };
   Tags?: {
@@ -403,8 +408,12 @@ export function createResearchWorkspaceZoteroSyncRuntime(
         available: Boolean(item),
       });
     }
+    const library = runtime.Libraries?.get?.(selection.libraryID) as
+      | { editable?: boolean }
+      | undefined;
     return {
       libraryID: selection.libraryID,
+      ...(library?.editable === false ? { libraryEditable: false } : {}),
       ...(collection
         ? {
             collection: {
@@ -433,10 +442,11 @@ export function createResearchWorkspaceZoteroSyncRuntime(
       for (const libraryID of [...new Set(libraryIDs)].sort(
         (left, right) => left - right,
       )) {
+        // recursive=true includes subcollections; trashed ones stay out.
         const raw = await Promise.resolve(
-          runtime.Collections?.getByLibrary?.(libraryID),
+          runtime.Collections?.getByLibrary?.(libraryID, true),
         );
-        const collections = values(raw)
+        const listed = values(raw)
           .map((value) => collectionFromValue(runtime, value))
           .filter((collection): collection is ZoteroSyncCollection =>
             Boolean(
@@ -444,11 +454,27 @@ export function createResearchWorkspaceZoteroSyncRuntime(
                 integer(collection.libraryID) === libraryID &&
                 text(collection.key),
             ),
-          )
+          );
+        const byKey = new Map(
+          listed.map((collection) => [text(collection.key), collection]),
+        );
+        // "Parent / Child" tells same-named subcollections apart.
+        const pathName = (collection: ZoteroSyncCollection) => {
+          const names: string[] = [];
+          const seen = new Set<string>();
+          let current: ZoteroSyncCollection | undefined = collection;
+          while (current && !seen.has(text(current.key))) {
+            seen.add(text(current.key));
+            names.unshift(text(current.name) || text(current.key));
+            current = byKey.get(text(current.parentKey));
+          }
+          return names.join(" / ");
+        };
+        const collections = listed
           .map((collection) => ({
             libraryID,
             collectionKey: text(collection.key),
-            name: text(collection.name) || text(collection.key),
+            name: pathName(collection),
             ...(integer(collection.version) !== undefined
               ? { version: integer(collection.version) }
               : {}),
@@ -633,7 +659,11 @@ export function createResearchWorkspaceZoteroSyncRuntime(
           const priorUndo = priorUndoByIdentity.get(identity);
           if (priorUndo?.status === "undone" || priorUndo?.status === "no-op") {
             alreadySettled.add(identity);
-            results.push(structuredClone(priorUndo));
+            // The add-on sandbox has no structuredClone.
+            results.push({
+              ...priorUndo,
+              tagNamesRemoved: [...priorUndo.tagNamesRemoved],
+            });
             continue;
           }
           if (!owned.collectionAdded && !owned.tagNamesAdded.length) {
@@ -735,9 +765,7 @@ export function createResearchWorkspaceZoteroSyncRuntime(
             });
             continue;
           }
-          const removeTag = item.removeTag;
-          const save = item.save;
-          if (tagsPresent.length && (!removeTag || !save)) {
+          if (tagsPresent.length && (!item.removeTag || !item.save)) {
             results.push({
               libraryID: owned.libraryID,
               itemKey: owned.itemKey,
@@ -767,11 +795,12 @@ export function createResearchWorkspaceZoteroSyncRuntime(
             collectionRemoved = true;
           }
           if (tagsPresent.length) {
+            // Zotero.Item methods need their receiver; never call them detached.
             for (const tagName of tagsPresent) {
-              await Promise.resolve(removeTag!(tagName));
+              await Promise.resolve(item.removeTag?.(tagName));
               tagNamesRemoved.push(tagName);
             }
-            await Promise.resolve(save!(options));
+            await Promise.resolve(item.save?.(options));
           }
           results.push({
             libraryID: owned.libraryID,

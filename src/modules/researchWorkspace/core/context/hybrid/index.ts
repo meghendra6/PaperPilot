@@ -18,7 +18,9 @@ function buildHybridIndex(params: HybridIndexInput) {
       const tokens = (0, tokenizer_1.tokenizeHybridOccurrences)(
         `${chunk.title || ""}\n${chunk.text}`,
       );
-      const termFrequency: Record<string, number> = {};
+      // Prototype-free maps, so tokens such as "constructor" or
+      // "__proto__" are plain keys.
+      const termFrequency: Record<string, number> = Object.create(null);
       for (const token of tokens)
         termFrequency[token] = (termFrequency[token] ?? 0) + 1;
       return {
@@ -33,7 +35,7 @@ function buildHybridIndex(params: HybridIndexInput) {
         length: Math.max(1, tokens.length),
       };
     });
-  const documentFrequency: Record<string, number> = {};
+  const documentFrequency: Record<string, number> = Object.create(null);
   for (const chunk of chunks) {
     for (const token of new Set(chunk.tokens))
       documentFrequency[token] = (documentFrequency[token] ?? 0) + 1;

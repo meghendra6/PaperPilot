@@ -232,6 +232,13 @@ export function renderDiscoverySection(params: {
         showMore.addEventListener("click", () => {
           view.revealed.add(group.category);
           for (const row of rows) row.style.display = "";
+          // Focus the first newly shown row before its button disappears.
+          const firstRevealed = rows[visible] as HTMLElement | undefined;
+          if (firstRevealed) {
+            // tabIndex -1 makes the row focusable without adding a tab stop.
+            firstRevealed.tabIndex = -1;
+            firstRevealed.focus?.({ preventScroll: false });
+          }
           showMore.remove();
         });
         section.appendChild(showMore);

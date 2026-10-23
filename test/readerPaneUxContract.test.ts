@@ -98,7 +98,7 @@ test("run events keep the live transcript while a run is active", () => {
   );
   assert.match(
     readerPaneSource,
-    /window\.showMessage\(position\.key, position\.offset, \{ focus: false \}\)/,
+    /window\.showMessage\(position\.key, position\.offset, \{\s*focus: false,?\s*\}\)/,
   );
 });
 
@@ -157,9 +157,10 @@ test("Workbench requests refresh their busy state on every run event", () => {
 test("discovery entry points honor engine capability and never click the toggle", () => {
   assert.doesNotMatch(readerPaneSource, /relatedRecommendButton\.click\(\)/);
   assert.match(readerPaneSource, /id="chat-related-availability"/);
+  // Card buttons are disabled by an unavailable engine or a busy paper.
   assert.match(
     workbenchSource,
-    /findPriorWork\.disabled = true;\s*findPriorWork\.title = options\.discoveryUnavailableReason;/,
+    /const reason =\s*options\.discoveryUnavailableReason \?\?\s*\(block\.blocked \? block\.reason : undefined\);\s*findPriorWork\.disabled = Boolean\(reason\);/,
   );
   assert.match(
     readerActionsSource,
@@ -314,4 +315,22 @@ test("discovery availability follows engine settings changed outside the pane", 
     readerPaneSource,
     /for \(const observer of engineSettingObservers\)\s*Zotero\.Prefs\.unregisterObserver\(observer\);/,
   );
+});
+
+test("deleting or switching conversations forgets the search return target", () => {
+  // Return to reading must never resurrect a conversation the reader deleted.
+  for (const call of [
+    /deleteSavedSession\(\{[^}]*\}\);\s*forgetSearchOrigin\(entry\.sessionId\)/g,
+    /deleteAllSavedSessions\(\{[^}]*\}\);\s*forgetSearchOrigin\(\)/g,
+    /startNewSessionDraft\(\{[^}]*\}\);\s*forgetSearchOrigin\(\)/g,
+  ]) {
+    assert.ok(readerPaneSource.match(call)?.length, String(call));
+  }
+  assert.equal(
+    readerPaneSource.match(/deleteSavedSession\(/g)?.length,
+    readerPaneSource.match(
+      /deleteSavedSession\(\{[^}]*\}\);\s*forgetSearchOrigin/g,
+    )?.length,
+  );
+  assert.match(readerPaneSource, /originMissing = !opened;/);
 });

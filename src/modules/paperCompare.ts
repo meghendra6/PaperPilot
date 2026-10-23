@@ -82,57 +82,88 @@ export interface PaperCompareMetrics {
 const MAX_COMPARE_PAPERS = 3;
 const MAX_COMPARE_LIST_ITEMS = 4;
 
-export const PAPER_COMPARE_OUTPUT_SCHEMA: StructuredOutputSchema = {
-  type: "object",
-  additionalProperties: false,
-  required: ["overview", "papers", "synthesis", "recommendations"],
-  properties: {
-    overview: { type: "string", minLength: 1, maxLength: 4_000 },
-    papers: {
-      type: "array",
-      minItems: 1,
-      maxItems: MAX_COMPARE_PAPERS + 1,
-      items: {
-        type: "object",
-        additionalProperties: false,
-        required: [
-          "title",
-          "relationship",
-          "strengths",
-          "tradeoffs",
-          "bestUseCase",
-        ],
-        properties: {
-          title: { type: "string", minLength: 1, maxLength: 500 },
-          relationship: { type: "string", minLength: 1, maxLength: 1_500 },
-          strengths: {
-            type: "array",
-            maxItems: MAX_COMPARE_LIST_ITEMS,
-            items: { type: "string", minLength: 1, maxLength: 1_000 },
-          },
-          tradeoffs: {
-            type: "array",
-            maxItems: MAX_COMPARE_LIST_ITEMS,
-            items: { type: "string", minLength: 1, maxLength: 1_000 },
-          },
-          bestUseCase: {
-            anyOf: [{ type: "string", maxLength: 1_000 }, { type: "null" }],
+function paperCompareOutputSchema(papers: {
+  minItems: number;
+  maxItems: number;
+  title: StructuredOutputSchema;
+}): StructuredOutputSchema {
+  return {
+    type: "object",
+    additionalProperties: false,
+    required: ["overview", "papers", "synthesis", "recommendations"],
+    properties: {
+      overview: { type: "string", minLength: 1, maxLength: 4_000 },
+      papers: {
+        type: "array",
+        minItems: papers.minItems,
+        maxItems: papers.maxItems,
+        items: {
+          type: "object",
+          additionalProperties: false,
+          required: [
+            "title",
+            "relationship",
+            "strengths",
+            "tradeoffs",
+            "bestUseCase",
+          ],
+          properties: {
+            title: papers.title,
+            relationship: { type: "string", minLength: 1, maxLength: 1_500 },
+            strengths: {
+              type: "array",
+              maxItems: MAX_COMPARE_LIST_ITEMS,
+              items: { type: "string", minLength: 1, maxLength: 1_000 },
+            },
+            tradeoffs: {
+              type: "array",
+              maxItems: MAX_COMPARE_LIST_ITEMS,
+              items: { type: "string", minLength: 1, maxLength: 1_000 },
+            },
+            bestUseCase: {
+              anyOf: [{ type: "string", maxLength: 1_000 }, { type: "null" }],
+            },
           },
         },
       },
+      synthesis: {
+        type: "array",
+        maxItems: MAX_COMPARE_LIST_ITEMS,
+        items: { type: "string", minLength: 1, maxLength: 1_000 },
+      },
+      recommendations: {
+        type: "array",
+        maxItems: MAX_COMPARE_LIST_ITEMS,
+        items: { type: "string", minLength: 1, maxLength: 1_000 },
+      },
     },
-    synthesis: {
-      type: "array",
-      maxItems: MAX_COMPARE_LIST_ITEMS,
-      items: { type: "string", minLength: 1, maxLength: 1_000 },
+  };
+}
+
+export const PAPER_COMPARE_OUTPUT_SCHEMA = paperCompareOutputSchema({
+  minItems: 1,
+  maxItems: MAX_COMPARE_PAPERS + 1,
+  title: { type: "string", minLength: 1, maxLength: 500 },
+});
+
+/**
+ * The compare schema for one request. The parser accepts only the exact
+ * selected paper set, so papers[] holds one entry per selected paper and
+ * each title is one of the supplied titles.
+ */
+export function buildPaperCompareOutputSchema(
+  selection: PaperCompareSelection,
+): StructuredOutputSchema {
+  const papers = [selection.currentPaper, ...selection.comparePapers];
+  return paperCompareOutputSchema({
+    minItems: papers.length,
+    maxItems: papers.length,
+    title: {
+      type: "string",
+      enum: [...new Set(papers.map((paper) => paper.title))],
     },
-    recommendations: {
-      type: "array",
-      maxItems: MAX_COMPARE_LIST_ITEMS,
-      items: { type: "string", minLength: 1, maxLength: 1_000 },
-    },
-  },
-};
+  });
+}
 
 function normalizeWhitespace(value: string) {
   return value.replace(/\s+/g, " ").trim();
@@ -400,7 +431,7 @@ export function buildPaperCompareRequestFromRecommendations(params: {
       comparePapers: selection.comparePapers,
       responseLanguage: params.responseLanguage,
     }),
-    outputSchema: PAPER_COMPARE_OUTPUT_SCHEMA,
+    outputSchema: buildPaperCompareOutputSchema(selection),
   };
 }
 
@@ -527,7 +558,8 @@ export function buildPaperCompareQuestion(params: {
     "Return ONLY one strict JSON object using this schema:",
     '{"overview":"1-2 sentence compare summary","papers":[{"title":"paper title","relationship":"how it differs or complements the current paper","strengths":["strength"],"tradeoffs":["tradeoff"],"bestUseCase":"when to read or use it"}],"synthesis":["cross-paper insight"],"recommendations":["what to read or do next"]}',
     "Rules:",
-    `- include the current paper plus at most ${MAX_COMPARE_PAPERS} comparison papers in papers[]`,
+    `- include every supplied paper exactly once in papers[] (${boundedComparePapers.length + 1} entries): the current paper first, then each comparison paper`,
+    "- copy each papers[].title exactly as the title appears in the source data below, even when writing in another language",
     `- use only the current paper plus the provided comparison set; do not invent extra papers or missing details`,
     `- keep each strengths/tradeoffs list to at most ${MAX_COMPARE_LIST_ITEMS} bullets`,
     "- keep every field compact and reader-pane-safe",

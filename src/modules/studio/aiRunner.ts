@@ -144,7 +144,11 @@ export async function runStudioAI(
   signal: AbortSignal,
 ) {
   validateAIConfig(config);
-  const timeout = ports.createAbortController?.() ?? new AbortController();
+  const timeout =
+    ports.createAbortController?.() ??
+    // Node tests only: the Zotero ports always supply a window controller.
+    // eslint-disable-next-line no-restricted-syntax
+    new AbortController();
   const cancel = () => timeout.abort();
   signal.addEventListener("abort", cancel, { once: true });
   if (signal.aborted) cancel();

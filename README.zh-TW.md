@@ -160,7 +160,7 @@ Mastery prompt 會強制問題／評估回應為嚴格 JSON（禁止前置推理
 - `paper.json`
 - `paper.txt`
 - `selection.json`
-- `recent-turns.json`
+- `conversation-context.md`（聊天執行）
 - `metadata.json`
 - `annotations.json`
 

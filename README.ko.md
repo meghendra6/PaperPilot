@@ -162,7 +162,7 @@ Mastery 프롬프트는 질문/평가 응답을 엄격한 JSON으로 강제하�
 - `paper.json`
 - `paper.txt`
 - `selection.json`
-- `recent-turns.json`
+- `conversation-context.md` (채팅 실행)
 - `metadata.json`
 - `annotations.json`
 

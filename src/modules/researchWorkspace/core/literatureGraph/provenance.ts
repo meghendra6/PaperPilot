@@ -25,7 +25,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
-function qualifyingBibliographicProvenance(
+/**
+ * Normalizes model-supplied bibliographic provenance. Paper Pilot does not yet
+ * check that the claimed local reference, Zotero relation, or metadata match
+ * exists, so the result is a labelled candidate and never verifies an edge.
+ */
+function bibliographicProvenanceCandidate(
   value: unknown,
   allowedSourceIDs: Set<string>,
 ) {
@@ -114,27 +119,34 @@ export function validateAndAnnotateRelationshipGraph(params: {
         (reference: any) => reference.verification?.status === "verified",
       ),
     );
-    const bibliographicProvenance = qualifyingBibliographicProvenance(
+    const bibliographicProvenance = bibliographicProvenanceCandidate(
       edge.bibliographicProvenance,
       allowedSourceIDs,
     );
-    const qualifies = hasVerifiedLocalEvidence || bibliographicProvenance;
-    if (edge.verified === true && !qualifies) {
+    if (
+      edge.verified === true &&
+      !hasVerifiedLocalEvidence &&
+      !bibliographicProvenance
+    ) {
       throw new Error(
         `Graph edge ${edge.id} is labelled verified without qualifying provenance.`,
       );
     }
+    // Only locally verified evidence verifies an edge; the model's own
+    // `verified` flag and bibliographic claims are not trusted.
+    const verified = hasVerifiedLocalEvidence;
     const provenance = hasVerifiedLocalEvidence
       ? "local-evidence"
       : bibliographicProvenance
-        ? "bibliographic"
+        ? "model-asserted"
         : "inferred";
+    const { bibliographicProvenance: _unvalidated, ...rest } = edge;
     return {
-      ...edge,
+      ...rest,
       ...(bibliographicProvenance ? { bibliographicProvenance } : {}),
       provenance,
-      verificationState: qualifies ? "verified" : "inferred",
-      verified: Boolean(qualifies),
+      verificationState: verified ? "verified" : "inferred",
+      verified,
       operationVersion: params.operationVersion,
       userReviewState: edge.userReviewState ?? "unreviewed",
     };

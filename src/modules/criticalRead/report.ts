@@ -19,6 +19,13 @@ export function buildCriticalReadReportMarkdown(params: {
   const t = createCriticalReadLocalizer(params.responseLanguage);
   const bullets = (values: string[]) =>
     formatBullets(values, t("Not recorded"));
+  // A list under a "- Label:" item is indented, so Markdown keeps every
+  // entry under its label instead of turning later ones into top bullets.
+  const nested = (values: string[]) =>
+    `\n${bullets(values)
+      .split("\n")
+      .map((line) => `  ${line}`)
+      .join("\n")}`;
   const sections = params.state.steps.map((step) => {
     const discovery = step.discovery;
     const discoveryPaper = (lane: string, paper: DiscoveredPaper) =>
@@ -61,19 +68,19 @@ export function buildCriticalReadReportMarkdown(params: {
         ? `### ${t("Extraction orientation")}\n\n- ${t("Mode")}: ${t(step.orientation.extractionMode)}\n- ${t("Notice")}: ${t(step.orientation.notice)}${step.orientation.sourceLocations.length ? `\n- ${t("Indexed source locations")}: ${step.orientation.sourceLocations.join("; ")}` : ""}${step.orientation.captions.length ? `\n- ${t("Caption coverage")}: ${step.orientation.captions.join("; ")}` : ""}`
         : undefined,
       step.output?.scanObservations
-        ? `### ${t("Scan observations")}\n\n- ${t("Abstract signal")}: ${step.output.scanObservations.abstractSignal}\n- ${t("Figure/table signals")}: ${bullets(step.output.scanObservations.figureTableSignals)}\n- ${t("Open questions")}: ${bullets(step.output.scanObservations.openQuestions)}`
+        ? `### ${t("Scan observations")}\n\n- ${t("Abstract signal")}: ${step.output.scanObservations.abstractSignal}\n- ${t("Figure/table signals")}:${nested(step.output.scanObservations.figureTableSignals)}\n- ${t("Open questions")}:${nested(step.output.scanObservations.openQuestions)}`
         : undefined,
       step.output?.researchQuestion
         ? `### ${t("Research question")}\n\n- ${t("Question")}: ${step.output.researchQuestion.question}\n- ${t("Problem")}: ${step.output.researchQuestion.problem}\n- ${t("Setting")}: ${step.output.researchQuestion.setting}\n- ${t("Claimed gap")}: ${step.output.researchQuestion.claimedGap}\n- ${t("Reader comparison")}: ${step.output.researchQuestion.readerComparison}`
         : undefined,
       step.output?.evidenceConclusion
-        ? `### ${t("Independent evidence conclusion")}\n\n- ${t("Supports")}: ${bullets(step.output.evidenceConclusion.supports)}\n- ${t("Does not support")}: ${bullets(step.output.evidenceConclusion.doesNotSupport)}\n- ${t("Strongest result")}: ${step.output.evidenceConclusion.strongestResult}\n- ${t("Weakest result")}: ${step.output.evidenceConclusion.weakestResult}\n- ${t("Confidence")}: ${t(step.output.evidenceConclusion.confidence)}`
+        ? `### ${t("Independent evidence conclusion")}\n\n- ${t("Supports")}:${nested(step.output.evidenceConclusion.supports)}\n- ${t("Does not support")}:${nested(step.output.evidenceConclusion.doesNotSupport)}\n- ${t("Strongest result")}: ${step.output.evidenceConclusion.strongestResult}\n- ${t("Weakest result")}: ${step.output.evidenceConclusion.weakestResult}\n- ${t("Confidence")}: ${t(step.output.evidenceConclusion.confidence)}`
         : undefined,
       step.output?.authorComparison
-        ? `### ${t("Author comparison")}\n\n- ${t("Author conclusion")}: ${t(step.output.authorComparison.authorConclusionStatus)}${step.output.authorComparison.unavailableReason ? ` — ${step.output.authorComparison.unavailableReason}` : ""}\n- ${t("Agreements")}: ${bullets(step.output.authorComparison.agreements)}\n- ${t("Reader omissions")}: ${bullets(step.output.authorComparison.readerOmissions)}\n- ${t("Stronger author claims")}: ${bullets(step.output.authorComparison.strongerAuthorClaims)}\n- ${t("Author caveats")}: ${bullets(step.output.authorComparison.authorCaveats)}\n- ${t("Interpretive differences")}: ${bullets(step.output.authorComparison.interpretiveDifferences)}`
+        ? `### ${t("Author comparison")}\n\n- ${t("Author conclusion")}: ${t(step.output.authorComparison.authorConclusionStatus)}${step.output.authorComparison.unavailableReason ? ` — ${step.output.authorComparison.unavailableReason}` : ""}\n- ${t("Agreements")}:${nested(step.output.authorComparison.agreements)}\n- ${t("Reader omissions")}:${nested(step.output.authorComparison.readerOmissions)}\n- ${t("Stronger author claims")}:${nested(step.output.authorComparison.strongerAuthorClaims)}\n- ${t("Author caveats")}:${nested(step.output.authorComparison.authorCaveats)}\n- ${t("Interpretive differences")}:${nested(step.output.authorComparison.interpretiveDifferences)}`
         : undefined,
       step.output?.methodComparison
-        ? `### ${t("Reader vs Paper Pilot method comparison")}\n\n- ${t("Agreements")}: ${bullets(step.output.methodComparison.agreements)}\n- ${t("Differences")}: ${bullets(step.output.methodComparison.differences)}\n- ${t("Unresolved")}: ${bullets(step.output.methodComparison.unresolved)}`
+        ? `### ${t("Reader vs Paper Pilot method comparison")}\n\n- ${t("Agreements")}:${nested(step.output.methodComparison.agreements)}\n- ${t("Differences")}:${nested(step.output.methodComparison.differences)}\n- ${t("Unresolved")}:${nested(step.output.methodComparison.unresolved)}`
         : undefined,
       step.output?.finalSynthesis
         ? `### ${t("Final synthesis")}\n\n- ${t("Strongest supported claim")}: ${step.output.finalSynthesis.strongestSupportedClaim}\n- ${t("Key residual uncertainty")}: ${step.output.finalSynthesis.keyResidualUncertainty}\n- ${t("Next reading or experiment")}: ${step.output.finalSynthesis.nextReadingOrExperiment}`

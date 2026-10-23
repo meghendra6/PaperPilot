@@ -31,6 +31,14 @@ import {
   releaseResearchWorkspaceOwner,
 } from "./projectRunAdmission";
 
+/**
+ * The add-on sandbox has no DOMException, so cancellation uses a plain error
+ * that callers identify by its `AbortError` name, as ai/workspaceRun.ts does.
+ */
+export function createCancelledError(): Error {
+  return Object.assign(new Error("Cancelled"), { name: "AbortError" });
+}
+
 export interface ResearchWorkspaceOperationResult<T> {
   projectID: string;
   result: T;
@@ -379,8 +387,7 @@ export class ResearchWorkspaceOperationCoordinator {
           },
         }),
       );
-      if (params.signal?.aborted)
-        throw new DOMException("Cancelled", "AbortError");
+      if (params.signal?.aborted) throw createCancelledError();
       params.onStatus?.(`Running ${params.artifactTitle}…`);
       try {
         await this.assertPaperInputsCurrent(
@@ -393,7 +400,7 @@ export class ResearchWorkspaceOperationCoordinator {
           params.signal?.aborted ||
           !isResearchWorkspaceOwnerClaimCurrent(owner, claim)
         ) {
-          throw new DOMException("Cancelled", "AbortError");
+          throw createCancelledError();
         }
         await this.assertPaperInputsCurrent(
           projectID,
@@ -443,8 +450,7 @@ export class ResearchWorkspaceOperationCoordinator {
             params.papers,
             admission,
           );
-          if (params.signal?.aborted)
-            throw new DOMException("Cancelled", "AbortError");
+          if (params.signal?.aborted) throw createCancelledError();
         } catch (error) {
           await this.repository.markArtifactStaleAtomically({
             projectID,
@@ -581,7 +587,7 @@ export class ResearchWorkspaceOperationCoordinator {
         }),
       );
       if (params.signal?.aborted) {
-        throw new DOMException("Cancelled", "AbortError");
+        throw createCancelledError();
       }
       params.onStatus?.(`Building ${params.artifactTitle} locally…`);
       try {
@@ -590,7 +596,7 @@ export class ResearchWorkspaceOperationCoordinator {
           params.signal?.aborted ||
           !isResearchWorkspaceOwnerClaimCurrent(owner, claim)
         ) {
-          throw new DOMException("Cancelled", "AbortError");
+          throw createCancelledError();
         }
         await this.assertDerivedInputsCurrent(
           params,
@@ -641,7 +647,7 @@ export class ResearchWorkspaceOperationCoordinator {
             params.signal?.aborted ||
             !isResearchWorkspaceOwnerClaimCurrent(owner, claim)
           ) {
-            throw new DOMException("Cancelled", "AbortError");
+            throw createCancelledError();
           }
           await this.assertDerivedInputsCurrent(
             params,
@@ -858,8 +864,19 @@ export class ResearchWorkspaceOperationCoordinator {
           },
         }),
       );
+      // Nothing has run yet, so a cancellation leaves no new version.
+      if (params.signal?.aborted) throw createCancelledError();
+      const earlierVersions = (
+        await this.repository.listSameScopeArtifacts(params.projectID, {
+          type: params.artifactType,
+          sourceIDs: params.papers.map((paper) => paper.sourceID),
+          operation: params.operation,
+        })
+      ).filter((candidate) => candidate.status !== "superseded");
       const checkpointAt = new Date().toISOString();
       artifact = await this.repository.createArtifact(params.projectID, {
+        // Supersede the current version only when this run finishes.
+        supersedeLatest: false,
         type: params.artifactType,
         title: params.artifactTitle,
         status: "partial",
@@ -1061,7 +1078,7 @@ export class ResearchWorkspaceOperationCoordinator {
             }),
           );
         }
-        throw new DOMException("Cancelled", "AbortError");
+        throw createCancelledError();
       }
 
       await this.assertPaperInputsCurrent(
@@ -1078,6 +1095,13 @@ export class ResearchWorkspaceOperationCoordinator {
       );
       if (!latestArtifact)
         throw new Error("Incremental artifact disappeared before completion.");
+      // A partial rerun must not hide a complete earlier result.
+      const superseded = earlierVersions
+        .filter(
+          (candidate) =>
+            status === "complete" || candidate.status !== "complete",
+        )
+        .sort((left, right) => right.version - left.version);
       artifact = await this.repository.updateArtifact<TPayload>(
         params.projectID,
         latestArtifact.artifact.artifactID,
@@ -1085,6 +1109,9 @@ export class ResearchWorkspaceOperationCoordinator {
         (current) => ({
           ...current,
           status,
+          ...(superseded.length
+            ? { supersedesArtifactID: superseded[0].artifactID }
+            : {}),
           ...(status === "complete" ? { completedAt } : {}),
           payload: clone(payload),
           checkpoint: {
@@ -1094,6 +1121,10 @@ export class ResearchWorkspaceOperationCoordinator {
             lastCheckpointAt: completedAt,
           },
         }),
+      );
+      await this.repository.supersedeArtifacts(
+        params.projectID,
+        superseded.map((candidate) => candidate.artifactID),
       );
       await this.assertPaperInputsCurrent(
         params.projectID,

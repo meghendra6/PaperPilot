@@ -1,9 +1,11 @@
 import * as assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  finishAllReaderRuns,
   finishReaderRunsForMode,
   getActiveReaderRunMode,
   isReaderRunTokenActive,
+  listActiveReaderRuns,
   markReaderRunFinished,
   markReaderRunStarted,
   notifyReaderPaneStateChanged,
@@ -58,4 +60,42 @@ test("stopping a mode clears all of its activities without clearing another mode
 
   markReaderRunFinished(9201, claude);
   assert.equal(getActiveReaderRunMode(9201), undefined);
+});
+
+test("a throwing listener does not stop later listeners or the state change", () => {
+  const seen: string[] = [];
+  const unsubscribeThrowing = subscribeToReaderRunEvents(9301, () => {
+    throw new Error("render failed");
+  });
+  const unsubscribeLater = subscribeToReaderRunEvents(9301, (event) => {
+    seen.push(event.type);
+  });
+  try {
+    const token = markReaderRunStarted(9301, "codex_cli");
+    assert.equal(isReaderRunTokenActive(9301, token), true);
+    markReaderRunFinished(9301, token);
+    assert.equal(isReaderRunTokenActive(9301, token), false);
+    assert.deepEqual(seen, ["started", "finished"]);
+  } finally {
+    unsubscribeThrowing();
+    unsubscribeLater();
+  }
+});
+
+test("finishAllReaderRuns revokes every token on every paper", () => {
+  const finished: string[] = [];
+  const unsubscribe = subscribeToReaderRunEvents(9401, (event) => {
+    if (event.type === "finished") finished.push(event.mode);
+  });
+  try {
+    const codex = markReaderRunStarted(9401, "codex_cli");
+    const claude = markReaderRunStarted(9402, "claude_code");
+    finishAllReaderRuns();
+    assert.equal(isReaderRunTokenActive(9401, codex), false);
+    assert.equal(isReaderRunTokenActive(9402, claude), false);
+    assert.deepEqual(listActiveReaderRuns(), []);
+    assert.deepEqual(finished, ["codex_cli"]);
+  } finally {
+    unsubscribe();
+  }
 });

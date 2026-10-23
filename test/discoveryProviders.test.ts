@@ -232,6 +232,74 @@ test("Zotero transport aborts a PDF at response headers without reading its body
   }
 });
 
+test("official evidence names a network proxy as the cause of a rejected connection", async () => {
+  const previousZotero = (globalThis as { Zotero?: unknown }).Zotero;
+  const previousComponents = (globalThis as { Components?: unknown })
+    .Components;
+  let aborted = false;
+  const listeners = new Map<string, Array<() => void>>();
+  const xhr = {
+    readyState: 2,
+    status: 200,
+    statusText: "OK",
+    responseText: "<html></html>",
+    channel: {
+      loadFlags: 0,
+      // A local proxy such as Charles or ClashX is the TCP peer.
+      QueryInterface: () => ({
+        remoteAddress: "127.0.0.1",
+        proxyInfo: { type: "http" },
+      }),
+    },
+    getResponseHeader: () => "text/html",
+    getAllResponseHeaders: () => "content-type: text/html\r\n",
+    addEventListener: (name: string, listener: () => void) => {
+      listeners.set(name, [...(listeners.get(name) || []), listener]);
+    },
+    abort: () => {
+      aborted = true;
+    },
+  };
+  (globalThis as { Components?: unknown }).Components = {
+    interfaces: {
+      nsIHttpChannelInternal: {},
+      nsIProxiedChannel: {},
+      nsIRequest: {
+        LOAD_BYPASS_CACHE: 1,
+        INHIBIT_CACHING: 2,
+        LOAD_FRESH_CONNECTION: 4,
+      },
+    },
+  };
+  (globalThis as { Zotero?: unknown }).Zotero = {
+    HTTP: {
+      request: (_method: string, _url: string, options: any) => {
+        options.cancellerReceiver(() => xhr.abort());
+        options.requestObserver(xhr);
+        for (const listener of listeners.get("readystatechange") || []) {
+          listener();
+        }
+        return aborted
+          ? Promise.reject(new Error("aborted"))
+          : Promise.resolve(xhr);
+      },
+    },
+  };
+  try {
+    await assert.rejects(
+      inspectOfficialEvidenceURL({
+        url: "https://venue.example.org/paper",
+        resolveHost: async () => ["8.8.8.8"],
+      }),
+      /does not run through a network proxy/,
+    );
+    assert.equal(aborted, true);
+  } finally {
+    (globalThis as { Zotero?: unknown }).Zotero = previousZotero;
+    (globalThis as { Components?: unknown }).Components = previousComponents;
+  }
+});
+
 test("official evidence rejects private DNS answers and mapped private IPv6", async () => {
   for (const address of [
     "::ffff:127.0.0.1",

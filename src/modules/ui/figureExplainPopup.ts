@@ -24,6 +24,9 @@ const WINDOW_TITLE = "Figure explanation · Paper Pilot";
 const WINDOW_SIZE = { width: 500, height: 660 };
 /** A request this soon after an abort may find the reservation still held. */
 const RECENT_ABORT_MS = 60_000;
+// Shared by every figure window: a window closed mid-run aborts a run that
+// still holds the engine slot, so a reopened window waits for its release.
+let lastFigureAbortAt = 0;
 const RESERVATION_WAIT_MS = 15_000;
 const FALLBACK_HEADING = "Selected area";
 
@@ -226,9 +229,13 @@ function mountFigureWindow(state: FigureExplainWindowState) {
 
   const status = element(doc, "div", "", "figure-status");
   status.setAttribute("role", "status");
+  status.setAttribute("aria-atomic", "false");
   const spinner = element(doc, "span", "", "figure-spinner");
   const statusText = element(doc, "span", "", "figure-status-text");
+  // The counter changes every second; announcing it would talk over the
+  // status text, so it stays visual only.
   const elapsed = element(doc, "span", "", "figure-elapsed");
+  elapsed.setAttribute("aria-hidden", "true");
   const stop = button(doc, "Stop");
   const retry = button(doc, "Retry");
   status.append(spinner, statusText, elapsed, stop, retry);
@@ -252,10 +259,9 @@ function mountFigureWindow(state: FigureExplainWindowState) {
   let running: Promise<void> = Promise.resolve();
   let inFlight = false;
   let startedGeneration = 0;
-  let lastAbortAt = 0;
   const abortCurrent = () => {
     if (controller && !controller.signal.aborted) {
-      lastAbortAt = Date.now();
+      lastFigureAbortAt = Date.now();
       controller.abort();
     }
   };
@@ -375,7 +381,9 @@ function mountFigureWindow(state: FigureExplainWindowState) {
         prepared,
         force,
         reservationWaitMs:
-          Date.now() - lastAbortAt < RECENT_ABORT_MS ? RESERVATION_WAIT_MS : 0,
+          Date.now() - lastFigureAbortAt < RECENT_ABORT_MS
+            ? RESERVATION_WAIT_MS
+            : 0,
         signal,
         onStatus: (text) => {
           if (isCurrent()) setStatus(text);

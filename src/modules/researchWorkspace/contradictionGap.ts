@@ -89,6 +89,11 @@ export interface ContradictionGapReviewEvent {
   eventID: string;
   submissionID: string;
   relationshipID: string;
+  /**
+   * The compared positions, evidence atoms, and comparability the reviewer
+   * saw. A refresh carries the review forward only while they are unchanged.
+   */
+  relationshipFingerprint?: string;
   action: "confirm" | "reclassify" | "dismiss";
   fromClassification: ContradictionClassification;
   toClassification?: ContradictionClassification;
@@ -878,6 +883,16 @@ function createGap(params: {
   };
 }
 
+const MAX_DASHBOARD_GAPS = 200;
+
+/** Evidence gaps first; the per-source "not assessed" notes go last. */
+const GAP_KIND_PRIORITY: Record<EvidenceGap["kind"], number> = {
+  "missing-verified-evidence": 0,
+  "unresolved-comparability": 1,
+  "single-source": 2,
+  "missing-reporting": 3,
+};
+
 function uniqueByID<T extends { gapID: string }>(values: T[]) {
   return [...new Map(values.map((value) => [value.gapID, value])).values()];
 }
@@ -1032,9 +1047,16 @@ export function buildContradictionGapDashboard(params: {
       }),
     );
   }
-  const orderedGaps = uniqueByID(gaps)
-    .sort((left, right) => left.gapID.localeCompare(right.gapID))
-    .slice(0, 200);
+  const uniqueGaps = uniqueByID(gaps);
+  const orderedGaps = [...uniqueGaps]
+    .sort(
+      (left, right) =>
+        GAP_KIND_PRIORITY[left.kind] - GAP_KIND_PRIORITY[right.kind] ||
+        left.gapID.localeCompare(right.gapID),
+    )
+    .slice(0, MAX_DASHBOARD_GAPS)
+    .sort((left, right) => left.gapID.localeCompare(right.gapID));
+  const omittedGaps = uniqueGaps.length - orderedGaps.length;
   const inputArtifacts = admitted.map((artifact) => ({
     artifactID: artifact.artifactID,
     artifactType: artifact.type,
@@ -1103,6 +1125,11 @@ export function buildContradictionGapDashboard(params: {
       "Only evidence references produced by the current local verifier with an exact project source identity and a supported locator method are admitted as evidence-linked assertions.",
       "Local evidence verification confirms that the stored locator and quoted content are present; it does not prove entailment, truth, or study quality.",
       "An opposite result becomes a rule-detected contradiction candidate only when different sources address the same concrete stored outcome or metric and at least two stored design dimensions match exactly.",
+      ...(omittedGaps
+        ? [
+            `${omittedGaps} lower-priority gap${omittedGaps === 1 ? " was" : "s were"} omitted to keep the dashboard within ${MAX_DASHBOARD_GAPS} gaps; "not assessed" reporting notes are omitted first.`,
+          ]
+        : []),
       ...admission
         .filter((entry) => entry.reason)
         .slice(0, 20)
@@ -1166,6 +1193,10 @@ export function applyContradictionGapReview(params: {
     eventID: params.eventID,
     submissionID: params.input.submissionID,
     relationshipID: params.input.relationshipID,
+    relationshipFingerprint: contradictionRelationshipFingerprint(
+      relationship,
+      params.dashboard.atoms,
+    ),
     action: params.input.action,
     fromClassification:
       relationship.userClassification ?? relationship.classification,
@@ -1182,19 +1213,155 @@ export function applyContradictionGapReview(params: {
     relationships: params.dashboard.relationships.map((entry) =>
       entry.relationshipID !== relationship.relationshipID
         ? entry
-        : {
-            ...entry,
-            reviewState:
-              params.input.action === "confirm"
-                ? ("confirmed" as const)
-                : params.input.action === "dismiss"
-                  ? ("dismissed" as const)
-                  : ("reclassified" as const),
-            ...(params.input.action === "reclassify"
-              ? { userClassification: params.input.toClassification }
-              : {}),
-          },
+        : withReviewEvent(entry, event),
     ),
     reviewEvents: [...params.dashboard.reviewEvents, event],
+  };
+}
+
+const COMPARABILITY_DIMENSIONS = new Set<ContradictionGapDimension>([
+  "method",
+  "population",
+  "dataset",
+  "replication",
+]);
+
+/** An atom's statement and evidence, without run-time timestamps. */
+function atomContent(atom: VerifiedFactAtom) {
+  return {
+    atomID: atom.atomID,
+    sourceID: atom.sourceID,
+    dimension: atom.dimension,
+    statement: atom.statement,
+    evidence: atom.evidence.map((reference) => ({
+      sourceID: reference.sourceID,
+      attachmentKey: reference.attachmentKey,
+      pageIndex: reference.pageIndex ?? null,
+      pageLabel: reference.pageLabel ?? null,
+      elementID: reference.elementID ?? null,
+      exactQuote: reference.exactQuote ?? null,
+      status: reference.verification?.status ?? null,
+    })),
+  };
+}
+
+/**
+ * The reviewed content of a relationship. Relationship IDs hash only the
+ * column and source IDs, so the fingerprint also covers the compared atoms'
+ * statements and evidence, and the design atoms of both sources that decide
+ * comparability (method, population, dataset, replication).
+ */
+export function contradictionRelationshipFingerprint(
+  relationship: ContradictionRelationship,
+  atoms: readonly VerifiedFactAtom[],
+) {
+  const referenced = new Set([
+    ...relationship.sides.flatMap((side) => side.atomIDs),
+    ...relationship.comparability.differences.flatMap(
+      (difference) => difference.atomIDs,
+    ),
+  ]);
+  const sourceIDs = new Set(
+    relationship.sides.flatMap((side) => side.sourceIDs),
+  );
+  const content = atoms
+    .filter(
+      (atom) =>
+        referenced.has(atom.atomID) ||
+        (sourceIDs.has(atom.sourceID) &&
+          COMPARABILITY_DIMENSIONS.has(atom.dimension)),
+    )
+    .map(atomContent)
+    .sort((left, right) => left.atomID.localeCompare(right.atomID));
+  return `relationship-content-${stableHash(
+    JSON.stringify({
+      topic: relationship.topic,
+      classification: relationship.classification,
+      sides: relationship.sides.map((side) => ({
+        position: side.position,
+        atomIDs: [...side.atomIDs].sort(),
+        sourceIDs: [...side.sourceIDs].sort(),
+      })),
+      comparability: relationship.comparability,
+      atoms: content,
+    }),
+  )}`;
+}
+
+function withReviewEvent(
+  relationship: ContradictionRelationship,
+  event: ContradictionGapReviewEvent,
+): ContradictionRelationship {
+  return {
+    ...relationship,
+    reviewState:
+      event.action === "confirm"
+        ? "confirmed"
+        : event.action === "dismiss"
+          ? "dismissed"
+          : "reclassified",
+    ...(event.action === "reclassify" && event.toClassification
+      ? { userClassification: event.toClassification }
+      : {}),
+  };
+}
+
+/**
+ * Re-applies the reviews of the dashboard that a refresh replaces. A review
+ * still applies when the same relationship is rebuilt with the same
+ * rule-detected classification and the same compared content
+ * (contradictionRelationshipFingerprint). A review of a relationship that
+ * disappeared or changed is dropped and counted in the limitations.
+ */
+export function carryForwardContradictionGapReviews(
+  dashboard: ContradictionGapDashboard,
+  previous: ContradictionGapDashboard | undefined,
+): ContradictionGapDashboard {
+  if (
+    !previous?.reviewEvents?.length ||
+    previous.kind !== dashboard.kind ||
+    previous.projectID !== dashboard.projectID
+  ) {
+    return dashboard;
+  }
+  const eventsByRelationship = new Map<string, ContradictionGapReviewEvent[]>();
+  for (const event of previous.reviewEvents) {
+    const events = eventsByRelationship.get(event.relationshipID) ?? [];
+    events.push(event);
+    eventsByRelationship.set(event.relationshipID, events);
+  }
+  const carriedEventIDs = new Set<string>();
+  const relationships = dashboard.relationships.map((relationship) => {
+    const events = eventsByRelationship.get(relationship.relationshipID);
+    if (!events?.length) return relationship;
+    // A review applies only to the evidence it judged. Changed positions or
+    // atoms, or a review without a recorded fingerprint, start unreviewed.
+    const fingerprint = contradictionRelationshipFingerprint(
+      relationship,
+      dashboard.atoms,
+    );
+    if (
+      events[0].fromClassification !== relationship.classification ||
+      events.some((event) => event.relationshipFingerprint !== fingerprint)
+    ) {
+      return relationship;
+    }
+    for (const event of events) carriedEventIDs.add(event.eventID);
+    return events.reduce(withReviewEvent, relationship);
+  });
+  const reviewEvents = previous.reviewEvents.filter((event) =>
+    carriedEventIDs.has(event.eventID),
+  );
+  const dropped = previous.reviewEvents.length - reviewEvents.length;
+  return {
+    ...dashboard,
+    relationships,
+    reviewEvents,
+    limitations: dropped
+      ? [
+          ...dashboard.limitations,
+          `${dropped} earlier review${dropped === 1 ? "" : "s"} no longer apply because the relationship changed or is no longer detected.`,
+        ]
+      : dashboard.limitations,
   };
 }

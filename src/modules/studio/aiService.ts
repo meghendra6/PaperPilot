@@ -245,7 +245,10 @@ export class StudioAIService {
     )
       throw new Error("Select at most 30 distinct context files.");
     const controller =
-      this.ports.createAbortController?.() ?? new AbortController();
+      this.ports.createAbortController?.() ??
+      // Node tests only: the Zotero ports always supply a window controller.
+      // eslint-disable-next-line no-restricted-syntax
+      new AbortController();
     this.reserve();
     let data: StudioConversation | undefined;
     let turn: StudioTurn | undefined;

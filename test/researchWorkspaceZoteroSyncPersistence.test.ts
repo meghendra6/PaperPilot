@@ -242,3 +242,77 @@ test("deleting a project removes its receipt directory without touching shared s
   assert.equal(files.files.has(receiptPath), false);
   assert.equal(files.files.has(sourcePath), true);
 });
+
+test("a project with members from libraries 1 and 12 builds a valid sync preview", () => {
+  const member = (libraryID: number, itemKey: string) => ({
+    ...source(),
+    sourceID: `zotero:${libraryID}:${itemKey}:PDF-${itemKey}`,
+    identity: {
+      libraryID,
+      itemKey,
+      attachmentKey: `PDF-${itemKey}`,
+      standaloneAttachment: false,
+    },
+  });
+  const observed = (libraryID: number, itemKey: string) => ({
+    libraryID,
+    itemKey,
+    itemKind: "regular-item" as const,
+    eligibleForAdditiveSync: true,
+    available: true,
+    version: 1,
+    collectionKeys: [],
+    tagNames: [],
+  });
+  const preview = buildResearchWorkspaceZoteroSyncPreview({
+    projectID: "project-multi-library",
+    membersRevision: 1,
+    sources: [member(1, "AAAA"), member(12, "BBBB")],
+    selection: { libraryID: 1, tagNames: ["reviewed"] },
+    observedState: {
+      libraryID: 1,
+      existingTagNames: ["reviewed"],
+      items: [observed(1, "AAAA"), observed(12, "BBBB")],
+    },
+    previewID: "preview-multi-library",
+    createdAt: "2026-08-30T06:01:00.000Z",
+  });
+  assert.deepEqual(
+    preview.items.map((item) => `${item.libraryID}:${item.itemKey}`),
+    ["12:BBBB", "1:AAAA"],
+  );
+});
+
+test("a read-only library previews its items as blocked", () => {
+  const paper = source();
+  const preview = buildResearchWorkspaceZoteroSyncPreview({
+    projectID: "project-read-only",
+    membersRevision: 1,
+    sources: [paper],
+    selection: { libraryID: 1, tagNames: ["reviewed"] },
+    observedState: {
+      libraryID: 1,
+      libraryEditable: false,
+      existingTagNames: ["reviewed"],
+      items: [
+        {
+          libraryID: 1,
+          itemKey: "ITEM-A",
+          itemKind: "regular-item",
+          eligibleForAdditiveSync: true,
+          available: true,
+          version: 1,
+          collectionKeys: [],
+          tagNames: [],
+        },
+      ],
+    },
+    previewID: "preview-read-only",
+    createdAt: "2026-08-30T06:01:00.000Z",
+  });
+  assert.equal(preview.items[0].status, "blocked");
+  assert.equal(
+    preview.items[0].blockedReason,
+    "The Zotero library is read-only.",
+  );
+});

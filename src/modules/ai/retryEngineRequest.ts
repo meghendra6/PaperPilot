@@ -1,6 +1,5 @@
 import { handleClaudeQuestion } from "../claude/controller";
 import { handleCodexQuestion } from "../codex/controller";
-import { addMessage } from "../components/ChatMessage";
 import { sessionHistoryService } from "../session/sessionHistoryService";
 import { sessionStore } from "../session/sessionStore";
 import { assertRequestContextCurrent } from "../context/requestContext";
@@ -18,17 +17,19 @@ export async function retryLastEngineQuestion(params: {
   itemTitle: string;
   chatMessages: HTMLElement;
   streamingIndicator: HTMLElement;
+  /**
+   * Shows a status notice in the composer hint. Notices must stay out of the
+   * transcript: the claim release rebuilds it from saved messages, which
+   * would erase them, and they are not answers.
+   */
+  onNotice: (text: string) => void;
 }) {
   if (
     isReaderLifecycleClaimActive(params.itemID) ||
     getPendingEngineCompletion(params.itemID) ||
     getActiveReaderRunMode(params.itemID)
   ) {
-    addMessage(
-      params.chatMessages,
-      "A run is already starting or active for this paper.",
-      "ai",
-    );
+    params.onNotice("A run is already starting or active for this paper.");
     return;
   }
   const retryToken = claimRetryEngineRequest(params.itemID);
@@ -37,18 +38,12 @@ export async function retryLastEngineQuestion(params: {
   try {
     const last = getLastEngineRequest(params.itemID);
     if (!last) {
-      addMessage(
-        params.chatMessages,
-        "No previous engine request to retry.",
-        "ai",
-      );
+      params.onNotice("No previous engine request to retry.");
       return;
     }
     if (sessionStore.get(params.itemID)?.sessionId !== last.sessionId) {
-      addMessage(
-        params.chatMessages,
+      params.onNotice(
         "Return to the session where this request failed before retrying it.",
-        "ai",
       );
       return;
     }
@@ -66,10 +61,8 @@ export async function retryLastEngineQuestion(params: {
     });
     params.streamingIndicator.style.display = "flex";
     if (sessionStore.get(params.itemID)?.sessionId !== last.sessionId) {
-      addMessage(
-        params.chatMessages,
+      params.onNotice(
         "The active session changed before Retry could start. Return to the original session and try again.",
-        "ai",
       );
       params.streamingIndicator.style.display = "none";
       return;
@@ -108,12 +101,10 @@ export async function retryLastEngineQuestion(params: {
     });
   } catch (error) {
     params.streamingIndicator.style.display = "none";
-    addMessage(
-      params.chatMessages,
+    params.onNotice(
       error instanceof Error
         ? error.message
         : "Retry could not start. Edit the original question and try again.",
-      "ai",
     );
   } finally {
     releaseRetryEngineRequest(params.itemID, retryToken);

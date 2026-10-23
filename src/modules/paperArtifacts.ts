@@ -7,8 +7,8 @@ import {
 } from "./researchBrief";
 import {
   buildPaperToolQuestion,
+  getPaperToolOutputSchema,
   getPaperToolPreset,
-  PAPER_TOOL_OUTPUT_SCHEMA,
   parsePaperToolResponse,
   type PaperToolPresetID,
 } from "./paperTools";
@@ -207,7 +207,7 @@ export function buildPaperArtifactRequest(
     kind,
     label: preset.label,
     prompt: buildPaperToolQuestion(item, kind, responseLanguage),
-    outputSchema: PAPER_TOOL_OUTPUT_SCHEMA,
+    outputSchema: getPaperToolOutputSchema(kind),
   };
 }
 

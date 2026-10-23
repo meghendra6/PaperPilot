@@ -94,3 +94,25 @@ test("pre-controller errors do not suggest changing model authentication or work
     "ReferenceError: structuredClone is not defined",
   );
 });
+
+test("a recoverable preparation failure shows its own recovery step", () => {
+  const recovery =
+    'Workspace input "paper.md" was changed outside this run. Its files were preserved; move the edited file from "…/work/9-chat-a" before retrying, or start a new conversation.';
+  const failure = classifyRunFailure({
+    engine: "claude_code",
+    source: "workspace",
+    rawError: recovery,
+    recoveryMessage: recovery,
+  });
+  assert.equal(failure.kind, "workspace_error");
+  assert.equal(failure.userMessage, recovery);
+  // Settings cannot fix an edited input, so no settings action is offered.
+  assert.equal(failure.action, undefined);
+  const ioFailure = classifyRunFailure({
+    engine: "claude_code",
+    source: "workspace",
+    rawError: "EACCES: permission denied",
+  });
+  assert.match(ioFailure.userMessage, /writable workspace/);
+  assert.equal(ioFailure.action, "open_settings");
+});

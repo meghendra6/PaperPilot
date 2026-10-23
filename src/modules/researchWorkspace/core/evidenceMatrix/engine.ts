@@ -178,6 +178,17 @@ function upsertEvidenceMatrixRow(matrix: EvidenceMatrix, row: MatrixRow) {
     row.cells.map((cell) => ({ ...cell, paperKey: row.paperKey })),
   );
 }
+/**
+ * A cell counts as evidenced only with a locally verified reference. A
+ * reference the verifier did not find is a model claim, not coverage.
+ */
+function hasVerifiedEvidence(cell: { evidence: readonly unknown[] }) {
+  return cell.evidence.some(
+    (entry) =>
+      (entry as { verification?: { status?: unknown } } | null)?.verification
+        ?.status === "verified",
+  );
+}
 function calculateEvidenceMatrixCoverage(matrix: EvidenceMatrix) {
   const cellCount = matrix.papers.length * matrix.columns.length;
   const filled = matrix.cells.filter(
@@ -186,7 +197,7 @@ function calculateEvidenceMatrixCoverage(matrix: EvidenceMatrix) {
       cell.value !== null &&
       !!cell.displayValue.trim(),
   );
-  const evidenced = filled.filter((cell) => cell.evidence.length > 0);
+  const evidenced = filled.filter(hasVerifiedEvidence);
   const columnMap = new Map(
     matrix.columns.map((column) => [column.id, column]),
   );
@@ -197,7 +208,7 @@ function calculateEvidenceMatrixCoverage(matrix: EvidenceMatrix) {
   const requiredEvidenced = filled.filter(
     (cell) =>
       columnMap.get(cell.columnId)?.requiredEvidence &&
-      cell.evidence.length > 0,
+      hasVerifiedEvidence(cell),
   );
   const extractionCoverage = cellCount ? filled.length / cellCount : 1;
   return {

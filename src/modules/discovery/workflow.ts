@@ -33,6 +33,63 @@ const NON_MAIN_TRACKS = [
   [/tutorial|extended abstract|doctoral consortium/i, "Tutorial or abstract"],
 ] as const;
 
+// Main-conference volumes: `-long`/`-short`, and `-main` (EMNLP 2020-2024,
+// ACL 2020, NAACL 2021, EACL, AACL, COLING, LREC-COLING).
+const ACL_ANTHOLOGY_MAIN_VOLUME =
+  /aclanthology\.org\/(?:\d{4}\.)?(?:acl|emnlp|naacl|eacl|aacl|coling|lrec)-(?:long|short|main)\./i;
+const ACL_ANTHOLOGY_CONFERENCES = new Set([
+  "acl",
+  "naacl",
+  "emnlp",
+  "eacl",
+  "aacl",
+  "coling",
+  "lrec",
+  "conll",
+  "tacl",
+]);
+// Pre-2020 anthology IDs start with a letter for the event series.
+const LEGACY_ACL_ANTHOLOGY_EVENTS: Record<string, string> = {
+  P: "acl",
+  N: "naacl",
+  D: "emnlp",
+  E: "eacl",
+  C: "coling",
+  K: "conll",
+  Q: "tacl",
+};
+
+/** The conference series an ACL Anthology paper URL belongs to, if known. */
+function aclAnthologyEvent(url: string) {
+  const modern = url.match(
+    /aclanthology\.org\/\d{4}\.(?:findings-)?([a-z]+)[-.]/i,
+  );
+  if (modern) return modern[1].toLowerCase();
+  const legacy = url.match(/aclanthology\.org\/([A-Z])\d{2}-\d/);
+  return legacy ? LEGACY_ACL_ANTHOLOGY_EVENTS[legacy[1]] : undefined;
+}
+
+/**
+ * Every ACL Anthology page names "ACL Anthology" and carries an "ACL"
+ * copyright line, so a claimed ACL acronym is found on NAACL and EMNLP pages
+ * too. The anthology ID in the URL names the real series.
+ */
+function contradictsAclAnthologyEvent(
+  paper: DiscoveryResult["verifiedMain"][number],
+  url: string,
+) {
+  const event = aclAnthologyEvent(url);
+  if (!event || !ACL_ANTHOLOGY_CONFERENCES.has(event)) return false;
+  return [paper.venueAcronym, paper.leadingVenueAssessment.venueAcronym].some(
+    (acronym) => {
+      const claimed = String(acronym || "")
+        .toLowerCase()
+        .replace(/[^a-z]/g, "");
+      return ACL_ANTHOLOGY_CONFERENCES.has(claimed) && claimed !== event;
+    },
+  );
+}
+
 function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -154,9 +211,7 @@ function inferTrack(page: string, url: string) {
     /\bmain(?: conference| track| program| programme)?\b|\bresearch track\b|\b(?:long|short) papers?\b/i.test(
       combined,
     ) ||
-    /aclanthology\.org\/(?:\d{4}\.)?(?:acl|emnlp|naacl)-(?:long|short)\./i.test(
-      url,
-    )
+    ACL_ANTHOLOGY_MAIN_VOLUME.test(url)
   ) {
     return { label: "Main conference", main: true };
   }
@@ -247,9 +302,7 @@ function inferEntryBoundTrack(params: {
   }
   if (
     params.sourceFamily === "acl-anthology" &&
-    /aclanthology\.org\/(?:\d{4}\.)?(?:acl|emnlp|naacl)-(?:long|short)\./i.test(
-      params.url,
-    )
+    ACL_ANTHOLOGY_MAIN_VOLUME.test(params.url)
   ) {
     return local;
   }
@@ -264,7 +317,18 @@ function inferEntryBoundTrack(params: {
 }
 
 function inferDecision(page: string) {
-  if (/\b(reject(?:ed|ion)?|withdrawn?|retracted?)\b/i.test(page)) {
+  // The identity window holds the paper's own title and abstract, where
+  // "rejection" or "withdrawal" is often the subject (rejection sampling,
+  // learning to reject). Only an explicit status label or retraction notice
+  // counts as a negative decision.
+  if (
+    /\b(?:decision|status)\s*[:\u2013\u2014-]\s*(?:reject(?:ed|ion)?|withdrawn?|retracted?)\b/i.test(
+      page,
+    ) ||
+    /\b(?:this|the) (?:paper|article|work) (?:has been|was|is) (?:retracted|withdrawn)\b/i.test(
+      page,
+    )
+  ) {
     return { label: "Rejected or withdrawn", accepted: false };
   }
   if (/\b(accept(?:ed|ance)?|published|archival proceedings)\b/i.test(page)) {
@@ -893,7 +957,8 @@ export function reconstructOfficialEvidence(
   } else {
     const primaryTitleSurface =
       inspection.sourceFamily !== "generic-official-web" &&
-      !["openreview", "isca"].includes(inspection.sourceFamily)
+      // These families set a fixed site <title>; the paper title is in the body.
+      !["openreview", "isca", "cvf"].includes(inspection.sourceFamily)
         ? inspection.pageTitle || ""
         : page;
     if (
@@ -928,6 +993,11 @@ export function reconstructOfficialEvidence(
     ? officialVenueAgreement(paper, statusClaims)?.label
     : observedVenue(paper, page);
   if ((paper.venueName || paper.venueAcronym) && !venue) return undefined;
+  if (
+    inspection.sourceFamily === "acl-anthology" &&
+    contradictsAclAnthologyEvent(paper, inspection.url)
+  )
+    return undefined;
   const type = inferEvidenceType(inspection);
   if (!type) return undefined;
   if (
@@ -1262,30 +1332,57 @@ export async function verifyDiscoveryEvidenceLive(params: {
     };
   });
 
+  // A paper that kept no verified URL would look malformed to the parser and
+  // vanish as an "omitted" paper. Record it as excluded for unsupported
+  // claims instead, so the failed verification stays visible.
+  const keepsTarget = (paper: (typeof papersWithLiveEvidence)[number]) =>
+    paper.urls.length > 0 || Boolean(paper.doi);
   const verifiedPayload = {
     ...params.discovery,
     liveVerification: {
       verifierVersion: 2,
       verifiedAt: new Date().toISOString(),
     },
-    verifiedMain: papersWithLiveEvidence,
+    verifiedMain: papersWithLiveEvidence.filter(keepsTarget),
     otherPeerReviewed: [],
     noveltyRadar: [],
+    excluded: [
+      ...params.discovery.excluded,
+      ...papersWithLiveEvidence
+        .filter((paper) => !keepsTarget(paper))
+        .map((paper) => ({
+          title: paper.title,
+          reason: "unsupported_claim" as const,
+        })),
+    ],
+    // The parser keeps 12 limitations. Verifier notices go first so the
+    // agent's and providers' notes cannot push them out.
     limitations: [
       ...new Set([
-        ...params.discovery.limitations,
-        ...(params.limitations || []),
         ...(failures.length
           ? [
               "Publication status could not be verified for one or more official sources during live recheck.",
-              ...failures.slice(0, 8),
+              ...failures.slice(0, 3),
             ]
           : []),
+        ...params.discovery.limitations,
+        ...(params.limitations || []),
       ]),
     ],
   };
-  return parseDiscoveryResult(JSON.stringify(verifiedPayload), {
-    allowReviewLinks: true,
-    allowLiveVerificationMarker: true,
-  });
+  try {
+    return parseDiscoveryResult(JSON.stringify(verifiedPayload), {
+      allowReviewLinks: true,
+      allowLiveVerificationMarker: true,
+    });
+  } catch {
+    // The payload is this verifier's own JSON, so a parse failure means no
+    // paper survived verification. Report that, not a malformed-JSON error.
+    throw new Error(
+      [
+        "No paper could be verified against official sources, so the discovery result did not include any usable papers.",
+        ...failures.slice(0, 2),
+      ].join(" "),
+    );
+  }
 }

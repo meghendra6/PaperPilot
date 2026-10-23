@@ -26,8 +26,25 @@ export type FigureToolReader = {
     toolType?: string;
     setTool?: (params: unknown) => void;
     _state?: { readOnly?: boolean };
+    _primaryView?: { _iframeWindow?: Window };
+    _secondaryView?: { _iframeWindow?: Window };
   };
 };
+
+/**
+ * The reader frame plus the PDF view frames. The PDF view handles keys in
+ * its own frame and swallows Escape there, so listen on each of them.
+ */
+function keyWindows(reader: FigureToolReader): Window[] {
+  const internal = reader._internalReader;
+  return [
+    reader._iframeWindow,
+    internal?._primaryView?._iframeWindow,
+    internal?._secondaryView?._iframeWindow,
+  ].filter((win, index, all): win is Window =>
+    Boolean(win && all.indexOf(win) === index),
+  );
+}
 
 export interface FigureModeEntry extends ArmedFigureReader {
   reader: FigureToolReader;
@@ -35,6 +52,7 @@ export interface FigureModeEntry extends ArmedFigureReader {
   onArea: (target: FigureExplainTarget) => void;
   onKeyDown: (event: KeyboardEvent) => void;
   onUnload: () => void;
+  keyWindows?: Window[];
 }
 
 function entries(): Map<string, FigureModeEntry> {
@@ -230,7 +248,9 @@ export function disarmFigureMode(id: string, restoreTool = true) {
   clearTimeout(entry.timer);
   try {
     const win = entry.reader._iframeWindow;
-    win?.removeEventListener("keydown", entry.onKeyDown, true);
+    for (const keyWindow of entry.keyWindows ?? [win]) {
+      keyWindow?.removeEventListener("keydown", entry.onKeyDown, true);
+    }
     win?.removeEventListener("unload", entry.onUnload);
     if (restoreTool && currentTool(entry.reader) === "image")
       setReaderTool(entry.reader, entry.previousTool);
@@ -282,9 +302,12 @@ export function armFigureMode(
       }
     }, EXPLAIN_MODE_TIMEOUT_MS),
   };
+  entry.keyWindows = keyWindows(reader);
   entries().set(id, entry);
   ensureObserver();
-  reader._iframeWindow?.addEventListener("keydown", onKeyDown, true);
+  for (const keyWindow of entry.keyWindows) {
+    keyWindow.addEventListener("keydown", onKeyDown, true);
+  }
   reader._iframeWindow?.addEventListener("unload", onUnload, { once: true });
   setReaderTool(reader, "image");
   syncButtons(reader);

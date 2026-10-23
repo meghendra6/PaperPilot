@@ -1,3 +1,6 @@
+import { logWithToolkit } from "../../utils/addonScope";
+import { shellExportLine } from "../codex/shell";
+
 export type StructuredOutputSchema = Record<string, unknown>;
 
 const capabilityCache = new Map<string, boolean>();
@@ -145,7 +148,7 @@ export async function cliSupportsFlag(params: {
       | { subprocess?: (path: string, args: string[]) => Promise<string> }
       | undefined;
     if (typeof internal?.subprocess !== "function") {
-      (globalThis as any).ztoolkit?.log?.(
+      logWithToolkit(
         `Native structured output probe unavailable for ${params.executablePath}; using parser validation.`,
       );
       return false;
@@ -156,7 +159,7 @@ export async function cliSupportsFlag(params: {
           /^[A-Za-z_][A-Za-z0-9_]*$/.test(entry[0]) &&
           typeof entry[1] === "string",
       )
-      .map(([key, value]) => `export ${key}=${shellEscape(value)}`);
+      .map(([key, value]) => shellExportLine(key, value));
     const command = [params.executablePath, ...params.helpArgs]
       .map(shellEscape)
       .join(" ");
@@ -168,7 +171,7 @@ export async function cliSupportsFlag(params: {
     if (supported) capabilityCache.set(cacheKey, true);
     return supported;
   } catch (error) {
-    (globalThis as any).ztoolkit?.log?.(
+    logWithToolkit(
       `Native structured output probe failed for ${params.executablePath}; using parser validation.`,
       error,
     );

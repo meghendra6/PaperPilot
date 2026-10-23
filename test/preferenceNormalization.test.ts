@@ -89,7 +89,7 @@ test("Codex sandbox mode accepts case and spacing variants", () => {
 
 test("Codex approval mode accepts case and spacing variants", () => {
   assert.equal(normalizeCodexApprovalMode("On Request"), "on-request");
-  assert.equal(normalizeCodexApprovalMode("on_failure"), "on-failure");
+  assert.equal(normalizeCodexApprovalMode("on_failure"), "on-request");
   assert.equal(normalizeCodexApprovalMode("NEVER"), "never");
   assert.equal(normalizeCodexApprovalMode("auto edit"), "never");
   assert.equal(normalizeCodexApprovalMode("sometimes"), undefined);
