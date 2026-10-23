@@ -1,3 +1,5 @@
+import { isWorkspacePreparationError } from "../workspace/preparationError";
+import { redactAbsolutePaths } from "../workspace/redaction";
 import {
   assertRequestContextCurrent,
   type RequestContextSnapshot,
@@ -36,10 +38,10 @@ import {
 import { classifyRunFailure } from "../ai/runFailure";
 import { getRunProgressState } from "../ai/runProgress";
 import { armRunTimeout, completeTimedOutRun } from "../ai/runTimeout";
-import { sanitizeAssistantText } from "../message/assistantOutput";
+import { presentRunAnswer } from "../message/assistantOutput";
 import { sessionHistoryService } from "../session/sessionHistoryService";
 import { cleanupWorkspaceIfEnabled } from "../workspace/cleanup";
-import { clearClaudePollerForItem } from "./poller";
+import { clearClaudePollerForItem, clearClaudePollerIfOwned } from "./poller";
 import {
   clearClaudeRunStateForItem,
   isClaudeRunActiveForItem,
@@ -53,6 +55,9 @@ import {
 } from "../ai/workspaceRun";
 import type { RunProfile } from "../ai/runProfile";
 import type { StructuredOutputSchema } from "../ai/structuredOutput";
+
+const SOURCE_CHANGED_MESSAGE =
+  "The PDF changed while this answer was generated. Its evidence needs review.";
 
 declare const addon: any;
 
@@ -212,6 +217,7 @@ export async function handleClaudeQuestion(params: {
       executionSettings: params.executionSettings,
       responseLength: params.responseLength,
       shouldContinue: () =>
+        !addon.data.shuttingDown &&
         isReaderRunTokenActive(params.itemID, runToken) &&
         !getPendingEngineCompletion(params.itemID)?.terminalClaim,
       onWorkspaceAllocated: (path) => {
@@ -245,6 +251,9 @@ export async function handleClaudeQuestion(params: {
       token: runToken,
       rawError: detail,
       source: "workspace",
+      recoveryMessage: isWorkspacePreparationError(error)
+        ? redactAbsolutePaths(error.message)
+        : undefined,
       canRetry: !params.suppressChatMessages,
     });
     const assistantText =
@@ -396,14 +405,35 @@ export async function handleClaudeQuestion(params: {
     type: "spawned",
     processId: result.processId,
   });
+  // A slow read must not overlap the next tick: a tick that resumes after
+  // another tick completed the run would write a stale running state.
+  let progressReadInFlight = false;
   const poller = setInterval(async () => {
-    const progress = await readClaudeRunProgress({
-      outputPath: result.outputPath,
-      stderrPath: result.stderrPath,
-      exitCodePath: result.exitCodePath,
-    });
+    if (progressReadInFlight) return;
+    progressReadInFlight = true;
+    let progress: Awaited<ReturnType<typeof readClaudeRunProgress>>;
+    try {
+      progress = await readClaudeRunProgress({
+        outputPath: result.outputPath,
+        stderrPath: result.stderrPath,
+        exitCodePath: result.exitCodePath,
+      });
+    } finally {
+      progressReadInFlight = false;
+    }
 
-    if (!isReaderRunTokenActive(params.itemID, runToken)) return;
+    // Shutdown clears pending completions; a poller whose run lost both its
+    // token and its pending entry can never finish, so it stops itself.
+    if (!isReaderRunTokenActive(params.itemID, runToken)) {
+      if (!isPendingEngineCompletionCurrent(params.itemID, runToken))
+        clearClaudePollerIfOwned(params.itemID, poller);
+      return;
+    }
+    // Completion, Stop, and shutdown unregister the poller first.
+    if (addon.data.claudeRunPollers?.get(params.itemID) !== poller) {
+      clearInterval(poller);
+      return;
+    }
 
     if (!progress.completed) {
       if (assistantMessage) {
@@ -420,12 +450,15 @@ export async function handleClaudeQuestion(params: {
           assistantMessage,
           partial || "Running Claude Code…",
           "ai",
+          { streaming: true },
         );
       }
       return;
     }
 
     if (!claimPendingEngineCompletion(params.itemID, runToken, "controller")) {
+      if (!isPendingEngineCompletionCurrent(params.itemID, runToken))
+        clearClaudePollerIfOwned(params.itemID, poller);
       return;
     }
 
@@ -462,17 +495,24 @@ export async function handleClaudeQuestion(params: {
     }
     const terminalFailure = success
       ? undefined
-      : classifyRunFailure({
-          engine: "claude_code",
-          rawError: progress.diagnosticOutput || rawAssistantText,
-          source: parsedAnswer.invalidAnswer ? "response" : "process_exit",
-        });
+      : sourceChanged
+        ? classifyRunFailure({
+            engine: "claude_code",
+            rawError: progress.diagnosticOutput || "",
+            source: "workspace",
+            recoveryMessage: SOURCE_CHANGED_MESSAGE,
+          })
+        : classifyRunFailure({
+            engine: "claude_code",
+            rawError: progress.diagnosticOutput || rawAssistantText,
+            source: parsedAnswer.invalidAnswer ? "response" : "process_exit",
+          });
     let assistantText = success
-      ? sanitizeAssistantText(parsedAnswer.answerMarkdown)
+      ? presentRunAnswer(parsedAnswer.answerMarkdown, profile)
       : (terminalFailure?.userMessage ?? "Claude Code run failed.");
 
     if (sourceChanged)
-      assistantText = `${sanitizeAssistantText(parsedAnswer.answerMarkdown)}\n\nThe PDF changed while this answer was generated. Its evidence needs review.`;
+      assistantText = `${presentRunAnswer(parsedAnswer.answerMarkdown, profile)}\n\n${SOURCE_CHANGED_MESSAGE}`;
     if (assistantMessage) {
       setMessageContent(assistantMessage, assistantText, "ai");
     }
@@ -501,7 +541,13 @@ export async function handleClaudeQuestion(params: {
             assistantText,
             success,
             citationCandidates: parsedAnswer.citationCandidates,
-            rawEvent: progress.rawOutput,
+            // The full event stream holds paper text and tool output; keep
+            // only failure diagnostics, as the Codex controller does.
+            rawEvent: success
+              ? undefined
+              : terminalFailure?.rawError ||
+                progress.diagnosticOutput ||
+                rawAssistantText,
             resumeSessionId: progress.resumeSessionId,
             suppressMessage: params.suppressChatMessages,
             updateResumeMetadata: profile === "chat",

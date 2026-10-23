@@ -689,3 +689,80 @@ test("completed steps keep reader judgment, paper claims, and Paper Pilot infere
   assert.match(block("agent"), /^Paper Pilot의 추론/);
   assert.match(block("paper"), /^논문의 주장/);
 });
+
+function findByControl(
+  element: FakeElement,
+  key: string,
+): FakeElement | undefined {
+  for (const child of element.children) {
+    if (child.getAttribute("data-cr-control") === key) return child;
+    const nested = findByControl(child, key);
+    if (nested) return nested;
+  }
+  return undefined;
+}
+
+function completedState() {
+  const initial = buildInitialCriticalReadState();
+  return {
+    ...initial,
+    phase: "complete" as const,
+    running: false,
+    currentStep: 7 as CriticalReadStepID,
+    reportMarkdown: "# Report",
+    steps: initial.steps.map((step) => ({
+      ...step,
+      status: "complete" as const,
+      output: output({
+        sourceLocators: ["p. 4", "Table 2"],
+        limitations: ["Appendix unavailable"],
+      }),
+    })),
+  };
+}
+
+const noActions = {
+  onStart() {},
+  onRun() {},
+  onCancel() {},
+  onRevise() {},
+  onSave() {},
+  onStartMastery() {},
+};
+
+test("completed steps show their source locations and limits", () => {
+  const doc = createFakeDocument();
+  const root = doc.createElement("div");
+  renderCriticalReadSection({
+    root: root as unknown as HTMLElement,
+    state: completedState(),
+    actions: noActions,
+  });
+  const text = collectText(root);
+  for (const expected of [
+    "Source locations",
+    "p. 4",
+    "Table 2",
+    "Limits and uncertainty",
+    "Appendix unavailable",
+  ]) {
+    assert.ok(text.includes(expected), `missing rendered output: ${expected}`);
+  }
+});
+
+test("a Critical Read rebuild returns keyboard focus to the same control", () => {
+  const doc = createFakeDocument();
+  const root = doc.createElement("div");
+  const render = () =>
+    renderCriticalReadSection({
+      root: root as unknown as HTMLElement,
+      state: completedState(),
+      actions: noActions,
+    });
+  render();
+  findByControl(root, "revise-3")?.focus();
+  render();
+  const focused = doc.activeElement;
+  assert.equal(focused?.getAttribute("data-cr-control"), "revise-3");
+  assert.equal(focused, findByControl(root, "revise-3"));
+});

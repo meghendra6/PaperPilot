@@ -10,6 +10,8 @@ import type { MasteryDifficulty, MasteryEvaluationResponse } from "./prompt";
 export const MASTERY_SCHEDULER_VERSION =
   "paperpilot-mastery-scheduler-v1" as const;
 
+const DAY_MS = 24 * 60 * 60 * 1_000;
+
 const CRITERIA = ["accuracy", "completeness", "evidence", "reasoning"] as const;
 
 function clamp01(value: number) {
@@ -86,6 +88,22 @@ export function scheduleMasteryReview(params: {
   const now = params.now ?? new Date();
   const quality = Math.round(score * 5);
   const successful = quality >= 3;
+  // Answers before the scheduled review are practice inside the same
+  // review period. A good answer keeps the schedule, so one sitting
+  // advances it at most once. A failed answer is a lapse and brings the
+  // review back to one day from now without lowering the ease again.
+  if (previous && now.getTime() < Date.parse(previous.nextReviewAt)) {
+    if (successful) return previous;
+    if (previous.repetitions === 0) return previous;
+    return {
+      ...previous,
+      algorithmVersion: MASTERY_SCHEDULER_VERSION,
+      repetitions: 0,
+      intervalDays: 1,
+      lastReviewedAt: now.toISOString(),
+      nextReviewAt: new Date(now.getTime() + DAY_MS).toISOString(),
+    };
+  }
   const repetitions = successful ? (previous?.repetitions ?? 0) + 1 : 0;
   const previousEase = previous?.easeFactor ?? 2.5;
   const easeFactor = Math.max(
@@ -105,9 +123,7 @@ export function scheduleMasteryReview(params: {
     intervalDays,
     easeFactor: Number(easeFactor.toFixed(3)),
     lastReviewedAt: now.toISOString(),
-    nextReviewAt: new Date(
-      now.getTime() + intervalDays * 24 * 60 * 60 * 1_000,
-    ).toISOString(),
+    nextReviewAt: new Date(now.getTime() + intervalDays * DAY_MS).toISOString(),
   };
 }
 

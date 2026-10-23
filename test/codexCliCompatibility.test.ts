@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { test } from "node:test";
 import * as assert from "node:assert/strict";
+import { CODEX_APPROVAL_MODES } from "../src/modules/codex/commandBuilder";
 
 function findCodexBinary() {
   const configuredPath = process.env.PAPERPILOT_CODEX_BIN;
@@ -47,5 +48,34 @@ test(
     );
     assert.equal(topLevelFlagResult.status, 0);
     assert.match(topLevelFlagResult.stdout, /Usage:\s+codex exec/i);
+  },
+);
+
+test(
+  "codex CLI lists every approval policy that settings offer",
+  {
+    skip: !findCodexBinary(),
+  },
+  () => {
+    const codexPath = findCodexBinary();
+    assert.ok(codexPath);
+
+    // Passing a value next to --help skips value validation, so read the
+    // accepted values from the help text instead.
+    const help = spawnSync(codexPath, ["--help"], { encoding: "utf-8" });
+    assert.equal(help.status, 0);
+    const section = help.stdout
+      .split(/\n(?= {2}-)/)
+      .find((block) => block.includes("--ask-for-approval"));
+    assert.ok(section, "codex --help does not describe --ask-for-approval");
+    const accepted = [...section.matchAll(/^\s+- ([a-z-]+):/gm)].map(
+      (match) => match[1],
+    );
+    for (const mode of CODEX_APPROVAL_MODES) {
+      assert.ok(
+        accepted.includes(mode),
+        `codex --ask-for-approval no longer accepts "${mode}" (accepted: ${accepted.join(", ")})`,
+      );
+    }
   },
 );

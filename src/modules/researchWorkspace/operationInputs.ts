@@ -131,6 +131,21 @@ export function admittedProjectArtifacts(
   return details.artifacts.filter((artifact) => current(artifact));
 }
 
+/**
+ * The newest version of an artifact type that has not been superseded.
+ * Superseding rewrites `updatedAt`, so the old version sorts first in the
+ * updated-time history list and a plain `find` returns it.
+ */
+export function latestCurrentArtifact<
+  T extends { type: string; status: string; version: number },
+>(artifacts: readonly T[], type: T["type"]): T | undefined {
+  return artifacts
+    .filter(
+      (artifact) => artifact.type === type && artifact.status !== "superseded",
+    )
+    .sort((left, right) => right.version - left.version)[0];
+}
+
 export function createProjectOperationAdmission(
   details: ProjectSemanticDetails,
   papers: readonly ResearchWorkspacePaper[],

@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import * as assert from "node:assert/strict";
 
+import { nativeStructuredOutputSchemaIssue } from "../src/modules/ai/structuredOutput";
 import {
   buildCompareSelection,
   buildCompareSelectionFromRecommendations,
@@ -285,6 +286,22 @@ test("buildPaperCompareRequestFromRecommendations packages a compare prompt from
   assert.match(
     request.prompt,
     /do not invent extra papers or missing details/i,
+  );
+  // The prompt, schema, and parser all ask for the exact selected set.
+  assert.match(request.prompt, /every supplied paper exactly once.*3 entries/);
+  assert.match(request.prompt, /copy each papers\[\]\.title exactly/);
+  const papers = (request.outputSchema.properties as Record<string, any>)
+    .papers;
+  assert.equal(papers.minItems, 3);
+  assert.equal(papers.maxItems, 3);
+  assert.deepEqual(papers.items.properties.title.enum, [
+    "Current Paper",
+    "Paper B",
+    "Paper C",
+  ]);
+  assert.equal(
+    nativeStructuredOutputSchemaIssue(request.outputSchema),
+    undefined,
   );
 });
 

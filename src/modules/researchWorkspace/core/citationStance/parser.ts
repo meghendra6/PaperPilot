@@ -82,11 +82,23 @@ function parse(
           : {}),
         stance: "uncertain",
         rationale: "No classification returned.",
-        limitations: ["Missing model output"],
+        limitations: [MISSING_STANCE_OUTPUT_LIMITATION],
         evidence: [],
       },
   );
 }
+/**
+ * The limitation on a placeholder for a context the model did not classify.
+ * Coverage counts use it, so skipped contexts are not reported as analyzed.
+ */
+const MISSING_STANCE_OUTPUT_LIMITATION = "Missing model output";
+
+function isMissingStanceOutput(result: { limitations?: readonly string[] }) {
+  return Boolean(
+    result.limitations?.includes(MISSING_STANCE_OUTPUT_LIMITATION),
+  );
+}
+
 function parseCitationStanceResponse(
   responseOrParams:
     | string
@@ -106,4 +118,8 @@ function parseCitationStanceResponse(
       );
 }
 
-export { parseCitationStanceResponse };
+export {
+  isMissingStanceOutput,
+  MISSING_STANCE_OUTPUT_LIMITATION,
+  parseCitationStanceResponse,
+};

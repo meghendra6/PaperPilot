@@ -2,7 +2,7 @@ import type { ResearchWorkspacePaper } from "./paperSource";
 import { stableHash } from "./identity";
 
 export const RESEARCH_WORKSPACE_CONTEXT_PLANNER_VERSION =
-  "context-planner-v1" as const;
+  "context-planner-v2" as const;
 
 export interface ResearchWorkspaceContextProjection {
   sourceID: string;
@@ -39,6 +39,8 @@ interface CandidateChunk {
   id: string;
   text: string;
   score: number;
+  /** Position in the paper; chunk IDs carry unpadded numbers. */
+  ordinal: number;
 }
 
 function stableFingerprint(value: string) {
@@ -105,13 +107,13 @@ function candidates(
       }))
     : plainChunks(paper);
   return source
-    .map((chunk) => ({
+    .map((chunk, ordinal) => ({
       ...chunk,
+      ordinal,
       score: score(`${paper.title}\n${chunk.text}`, searchTerms),
     }))
     .sort(
-      (left, right) =>
-        right.score - left.score || left.id.localeCompare(right.id),
+      (left, right) => right.score - left.score || left.ordinal - right.ordinal,
     );
 }
 
@@ -144,6 +146,8 @@ function chooseChunks(
     used += separator + text.length;
     if (text.length < chunk.text.length) break;
   }
+  // Relevance decides what is included; document order decides how it reads.
+  selected.sort((left, right) => left.ordinal - right.ordinal);
   const includedIDs = new Set(selected.map((chunk) => chunk.id));
   const includedText = selected.map((chunk) => chunk.text).join("\n\n");
   const availableCharacters = available.reduce(

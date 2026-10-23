@@ -1,5 +1,6 @@
 import {
   extractPdfTextPages,
+  countQuoteOccurrences,
   matchQuoteInPages,
 } from "../autoHighlight/pdfMatch";
 import type { PDFPageText } from "../autoHighlight/types";
@@ -298,18 +299,27 @@ export class ResearchWorkspaceEvidenceVerifier {
         ),
       };
     }
-    const match = matchQuoteInPages(base.exactQuote, pages);
-    if (
-      !match ||
-      (base.pageIndex !== undefined && match.pageIndex !== base.pageIndex)
-    ) {
+    // A claimed page narrows the search, so a sentence repeated elsewhere
+    // in the paper (abstract and conclusion) still verifies on that page.
+    const searchedPages =
+      base.pageIndex !== undefined
+        ? pages.filter((page) => page.pageIndex === base.pageIndex)
+        : pages;
+    const match = matchQuoteInPages(base.exactQuote, searchedPages);
+    if (!match) {
+      const repeated =
+        countQuoteOccurrences(base.exactQuote, searchedPages) > 1;
       return {
         ...base,
         verification: verification(
           "not-found",
           "pdf-exact-quote",
           now,
-          "The exact quote was not found at the claimed local PDF location.",
+          repeated
+            ? base.pageIndex !== undefined
+              ? "The exact quote occurs more than once on the claimed page, so its location is ambiguous."
+              : "The exact quote occurs more than once in the local PDF; a page is required to verify it."
+            : "The exact quote was not found at the claimed local PDF location.",
         ),
       };
     }

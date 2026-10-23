@@ -1,3 +1,4 @@
+import { splitSentences, type SentenceSlice } from "./sentenceSplit";
 import type {
   ResearchWorkspacePaper,
   ResearchWorkspaceStructuredChunk,
@@ -10,7 +11,7 @@ import {
 } from "./identity";
 
 export const CITATION_CONTEXT_EXTRACTOR_VERSION =
-  "paperpilot-citation-context-v1" as const;
+  "paperpilot-citation-context-v2" as const;
 
 export interface CitationLibraryCandidate {
   id: number;
@@ -113,28 +114,15 @@ interface CitationMarker {
   year?: number;
 }
 
-interface SentenceSlice {
-  text: string;
-  start: number;
-}
-
 function normalizeWhitespace(value: string) {
   return value.replace(/\s+/g, " ").trim();
 }
 
 function sentences(value: string): SentenceSlice[] {
-  const protectedValue = value
-    .replace(/\b(?:et\s+al|e\.g|i\.e|fig|eq|dr|mr|mrs|prof)\./gi, (match) =>
-      match.replace(/\./g, "\uE000"),
-    )
-    .replace(/(?<=\d)\.(?=\d)/g, "\uE000");
-  const result: SentenceSlice[] = [];
-  const expression = /[^.!?\n]+(?:[.!?]+(?=\s|$)|$)/g;
-  for (const match of protectedValue.matchAll(expression)) {
-    const text = normalizeWhitespace(match[0].replace(/\uE000/g, "."));
-    if (text) result.push({ text, start: match.index ?? 0 });
-  }
-  return result;
+  return splitSentences(value).flatMap((slice) => {
+    const text = normalizeWhitespace(slice.text);
+    return text ? [{ text, start: slice.start }] : [];
+  });
 }
 
 function numericIndexes(value: string) {
@@ -160,9 +148,10 @@ function numericIndexes(value: string) {
 
 function citationMarkers(sentence: string): CitationMarker[] {
   const markers: CitationMarker[] = [];
-  for (const match of sentence.matchAll(
-    /\[((?:\d+\s*(?:[-–]\s*\d+)?\s*[,;]?\s*)+)\]/g,
-  )) {
+  // One bounded character class keeps matching linear. The nested optional
+  // separators used before backtracked exponentially on "[1234567…" without
+  // a closing bracket. numericIndexes() validates the content.
+  for (const match of sentence.matchAll(/\[(\d[\d\s,;–-]{0,199})\]/g)) {
     for (const numericIndex of numericIndexes(match[1])) {
       markers.push({
         raw: match[0],

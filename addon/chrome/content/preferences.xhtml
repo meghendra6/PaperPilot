@@ -439,6 +439,7 @@
         <html:select
           id="zotero-prefpane-__addonRef__-input-codex-approval-mode"
           preference="extensions.zotero.__addonRef__.codexApprovalMode"
+          aria-describedby="zotero-prefpane-__addonRef__-codex-approval-mode-help"
           style="flex: 1"
         >
           <html:option
@@ -449,16 +450,13 @@
             value="on-request"
             data-l10n-id="pref-codex-approval-mode-on-request"
           ></html:option>
-          <html:option
-            value="untrusted"
-            data-l10n-id="pref-codex-approval-mode-untrusted"
-          ></html:option>
-          <html:option
-            value="on-failure"
-            data-l10n-id="pref-codex-approval-mode-on-failure"
-          ></html:option>
         </html:select>
       </hbox>
+      <html:p
+        id="zotero-prefpane-__addonRef__-codex-approval-mode-help"
+        data-l10n-id="pref-codex-approval-mode-help"
+        class="paperpilot-pref-help"
+      ></html:p>
     </groupbox>
 
     <groupbox>

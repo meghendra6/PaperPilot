@@ -4,9 +4,14 @@ export function normalizeWhitespace(value: string) {
   return value.replace(/\s+/g, " ").trim();
 }
 
+/**
+ * Folds diacritics before splitting on separators, so "García" and "Garcia"
+ * share one key and accented names stay whole words.
+ */
 export function normalizeDiscoveryTitle(value: string) {
   return normalizeWhitespace(value)
     .normalize("NFKD")
+    .replace(/\p{M}+/gu, "")
     .toLowerCase()
     .replace(/[^\p{L}\p{N}]+/gu, " ")
     .trim();

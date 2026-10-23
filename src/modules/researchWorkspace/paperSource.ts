@@ -1,3 +1,4 @@
+import { isPdfFileAttachment } from "../../utils/pdfAttachment";
 import {
   paperWorkspaceContentCache,
   buildPaperContentFingerprint,
@@ -159,11 +160,8 @@ export async function getResearchWorkspaceItem(itemID: number) {
 
 async function resolvePaperAndAttachment(item: any) {
   if (item?.isAttachment?.()) {
-    const isPdf =
-      item.isPDFAttachment?.() ||
-      item.attachmentContentType === "application/pdf" ||
-      item.attachmentContentType === "";
-    if (!isPdf) throw new Error("The selected attachment is not a PDF.");
+    if (!isPdfFileAttachment(item))
+      throw new Error("The selected attachment is not a PDF.");
     const parentID = Number(item.parentItemID || 0);
     return {
       paperItem: parentID
@@ -177,13 +175,7 @@ async function resolvePaperAndAttachment(item: any) {
   const attachmentIDs = item?.getAttachments?.() ?? [];
   for (const attachmentID of attachmentIDs) {
     const attachment = await getResearchWorkspaceItem(Number(attachmentID));
-    if (
-      attachment?.isPDFAttachment?.() ||
-      attachment?.attachmentContentType === "application/pdf" ||
-      attachment?.attachmentContentType === ""
-    ) {
-      attachments.push(attachment);
-    }
+    if (isPdfFileAttachment(attachment)) attachments.push(attachment);
   }
   if (attachments.length > 1) {
     throw new Error(

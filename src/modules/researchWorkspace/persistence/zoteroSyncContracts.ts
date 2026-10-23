@@ -44,6 +44,8 @@ export interface ResearchWorkspaceZoteroSyncItemSnapshot
 
 export interface ResearchWorkspaceZoteroSyncObservedState {
   libraryID: number;
+  /** False for a read-only (for example group) library. */
+  libraryEditable?: boolean;
   collection?: ResearchWorkspaceZoteroSyncCollectionSnapshot;
   existingTagNames: string[];
   items: ResearchWorkspaceZoteroSyncItemSnapshot[];

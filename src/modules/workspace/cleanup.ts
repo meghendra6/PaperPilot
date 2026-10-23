@@ -1,8 +1,11 @@
 import { getPref } from "../../utils/prefs";
 import { resolveSessionHistoryPrefs } from "../session/historyPrefs";
 import {
+  findWorkspaceSymlink,
+  isWorkspaceSymlink,
   parseWorkspaceInputManifest,
   workspaceInputContentFingerprint,
+  type WorkspaceSymlinkProbe,
 } from "./supplementalFiles";
 
 function isSafeWorkspacePath(workspacePath: string) {
@@ -17,8 +20,16 @@ function isSafeWorkspacePath(workspacePath: string) {
   );
 }
 
-/** Remove only manifest-owned files at the exact allocated path. */
-export async function cleanupWorkspaceDirectory(workspacePath: string) {
+/**
+ * Remove only manifest-owned files at the exact allocated path. The agent can
+ * write the manifest and plant links in its workspace, so an entry reached
+ * through a symbolic link is never removed; the manifest is kept, and the next
+ * run reports the link instead of reusing the directory silently.
+ */
+export async function cleanupWorkspaceDirectory(
+  workspacePath: string,
+  isSymlink: WorkspaceSymlinkProbe = isWorkspaceSymlink,
+) {
   if (!isSafeWorkspacePath(workspacePath)) return false;
   const io = (globalThis as any).IOUtils;
   const zotero = (globalThis as any).Zotero;
@@ -38,6 +49,10 @@ export async function cleanupWorkspaceDirectory(workspacePath: string) {
   let preservedEdits = false;
   const removable = [];
   for (const entry of manifest.files) {
+    if (await findWorkspaceSymlink(workspacePath, entry.path, isSymlink)) {
+      preservedEdits = true;
+      continue;
+    }
     if (!(await io.exists(`${workspacePath}/${entry.path}`))) continue;
     if (entry.contentFingerprint !== "runtime-owned") {
       const current = String(
@@ -69,6 +84,7 @@ export async function cleanupWorkspaceDirectory(workspacePath: string) {
   for (const directory of [...directories].sort(
     (left, right) => right.length - left.length,
   )) {
+    if (await isSymlink(directory)) continue;
     try {
       await io.remove(directory, { recursive: false, ignoreAbsent: true });
     } catch {

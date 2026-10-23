@@ -83,6 +83,37 @@ test("canonical mastery records rubric scoring, learner calibration, and review 
   assert.deepEqual(summary.openMisconceptions, ["Accepted-prefix detail"]);
 });
 
+test("one sitting of good answers advances the review schedule once", () => {
+  const start = Date.parse("2026-10-22T10:00:00.000Z");
+  let schedule = scheduleMasteryReview({ score: 1, now: new Date(start) });
+  for (let round = 1; round < 6; round += 1) {
+    schedule = scheduleMasteryReview({
+      score: 1,
+      previous: schedule,
+      now: new Date(start + round * 100_000),
+    });
+  }
+  assert.equal(schedule.repetitions, 1);
+  assert.equal(schedule.nextReviewAt, "2026-10-23T10:00:00.000Z");
+
+  const lapse = scheduleMasteryReview({
+    score: 0,
+    previous: schedule,
+    now: new Date(start + 600_000),
+  });
+  assert.equal(lapse.repetitions, 0);
+  assert.equal(lapse.easeFactor, schedule.easeFactor);
+  assert.equal(lapse.nextReviewAt, "2026-10-23T10:10:00.000Z");
+
+  const due = scheduleMasteryReview({
+    score: 1,
+    previous: schedule,
+    now: new Date("2026-10-23T12:00:00.000Z"),
+  });
+  assert.equal(due.repetitions, 2);
+  assert.equal(due.intervalDays, 6);
+});
+
 test("cross-paper sessions bind exact source fingerprints and advance revisions", () => {
   const papers = [paper("B"), paper("A")];
   const snapshot = buildCrossPaperMasterySourceSnapshot(papers);

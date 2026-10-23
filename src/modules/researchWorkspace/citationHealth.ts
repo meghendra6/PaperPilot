@@ -1,3 +1,4 @@
+import { splitSentences } from "./sentenceSplit";
 import { isResearchWorkspaceMemberExcluded } from "./memberState";
 import { researchWorkspaceArtifactPayloadFingerprint } from "./artifactFingerprint";
 import type { ResearchWorkspaceProjectDetails } from "./projectController";
@@ -300,9 +301,22 @@ function stableFingerprint(prefix: string, value: unknown) {
 }
 
 function optionalYear(value: unknown) {
+  // The citation extractor stores reference years as numbers.
+  if (typeof value === "number") {
+    return Number.isInteger(value) && value >= 1900 && value < 2100
+      ? value
+      : undefined;
+  }
   const match = cleanText(value, 100).match(/\b(19|20)\d{2}\b/);
   return match ? Number(match[0]) : undefined;
 }
+
+const STATUS_TERMS =
+  "retracted|retraction(?: notice)?|withdrawn|withdrawal(?: notice)?|erratum|corrigendum|expression of concern|corrected(?: article)?|correction(?: notice)?";
+/** A tag that is only a status term, such as "Retracted" or "[Erratum]". */
+const STATUS_TAG = new RegExp(`^\\[?(?:${STATUS_TERMS})\\]?$`, "i");
+/** An Extra line that starts with a status, such as "Retraction notice: …". */
+const STATUS_LINE = new RegExp(`^\\s*\\[?(?:${STATUS_TERMS})\\b`, "i");
 
 function metadataSignals(params: {
   title: string;
@@ -315,8 +329,15 @@ function metadataSignals(params: {
     value: string;
   }> = [
     { field: "title", value: params.title },
-    { field: "extra", value: params.extra },
-    ...params.tags.map((value) => ({ field: "tag" as const, value })),
+    // Publisher keywords such as "Opioid withdrawal" or "Error correction"
+    // arrive as tags. Only status tags and status lines in Extra count.
+    ...params.extra
+      .split(/\r?\n/)
+      .filter((line) => STATUS_LINE.test(line))
+      .map((value) => ({ field: "extra" as const, value })),
+    ...params.tags
+      .filter((value) => STATUS_TAG.test(value.trim()))
+      .map((value) => ({ field: "tag" as const, value })),
   ];
   const seen = new Set<string>();
   for (const entry of values) {
@@ -644,14 +665,32 @@ function finding(params: Omit<CitationHealthFinding, "findingID">) {
   } satisfies CitationHealthFinding;
 }
 
+const SEVERITY_RANK: Record<CitationHealthFindingSeverity, number> = {
+  high: 0,
+  review: 1,
+  info: 2,
+};
+
+/**
+ * Unique findings in ID order. When more than MAX_FINDINGS exist, the most
+ * severe ones are kept, so a retraction signal is never cut for an
+ * unresolved-identity note.
+ */
 function uniqueFindings(findings: CitationHealthFinding[]) {
   const byID = new Map<string, CitationHealthFinding>();
   for (const entry of findings) {
     if (!byID.has(entry.findingID)) byID.set(entry.findingID, entry);
   }
-  return [...byID.values()]
-    .sort((left, right) => left.findingID.localeCompare(right.findingID))
-    .slice(0, MAX_FINDINGS);
+  const unique = [...byID.values()];
+  const kept = unique
+    .sort(
+      (left, right) =>
+        SEVERITY_RANK[left.severity] - SEVERITY_RANK[right.severity] ||
+        left.findingID.localeCompare(right.findingID),
+    )
+    .slice(0, MAX_FINDINGS)
+    .sort((left, right) => left.findingID.localeCompare(right.findingID));
+  return { findings: kept, omitted: unique.length - kept.length };
 }
 
 function tokens(value: string) {
@@ -666,16 +705,15 @@ function tokens(value: string) {
 
 function draftStatements(value: string) {
   const result: Array<{ excerpt: string; offset: number }> = [];
-  const expression = /[^.!?\n]+(?:[.!?]+(?=\s|$)|$)/g;
-  for (const match of value.matchAll(expression)) {
-    const excerpt = cleanText(match[0], 600);
+  for (const slice of splitSentences(value)) {
+    const excerpt = cleanText(slice.text, 600);
     if (excerpt.length < 35) continue;
     const empirical =
       /\[[0-9,;\s–-]+\]|\((?:[^()]*(?:19|20)\d{2}[^()]*)\)|\b(?:significant|improv|outperform|reduce|increase|decrease|demonstrat|show|found|achiev|accuracy|latency|throughput|risk|effect)\b|\b\d+(?:\.\d+)?%/i.test(
         excerpt,
       );
     if (!empirical) continue;
-    result.push({ excerpt, offset: match.index ?? 0 });
+    result.push({ excerpt, offset: slice.start });
     if (result.length >= MAX_DRAFT_STATEMENTS) break;
   }
   return result;
@@ -1336,7 +1374,13 @@ export function buildCitationHealthReport(params: {
     );
   }
 
-  const orderedFindings = uniqueFindings(findings);
+  const { findings: orderedFindings, omitted: omittedFindings } =
+    uniqueFindings(findings);
+  if (omittedFindings) {
+    limitations.add(
+      `${omittedFindings.toLocaleString()} lower-severity finding${omittedFindings === 1 ? " was" : "s were"} omitted to keep the report within ${MAX_FINDINGS} findings.`,
+    );
+  }
   const localMetadataFingerprint = stableFingerprint(
     "citation-health-local-metadata",
     {

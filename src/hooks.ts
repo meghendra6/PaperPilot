@@ -1,6 +1,9 @@
 import { config } from "../package.json";
 import { migrateLegacyDefaultMode } from "./modules/ai/modeStore";
-import { listActiveReaderRuns } from "./modules/ai/runPresentation";
+import {
+  finishAllReaderRuns,
+  listActiveReaderRuns,
+} from "./modules/ai/runPresentation";
 import {
   collectShutdownRuns,
   stopShutdownRunsBestEffort,
@@ -13,6 +16,7 @@ import {
   unregisterReaderActionPlaceholders,
 } from "./modules/readerActions";
 import {
+  abortReaderPaneWorkflows,
   disposeReaderPaneRunProgressCards,
   registerPaperPilotPaneSection,
   unregisterPaperPilotPaneSection,
@@ -40,7 +44,6 @@ import { closeStudioWindows } from "./modules/studio/window";
 import { clearCriticalReadViewState } from "./modules/ui/criticalReadDraft";
 import { PAPER_PILOT_PREF_PANE_ID } from "./modules/ui/runProgressCard";
 import { getString, initLocale } from "./utils/locale";
-import { createZToolkit } from "./utils/ztoolkit";
 
 async function onStartup() {
   await Promise.all([
@@ -105,8 +108,6 @@ async function onMainWindowLoad(win: Window) {
     win.document.documentElement.appendChild(link);
   }
 
-  // Recreate toolkit bound to the active window context
-  addon.data.ztoolkit = createZToolkit();
   registerPaperPilotPaneSection();
   registerResearchWorkspacePaneSection();
   registerResearchWorkspaceLaunchers(win);
@@ -133,8 +134,12 @@ let processShutdown: Promise<void> | undefined;
 function onApplicationShutdown(): Promise<void> {
   if (processShutdown) return processShutdown;
   addon.data.shuttingDown = true;
+  const runs = collectShutdownRuns(addon.data, listActiveReaderRuns());
+  // Runs that are still preparing have no pid to stop yet. Revoking their
+  // tokens makes the controllers stop the process they launch afterwards.
+  finishAllReaderRuns();
   processShutdown = stopShutdownRunsBestEffort({
-    runs: collectShutdownRuns(addon.data, listActiveReaderRuns()),
+    runs,
     log: (...values) => addon.data.ztoolkit?.log(...values),
   });
   return processShutdown;
@@ -142,6 +147,7 @@ function onApplicationShutdown(): Promise<void> {
 
 async function onShutdown(): Promise<void> {
   await onApplicationShutdown();
+  abortReaderPaneWorkflows();
   unregisterPaperPilotPaneSection();
   disposeReaderPaneRunProgressCards();
   addon.data.codexRunPollers?.forEach((_poller, itemID) =>

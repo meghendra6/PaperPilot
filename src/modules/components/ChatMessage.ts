@@ -9,7 +9,6 @@ import { renderMarkdownFragment } from "./markdownRenderer";
 import type { MessageRecord } from "../message/types";
 import type { ChatCitation } from "../message/chatTypes";
 import { chatCitationLabel, openChatCitation } from "../message/chatCitations";
-import { openPublicURL } from "../message/publicLinks";
 import { redactAbsolutePaths } from "../workspace/redaction";
 
 const messageFooters = new WeakMap<HTMLElement, HTMLElement>();
@@ -25,6 +24,8 @@ export interface ChatMessageActions {
   onSaveNote?: (message: MessageRecord) => unknown | Promise<unknown>;
   onSendToProject?: (message: MessageRecord) => unknown | Promise<unknown>;
   onPin?: (message: MessageRecord) => unknown | Promise<unknown>;
+  /** Whether the message is pinned, so the menu and bubble show the state. */
+  isPinned?: (message: MessageRecord) => boolean;
   onCitation?: (
     citation: ChatCitation,
     message: MessageRecord,
@@ -308,20 +309,26 @@ export function bindMessageActions(
   const actionStatus = messageDiv.ownerDocument.createElement("div");
   actionStatus.className = "pp-message-action-status";
   actionStatus.setAttribute("role", "status");
+  const pinned = Boolean(actions.onPin && actions.isPinned?.(message));
+  renderPinnedMarker(footer, pinned);
   const entries: Array<[string, keyof ChatMessageActions]> = [
     ["Edit question", "onEdit"],
     ["New conversation from here", "onFork"],
     ["Save to note", "onSaveNote"],
     ["Send comparison question", "onSendToProject"],
-    ["Pin / unpin", "onPin"],
+    [pinned ? "Unpin" : "Pin for later questions", "onPin"],
   ];
+  const finishedAnswer =
+    message.role === "assistant" && message.status === "done";
   for (const [label, key] of entries) {
     const action = actions[key];
     if (
       !action ||
       key === "onCitation" ||
-      (key === "onFork" &&
-        (message.role !== "assistant" || message.status !== "done"))
+      key === "isPinned" ||
+      // Branching and notes need a finished answer, not a question or a
+      // failed turn.
+      ((key === "onFork" || key === "onSaveNote") && !finishedAnswer)
     )
       continue;
     const button = messageDiv.ownerDocument.createElement("button");
@@ -357,16 +364,37 @@ export function bindMessageActions(
   decorateCitations(messageDiv);
 }
 
+/** A visible, named "Pinned" marker in the message footer. */
+function renderPinnedMarker(footer: HTMLElement, pinned: boolean) {
+  const existing = footer.querySelector?.(".pp-message-pin");
+  if (!pinned) {
+    existing?.remove();
+    return;
+  }
+  if (existing) return;
+  const marker = footer.ownerDocument.createElement("span");
+  marker.className = "pp-message-pin";
+  marker.textContent = "Pinned";
+  marker.title = "Included in later questions of this conversation.";
+  footer.prepend(marker);
+}
+
 export function setMessageContent(
   messageDiv: HTMLElement,
   text: string,
   sender: "user" | "ai",
+  options: { streaming?: boolean } = {},
 ) {
   if (sender === "user") {
     messageDiv.textContent = text;
     return;
   }
 
+  // The transcript is a polite live log. A streaming answer stays busy so a
+  // screen reader does not re-read it from the start on every poll; the
+  // final update clears busy and the answer is announced once.
+  if (options.streaming) messageDiv.setAttribute?.("aria-busy", "true");
+  else messageDiv.removeAttribute?.("aria-busy");
   const sanitized = sanitizeAssistantText(text);
   if (messageCopyText.get(messageDiv) === sanitized) return;
   const container = messageDiv.parentElement?.parentElement;
@@ -379,16 +407,6 @@ export function setMessageContent(
   messageCopyText.set(messageDiv, sanitized);
   if (footer) messageDiv.appendChild(footer);
   decorateCitations(messageDiv);
-  for (const node of Array.from(
-    messageDiv.querySelectorAll?.("a.pp-public-source") ?? [],
-  )) {
-    const anchor = node as HTMLAnchorElement;
-    anchor.addEventListener("click", (event) => {
-      event.preventDefault();
-      const url = anchor.getAttribute("href");
-      if (url) openPublicURL(url, messageDiv.ownerDocument);
-    });
-  }
   if (container?.id === "chat-messages")
     notifyChatTranscriptUpdate(container, Boolean(follow));
 }

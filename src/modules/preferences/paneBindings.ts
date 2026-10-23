@@ -1,4 +1,5 @@
 import { config } from "../../../package.json";
+import { getLocaleID } from "../../utils/locale";
 import { getPref, setPref } from "../../utils/prefs";
 import {
   describeRetrievalChunking,
@@ -40,11 +41,15 @@ function bindOnce(element: HTMLElement, bind: () => void) {
   bind();
 }
 
+/**
+ * The build prefixes every shipped Fluent message with the add-on ref, but
+ * rewrites IDs only in .xhtml files. IDs set at runtime need the same prefix.
+ */
 function setFluentMessage(
   element: Element,
   message: { l10nId: string; args: Readonly<Record<string, unknown>> },
 ) {
-  element.setAttribute("data-l10n-id", message.l10nId);
+  element.setAttribute("data-l10n-id", getLocaleID(message.l10nId));
   element.setAttribute("data-l10n-args", JSON.stringify(message.args));
 }
 

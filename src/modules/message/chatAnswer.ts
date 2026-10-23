@@ -56,6 +56,10 @@ export function normalizeChatCitationCandidates(
 }
 
 /** Only the explicit discriminator identifies our envelope; user JSON stays JSON. */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
 export function parseChatAnswer(
   text: string,
   options: { allowedSourceIDs?: ReadonlySet<string>; partial?: boolean } = {},
@@ -75,53 +79,67 @@ export function parseChatAnswer(
   try {
     raw = JSON.parse(unwrapped);
   } catch {
-    if (
-      options.partial &&
-      /^\s*(?:\{|```(?:json)?)/i.test(unwrapped) &&
-      !unwrapped.includes('"paperpilotChatVersion"')
-    )
-      return { ...fallback, answerMarkdown: "" };
-    if (
-      !/^\s*\{[\s\S]*?"paperpilotChatVersion"\s*:\s*1(?:\s*[,}])/.test(
-        unwrapped,
+    // Prose before or after a complete envelope: use the envelope itself.
+    const embedded =
+      options.partial || !unwrapped.includes('"paperpilotChatVersion"')
+        ? undefined
+        : tryParseFirstJsonObject(trimmed, (parsed) =>
+            isRecord(parsed) && parsed.paperpilotChatVersion === 1
+              ? parsed
+              : undefined,
+          );
+    if (!embedded) {
+      if (
+        options.partial &&
+        /^\s*(?:\{|```(?:json)?)/i.test(unwrapped) &&
+        !unwrapped.includes('"paperpilotChatVersion"')
       )
-    ) {
-      return options.partial &&
-        /^\s*\{\s*"paperpilotChatVersion"/.test(unwrapped)
-        ? { ...fallback, answerMarkdown: "", envelope: true }
-        : fallback;
-    }
-    // Recover only a complete JSON string value, never a raw envelope fragment.
-    const answer = unwrapped.match(
-      /"answerMarkdown"\s*:\s*("(?:[^"\\]|\\[\s\S])*")/,
-    );
-    let answerMarkdown = "";
-    if (answer) {
-      try {
-        answerMarkdown = JSON.parse(answer[1]);
-      } catch {
-        // Consume valid escape pairs intact; repair only otherwise-invalid
-        // backslashes and raw controls in the complete answer string, never
-        // citation metadata.
-        const repaired = answer[1].replace(
-          // eslint-disable-next-line no-control-regex -- Raw JSON string controls need escaping.
-          /\\(?:["\\/bfnrt]|u[0-9a-fA-F]{4})|\\|[\u0000-\u001f]/g,
-          (escape) =>
-            escape.length === 1 ? JSON.stringify(escape).slice(1, -1) : escape,
-        );
+        return { ...fallback, answerMarkdown: "" };
+      if (
+        !/^\s*\{[\s\S]*?"paperpilotChatVersion"\s*:\s*1(?:\s*[,}])/.test(
+          unwrapped,
+        )
+      ) {
+        return options.partial &&
+          /^\s*\{\s*"paperpilotChatVersion"/.test(unwrapped)
+          ? { ...fallback, answerMarkdown: "", envelope: true }
+          : fallback;
+      }
+      // Recover only a complete JSON string value, never a raw envelope fragment.
+      const answer = unwrapped.match(
+        /"answerMarkdown"\s*:\s*("(?:[^"\\]|\\[\s\S])*")/,
+      );
+      let answerMarkdown = "";
+      if (answer) {
         try {
-          answerMarkdown = JSON.parse(repaired);
+          answerMarkdown = JSON.parse(answer[1]);
         } catch {
-          /* An incomplete or otherwise invalid string cannot become an answer. */
+          // Consume valid escape pairs intact; repair only otherwise-invalid
+          // backslashes and raw controls in the complete answer string, never
+          // citation metadata.
+          const repaired = answer[1].replace(
+            // eslint-disable-next-line no-control-regex -- Raw JSON string controls need escaping.
+            /\\(?:["\\/bfnrt]|u[0-9a-fA-F]{4})|\\|[\u0000-\u001f]/g,
+            (escape) =>
+              escape.length === 1
+                ? JSON.stringify(escape).slice(1, -1)
+                : escape,
+          );
+          try {
+            answerMarkdown = JSON.parse(repaired);
+          } catch {
+            /* An incomplete or otherwise invalid string cannot become an answer. */
+          }
         }
       }
+      return {
+        answerMarkdown: answerMarkdown.slice(0, MAX_ANSWER_LENGTH),
+        citationCandidates: [],
+        envelope: true,
+        malformed: true,
+      };
     }
-    return {
-      answerMarkdown: answerMarkdown.slice(0, MAX_ANSWER_LENGTH),
-      citationCandidates: [],
-      envelope: true,
-      malformed: true,
-    };
+    raw = embedded;
   }
   if (
     !raw ||
@@ -161,3 +179,4 @@ export function buildChatAnswerInstructions() {
     "Preserve requested public http/https sources. Never provide local file paths as source links.",
   ].join("\n");
 }
+import { tryParseFirstJsonObject } from "../ai/jsonCandidates";

@@ -4,6 +4,15 @@ import type { HybridIndex, HybridSearchOptions } from "./types";
 function clamp01(value: number) {
   return Math.max(0, Math.min(1, value));
 }
+/**
+ * A token count from a frequency map. Only own keys count, because a loaded
+ * index is a plain JSON object whose prototype has keys like "constructor".
+ */
+function tokenCount(counts: Record<string, number>, token: string) {
+  if (!Object.prototype.hasOwnProperty.call(counts, token)) return 0;
+  const value = Number(counts[token]);
+  return Number.isFinite(value) ? value : 0;
+}
 function bm25(index: HybridIndex, chunkIndex: number, queryTokens: string[]) {
   const chunk = index.chunks[chunkIndex];
   const count = Math.max(1, index.chunks.length);
@@ -13,10 +22,10 @@ function bm25(index: HybridIndex, chunkIndex: number, queryTokens: string[]) {
   let score = 0;
   const matched = [];
   for (const token of queryTokens) {
-    const frequency = chunk.termFrequency[token] ?? 0;
+    const frequency = tokenCount(chunk.termFrequency, token);
     if (!frequency) continue;
     matched.push(token);
-    const df = index.documentFrequency[token] ?? 0;
+    const df = tokenCount(index.documentFrequency, token);
     const idf = Math.log(1 + (count - df + 0.5) / (df + 0.5));
     score +=
       idf *

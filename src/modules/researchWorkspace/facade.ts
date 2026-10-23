@@ -3,6 +3,7 @@ import { researchWorkspaceArtifactPayloadFingerprint } from "./artifactFingerpri
 import {
   admittedProjectArtifacts,
   createProjectOperationAdmission,
+  latestCurrentArtifact,
   type ProjectOperationAdmission,
 } from "./operationInputs";
 import { captureExecutionSettings } from "../ai/executionSettings";
@@ -32,6 +33,7 @@ import {
 } from "./contextPlanner";
 import {
   applyContradictionGapReview,
+  carryForwardContradictionGapReviews,
   buildContradictionGapDashboard,
   type ContradictionClassification,
   type ContradictionGapDashboard,
@@ -54,7 +56,10 @@ import {
   isPersistentCrossPaperMasterySession,
   type PersistentCrossPaperMasterySession,
 } from "./masteryPersistence";
-import { ResearchWorkspaceOperationCoordinator } from "./operationCoordinator";
+import {
+  createCancelledError,
+  ResearchWorkspaceOperationCoordinator,
+} from "./operationCoordinator";
 import { researchWorkspaceOutputSchemaForPurpose } from "./outputSchemas";
 import {
   assertResearchWorkspacePaperCurrent,
@@ -77,7 +82,10 @@ import {
   serializeResearchWorkspaceProjectTemplateJSON,
   type ResearchWorkspaceProjectTemplatePreview,
 } from "./projectTemplates";
-import { buildResearchWorkspaceProjectWorkspace } from "./projectWorkspaceBuilder";
+import {
+  buildCitationStanceWorkspaceFiles,
+  buildResearchWorkspaceProjectWorkspace,
+} from "./projectWorkspaceBuilder";
 import {
   buildRunOutcome,
   type ResearchWorkspaceRunOutcome,
@@ -195,6 +203,16 @@ async function createBoundService(params: {
       ),
     ].join("\n");
   }
+  // The paper whose engine slot a run reserves. Per-paper units (Evidence
+  // Matrix rows) reserve their own paper, so a busy anchor paper does not
+  // fail every row, and a row does not block the anchor's reader chat.
+  let reservationPaper = params.anchor;
+  // Set only while a per-paper unit runs, so its status names the paper.
+  let unitPaper: ResearchWorkspacePaper | undefined;
+  const reserveFor = (paper: ResearchWorkspacePaper | undefined) => {
+    reservationPaper = paper ?? params.anchor;
+    unitPaper = paper;
+  };
   const service = new ResearchWorkspaceService({
     repository,
     indexes: sharedHybridIndexes,
@@ -205,9 +223,9 @@ async function createBoundService(params: {
         outputSchema?: Record<string, unknown>,
       ) =>
         runResearchWorkspaceAnalysis({
-          itemID: params.anchor.itemID,
+          itemID: reservationPaper.itemID,
           executionSettings,
-          itemTitle: params.anchor.title,
+          itemTitle: reservationPaper.title,
           prompt: params.workspaceFiles
             ? [
                 "Read PROJECT_INDEX.md before performing this operation.",
@@ -228,12 +246,17 @@ async function createBoundService(params: {
             ),
           },
           signal: params.signal,
-          onStatus: params.onStatus,
+          // The engine's generic status would replace the unit progress
+          // line, so it carries the unit's paper title.
+          onStatus: (status: string) =>
+            params.onStatus?.(
+              unitPaper ? `${unitPaper.title}: ${status}` : status,
+            ),
         }),
     },
   });
   for (const paper of params.papers) await service.registerPaper(paper);
-  return { service, repository, executionSettings };
+  return { service, repository, executionSettings, reserveFor };
 }
 
 function projectController() {
@@ -337,6 +360,12 @@ export async function addResearchWorkspaceComparisonQuestion(params: {
     const bundle = await repository.getProject(params.projectID);
     if (bundle.project.comparisonQuestions?.some((entry) => entry.id === id))
       return projectController().details(params.projectID);
+    // The project file holds at most 20; say so instead of failing
+    // validation with an internal message.
+    if ((bundle.project.comparisonQuestions?.length ?? 0) >= 20)
+      throw new Error(
+        "This project already has 20 comparison questions from chat, the most it can hold.",
+      );
     try {
       await repository.updateProject(
         params.projectID,
@@ -787,7 +816,7 @@ export async function runResearchWorkspaceMultiOperation(params: {
     outputSchema: researchWorkspaceOutputSchemaForPurpose(purpose),
     consumedArtifacts: priorCrossArtifact ? [priorCrossArtifact] : [],
   });
-  const { service, executionSettings } = await createBoundService({
+  const { service, executionSettings, reserveFor } = await createBoundService({
     anchor: projectedPapers[0],
     papers: projectedPapers,
     signal: params.signal,
@@ -860,8 +889,14 @@ export async function runResearchWorkspaceMultiOperation(params: {
       units,
       signal: params.signal,
       onStatus: params.onStatus,
-      executeUnit: (unit) =>
-        service.extractEvidenceMatrixRow(matrix, unit.paper),
+      executeUnit: async (unit) => {
+        reserveFor(unit.paper);
+        try {
+          return await service.extractEvidenceMatrixRow(matrix, unit.paper);
+        } finally {
+          reserveFor(undefined);
+        }
+      },
       mergeUnit: (payload, _unit, row) => {
         const nextMatrix = service.mergeEvidenceMatrixRow(payload.matrix, row);
         return {
@@ -1226,7 +1261,7 @@ export async function extractResearchWorkspaceCitationContexts(params: {
   onStatus?: (status: string) => void;
 }) {
   if (!params.papers.length) throw new Error("Choose at least one local PDF.");
-  if (params.signal?.aborted) throw params.signal.reason;
+  if (params.signal?.aborted) throw createCancelledError();
   const projectID = await prepareProject(params.projectID, params.papers);
   params = {
     ...params,
@@ -1243,7 +1278,7 @@ export async function extractResearchWorkspaceCitationContexts(params: {
       }
     }),
   );
-  if (params.signal?.aborted) throw params.signal.reason;
+  if (params.signal?.aborted) throw createCancelledError();
   const descriptor = getResearchWorkspaceCapability("citation-context");
   const coordinated =
     await operationCoordinator().run<CitationContextExtractionResult>({
@@ -1293,6 +1328,8 @@ export async function classifyResearchWorkspaceCitations(params: {
     papers,
     signal: params.signal,
     onStatus: params.onStatus,
+    // Consent covers the displayed snippets only; stage no paper text.
+    workspaceFiles: buildCitationStanceWorkspaceFiles(),
   });
   const coordinated = await operationCoordinator().run<any>({
     projectID,
@@ -1512,10 +1549,14 @@ export async function runResearchWorkspaceContradictionGapDashboard(params: {
   onStatus?: (status: string) => void;
 }) {
   const details = await projectController().details(params.projectID);
-  const dashboard = buildContradictionGapDashboard({
-    details,
-    generatedAt: new Date().toISOString(),
-  });
+  const dashboard = carryForwardContradictionGapReviews(
+    buildContradictionGapDashboard({
+      details,
+      generatedAt: new Date().toISOString(),
+    }),
+    latestCurrentArtifact(details.artifacts, "contradiction-gap-dashboard")
+      ?.payload as ContradictionGapDashboard | undefined,
+  );
   if (!dashboard.scope.includedSourceIDs.length) {
     throw new Error(
       "This project has no non-excluded sources for contradiction analysis.",
@@ -1564,7 +1605,7 @@ export async function runResearchWorkspaceCitationHealth(params: {
   signal?: AbortSignal;
   onStatus?: (status: string) => void;
 }) {
-  if (params.signal?.aborted) throw params.signal.reason;
+  if (params.signal?.aborted) throw createCancelledError();
   const details = await projectController().details(params.projectID);
   const includedSourceIDs = new Set(
     details.members
@@ -1583,7 +1624,7 @@ export async function runResearchWorkspaceCitationHealth(params: {
   const localLibrary = await collectCitationHealthLocalLibrarySnapshot(
     includedSources.map((source) => source.identity.libraryID),
   );
-  if (params.signal?.aborted) throw params.signal.reason;
+  if (params.signal?.aborted) throw createCancelledError();
   params.onStatus?.("Building the local citation and reference checklist…");
   const report = buildCitationHealthReport({
     details,

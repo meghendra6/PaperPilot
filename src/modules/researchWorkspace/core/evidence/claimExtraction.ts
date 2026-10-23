@@ -53,11 +53,28 @@ function parseClaimExtractionResponse(
     params.paperKey ?? params.attachmentKey,
     params.now,
   );
-  for (const [index, entry] of (0, json_1.readArray)(
-    root.claims,
-    "claims",
-  ).entries()) {
+  // addClaim merges an existing ID, so a reused ID would attach one claim's
+  // support to another claim's text. Duplicates are rejected instead.
+  const seenIDs = new Set<string>();
+  const entries = (0, json_1.readArray)(root.claims, "claims");
+  const explicitIDs = new Set(
+    entries
+      .map((entry) => (entry as { id?: unknown } | null)?.id)
+      .filter((id) => typeof id === "string" && id)
+      .map(String),
+  );
+  for (const [index, entry] of entries.entries()) {
     const claim = object(entry, `claim[${index}]`);
+    let claimID = claim.id ? String(claim.id) : "";
+    if (claimID && seenIDs.has(claimID))
+      throw new Error(`Duplicate claim ID ${claimID}.`);
+    if (!claimID) {
+      let next = index + 1;
+      while (explicitIDs.has(`claim-${next}`) || seenIDs.has(`claim-${next}`))
+        next += 1;
+      claimID = `claim-${next}`;
+    }
+    seenIDs.add(claimID);
     const support = (0, types_1.normalizeEvidenceReferences)(claim.support, {
       allowedAttachmentKeys: allowed,
     });
@@ -79,7 +96,7 @@ function parseClaimExtractionResponse(
         `Unsupported claim verification status: ${verificationStatus}`,
       );
     ledger = (0, claimLedger_1.addClaim)(ledger, {
-      id: String(claim.id || `claim-${index + 1}`),
+      id: claimID,
       text: String(claim.text || "").trim(),
       kind: enumValue(claim.kind, `claim[${index}].kind`, CLAIM_KINDS),
       confidence: optionalUnitInterval(

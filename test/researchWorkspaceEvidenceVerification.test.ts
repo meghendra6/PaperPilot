@@ -91,6 +91,67 @@ test("local evidence verifier derives page geometry from an exact PDF quote", as
   ]);
 });
 
+test("a quote repeated elsewhere in the PDF verifies on its claimed page", async () => {
+  const sentence = "Our method improves accuracy by four points.";
+  const page = (pageIndex: number) => ({
+    pageIndex,
+    pageLabel: String(pageIndex + 1),
+    spans: [
+      {
+        pageIndex,
+        pageLabel: String(pageIndex + 1),
+        text: sentence,
+        normalizedText: normalizeQuoteText(sentence),
+        rect: [10, 20, 200, 40],
+      },
+    ],
+  });
+  const verifier = new ResearchWorkspaceEvidenceVerifier([source], {
+    ...localDependencies(),
+    extractPages: async () => [page(0), page(1), page(2)],
+  });
+  const claimed = await verifier.verify({
+    attachmentKey: "ATTACH",
+    pageIndex: 2,
+    quote: sentence,
+    confidence: 0.9,
+  });
+  assert.equal(claimed?.verification.status, "verified");
+  assert.equal(claimed?.pageIndex, 2);
+
+  const unplaced = await verifier.verify({
+    attachmentKey: "ATTACH",
+    pageIndex: null,
+    quote: sentence,
+    confidence: 0.9,
+  });
+  assert.equal(unplaced?.verification.status, "not-found");
+  assert.match(
+    unplaced?.verification.detail ?? "",
+    /occurs more than once in the local PDF/,
+  );
+});
+
+test("schema-valid evidence with an unknown page is verified and gets its page locally", async () => {
+  // The strict native schemas require pageIndex, so "unknown" arrives as null.
+  const verifier = new ResearchWorkspaceEvidenceVerifier(
+    [source],
+    localDependencies(),
+  );
+  const reference = await verifier.verify({
+    attachmentKey: "ATTACH",
+    pageIndex: null,
+    quote: "The exact local evidence sentence.",
+    boundingBox: null,
+  });
+
+  assert(reference);
+  assert.equal(reference.verification.status, "verified");
+  assert.deepEqual(reference.boundingBoxes, [
+    { pageIndex: 0, rect: [10, 20, 200, 40] },
+  ]);
+});
+
 test("local evidence verifier never verifies an unmatched or wrong-page quote", async () => {
   const verifier = new ResearchWorkspaceEvidenceVerifier(
     [source],

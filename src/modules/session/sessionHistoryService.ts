@@ -75,11 +75,20 @@ function buildAssistantMessageRecord(params: {
     ...(params.rawEvent
       ? {
           rawEvent: getPref("privacyRedactLocalFilePaths")
-            ? redactAbsolutePaths(params.rawEvent)
-            : params.rawEvent,
+            ? redactAbsolutePaths(boundRawEvent(params.rawEvent))
+            : boundRawEvent(params.rawEvent),
         }
       : {}),
   };
+}
+
+/** Failure diagnostics are kept as a bounded tail, never a whole stream. */
+const MAX_PERSISTED_RAW_EVENT_CHARACTERS = 4_000;
+
+function boundRawEvent(rawEvent: string) {
+  return rawEvent.length > MAX_PERSISTED_RAW_EVENT_CHARACTERS
+    ? `…${rawEvent.slice(-MAX_PERSISTED_RAW_EVENT_CHARACTERS)}`
+    : rawEvent;
 }
 
 function applyResumeMetadata<
@@ -443,7 +452,9 @@ export class SessionHistoryService {
         text: assistantText,
         sourceMode: params.mode,
         status: params.success ? "done" : "error",
-        ...(params.rawEvent ? { rawEvent: params.rawEvent } : {}),
+        ...(params.rawEvent && !params.success
+          ? { rawEvent: boundRawEvent(params.rawEvent) }
+          : {}),
         turnId: turn?.turnId ?? params.turnId,
         attemptId: attempt?.id ?? params.attemptId,
         requestContext: cloneChatValue(

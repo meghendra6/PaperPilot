@@ -28,11 +28,35 @@ export function createOpenResearchWorkspaceButton(
   button.textContent = params.label ?? OPEN_RESEARCH_WORKSPACE_LABEL;
   button.title = "Open the Research Workspace window for this paper.";
   button.addEventListener("click", () => {
-    void openResearchWorkspaceFromPane(params.items).catch((error) =>
-      params.onError?.(error),
-    );
+    clearLaunchError(button);
+    void openResearchWorkspaceFromPane(params.items).catch((error) => {
+      // A failed launch says why next to the button, not only in the log.
+      showLaunchError(button, error);
+      params.onError?.(error);
+    });
   });
   return button;
+}
+
+function launchErrorNode(button: HTMLButtonElement) {
+  const next = button.nextElementSibling as HTMLElement | null;
+  return next?.dataset.launchError === "true" ? next : undefined;
+}
+
+function clearLaunchError(button: HTMLButtonElement) {
+  launchErrorNode(button)?.remove();
+}
+
+function showLaunchError(button: HTMLButtonElement, error: unknown) {
+  const node =
+    launchErrorNode(button) ?? button.ownerDocument.createElement("span");
+  node.dataset.launchError = "true";
+  node.className = "pp-status-text pp-status-text--error";
+  node.setAttribute("role", "alert");
+  node.textContent = `The Research Workspace could not open: ${
+    error instanceof Error ? error.message : String(error)
+  }`;
+  if (!node.isConnected) button.after(node);
 }
 
 /**

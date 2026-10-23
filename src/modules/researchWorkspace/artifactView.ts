@@ -33,6 +33,8 @@ export interface ResearchWorkspaceClaimLedgerView {
     confidence?: number;
     reviewStatus: ResearchWorkspaceClaimReviewStatus;
     verifiedSupport: number;
+    /** Verified support plus verified contradictions. */
+    verifiedEvidence: number;
     evidenceTotal: number;
     support: ResearchWorkspaceEvidenceView[];
     contradictions: ResearchWorkspaceEvidenceView[];
@@ -438,6 +440,8 @@ export interface ResearchWorkspaceArtifactRendererOptions {
   onCopyText?: (value: string) => void | Promise<void>;
   /** Source IDs whose unit failed in the run that produced this payload. */
   failedSourceIDs?: readonly string[];
+  /** A short paper title for a source ID, to tell evidence chips apart. */
+  sourceTitle?: (sourceID: string) => string | undefined;
 }
 
 export function record(value: unknown): UnknownRecord | undefined {
@@ -447,6 +451,11 @@ export function record(value: unknown): UnknownRecord | undefined {
 }
 
 function finite(value: unknown) {
+  // Number(null) and Number("") are 0, which would show "0%" for a value
+  // that was never measured.
+  if (typeof value === "number")
+    return Number.isFinite(value) ? value : undefined;
+  if (typeof value !== "string" || !value.trim()) return undefined;
   const number = Number(value);
   return Number.isFinite(number) ? number : undefined;
 }
@@ -536,6 +545,7 @@ function claimLedgerView(
         confidence: finite(claim.confidence),
         reviewStatus,
         verifiedSupport,
+        verifiedEvidence: verifiedSupport + verifiedContradictions,
         evidenceTotal: support.length + contradictions.length,
         support,
         contradictions,
@@ -712,9 +722,11 @@ function paperToCodeView(
           ),
       stateChanges: [
         ...stringList(step.stateReads).map((entry) => `Read: ${entry}`),
-        ...stringList(step.stateWrites ?? step.stateChanges).map(
-          (entry) => `Write: ${entry}`,
-        ),
+        // Only an explicit stateWrites list is labelled; the model's plain
+        // stateChanges may describe reads as well as writes.
+        ...(Array.isArray(step.stateWrites)
+          ? stringList(step.stateWrites).map((entry) => `Write: ${entry}`)
+          : stringList(step.stateChanges)),
       ],
       memoryOrCommunication: stringList(
         step.memoryOrCommunication ?? step.memoryAccess,
@@ -1134,12 +1146,88 @@ function reviewLogView(
  * hidden grading rubric. The full rubric remains in the private persisted
  * session so an interrupted attempt can still be resumed and graded.
  */
+/** Answer-key fields a learner must not see before answering. */
+const HIDDEN_ANSWER_KEYS = ["expectedClaims", "rubric", "criteria"] as const;
+
+function withoutAnswerKey(value: unknown) {
+  const question = record(value);
+  if (!question) return value;
+  const publicQuestion = { ...question };
+  for (const key of HIDDEN_ANSWER_KEYS) delete publicQuestion[key];
+  return publicQuestion;
+}
+
+/**
+ * Paper Mastery payloads (legacy sessions and retired workspace payloads)
+ * keep the unanswered question's expected claims and rubric. The Artifacts
+ * list and exports show only the public part.
+ */
+function publicPaperMasteryPayload(value: unknown): unknown {
+  const root = record(value);
+  if (!root) return value;
+  const projectSession = (sessionValue: unknown) => {
+    const session = record(sessionValue);
+    if (!session) return sessionValue;
+    return {
+      ...session,
+      ...(session.pendingQuestion
+        ? { pendingQuestion: withoutAnswerKey(session.pendingQuestion) }
+        : {}),
+      ...(record(session.currentQuestion)
+        ? { currentQuestion: withoutAnswerKey(session.currentQuestion) }
+        : {}),
+    };
+  };
+  return {
+    ...(projectSession(root) as UnknownRecord),
+    ...(root.session ? { session: projectSession(root.session) } : {}),
+    ...(root.question && !root.answer && !root.evaluation
+      ? { question: withoutAnswerKey(root.question) }
+      : {}),
+  };
+}
+
+/** Imported cross-paper mastery: {sessions, questions, attempts}. */
+function publicImportedCrossPaperPayload(root: UnknownRecord): UnknownRecord {
+  const attempted = new Set(
+    (Array.isArray(root.attempts) ? root.attempts : [])
+      .map((entry) => text(record(entry)?.questionId, ""))
+      .filter(Boolean),
+  );
+  const projectQuestion = (questionValue: unknown) =>
+    attempted.has(text(record(questionValue)?.id, ""))
+      ? questionValue
+      : withoutAnswerKey(questionValue);
+  return {
+    ...root,
+    ...(Array.isArray(root.questions)
+      ? { questions: root.questions.map(projectQuestion) }
+      : {}),
+    ...(Array.isArray(root.sessions)
+      ? {
+          sessions: root.sessions.map((sessionValue) => {
+            const session = record(sessionValue);
+            return session && Array.isArray(session.questions)
+              ? {
+                  ...session,
+                  questions: session.questions.map(projectQuestion),
+                }
+              : sessionValue;
+          }),
+        }
+      : {}),
+  };
+}
+
 export function createResearchWorkspacePublicPayload(
   value: unknown,
   artifactType?: ResearchWorkspaceArtifactType,
 ): unknown {
+  if (artifactType === "paper-mastery") return publicPaperMasteryPayload(value);
   if (artifactType !== "cross-paper-mastery") return value;
   const root = record(value);
+  if (root && !root.session && (root.sessions || root.questions))
+    return publicImportedCrossPaperPayload(root);
   const session = record(root?.session);
   if (!root || !session || !Array.isArray(session.questions)) return value;
   const attemptedQuestionIDs = new Set(
@@ -1202,7 +1290,29 @@ function matrixView(
           evidence: evidenceViews(cell.evidence),
         })),
     }));
+  // Every admitted paper gets a row. A paper whose row did not finish shows
+  // pending cells instead of disappearing from the table.
+  const listed = new Set(rows.map((row) => row.sourceID));
+  for (const candidate of Array.isArray(matrix.papers) ? matrix.papers : []) {
+    const paper = record(candidate);
+    const paperKey = text(paper?.paperKey ?? paper?.sourceID, "");
+    if (!paper || !paperKey || listed.has(paperKey)) continue;
+    listed.add(paperKey);
+    rows.push({
+      sourceID: paperKey,
+      title: text(paper.title, paperKey),
+      cells: columns.map((column) => ({
+        columnID: column.id,
+        value: "—",
+        status: "pending",
+        confidence: undefined,
+        evidence: [],
+      })),
+    });
+  }
   const coverage = record(value.coverage);
+  // With no filled cell, evidence coverage is not 100%; it is unmeasured.
+  const measured = finite(coverage?.filledCount) !== 0;
   return {
     kind: "matrix",
     columns,
@@ -1213,8 +1323,10 @@ function matrixView(
             extraction: finite(
               coverage.extractionCoverage ?? coverage.coverage,
             ),
-            evidence: finite(coverage.evidenceCoverage),
-            requiredEvidence: finite(coverage.requiredEvidenceCoverage),
+            evidence: measured ? finite(coverage.evidenceCoverage) : undefined,
+            requiredEvidence: measured
+              ? finite(coverage.requiredEvidenceCoverage)
+              : undefined,
           },
         }
       : {}),

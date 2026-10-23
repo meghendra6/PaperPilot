@@ -95,9 +95,36 @@ test("URLs survive sanitization and safe rendering; code stays literal and privi
     "zotero://select/items/ABC",
     "https://127.0.0.1/admin",
     "https://user:secret@example.org",
+    "http://localhost./",
+    "http://[::ffff:127.0.0.1]:8080/admin",
+    "http://[fe80::1]/",
+    "http://100.100.100.100/",
+    "http://[::1]/",
   ]) {
-    assert.equal(safePublicURL(url), undefined);
+    assert.equal(safePublicURL(url), undefined, url);
     assert.doesNotMatch(renderInlineMarkdown(`[bad](${url})`), /<a /);
   }
   assert.equal(safePublicURL("https://example.org"), "https://example.org/");
+  assert.equal(safePublicURL("https://8.8.8.8/"), "https://8.8.8.8/");
+  assert.equal(
+    safePublicURL("https://[2001:4860:4860::8888]/"),
+    "https://[2001:4860:4860::8888]/",
+  );
+});
+
+test("an envelope wrapped in prose is still parsed as an envelope", () => {
+  const envelope = JSON.stringify({
+    paperpilotChatVersion: 1,
+    answerMarkdown: "The method reduces latency.",
+    citationCandidates: [],
+  });
+  const fence = "```";
+  for (const text of [
+    `Here is the answer:\n${envelope}`,
+    `${fence}json\n${envelope}\n${fence}\nLet me know if you need more.`,
+  ]) {
+    const parsed = parseChatAnswer(text);
+    assert.equal(parsed.envelope, true, text);
+    assert.equal(parsed.answerMarkdown, "The method reduces latency.");
+  }
 });

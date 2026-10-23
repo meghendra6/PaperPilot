@@ -43,6 +43,8 @@
   --pp-text-artifact-source: #54657d;
   --pp-bg-artifact-source: #eef4fb;
   --pp-border-recommendation: #eef1f4;
+  --pp-border-inference: #9a6a00;
+  --pp-border-external: #6b7280;
   --pp-text-recommendation-meta: #54657d;
   --pp-text-recommendation-reason: #475569;
 
@@ -162,6 +164,8 @@
     --pp-text-artifact-source: #8a9ab0;
     --pp-bg-artifact-source: #2a3444;
     --pp-border-recommendation: #3e3e42;
+    --pp-border-inference: #c9a24a;
+    --pp-border-external: #9aa5b4;
     --pp-text-recommendation-meta: #8a9ab0;
     --pp-text-recommendation-reason: #9aa5b4;
 
@@ -256,7 +260,7 @@
 
 .pp-pane-header__trigger:hover,
 .pp-pane-header--open .pp-pane-header__trigger {
-  background: var(--pp-bg-tertiary);
+  background-image: linear-gradient(var(--pp-fill-hover), var(--pp-fill-hover));
 }
 
 .pp-pane-header__dot {
@@ -648,6 +652,12 @@
 .pp-status-text {
   font-size: var(--pp-font-size-sm);
   color: var(--pp-text-muted);
+}
+
+.pp-status-text--error {
+  display: block;
+  margin-top: 4px;
+  color: var(--pp-error);
 }
 
 .pp-tool-cards {
@@ -1233,6 +1243,13 @@
   color: var(--pp-text-secondary, var(--pp-text-primary));
 }
 
+.pp-critical-read__sublabel {
+  margin: 8px 0 2px;
+  font-size: var(--pp-font-size-sm);
+  font-weight: 600;
+  color: var(--pp-text-secondary);
+}
+
 .pp-critical-read__block--reader {
   border-left-color: var(--pp-accent, #1976d2);
 }
@@ -1243,12 +1260,12 @@
 }
 
 .pp-critical-read__block--agent {
-  border-left-color: var(--pp-border-recommendation, #b08800);
+  border-left-color: var(--pp-border-inference);
   border-left-style: dashed;
 }
 
 .pp-critical-read__block--external {
-  border-left-color: var(--pp-border-light);
+  border-left-color: var(--pp-border-external);
   border-left-style: dotted;
 }
 
@@ -1381,7 +1398,9 @@
 #paper-pilot-container
   :is(
     .pp-pane-header__trigger,
-    .pp-collapsible-section__trigger
+    .pp-collapsible-section__trigger,
+    .pp-recommendation-group__header,
+    .pp-chat-search__results .pp-btn
   ):focus-visible {
   outline-offset: calc(-1 * var(--pp-focus-width));
 }
@@ -1417,7 +1436,7 @@
 }
 
 .pp-btn--secondary:active:not(:disabled) {
-  background: var(--pp-bg-tertiary);
+  background-image: linear-gradient(var(--pp-fill-press), var(--pp-fill-press));
 }
 
 .pp-btn--ghost {
@@ -1528,11 +1547,13 @@
 
 .pp-message--ai a {
   color: var(--pp-text-link);
-  text-decoration: none;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
 }
 
 .pp-message--ai a:hover {
-  text-decoration: underline;
+  text-decoration-thickness: 2px;
 }
 
 /* Inline citation chips sit inside answer sentences. They keep the line
@@ -1601,7 +1622,12 @@
 }
 
 /* Inline KaTeX scrolls inside its own box instead of being clipped by the
-   message. Display math already scrolls in .pp-math-block. */
+   message, Mastery card, artifact, or Critical Read block. Display math
+   already scrolls in .pp-math-block. */
+.pp-mastery-question :not(.pp-math-block) > .katex,
+.pp-mastery-feedback :not(.pp-math-block) > .katex,
+.pp-artifact-card :not(.pp-math-block) > .katex,
+.pp-critical-read__block :not(.pp-math-block) > .katex,
 .pp-message--ai :not(.pp-math-block) > .katex {
   display: inline-block;
   max-width: 100%;
@@ -1656,6 +1682,17 @@
   justify-content: flex-end;
   gap: 4px;
   margin-top: 8px;
+}
+
+/* A pinned message says so in text, not by color alone. */
+.pp-message-pin {
+  align-self: center;
+  margin-inline-end: auto;
+  padding: 1px 6px;
+  border: 1px solid var(--pp-border-medium);
+  border-radius: var(--pp-radius-sm);
+  color: var(--pp-text-secondary);
+  font-size: var(--pp-font-size-xs);
 }
 
 .pp-message-footer .pp-btn,
@@ -1804,6 +1841,8 @@
    20. Collapsible sections
    ============================================================ */
 #paper-pilot-section-stack {
+  /* The resize handle measures and writes border-box heights. */
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   flex: 0 1 clamp(240px, 44%, 560px);
@@ -1856,7 +1895,7 @@
 }
 
 .pp-collapsible-section__trigger:hover {
-  background: var(--pp-bg-tertiary);
+  background-image: linear-gradient(var(--pp-fill-hover), var(--pp-fill-hover));
 }
 
 .pp-collapsible-section__chevron {
@@ -2932,6 +2971,7 @@
 }
 
 .paperpilot-research-workspace {
+  container: pprw / inline-size;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -3006,13 +3046,32 @@
   box-shadow: var(--pp-shadow-sm);
 }
 
-.pprw-window [hidden] {
+/* Buttons are inline-flex, which overrides the [hidden] presentation
+   attribute. The item-pane view sits outside .pprw-window. */
+.pprw-window [hidden],
+.paperpilot-research-workspace [hidden] {
   display: none !important;
+}
+
+/* Local search hits: heading, passage, matched terms. */
+.pprw-search-hits {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding-inline-start: 20px;
+}
+
+.pprw-search-hit p {
+  margin: 4px 0 0;
+}
+
+.pprw-project-operations:empty {
+  display: none;
 }
 
 .pprw-project-operations:focus,
 .pprw-window-body > .paperpilot-research-workspace:focus {
-  outline: 2px solid var(--pp-accent);
+  outline: 2px solid var(--pp-focus-color);
   outline-offset: 2px;
 }
 
@@ -3635,7 +3694,7 @@ button.pprw-render-evidence-link {
 }
 
 .pprw-claim-summary:hover {
-  background: var(--pp-bg-secondary);
+  background-image: linear-gradient(var(--pp-fill-hover), var(--pp-fill-hover));
 }
 
 .pprw-claim-number {
@@ -3808,7 +3867,7 @@ button.pprw-render-evidence-link {
   text-align: center;
 }
 
-@container paper-pilot (max-width: 420px) {
+@container pprw (max-width: 420px) {
   .pprw-claim-guidance {
     grid-template-columns: 1fr;
   }

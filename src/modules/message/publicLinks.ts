@@ -1,3 +1,8 @@
+import {
+  isIPAddressLiteral,
+  isNonPublicIPAddress,
+} from "../../utils/ipAddress";
+
 /** No fetch or privileged scheme; activation is always an explicit user action. */
 export function safePublicURL(value: string): string | undefined {
   if (
@@ -15,16 +20,17 @@ export function safePublicURL(value: string): string | undefined {
       url.password
     )
       return undefined;
-    const host = url.hostname.toLowerCase();
+    // A trailing dot names the same host ("localhost." is localhost).
+    const host = url.hostname
+      .toLowerCase()
+      .replace(/^\[|\]$/g, "")
+      .replace(/\.+$/, "");
     if (
       !host ||
       host === "localhost" ||
       host.endsWith(".localhost") ||
       host.endsWith(".local") ||
-      /^(?:127\.|10\.|0\.|169\.254\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.)/.test(
-        host,
-      ) ||
-      /^\[(?:::|::1|f[cd][0-9a-f:]*)\]$/.test(host)
+      (isIPAddressLiteral(host) && isNonPublicIPAddress(host))
     )
       return undefined;
     return url.href;

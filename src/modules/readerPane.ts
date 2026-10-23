@@ -1,5 +1,6 @@
 import { config } from "../../package.json";
 import { getLocaleID } from "../utils/locale";
+import { isPendingReaderActionFresh } from "./ui/pendingReaderAction";
 import { getPref, setPref } from "../utils/prefs";
 import {
   clearModeOverrideForItem,
@@ -62,6 +63,7 @@ import {
 } from "./claude/controller";
 import { isClaudeRunActiveForItem } from "./claude/runState";
 import { buildCodexAuthenticateMessage } from "./codex/authAction";
+import { clearResolvedCodexExecutableCache } from "./codex/executable";
 import { handleCodexQuestion, stopCodexRunSilently } from "./codex/controller";
 import { rememberRecentModel } from "./codex/modelHistory";
 import {
@@ -110,6 +112,7 @@ import {
   createChatDraftSubmission,
   formatDraftAnnotationNotice,
   formatDraftSourceLabel,
+  recordedContextForRun,
   shouldReadLiveSelection,
   type ChatDraftSubmission,
 } from "./ui/chatDraft";
@@ -214,6 +217,8 @@ import {
   renderChatTranscriptWindow,
 } from "./ui/chatTranscriptWindow";
 import { createCollapsibleSection } from "./ui/collapsibleSection";
+import { registerItemBridge } from "./ui/itemBridgeRegistry";
+import { openPublicURL } from "./message/publicLinks";
 import {
   clearCriticalReadViewState,
   getCriticalReadDraft,
@@ -368,6 +373,14 @@ function logReaderPaneError(context: string, error: unknown) {
   Zotero.logError?.(normalized);
 }
 
+/**
+ * Prunes transient per-paper state after the paper's last reader pane goes
+ * away. Session-derived state (Workbench cards, Critical Read, Mastery,
+ * discovery and Auto Highlight results, the engine override) stays: the
+ * paper's session outlives its tab, and the next save would otherwise write
+ * a snapshot without that state over the saved one. Each pane removes its own
+ * item bridges when it is cleaned up.
+ */
 export function pruneReaderPaneItemState(itemID: number) {
   const item = Zotero.Items?.get?.(itemID);
   if (item?.key && item.libraryID !== undefined) {
@@ -376,25 +389,35 @@ export function pruneReaderPaneItemState(itemID: number) {
       itemKey: String(item.key),
     });
   }
-  addon.data.modeOverrides?.delete(itemID);
-  addon.data.relatedRecommendationStates?.delete(itemID);
-  addon.data.autoHighlightStates?.delete(itemID);
-  addon.data.paperArtifactStates?.delete(itemID);
-  addon.data.comprehensionCheckStates?.delete(itemID);
-  addon.data.criticalReadStates?.delete(itemID);
   addon.data.pendingReaderActions?.delete(itemID);
   addon.data.pendingDiscoveryConcerns?.delete(itemID);
   addon.data.readerActionDrafts?.delete(itemID);
-  addon.data.applyReaderActionToPane?.delete(itemID);
-  addon.data.showReaderPaneNotice?.delete(itemID);
-  addon.data.activateReaderCapability?.delete(itemID);
   clearMasteryPanelMemory(itemID);
+}
+
+/**
+ * Aborts the item-scoped direct workflows (prior-work discovery, review
+ * insight, Auto Highlight, Critical Read discovery). Pane cleanup leaves
+ * them running on purpose, so add-on shutdown must end them here.
+ */
+export function abortReaderPaneWorkflows(): void {
+  for (const controllers of [
+    publicReviewAbortControllers,
+    relatedDiscoveryAbortControllers,
+    autoHighlightAbortControllers,
+    criticalReadDiscoveryAbortControllers,
+  ]) {
+    for (const controller of controllers.values()) controller.abort();
+    controllers.clear();
+  }
 }
 
 export function disposeReaderPaneRunProgressCards(): void {
   for (const card of activeRunProgressCards) card.dispose();
   activeRunProgressCards.clear();
 }
+
+let paperPilotPaneKey: string | undefined;
 
 export function unregisterPaperPilotPaneSection(): void {
   for (const body of [...activePaneBodies]) {
@@ -407,13 +430,17 @@ export function unregisterPaperPilotPaneSection(): void {
   activePaneBodies.clear();
   if (!addon.data.aiReaderPaneRegistered) return;
   try {
-    Zotero.ItemPaneManager?.unregisterSection?.("paper-pilot-tabpanel");
+    // registerSection namespaces the pane ID; unregister needs that key.
+    Zotero.ItemPaneManager?.unregisterSection?.(
+      paperPilotPaneKey ?? "paper-pilot-tabpanel",
+    );
   } catch (error) {
     Zotero.logError?.(
       error instanceof Error ? error : new Error(String(error)),
     );
   }
   addon.data.aiReaderPaneRegistered = false;
+  paperPilotPaneKey = undefined;
 }
 
 const chatMessageOptions = new WeakMap<
@@ -508,7 +535,7 @@ export function registerPaperPilotPaneSection() {
               <html:textarea id="paper-mastery-answer" class="pp-mastery-answer" aria-label="Your answer" placeholder="Type your answer here..." style="display: none;" />
               <label id="paper-mastery-confidence-row" class="pp-mastery-confidence" style="display: none;">
                 Confidence before grading
-                <html:input id="paper-mastery-confidence" type="range" min="0" max="1" step="0.05" value="0.7" aria-valuetext="70%" />
+                <html:input id="paper-mastery-confidence" type="range" min="0" max="1" step="0.05" value="0.7" aria-label="Confidence before grading" aria-valuetext="70%" />
                 <span id="paper-mastery-confidence-value">70%</span>
               </label>
               <div id="paper-mastery-actions" class="pp-mastery-actions" style="display: none;">
@@ -522,13 +549,14 @@ export function registerPaperPilotPaneSection() {
           </div>
           <div id="paper-pilot-related-mount">
             <label for="chat-related-concern" class="pp-related-concern-label">Research concern or idea</label>
-            <html:textarea id="chat-related-concern" class="pp-related-concern" placeholder="Optional: describe the research concern or novelty question." />
+            <html:textarea id="chat-related-concern" class="pp-related-concern" aria-label="Research concern or idea" placeholder="Optional: describe the research concern or novelty question." />
             <html:button id="chat-related-recommend" class="pp-btn pp-btn--secondary">Find verified prior work</html:button>
             <div id="chat-related-availability" class="pp-related-availability" role="note" style="display: none;"></div>
             <html:button id="chat-related-save" class="pp-btn pp-btn--ghost" disabled="true" title="Save the verified prior-work results as a child note of this paper">Save prior-work note</html:button>
             <div class="pp-related-disclosure">Paper Pilot infers the field and leading venues, then verifies main-track acceptance from official paper-level sources. Workshops and preprints stay in separate lanes.</div>
             <div id="chat-related-status" class="pp-status-text" role="status" aria-live="polite" style="display: none;"></div>
             <div id="chat-related-groups" style="display: none;"></div>
+            <div id="chat-related-review" class="pp-related-review"></div>
           </div>
           <div id="paper-pilot-sessions-mount">
             <div id="paper-pilot-session-history" class="pp-session-history"></div>
@@ -1027,6 +1055,11 @@ export function registerPaperPilotPaneSection() {
             itemTitle: String(item.getField("title") || ""),
             elements: paneElements,
             ...options,
+            // The live answer bubble is not stored until the run finishes, so
+            // a rebuild during a run (Pin, deleting another session) would
+            // detach it. Callers may still ask for a rebuild explicitly.
+            renderTranscript:
+              options.renderTranscript ?? !getActiveReaderRunMode(item.id),
           });
         };
         const cancelCurrentRun = async () => {
@@ -1061,6 +1094,8 @@ export function registerPaperPilotPaneSection() {
                 itemTitle: String(item.getField("title") || ""),
                 chatMessages,
                 streamingIndicator,
+                onNotice: (text) =>
+                  showComposerNotice(input, text, { sticky: true }),
               });
             },
             onOpenSettings: () => {
@@ -1107,6 +1142,20 @@ export function registerPaperPilotPaneSection() {
         let openKebabSessionId: string | undefined;
         // The last failed session action, shown at the top of Past sessions.
         let sessionHistoryError: string | undefined;
+        /** The conversation that Return to reading reopens after a search. */
+        let searchOrigin:
+          | {
+              sessionId: string;
+              position: ReturnType<typeof captureChatPosition>;
+              restore?: () => void;
+            }
+          | undefined;
+        // A delete, Open, or New session outside search changes what Return
+        // to reading may restore; a deleted origin must never come back.
+        const forgetSearchOrigin = (sessionId?: string) => {
+          if (sessionId === undefined || searchOrigin?.sessionId === sessionId)
+            searchOrigin = undefined;
+        };
         cleanupTasks.push(
           installPopoverDismissal({
             doc: body.ownerDocument,
@@ -1230,6 +1279,16 @@ export function registerPaperPilotPaneSection() {
           });
         };
         const setCriticalReadStateForItem = (state: CriticalReadState) => {
+          // A handler that awaited extraction or a note save can resume after
+          // the reader opened another session. Its state belongs to the old
+          // session and must not replace the active session's Critical Read.
+          const activeSessionID = sessionStore.get(item.id)?.sessionId;
+          if (
+            state.sessionID &&
+            activeSessionID &&
+            state.sessionID !== activeSessionID
+          )
+            return;
           if (!addon.data.criticalReadStates) {
             addon.data.criticalReadStates = new Map();
           }
@@ -1252,10 +1311,16 @@ export function registerPaperPilotPaneSection() {
           );
         };
         const persistCriticalReadState = async () => {
-          await sessionHistoryService.persistActiveSession({
-            itemID: item.id,
-            paperTitle: String(item.getField("title") || ""),
-          });
+          // The state is already in memory; a failed history write must not
+          // turn a finished step into a failure or reject a click handler.
+          try {
+            await sessionHistoryService.persistActiveSession({
+              itemID: item.id,
+              paperTitle: String(item.getField("title") || ""),
+            });
+          } catch (error) {
+            logReaderPaneError("Critical Read history save failed", error);
+          }
           notifyReaderPaneStateChanged(item.id);
         };
 
@@ -1394,6 +1459,16 @@ export function registerPaperPilotPaneSection() {
                   orientations = buildCriticalReadOrientations({});
                 } finally {
                   criticalReadPreparing = false;
+                }
+                // The session or the Critical Read may have changed while the
+                // paper was being prepared; never restart over that change.
+                const current = getCriticalReadStateForItem();
+                if (
+                  current.sessionID !== state.sessionID ||
+                  current.phase !== state.phase
+                ) {
+                  renderCriticalRead();
+                  return;
                 }
                 const started = startCriticalRead(state);
                 setCriticalReadStateForItem({
@@ -1901,12 +1976,15 @@ export function registerPaperPilotPaneSection() {
                   await sessionHistoryService.deleteAllSavedSessions({
                     itemID: item.id,
                   });
+                  forgetSearchOrigin();
                   clearCriticalReadViewState(item.id);
                   sessionHistoryOpen = false;
                   sessionsSection.setExpanded(false);
                   await rerenderPane();
                 }),
               );
+              // The list is gone; the section toggle keeps keyboard focus.
+              pastSessionsButton?.focus();
             });
             headerActions.appendChild(deleteAllButton);
             header.appendChild(headerActions);
@@ -2077,6 +2155,7 @@ export function registerPaperPilotPaneSection() {
                     itemID: item.id,
                     sessionId: entry.sessionId,
                   });
+                  forgetSearchOrigin();
                   input.value = "";
                   resizeChatComposer(input);
                   sessionHistoryOpen = false;
@@ -2085,6 +2164,8 @@ export function registerPaperPilotPaneSection() {
                   await rerenderPane();
                 }),
               );
+              // The opened conversation continues at the composer.
+              input.focus();
             });
             rowActions.appendChild(openButton);
 
@@ -2168,6 +2249,7 @@ export function registerPaperPilotPaneSection() {
                     `Delete session "${entry.title}"? This cannot be undone.`,
                   )
                 ) {
+                  kebabButton.focus();
                   return;
                 }
                 const deletingCurrent =
@@ -2179,12 +2261,14 @@ export function registerPaperPilotPaneSection() {
                         itemID: item.id,
                         sessionId: entry.sessionId,
                       });
+                      forgetSearchOrigin(entry.sessionId);
                       clearCriticalReadViewState(item.id, entry.sessionId);
                       resetBlankSessionState();
                       renamingSessionId = undefined;
                       await rerenderPane();
                     }),
                   );
+                  pastSessionsButton?.focus();
                   return;
                 }
                 await runSessionHistoryAction(async () => {
@@ -2192,10 +2276,12 @@ export function registerPaperPilotPaneSection() {
                     itemID: item.id,
                     sessionId: entry.sessionId,
                   });
+                  forgetSearchOrigin(entry.sessionId);
                   clearCriticalReadViewState(item.id, entry.sessionId);
                   renamingSessionId = undefined;
                   await rerenderPane();
                 });
+                pastSessionsButton?.focus();
               });
               kebabMenu.appendChild(deleteItem);
 
@@ -2285,13 +2371,6 @@ export function registerPaperPilotPaneSection() {
           }
         };
 
-        let searchOrigin:
-          | {
-              sessionId: string;
-              position: ReturnType<typeof captureChatPosition>;
-              restore?: () => void;
-            }
-          | undefined;
         const chatTools = createChatTools({
           doc: body.ownerDocument,
           input,
@@ -2411,6 +2490,7 @@ export function registerPaperPilotPaneSection() {
               return false;
             }
             if (origin.sessionId !== sessionStore.get(item.id)?.sessionId) {
+              let originMissing = false;
               const changed = await runSessionRuntimeTransition(async () => {
                 await sessionHistoryService.persistActiveSession({
                   itemID: item.id,
@@ -2422,13 +2502,18 @@ export function registerPaperPilotPaneSection() {
                     itemID: item.id,
                     sessionId: origin.sessionId,
                   });
-                  if (!opened)
-                    throw new Error(
-                      "The original conversation is no longer available.",
-                    );
+                  originMissing = !opened;
                 }
               });
               if (!changed) return false;
+              if (originMissing) {
+                // Close the panel instead of failing every later attempt.
+                searchOrigin = undefined;
+                chatTools.setStatus(
+                  "The original conversation is no longer available, so you stay in this one.",
+                );
+                return true;
+              }
               await rerenderPane();
             }
             if (origin.position)
@@ -2543,6 +2628,7 @@ export function registerPaperPilotPaneSection() {
                   // reader is unless it is already in the chat tools.
                   showChatReviewPanel({
                     mount: chatTools.root,
+                    returnFocus: input,
                     title: "Conversation summary",
                     body: `Model-generated context for later questions in this conversation, not paper evidence. ${keptNote}`,
                     fields: [summaryBody],
@@ -2623,6 +2709,12 @@ export function registerPaperPilotPaneSection() {
               await rerenderPane();
               input.focus();
             },
+            isPinned: () =>
+              Boolean(
+                sessionStore
+                  .get(item.id)
+                  ?.pins?.some((pin) => pin.messageId === message.id),
+              ),
             onPin: async () => {
               if (
                 message.role === "assistant" &&
@@ -2653,6 +2745,7 @@ export function registerPaperPilotPaneSection() {
               const noteContext = { sessionID, question };
               showChatReviewPanel({
                 mount: chatTools.root,
+                returnFocus: input,
                 title: "Save answer to Zotero note",
                 body: buildChatNotePreview(message, target, noteContext),
                 confirmLabel: "Save note",
@@ -2695,6 +2788,7 @@ export function registerPaperPilotPaneSection() {
               const sessionID = sessionStore.get(item.id)!.sessionId;
               showChatReviewPanel({
                 mount: chatTools.root,
+                returnFocus: input,
                 title: "Send comparison question to project",
                 body: "Review the question and destination. It will be added to the project without starting an analysis.",
                 fields: [select, question],
@@ -3265,6 +3359,23 @@ export function registerPaperPilotPaneSection() {
               reader: await ztoolkit.Reader.getReader().catch(() => undefined),
               selectedText: "",
             });
+            // A history write failure must not turn a finished search into a failed
+            // one; the results stay visible and the status says they were not saved.
+            const persistDiscoveryHistory = async () => {
+              try {
+                await sessionHistoryService.persistActiveSession({
+                  itemID: item.id,
+                  paperTitle: String(item.getField("title") || ""),
+                });
+              } catch (error) {
+                logReaderPaneError("prior-work history save failed", error);
+                const state = getRelatedRecommendationState(item.id);
+                addon.data.relatedRecommendationStates?.set(item.id, {
+                  ...state,
+                  status: `${state.status} These results were not saved to history.`,
+                });
+              }
+            };
             await generateRelatedPaperGroups({
               itemID: item.id,
               itemTitle: item.getField("title"),
@@ -3326,10 +3437,7 @@ export function registerPaperPilotPaneSection() {
                     discovery: result.discovery,
                   }),
                 );
-                await sessionHistoryService.persistActiveSession({
-                  itemID: item.id,
-                  paperTitle: String(item.getField("title") || ""),
-                });
+                await persistDiscoveryHistory();
               },
               onFailure: async (error) => {
                 addon.data.relatedRecommendationStates?.set(
@@ -3340,10 +3448,7 @@ export function registerPaperPilotPaneSection() {
                     error,
                   }),
                 );
-                await sessionHistoryService.persistActiveSession({
-                  itemID: item.id,
-                  paperTitle: String(item.getField("title") || ""),
-                });
+                await persistDiscoveryHistory();
               },
             });
           } catch (error) {
@@ -4099,7 +4204,20 @@ export function registerPaperPilotPaneSection() {
               existingState.phase !== "idle" &&
               existingState.phase !== "complete")
           ) {
+            // "Resume Paper Mastery" brings the current round into view
+            // and puts focus on the control that continues it.
             renderMasteryPanel();
+            masterySection?.scrollIntoView?.({ block: "nearest" });
+            const masteryNextButton = body.querySelector(
+              "#paper-mastery-next",
+            ) as HTMLButtonElement | null;
+            const continueControl = [masteryAnswer, masteryNextButton].find(
+              (control) =>
+                control &&
+                control.style.display !== "none" &&
+                !control.disabled,
+            );
+            continueControl?.focus();
             return;
           }
           if (
@@ -4238,15 +4356,13 @@ export function registerPaperPilotPaneSection() {
           revealWorkbenchPanel(masterySection);
           return true;
         };
-        addon.data.activateReaderCapability?.set(item.id, activateCapability);
-        cleanupTasks.push(() => {
-          if (
-            addon.data.activateReaderCapability?.get(item.id) ===
-            activateCapability
-          ) {
-            addon.data.activateReaderCapability.delete(item.id);
-          }
-        });
+        cleanupTasks.push(
+          registerItemBridge(
+            addon.data.activateReaderCapability,
+            item.id,
+            activateCapability,
+          ),
+        );
 
         masterySubmit?.addEventListener("click", async () => {
           const answer = masteryAnswer?.value?.trim();
@@ -4512,6 +4628,7 @@ export function registerPaperPilotPaneSection() {
               mode,
               paperTitle: String(item.getField("title") || ""),
             });
+            forgetSearchOrigin();
             resetBlankSessionState();
             sessionHistoryOpen = false;
             sessionsSection.setExpanded(false);
@@ -4521,6 +4638,8 @@ export function registerPaperPilotPaneSection() {
         });
 
         codexAuthButton.addEventListener("click", async () => {
+          // A new install or sign-in may change which executable is best.
+          clearResolvedCodexExecutableCache();
           const loginState = await probeCodexLoginState().catch(
             () => "unavailable" as const,
           );
@@ -4545,17 +4664,25 @@ export function registerPaperPilotPaneSection() {
 
         codexDeviceAuthButton.addEventListener("click", () => {
           paneHeader.setCodexAuthStatus(
-            "If your Codex CLI prompts for device auth, complete that flow in the terminal, then click Re-check status.",
+            "Run `codex login --device-auth` in your terminal, enter the code it prints on the page it names, then click Re-check status.",
           );
         });
 
         codexRecheckButton.addEventListener("click", async () => {
           paneHeader.setCodexAuthStatus("Checking Codex CLI status…");
+          clearResolvedCodexExecutableCache();
           await refreshPaneState({
             isCurrent: isCurrentRender,
             renderTranscript: false,
           });
           if (!isCurrentRender()) return;
+          // A ready CLI hides this row, including the focused Re-check button.
+          const focused = body.ownerDocument?.activeElement;
+          if (
+            paneHeader.codexActions.style.display === "none" &&
+            (!focused || paneHeader.codexActions.contains(focused))
+          )
+            paneHeader.modeCodexButton.focus();
           const loginState = lastCodexLoginState;
           paneHeader.setCodexAuthStatus(
             loginState === "login_required" ||
@@ -4672,8 +4799,9 @@ export function registerPaperPilotPaneSection() {
           if (pendingDiscovery) {
             const activeSessionID = sessionStore.get(item.id)?.sessionId;
             if (
-              pendingDiscovery.sessionId &&
-              pendingDiscovery.sessionId !== activeSessionID
+              (pendingDiscovery.sessionId &&
+                pendingDiscovery.sessionId !== activeSessionID) ||
+              !isPendingReaderActionFresh(pendingDiscovery.updatedAt)
             ) {
               addon.data.pendingDiscoveryConcerns?.delete(item.id);
               return;
@@ -4698,6 +4826,20 @@ export function registerPaperPilotPaneSection() {
           }
 
           addon.data.pendingReaderActions?.delete(item.id);
+          // A click from minutes ago, for example in a tab whose pane was
+          // closed, must not start a run by surprise when the pane opens.
+          if (
+            pending.autoSubmit &&
+            !isPendingReaderActionFresh(pending.updatedAt)
+          ) {
+            clearReaderActionDraft(item.id);
+            renderDraftCard(draftCard, item.id);
+            showComposerNotice(
+              input,
+              "An earlier reader action expired before Paper Pilot opened. Select the passage and choose the action again.",
+            );
+            return;
+          }
           if (isReaderChatBusy(item.id)) {
             renderDraftCard(draftCard, item.id);
             return;
@@ -4726,43 +4868,42 @@ export function registerPaperPilotPaneSection() {
             );
           }
         };
-        addon.data.applyReaderActionToPane?.set(
-          item.id,
-          applyReaderActionToPane,
-        );
         const showPaneNotice = (text: string) =>
           showComposerNotice(input, text);
-        addon.data.showReaderPaneNotice?.set(item.id, showPaneNotice);
-        cleanupTasks.push(() => {
-          if (
-            addon.data.applyReaderActionToPane?.get(item.id) ===
-            applyReaderActionToPane
-          ) {
-            addon.data.applyReaderActionToPane.delete(item.id);
-          }
-          if (
-            addon.data.showReaderPaneNotice?.get(item.id) === showPaneNotice
-          ) {
-            addon.data.showReaderPaneNotice.delete(item.id);
-          }
-        });
+        cleanupTasks.push(
+          registerItemBridge(
+            addon.data.applyReaderActionToPane,
+            item.id,
+            applyReaderActionToPane,
+          ),
+          registerItemBridge(
+            addon.data.showReaderPaneNotice,
+            item.id,
+            showPaneNotice,
+          ),
+        );
         void addon.data.applyReaderActionToPane?.get(item.id)?.();
       }
     },
     onDestroy: ({ body }) => {
       paneCleanupByBody.get(body)?.();
       const itemID = paneItemByBody.get(body);
-      if (itemID !== undefined) pruneReaderPaneItemState(itemID);
       activePaneBodies.delete(body);
       paneCleanupByBody.delete(body);
       paneTemplateByBody.delete(body);
       paneItemByBody.delete(body);
       paneLayoutByBody.delete(body);
+      // Another reader tab can still show the same paper.
+      const stillShown = [...activePaneBodies].some(
+        (other) => paneItemByBody.get(other) === itemID,
+      );
+      if (itemID !== undefined && !stillShown) pruneReaderPaneItemState(itemID);
     },
   });
 
   if (result) {
     addon.data.aiReaderPaneRegistered = true;
+    paperPilotPaneKey = typeof result === "string" ? result : undefined;
   }
 }
 
@@ -4986,6 +5127,14 @@ async function renderPaneState(options: {
     renderStreamingIndicator(params.streamingIndicator, true);
     params.setSectionSummary(`${activeLabel} · Running`);
   }
+  // The status probe and the running header rewrite the line, so the
+  // override note is added again after them.
+  if (
+    mode !== defaultMode &&
+    !params.modeStatus.textContent?.includes("per-paper override")
+  ) {
+    params.modeStatus.textContent = `${params.modeStatus.textContent} · per-paper override`;
+  }
 }
 
 function renderCurrentDocumentLabel(
@@ -5135,7 +5284,9 @@ function renderCompareHelperState(
       ? undefined
       : discovery.reason,
   });
-  compareHelper.textContent = workflowState.helperText;
+  // An unchanged live region rewrite would be announced again.
+  if (compareHelper.textContent !== workflowState.helperText)
+    compareHelper.textContent = workflowState.helperText;
   compareHelper.className =
     workflowState.tone === "ready"
       ? "pp-compare-helper pp-compare-helper--ready"
@@ -5167,6 +5318,10 @@ function renderRelatedRecommendationState(
   const state = getRelatedRecommendationState(itemID);
   const doc = groupsContainer.ownerDocument;
   const pane = groupsContainer.closest("#paper-pilot-container");
+  // Review panels live outside the list, which every refresh rebuilds.
+  const reviewMount =
+    (pane?.querySelector("#chat-related-review") as HTMLElement | null) ??
+    groupsContainer;
   const saveButton = pane?.querySelector(
     "#chat-related-save",
   ) as HTMLButtonElement | null;
@@ -5281,7 +5436,7 @@ function renderRelatedRecommendationState(
             const home = await loadResearchWorkspaceHome();
             if (!home.projects.length) {
               showResearchWorkspaceRequiredPanel({
-                mount: groupsContainer,
+                mount: reviewMount,
                 title: "Save candidate to project inbox",
                 body: "Create a Research Workspace project before saving a candidate.",
                 items: [Zotero.Items.get(itemID)].filter(Boolean),
@@ -5297,7 +5452,7 @@ function renderRelatedRecommendationState(
               select.append(option);
             }
             const candidatePanel = showChatReviewPanel({
-              mount: groupsContainer,
+              mount: reviewMount,
               title: "Save candidate to project inbox",
               body: `${target.title}\n${target.reason || ""}\nPDF linking and screening remain separate steps.`,
               fields: [select],
@@ -5331,7 +5486,7 @@ function renderRelatedRecommendationState(
                 addon.data.criticalReadStates?.get(itemID),
               ),
             }),
-          onOpenURL: (url) => Zotero.launchURL(url),
+          onOpenURL: (url) => openPublicURL(url),
           onError: setFailure,
           // The row already shows the error; keep it in the stored status
           // without a rebuild, which would remove the row's message.
@@ -5366,10 +5521,11 @@ function renderRelatedRecommendationState(
             }
             const current = getRelatedRecommendationState(itemID);
             const patch = { existingItemID: result.itemID };
+            // A refresh search may still be running; keep its flag and its
+            // progress status so Cancel stays available.
             addon.data.relatedRecommendationStates?.set(itemID, {
               ...current,
-              running: false,
-              status: "Added to collection",
+              status: current.running ? current.status : "Added to collection",
               groups: current.groups.map((group: RecommendationGroup) => ({
                 ...group,
                 papers: group.papers.map((entry) =>
@@ -5713,8 +5869,13 @@ function renderMessageHistory(
     },
   });
   if (!position) return;
-  window.showMessage(position.key, position.offset, { focus: false });
+  // Offer "Jump to latest" only when the reading position was restored;
+  // otherwise the window already shows the latest message.
+  const restored = window.showMessage(position.key, position.offset, {
+    focus: false,
+  });
   if (
+    restored &&
     previous?.sessionId === sessionId &&
     (messages.length > previous.count || hadNewResponse)
   )
@@ -5863,10 +6024,7 @@ async function runPaperArtifactRequest(params: {
             logReaderPaneError("paper artifact response parsing failed", error);
             setPaperArtifactState(params.item.id, {
               running: false,
-              status:
-                error instanceof Error
-                  ? `${request.label} parse failed: ${error.message}`
-                  : `${request.label} parse failed.`,
+              status: `${request.label} returned an incomplete answer. Run it again.`,
               cards: getPaperArtifactState(params.item.id).cards,
             });
           }
@@ -6009,10 +6167,7 @@ async function runPaperCompareRequest(params: {
             );
             setPaperArtifactState(params.item.id, {
               running: false,
-              status:
-                error instanceof Error
-                  ? `Compare parse failed: ${error.message}`
-                  : "Compare parse failed.",
+              status: "Compare returned an incomplete answer. Run it again.",
               cards: getPaperArtifactState(params.item.id).cards,
             });
           }
@@ -6078,10 +6233,16 @@ async function handleUserInput(
   const activeSessionID = current.sessionId;
   const admittedDraft = getChatDraft(itemID, activeSessionID);
   const actionDraft = addon.data.readerActionDrafts?.get(itemID);
+  const visibleChat =
+    !options?.suppressChatMessages && !options?.silentUserMessage;
   const context =
     options?.requestDraftContext ??
-    admittedDraft.context ??
-    (actionDraft?.sessionId === activeSessionID ? actionDraft : undefined);
+    recordedContextForRun({
+      context:
+        admittedDraft.context ??
+        (actionDraft?.sessionId === activeSessionID ? actionDraft : undefined),
+      visibleChat,
+    });
   const preserveComposer =
     options?.preserveComposer || options?.silentUserMessage;
   let submission: ChatDraftSubmission | undefined =
@@ -6103,9 +6264,13 @@ async function handleUserInput(
       t.userTurnPersistedAt = userTurnPersistedAt;
       const seconds = (end?: number, start?: number) =>
         end && start ? `${((end - start) / 1000).toFixed(1)}s` : "unavailable";
-      const status = input
-        .closest("#paper-pilot-container")
-        ?.querySelector(".pp-chat-context-status");
+      // Hidden runs get no conversation context, so they leave the chat's
+      // context line alone.
+      const status = visibleChat
+        ? input
+            .closest("#paper-pilot-container")
+            ?.querySelector(".pp-chat-context-status")
+        : undefined;
       if (status) {
         t.displayedAt = Date.now();
         renderChatContextStatus(
@@ -6147,8 +6312,7 @@ async function handleUserInput(
     // in another PDF. Removed contexts and hidden workflow runs never do.
     const readLiveSelection = shouldReadLiveSelection({
       context,
-      visibleChat:
-        !options?.suppressChatMessages && !options?.silentUserMessage,
+      visibleChat,
     });
     const reader =
       context?.attachmentID && !readLiveSelection
@@ -6224,7 +6388,8 @@ async function handleUserInput(
       omitted: continuity.omitted,
       warnings: requestContext.warnings,
     });
-    if (status) renderChatContextStatus(status, requestContextStatus);
+    if (status && visibleChat)
+      renderChatContextStatus(status, requestContextStatus);
     if (isChatPreparationCancelled(itemID)) return;
     const common = {
       itemID,

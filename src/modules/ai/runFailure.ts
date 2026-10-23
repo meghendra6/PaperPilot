@@ -58,6 +58,8 @@ export function classifyRunFailure(params: {
   engine: EngineMode;
   rawError: string;
   source: RunFailureSource;
+  /** A safe preparation message that names how to recover. */
+  recoveryMessage?: string;
 }): RunFailure {
   const rawError = String(params.rawError || "").trim();
   const label = getEngineLabel(params.engine);
@@ -77,6 +79,15 @@ export function classifyRunFailure(params: {
       engine: params.engine,
       userMessage:
         "Paper Pilot could not start this request. Try sending it again. Expand Raw logs in the run status for details.",
+      rawError,
+    };
+  }
+
+  if (params.source === "workspace" && params.recoveryMessage) {
+    return {
+      kind: "workspace_error",
+      engine: params.engine,
+      userMessage: params.recoveryMessage,
       rawError,
     };
   }

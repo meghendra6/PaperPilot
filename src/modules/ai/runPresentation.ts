@@ -1,3 +1,4 @@
+import { logWithToolkit } from "../../utils/addonScope";
 import type { EngineMode } from "./types";
 
 export type ReaderRunEvent =
@@ -23,9 +24,15 @@ type ActiveRun = {
 const activeRunsByItem = new Map<number, ActiveRun[]>();
 const listenersByItem = new Map<number, Set<(event: ReaderRunEvent) => void>>();
 
+// Events fire in the middle of lifecycle mutations. A listener that throws
+// must not skip the bookkeeping that follows, or the paper stays busy.
 function emit(event: ReaderRunEvent) {
   for (const listener of listenersByItem.get(event.itemID) ?? []) {
-    listener(event);
+    try {
+      listener(event);
+    } catch (error) {
+      logWithToolkit("Paper Pilot run event listener failed:", error);
+    }
   }
 }
 
@@ -84,6 +91,19 @@ export function finishReaderRunsForMode(
     activeRunsByItem.delete(itemID);
   }
   emit({ type: "finished", itemID, mode });
+}
+
+/**
+ * Ends every active run token. Add-on shutdown calls this after it has
+ * collected the runs to stop, so a run that is still preparing sees its
+ * token revoked and stops the process it launches instead of polling it.
+ */
+export function finishAllReaderRuns(): void {
+  const finished = [...activeRunsByItem].flatMap(([itemID, runs]) =>
+    runs.map((run) => ({ itemID, mode: run.mode })),
+  );
+  activeRunsByItem.clear();
+  for (const run of finished) emit({ type: "finished", ...run });
 }
 
 export function getActiveReaderRunMode(itemID: number): EngineMode | undefined {

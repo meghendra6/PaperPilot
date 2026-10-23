@@ -100,9 +100,18 @@ export function captureChatPosition(
   container: HTMLElement,
 ): { key: string; offset: number } | undefined {
   const top = container.getBoundingClientRect().top;
-  const wrapper = getMessageWrappers(container).find(
+  const wrappers = getMessageWrappers(container);
+  let index = wrappers.findIndex(
     (item) => item.getBoundingClientRect().bottom >= top,
   );
+  // A live answer has a temporary key that the stored answer will not carry
+  // after the run, so anchor on the nearest stored message above it.
+  while (
+    index >= 0 &&
+    wrappers[index]?.dataset.ppTranscriptKey?.startsWith("live-")
+  )
+    index -= 1;
+  const wrapper = index >= 0 ? wrappers[index] : undefined;
   return wrapper?.dataset.ppTranscriptKey
     ? {
         key: wrapper.dataset.ppTranscriptKey,
@@ -208,6 +217,11 @@ export function renderChatTranscriptWindow<T>(params: {
   let rendering = false;
   let disposed = false;
   let suppressScroll = false;
+  // Assistant bubbles that an engine controller adds during a run reach the
+  // message store only when it finishes. Window rebuilds (Jump to latest,
+  // Show earlier/newer, scroll shifts) must keep them instead of dropping
+  // them; the post-run history render creates a new window.
+  const liveWrappers: HTMLElement[] = [];
   let scrollFrame: number | undefined;
   let latestScrollFrame: number | undefined;
   let lastScrollTop = 0;
@@ -386,6 +400,9 @@ export function renderChatTranscriptWindow<T>(params: {
       }
     }
 
+    if (normalized.end >= items.length)
+      for (const live of liveWrappers) params.container.append(live);
+
     const newerCount = items.length - normalized.end;
     if (newerCount > 0) {
       params.container.append(
@@ -411,11 +428,20 @@ export function renderChatTranscriptWindow<T>(params: {
         focusDirection === "earlier" ? params.container.scrollHeight : 0;
     }
     if (focusDirection) {
-      params.container
-        .querySelector<HTMLButtonElement>(
-          `.pp-chat-window-control--${focusDirection} button`,
-        )
-        ?.focus({ preventScroll: true });
+      const control = params.container.querySelector<HTMLButtonElement>(
+        `.pp-chat-window-control--${focusDirection} button`,
+      );
+      if (control) {
+        control.focus({ preventScroll: true });
+      } else {
+        // The last step removed its control. Keep focus in the transcript
+        // on the message at that end instead of losing it.
+        const wrappers = getMessageWrappers(params.container);
+        const edge =
+          focusDirection === "earlier" ? wrappers[0] : wrappers.at(-1);
+        edge?.setAttribute("tabindex", "-1");
+        edge?.focus({ preventScroll: true });
+      }
     }
     if (effectiveBehavior === "preserve") releaseScrollSuppression();
   }
@@ -530,7 +556,10 @@ export function renderChatTranscriptWindow<T>(params: {
         params.container.scrollHeight - 24;
       if (movingDown && atBottom && range.end < params.getItems().length) {
         shift("newer");
+        return;
       }
+      // The reader reached the latest message, so the prompt is done.
+      if (atBottom && atLatest) clearChatNewResponse(params.container);
     });
   };
 
@@ -553,9 +582,10 @@ export function renderChatTranscriptWindow<T>(params: {
     showLatest,
     notifyUpdate(follow) {
       if (disposed || rendering) return;
-      if (follow && atLatest)
+      if (follow && atLatest) {
         params.container.scrollTop = params.container.scrollHeight;
-      else showNewResponseButton(params.container);
+        clearChatNewResponse(params.container);
+      } else showNewResponseButton(params.container);
     },
     prepareAppend() {
       if (disposed || rendering) return;
@@ -564,6 +594,11 @@ export function renderChatTranscriptWindow<T>(params: {
     notifyAppend(wrapper) {
       if (disposed || rendering) return;
       wrapper.dataset.ppTranscriptKey ||= `live-${liveKey++}`;
+      if (
+        String(wrapper.className).includes("pp-message-wrapper--ai") &&
+        !liveWrappers.includes(wrapper)
+      )
+        liveWrappers.push(wrapper);
       if (!followingOnAppend) {
         if (!atLatest) wrapper.remove();
         showNewResponseButton(params.container);

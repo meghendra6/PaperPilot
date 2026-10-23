@@ -12,7 +12,6 @@ import type {
   CriticalReadStepState,
 } from "../criticalRead/types";
 import { getCriticalReadStep } from "../criticalRead/workflow";
-import { openPublicURL } from "../message/publicLinks";
 
 export interface CriticalReadSectionActions {
   onStart(): void | Promise<void>;
@@ -77,6 +76,69 @@ function appendList(doc: Document, parent: HTMLElement, values: string[]) {
     list.appendChild(item);
   }
   parent.appendChild(list);
+}
+
+function appendLabelledList(
+  doc: Document,
+  parent: HTMLElement,
+  label: string,
+  values: string[],
+) {
+  if (!values.length) return;
+  const heading = doc.createElement("p");
+  heading.className = "pp-critical-read__sublabel";
+  heading.textContent = label;
+  parent.appendChild(heading);
+  appendList(doc, parent, values);
+}
+
+/** Marks a control so a rebuild can return keyboard focus to it. */
+function markControl<T extends HTMLElement>(element: T, key: string): T {
+  element.setAttribute("data-cr-control", key);
+  return element;
+}
+
+function findControl(node: HTMLElement, key: string): HTMLElement | undefined {
+  for (const child of Array.from(node.children ?? []) as HTMLElement[]) {
+    if (child.getAttribute?.("data-cr-control") === key) return child;
+    const nested = findControl(child, key);
+    if (nested) return nested;
+  }
+  return undefined;
+}
+
+function focusedControlKey(doc: Document, body: HTMLElement) {
+  let node = doc.activeElement as HTMLElement | null | undefined;
+  for (let depth = 0; node && depth < 4; depth += 1) {
+    const key = node.getAttribute?.("data-cr-control");
+    if (key) return findControl(body, key) === node ? key : undefined;
+    node = node.parentElement;
+  }
+  return undefined;
+}
+
+/**
+ * Returns focus to the rebuilt control. A Run button that turned into a
+ * disabled "Working…" hands focus to Cancel.
+ */
+function restoreControlFocus(body: HTMLElement, key: string) {
+  let target = findControl(body, key);
+  if (key === "run" && (!target || (target as HTMLButtonElement).disabled))
+    target = findControl(body, "cancel") ?? target;
+  if (key === "cancel" && !target) target = findControl(body, "run");
+  if (target && !(target as HTMLButtonElement).disabled) target.focus();
+}
+
+/** False only when Zotero reports the saved report note as gone. */
+function reportNoteExists(noteID: number) {
+  const items = (
+    globalThis as {
+      Zotero?: { Items?: { get?: (id: number) => unknown } };
+    }
+  ).Zotero?.Items;
+  if (!items?.get) return true;
+  const note = items.get(noteID) as { deleted?: boolean } | false | undefined;
+  return Boolean(note) && !(note as { deleted?: boolean }).deleted;
 }
 
 function appendBlock(
@@ -220,9 +282,11 @@ function agentOutputLines(
     ]);
   }
   lines.push(
-    (output.alternatives || []).map(
-      (entry) =>
-        `${t("Alternative")}: ${entry.explanation} · ${t("could explain")} ${entry.explainedResult} · ${t("test")}: ${entry.discriminatingExperiment} · ${t("addressed")}: ${t(entry.addressedByPaper)}`,
+    (output.alternatives || []).map((entry) =>
+      withLocator(
+        `${t("Alternative")}: ${entry.explanation} · ${t("could explain")} ${entry.explainedResult} · ${t("test")}: ${entry.discriminatingExperiment} · ${t("addressed")}: ${t(entry.addressedByPaper)} · ${t("Challenges")}: ${entry.challengedAssumption}`,
+        entry.sourceLocator,
+      ),
     ),
   );
   return lines;
@@ -244,7 +308,10 @@ function renderCompletedStep(params: {
   details.addEventListener("toggle", () =>
     params.actions.onToggleStep?.(step.id, details.open),
   );
-  const summary = doc.createElement("summary");
+  const summary = markControl(
+    doc.createElement("summary"),
+    `summary-${step.id}`,
+  );
   summary.textContent = `${step.id}. ${getCriticalReadStepCopy(step.id, params.responseLanguage).title}`;
   details.appendChild(summary);
   if (step.readerInput) {
@@ -277,6 +344,18 @@ function renderCompletedStep(params: {
     for (const lines of agentOutputLines(step.output, t)) {
       appendList(doc, agent, lines);
     }
+    appendLabelledList(
+      doc,
+      agent,
+      t("Source locations"),
+      step.output.sourceLocators ?? [],
+    );
+    appendLabelledList(
+      doc,
+      agent,
+      t("Limits and uncertainty"),
+      step.output.limitations ?? [],
+    );
   }
   if (step.discovery) {
     const external = appendBlock(doc, details, "external", t("Discovery map"));
@@ -291,7 +370,7 @@ function renderCompletedStep(params: {
     );
     external.appendChild(discovery);
   }
-  const revise = doc.createElement("button");
+  const revise = markControl(doc.createElement("button"), `revise-${step.id}`);
   revise.className = "pp-btn pp-btn--ghost";
   revise.textContent = "Revise from here";
   revise.disabled = params.state.running;
@@ -327,21 +406,20 @@ function renderReport(params: {
       doc,
     ),
   );
-  for (const node of Array.from(
-    content.querySelectorAll?.("a.pp-public-source") ?? [],
-  )) {
-    const anchor = node as HTMLAnchorElement;
-    anchor.addEventListener("click", (event) => {
-      event.preventDefault();
-      const url = anchor.getAttribute("href");
-      if (url) openPublicURL(url, doc);
-    });
-  }
   report.append(reportSummary, content);
   return report;
 }
 
-export function renderCriticalReadSection(params: {
+export function renderCriticalReadSection(
+  params: Parameters<typeof renderCriticalReadBody>[0],
+) {
+  const shell = ensureShell(params.root);
+  const focusedKey = focusedControlKey(params.root.ownerDocument, shell.body);
+  renderCriticalReadBody(params);
+  if (focusedKey) restoreControlFocus(shell.body, focusedKey);
+}
+
+function renderCriticalReadBody(params: {
   root: HTMLElement;
   state: CriticalReadState;
   actions: CriticalReadSectionActions;
@@ -386,7 +464,7 @@ export function renderCriticalReadSection(params: {
     intro.textContent = t(
       "Build your own judgment first, then use Paper Pilot to check it against the paper.",
     );
-    const start = doc.createElement("button");
+    const start = markControl(doc.createElement("button"), "start");
     start.className = "pp-btn pp-btn--secondary";
     // Reading the paper can take a while on first use.
     start.textContent = params.preparing
@@ -399,13 +477,16 @@ export function renderCriticalReadSection(params: {
   }
 
   shell.status.hidden = false;
-  shell.status.textContent = localizeCriticalReadStatus(
+  // Rewriting an unchanged live region would announce it again.
+  const statusText = localizeCriticalReadStatus(
     state.status,
     params.responseLanguage,
   );
+  if (shell.status.textContent !== statusText)
+    shell.status.textContent = statusText;
 
   const makeCancel = () => {
-    const cancel = doc.createElement("button");
+    const cancel = markControl(doc.createElement("button"), "cancel");
     cancel.className = "pp-btn pp-btn--secondary";
     cancel.textContent = "Cancel Critical Read step";
     cancel.addEventListener("click", () => void params.actions.onCancel());
@@ -434,16 +515,21 @@ export function renderCriticalReadSection(params: {
   }
 
   if (state.phase === "complete") {
-    const save = doc.createElement("button");
+    const save = markControl(doc.createElement("button"), "save");
     save.className = "pp-btn pp-btn--secondary";
-    save.textContent = state.reportNoteItemID
-      ? "Saved to Zotero note"
-      : params.saving
-        ? "Saving…"
+    const savedNote = Boolean(
+      state.reportNoteItemID && reportNoteExists(state.reportNoteItemID),
+    );
+    // A new note follows the current response language, so a saved report
+    // can be saved again, and a deleted note no longer blocks saving.
+    save.textContent = params.saving
+      ? "Saving…"
+      : savedNote
+        ? "Saved to Zotero note · Save another copy"
         : "Save report to note";
-    save.disabled = Boolean(state.reportNoteItemID || params.saving);
+    save.disabled = Boolean(params.saving);
     save.addEventListener("click", () => void params.actions.onSave());
-    const mastery = doc.createElement("button");
+    const mastery = markControl(doc.createElement("button"), "mastery");
     mastery.className = "pp-btn pp-btn--ghost";
     mastery.textContent = "Start Paper Mastery";
     mastery.addEventListener(
@@ -556,7 +642,7 @@ export function renderCriticalReadSection(params: {
     shell.input = answer;
   }
 
-  const run = doc.createElement("button");
+  const run = markControl(doc.createElement("button"), "run");
   run.className = "pp-btn pp-btn--primary";
   run.textContent = state.running
     ? "Working…"

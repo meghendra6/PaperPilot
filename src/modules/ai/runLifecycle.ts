@@ -207,7 +207,9 @@ export function releaseReaderSessionTransition(
   itemID: number,
   token: symbol,
 ): void {
-  releaseReaderLifecycle(itemID, token);
+  // Open, New, and Delete re-render the pane while they still hold the
+  // claim, so the busy-gated controls need the release event to re-enable.
+  releaseOwnedClaimAndNotify(itemID, token);
 }
 
 export function isReaderSessionTransitionActive(itemID: number): boolean {
@@ -364,6 +366,7 @@ export function failRunProgress(params: {
   token: ReaderRunToken;
   rawError: string;
   source: RunFailureSource;
+  recoveryMessage?: string;
   canRetry?: boolean;
 }): RunProgressState | undefined {
   const current =

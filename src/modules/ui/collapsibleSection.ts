@@ -7,6 +7,8 @@ import {
 } from "./paneSectionState";
 import { createVerticalResizeHandle } from "./paneResize";
 
+let sectionBodyCounter = 0;
+
 export const SECTION_STACK_ALL_COLLAPSED_CLASS =
   "pp-section-stack--all-collapsed";
 
@@ -84,7 +86,8 @@ export function createCollapsibleSection(params: {
   updated.hidden = true;
 
   const body = params.doc.createElement("div");
-  body.id = `paper-pilot-${params.id}-body`;
+  // aria-controls needs an ID that is unique across reader-tab panes.
+  body.id = `paper-pilot-${params.id}-body-${++sectionBodyCounter}`;
   body.className = "pp-collapsible-section__body";
 
   const resizeHandle = createVerticalResizeHandle({

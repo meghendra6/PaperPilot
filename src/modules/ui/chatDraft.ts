@@ -32,6 +32,22 @@ export function shouldReadLiveSelection(params: {
   if (context?.text || context?.annotationIDs?.length) return false;
   return !context || ("origin" in context && context.origin === "pane-open");
 }
+/**
+ * The recorded context a run may use. A hidden workflow run (Workbench card,
+ * Mastery, Compare, Critical Read) covers the whole paper, so it keeps only
+ * the bound PDF and never a leftover passage, page, or annotation. A stale
+ * annotation ID would otherwise also fail the unrelated whole-paper run.
+ */
+export function recordedContextForRun(params: {
+  context?: ChatDraftContext;
+  visibleChat: boolean;
+}): ChatDraftContext | undefined {
+  const { context } = params;
+  if (params.visibleChat || !context) return context;
+  return context.attachmentID !== undefined
+    ? { attachmentID: context.attachmentID }
+    : undefined;
+}
 export interface ChatDraft {
   revision: number;
   text: string;
@@ -108,14 +124,22 @@ export function restoreChatDraft(
   submission?: ChatDraftSubmission,
 ): boolean {
   const current = getChatDraft(itemID, sessionId);
+  // The pane records the open PDF and the length select on its own. Those
+  // writes are not the reader starting another question, so they do not
+  // block the restore; typed text or an attached selection does.
+  const paneOwnedContext =
+    !current.context ||
+    ("origin" in current.context && current.context.origin === "pane-open");
   if (
-    current.revision !== admitted.revision + 1 ||
+    current.revision < admitted.revision + 1 ||
     current.text ||
-    current.context
+    !paneOwnedContext
   )
     return false;
+  const changedSinceConsume = current.revision > admitted.revision + 1;
   drafts.set(key(itemID, sessionId), {
     ...copy(admitted),
+    ...(changedSinceConsume ? { responseLength: current.responseLength } : {}),
     ...(submission ? { submission } : {}),
     revision: current.revision + 1,
   });

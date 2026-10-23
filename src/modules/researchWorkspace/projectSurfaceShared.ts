@@ -94,10 +94,12 @@ export function setMessage(root: HTMLElement, message: string, kind = "info") {
   if (!node) {
     node = element(root.ownerDocument, "div", "pprw-status");
     node.dataset.projectMessage = "true";
-    node.setAttribute("role", kind === "error" ? "alert" : "status");
-    node.setAttribute("aria-live", kind === "error" ? "assertive" : "polite");
     root.prepend(node);
   }
+  // An error is announced assertively even when the line was created for a
+  // polite status first.
+  node.setAttribute("role", kind === "error" ? "alert" : "status");
+  node.setAttribute("aria-live", kind === "error" ? "assertive" : "polite");
   node.textContent = message;
   node.dataset.kind = kind;
   if (kind === "error") logProjectError(new Error(message));

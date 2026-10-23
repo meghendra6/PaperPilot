@@ -108,6 +108,20 @@ function isoDate(value: unknown, label: string) {
   return normalized;
 }
 
+/**
+ * Item identity order. It is UTF-16 code-unit order, the order of the
+ * default sort() that the preview parser checks. localeCompare() puts
+ * "1:" before "12:", the default sort puts it after.
+ */
+function compareIdentityKeys(
+  left: ResearchWorkspaceZoteroItemIdentity,
+  right: ResearchWorkspaceZoteroItemIdentity,
+) {
+  const leftKey = researchWorkspaceZoteroItemIdentityKey(left);
+  const rightKey = researchWorkspaceZoteroItemIdentityKey(right);
+  return leftKey < rightKey ? -1 : leftKey > rightKey ? 1 : 0;
+}
+
 function uniqueTexts(value: unknown, label: string, maximum: number) {
   const result = boundedArray(value, label, maximum).map((entry, index) =>
     requiredText(entry, `${label} ${index + 1}`, 500),
@@ -278,11 +292,7 @@ function normalizeObservedState(
       available: item.available,
     } satisfies ResearchWorkspaceZoteroSyncItemSnapshot;
   });
-  items.sort((left, right) =>
-    researchWorkspaceZoteroItemIdentityKey(left).localeCompare(
-      researchWorkspaceZoteroItemIdentityKey(right),
-    ),
-  );
+  items.sort(compareIdentityKeys);
   const identities = new Set<string>();
   for (const item of items) {
     const key = researchWorkspaceZoteroItemIdentityKey(item);
@@ -294,6 +304,7 @@ function normalizeObservedState(
       observed.libraryID,
       "Zotero sync observed libraryID",
     ),
+    ...(observed.libraryEditable === false ? { libraryEditable: false } : {}),
     ...(observed.collection
       ? {
           collection: normalizeCollection(
@@ -455,10 +466,8 @@ export function buildResearchWorkspaceZoteroSyncPreview(params: {
     ]),
   );
   const items: ResearchWorkspaceZoteroSyncPreviewItem[] = [];
-  for (const source of [...sourcesByIdentity.values()].sort((left, right) =>
-    researchWorkspaceZoteroItemIdentityKey(left).localeCompare(
-      researchWorkspaceZoteroItemIdentityKey(right),
-    ),
+  for (const source of [...sourcesByIdentity.values()].sort(
+    compareIdentityKeys,
   )) {
     const observed = observedByIdentity.get(
       researchWorkspaceZoteroItemIdentityKey(source),
@@ -492,6 +501,17 @@ export function buildResearchWorkspaceZoteroSyncPreview(params: {
         addTagNames: [],
         status: "blocked",
         blockedReason: "The stable Zotero item identity no longer resolves.",
+      });
+      continue;
+    }
+    // Zotero refuses every save in a read-only library, so Apply would fail.
+    if (observedState.libraryEditable === false) {
+      items.push({
+        ...base,
+        addCollection: false,
+        addTagNames: [],
+        status: "blocked",
+        blockedReason: "The Zotero library is read-only.",
       });
       continue;
     }

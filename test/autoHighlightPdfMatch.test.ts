@@ -330,11 +330,67 @@ test("matchQuoteInPages rejects a quote that appears more than once", () => {
   assert.equal(match, undefined);
 });
 
-test("buildSortIndex is deterministic and changes with position", () => {
-  assert.equal(buildSortIndex(0, [[10, 20, 30, 40]]), "00000|000200|00100");
+test("buildSortIndex follows Zotero's page|charOffset|top format", () => {
+  // top is the distance from the page top: 792 - 40 = 752.
+  assert.equal(
+    buildSortIndex(0, [[10, 20, 30, 40]], { charOffset: 12, pageHeight: 792 }),
+    "00000|000012|00752",
+  );
   assert.notEqual(
     buildSortIndex(0, [[10, 20, 30, 40]]),
     buildSortIndex(1, [[10, 20, 30, 40]]),
+  );
+});
+
+test("auto-highlights on one page sort from top to bottom", () => {
+  const span = (text: string, y: number) => ({
+    pageIndex: 0,
+    pageLabel: "1",
+    text,
+    normalizedText: normalizeQuoteText(text),
+    rect: [72, y, 520, y + 10],
+  });
+  const pages = [
+    {
+      pageIndex: 0,
+      pageLabel: "1",
+      height: 792,
+      spans: [
+        span("The top sentence describes the proposed encoder design.", 700),
+        span("A bottom sentence reports the final ablation results.", 100),
+      ],
+    },
+  ];
+  const top = matchQuoteInPages(
+    "The top sentence describes the proposed encoder design.",
+    pages,
+  );
+  const bottom = matchQuoteInPages(
+    "A bottom sentence reports the final ablation results.",
+    pages,
+  );
+  assert.ok(top && bottom);
+  assert.ok(
+    top.sortIndex < bottom.sortIndex,
+    `${top.sortIndex} ${bottom.sortIndex}`,
+  );
+});
+
+test("extracted pages carry the PDF's own page labels and heights", async () => {
+  const pages = await extractPdfTextPagesFromPdfDocument({
+    numPages: 2,
+    getPageLabels: async () => ["iv", ""],
+    getPage: async () => ({
+      view: [0, 0, 612, 792],
+      getTextContent: async () => ({ items: [] }),
+    }),
+  });
+  assert.deepEqual(
+    pages.map((page) => [page.pageLabel, page.height]),
+    [
+      ["iv", 792],
+      ["2", 792],
+    ],
   );
 });
 

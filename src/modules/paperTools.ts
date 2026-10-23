@@ -26,37 +26,47 @@ export interface PaperToolResult {
 const MAX_SECTION_COUNT = 5;
 const MAX_BULLETS_PER_SECTION = 4;
 
-export const PAPER_TOOL_OUTPUT_SCHEMA: StructuredOutputSchema = {
-  type: "object",
-  additionalProperties: false,
-  required: ["overview", "sections"],
-  properties: {
-    overview: { type: "string", minLength: 1, maxLength: 4_000 },
-    sections: {
-      type: "array",
-      minItems: 1,
-      maxItems: MAX_SECTION_COUNT,
-      items: {
-        type: "object",
-        additionalProperties: false,
-        required: ["heading", "bullets", "evidence"],
-        properties: {
-          heading: { type: "string", minLength: 1, maxLength: 160 },
-          bullets: {
-            type: "array",
-            minItems: 1,
-            maxItems: MAX_BULLETS_PER_SECTION,
-            items: { type: "string", minLength: 1, maxLength: 1_000 },
-          },
-          evidence: {
-            type: "string",
-            enum: ["explicit", "inference", "mixed"],
+function paperToolOutputSchema(
+  heading: StructuredOutputSchema,
+): StructuredOutputSchema {
+  return {
+    type: "object",
+    additionalProperties: false,
+    required: ["overview", "sections"],
+    properties: {
+      overview: { type: "string", minLength: 1, maxLength: 4_000 },
+      sections: {
+        type: "array",
+        minItems: 1,
+        maxItems: MAX_SECTION_COUNT,
+        items: {
+          type: "object",
+          additionalProperties: false,
+          required: ["heading", "bullets", "evidence"],
+          properties: {
+            heading,
+            bullets: {
+              type: "array",
+              minItems: 1,
+              maxItems: MAX_BULLETS_PER_SECTION,
+              items: { type: "string", minLength: 1, maxLength: 1_000 },
+            },
+            evidence: {
+              type: "string",
+              enum: ["explicit", "inference", "mixed"],
+            },
           },
         },
       },
     },
-  },
-};
+  };
+}
+
+export const PAPER_TOOL_OUTPUT_SCHEMA = paperToolOutputSchema({
+  type: "string",
+  minLength: 1,
+  maxLength: 160,
+});
 
 function normalizeWhitespace(value: string) {
   return value.replace(/\s+/g, " ").trim();
@@ -126,11 +136,10 @@ function normalizePaperToolResult(
     return undefined;
   }
 
-  const allowedHeadings = new Set(
-    preset.responseSections.map((section) => section.toLowerCase()),
-  );
   const hasExpectedHeading = sections.some((section) =>
-    allowedHeadings.has(section.heading.toLowerCase()),
+    preset.responseSections.some((expected) =>
+      headingMatches(section.heading, expected),
+    ),
   );
 
   if (!hasExpectedHeading) {
@@ -143,6 +152,18 @@ function normalizePaperToolResult(
     overview,
     sections,
   };
+}
+
+/**
+ * A heading matches a preset heading exactly, or as a titled variant such as
+ * "Idea 1: Cross-lingual evaluation" (separator ":", "-", "–", or "—").
+ */
+function headingMatches(heading: string, expected: string) {
+  const observed = heading.toLowerCase();
+  const wanted = expected.toLowerCase();
+  if (observed === wanted) return true;
+  if (!observed.startsWith(wanted)) return false;
+  return /^\s*[:\-–—]/.test(observed.slice(wanted.length));
 }
 
 export const PAPER_TOOL_PRESETS: PaperToolPreset[] = [
@@ -213,6 +234,19 @@ export function getPaperToolPreset(id: PaperToolPreset["id"]) {
   return PAPER_TOOL_PRESET_MAP.get(id);
 }
 
+/**
+ * The output schema for one preset. Section headings are schema literals,
+ * so a response in another language still uses the preset's headings.
+ */
+export function getPaperToolOutputSchema(
+  id: PaperToolPreset["id"],
+): StructuredOutputSchema {
+  const preset = getPaperToolPreset(id);
+  return preset
+    ? paperToolOutputSchema({ type: "string", enum: preset.responseSections })
+    : PAPER_TOOL_OUTPUT_SCHEMA;
+}
+
 export function buildPaperToolQuestion(
   item: Pick<any, "getField" | "getCreators">,
   presetID: PaperToolPresetID,
@@ -257,7 +291,7 @@ export function buildPaperToolQuestion(
     "- if support is missing, omit the bullet instead of filling with generic advice",
     "- separate paper claims from your interpretation",
     "- cite section, page, figure, or table support when available; do not invent source locations",
-    `- keep each section heading aligned with one of: ${preset.responseSections.join(", ")}`,
+    `- use these section headings exactly as written, in English, even when writing in another language: ${preset.responseSections.join(", ")}`,
     `- include at most ${MAX_SECTION_COUNT} sections`,
     `- include at most ${MAX_BULLETS_PER_SECTION} bullets per section`,
     "- keep bullets short and reader-pane-safe",

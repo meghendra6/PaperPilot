@@ -710,6 +710,45 @@ test("startup recovery repairs a missing catalog only when project data exists",
   assert.deepEqual(setup.files.writes, [setup.repository.catalogPath]);
 });
 
+test("startup cleanup removes only atomic-write temp files, never exports", async () => {
+  const setup = repository();
+  const root = "/profile/paperpilot-research-workspace";
+  const exports = [
+    `${root}/exports/analysis.tmp-2026-10-22T10-00-00-000Z.json`,
+    `${root}/exports/Draft-.TMP-review-screening-log-2026-10-22T10-00-00-000Z.csv`,
+  ];
+  const temporary = `${root}/catalog-v1.json.tmp-1792680933163-abc123`;
+  for (const path of [...exports, temporary]) setup.files.files.set(path, "{}");
+  await setup.repository.recoverStartup();
+  assert.equal(setup.files.files.has(temporary), false);
+  for (const path of exports) {
+    assert.equal(setup.files.files.has(path), true, path);
+  }
+});
+
+test("catalog repair skips a copied project directory instead of duplicating its ID", async () => {
+  const setup = repository();
+  await setup.repository.createProject({
+    projectID: "project-alpha",
+    name: "Alpha",
+  });
+  const original = setup.repository.getProjectPath("project-alpha");
+  const copy = original.replace("project-alpha", "project-alpha-backup");
+  assert.notEqual(copy, original);
+  setup.files.files.set(copy, setup.files.files.get(original)!);
+  setup.files.files.delete(setup.repository.catalogPath);
+
+  const recovery = await setup.repository.recoverStartup();
+  assert.deepEqual(
+    (await setup.repository.listProjects()).map((entry) => entry.projectID),
+    ["project-alpha"],
+  );
+  assert.ok(
+    recovery.warnings.some((warning) => warning.includes(copy)),
+    recovery.warnings.join("\n"),
+  );
+});
+
 test("catalog repair discovers a project left behind by a catalog failure", async () => {
   const setup = repository();
   setup.files.failWrite = (path) => path.endsWith("catalog-v1.json");

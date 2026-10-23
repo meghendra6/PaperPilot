@@ -1,7 +1,11 @@
 import { test } from "node:test";
 import * as assert from "node:assert/strict";
 
-import { buildBackgroundCodexShellScript } from "../src/modules/codex/shell";
+import { spawnSync } from "node:child_process";
+import {
+  buildBackgroundCodexShellScript,
+  shellExportLine,
+} from "../src/modules/codex/shell";
 import { checkShellSyntax } from "./helpers/shellSyntax";
 
 test("buildBackgroundCodexShellScript exports environment before running codex", () => {
@@ -51,4 +55,16 @@ test("buildBackgroundCodexShellScript quotes paths with apostrophes", () => {
   assert.match(script, /Smith'\\''s paper/);
   assert.match(script, /codex'\\''s bin/);
   assert.match(script, /O'\\''Connor/);
+});
+
+test("PATH keeps the fixed CLI directories first and then the login PATH", () => {
+  const line = shellExportLine("PATH", "/opt/homebrew/bin:/usr/bin");
+  assert.equal(line, `export PATH='/opt/homebrew/bin:/usr/bin':"$PATH"`);
+  const result = spawnSync(
+    "/bin/sh",
+    ["-c", `PATH=/login/only/bin; ${line}; printf '%s' "$PATH"`],
+    { encoding: "utf-8" },
+  );
+  assert.equal(result.stdout, "/opt/homebrew/bin:/usr/bin:/login/only/bin");
+  assert.equal(shellExportLine("HOME", "/Users/me"), "export HOME='/Users/me'");
 });

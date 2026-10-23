@@ -219,7 +219,7 @@ test("settings repair hand-typed choices and keep unknown ones visible", async (
       assert.equal(unknown.value, "sometimes");
       assert.equal(
         unknown.getAttribute("data-l10n-id"),
-        field.unrecognizedL10nId,
+        `${config.addonRef}-${field.unrecognizedL10nId}`,
       );
       assert.deepEqual(
         JSON.parse(String(unknown.getAttribute("data-l10n-args"))),
@@ -305,7 +305,7 @@ test("settings explain adjusted retrieval values and open the advanced group", a
       assert.equal(overlapWarning.hidden, false);
       assert.equal(
         overlapWarning.getAttribute("data-l10n-id"),
-        "pref-retrieval-overlap-size-adjusted",
+        `${config.addonRef}-pref-retrieval-overlap-size-adjusted`,
       );
       assert.deepEqual(
         JSON.parse(String(overlapWarning.getAttribute("data-l10n-args"))),

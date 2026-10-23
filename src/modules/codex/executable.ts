@@ -1,4 +1,8 @@
 import { getPref } from "../../utils/prefs";
+import {
+  parseExitStatusMarker,
+  withExitStatusMarker,
+} from "../ai/subprocessStatus";
 import { getZoteroProfilePath } from "../../utils/zoteroProfile";
 import type {
   CandidateSource,
@@ -6,7 +10,7 @@ import type {
 } from "./executableSelection";
 import { buildCodexCommandEnvironment } from "./environment";
 import { chooseBestCodexExecutable } from "./executableSelection";
-import { shellEscape } from "./shell";
+import { shellEscape, shellExportLine } from "./shell";
 
 declare const Zotero: any;
 declare const IOUtils: any;
@@ -54,21 +58,31 @@ function buildCodexProbeScript(path: string, args: string[]) {
   const environment = buildCodexCommandEnvironment(path);
   const exports = Object.entries(environment)
     .filter((entry): entry is [string, string] => Boolean(entry[0] && entry[1]))
-    .map(([key, value]) => `export ${key}=${shellEscape(value)}`);
+    .map(([key, value]) => shellExportLine(key, value));
   const command = [path, ...args].map(shellEscape).join(" ");
   return [...exports, command].join(" && ");
 }
 
 async function runCodexSubprocess(path: string, args: string[]) {
   try {
-    const output = await getInternalWithSubprocess().subprocess("/bin/zsh", [
-      "-lc",
-      buildCodexProbeScript(path, args),
-    ]);
-    return {
-      ok: true as const,
-      output: normalizeOutput(output),
-    };
+    // subprocess() ignores the exit status and drops stderr, where
+    // `codex login status` reports a logged-out CLI.
+    const result = parseExitStatusMarker(
+      await getInternalWithSubprocess().subprocess("/bin/zsh", [
+        "-lc",
+        withExitStatusMarker(buildCodexProbeScript(path, args)),
+      ]),
+    );
+    const output = normalizeOutput(result.output);
+    if (result.exitCode !== 0) {
+      return {
+        ok: false as const,
+        error:
+          output ||
+          `Codex CLI exited with status ${result.exitCode ?? "unknown"}.`,
+      };
+    }
+    return { ok: true as const, output };
   } catch (error) {
     return {
       ok: false as const,

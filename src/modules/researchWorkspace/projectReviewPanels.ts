@@ -1,3 +1,4 @@
+import { latestCurrentArtifact } from "./operationInputs";
 import {
   isResearchWorkspaceMemberExcluded,
   memberReadingProgress,
@@ -189,9 +190,7 @@ export function renderCitationHealthPanel(
     );
   }
 
-  const latest = details.artifacts.find(
-    (artifact) => artifact.type === "citation-health",
-  );
+  const latest = latestCurrentArtifact(details.artifacts, "citation-health");
   if (!latest) {
     section.append(
       element(
@@ -260,12 +259,20 @@ export function renderLivingReviewPanel(
   capturedPapers: readonly ResearchWorkspacePaper[],
   generation: symbol,
   navigation: ProjectNavigation,
+  unavailableReason?: string,
 ) {
   const section = element(
     doc,
     "section",
     "pprw-project-panel pprw-living-review-panel",
   );
+  if (unavailableReason) {
+    section.append(
+      element(doc, "h3", "", "Living review"),
+      element(doc, "p", "pprw-project-warning", unavailableReason),
+    );
+    return section;
+  }
   const pending = inbox.changes.filter((change) => !change.resolution).length;
   section.append(
     element(doc, "h3", "", `Living review · ${pending} pending`),
@@ -523,8 +530,9 @@ export function renderContradictionGapPanel(
     );
   }
 
-  const latest = details.artifacts.find(
-    (artifact) => artifact.type === "contradiction-gap-dashboard",
+  const latest = latestCurrentArtifact(
+    details.artifacts,
+    "contradiction-gap-dashboard",
   );
   if (!latest) {
     section.append(
@@ -598,6 +606,10 @@ export function renderContradictionGapPanel(
       ),
     );
     const classification = element(doc, "select", "pprw-select");
+    classification.setAttribute(
+      "aria-label",
+      `Classification for ${relationship.topic}`,
+    );
     for (const value of [
       "direct-contradiction",
       "non-comparable",
@@ -901,7 +913,9 @@ export function renderScreeningLog(
       "aria-label",
       `Protocol criterion for ${rowView.title}`,
     );
-    criterion.append(element(doc, "option", "", "No criterion selected"));
+    const noCriterion = element(doc, "option", "", "No criterion selected");
+    noCriterion.value = "";
+    criterion.append(noCriterion);
     for (const entry of criteria) {
       const option = element(doc, "option", "", `${entry.kind}: ${entry.text}`);
       option.value = entry.criterionID;
@@ -932,14 +946,20 @@ export function renderScreeningLog(
             sourceID: rowView.sourceID,
             stage: stage.value as "abstract" | "full-text",
             decision: decision.value as "include" | "exclude" | "maybe",
-            ...(reason.value.trim()
+            ...(reason.value.trim() ||
+            (reasonCode.value === "criterion" && criterion.value)
               ? {
                   reasonCode: reasonCode.value as
                     | "criterion"
                     | "duplicate"
                     | "missing-pdf"
                     | "other",
-                  reason: reason.value,
+                  // A criterion decision without text explains itself with
+                  // the selected criterion.
+                  reason:
+                    reason.value.trim() ||
+                    criterion.selectedOptions?.[0]?.textContent ||
+                    criterion.value,
                 }
               : {}),
             ...(reasonCode.value === "criterion" && criterion.value
@@ -1027,9 +1047,9 @@ export function renderProjectPapers(
   doc: Document,
   root: HTMLElement,
   details: ResearchWorkspaceProjectDetails,
-  _capturedPapers: readonly ResearchWorkspacePaper[],
-  _generation: symbol,
-  _navigation: ProjectNavigation,
+  capturedPapers: readonly ResearchWorkspacePaper[],
+  generation: symbol,
+  navigation: ProjectNavigation,
 ) {
   const section = element(doc, "section", "pprw-project-panel");
   section.append(element(doc, "h3", "", `Papers · ${details.members.length}`));
@@ -1096,6 +1116,14 @@ export function renderProjectPapers(
             | "needs-review"
             | "understood",
         });
+        // The save advances the project and member revisions. Re-render so
+        // screening, protocol, and template saves use the new revisions.
+        await navigation.renderProject(
+          root,
+          details.project.projectID,
+          capturedPapers,
+          generation,
+        );
         setMessage(
           root,
           "Reading progress saved. Screening and active analysis are unchanged.",
@@ -1202,6 +1230,8 @@ export function renderArtifactHistory(
     item.append(
       renderResearchWorkspaceArtifactEnvelope(doc, artifact, {
         responseLanguage: String(getPref("responseLanguage") || "English"),
+        sourceTitle: (sourceID) =>
+          details.sources.find((source) => source.sourceID === sourceID)?.title,
         onCopyText: (text) => copyTextToClipboard(text, doc),
         onOpenEvidence: async (reference) => {
           try {

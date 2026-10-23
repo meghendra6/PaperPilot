@@ -7,3 +7,13 @@ export function clearClaudePollerForItem(itemID: number) {
     addon.data.claudeRunPollers?.delete(itemID);
   }
 }
+
+/** Clears `poller` only while it is still the item's registered poller. */
+export function clearClaudePollerIfOwned(
+  itemID: number,
+  poller: ReturnType<typeof setInterval>,
+) {
+  clearInterval(poller);
+  if (addon.data.claudeRunPollers?.get(itemID) === poller)
+    addon.data.claudeRunPollers?.delete(itemID);
+}

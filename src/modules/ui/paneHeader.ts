@@ -156,11 +156,14 @@ function makeButton(
   return button;
 }
 
+let paneHeaderCounter = 0;
+
 export function createPaneHeader(params: {
   doc: Document;
   mount: HTMLElement;
 }): PaneHeaderHandle {
   const { doc } = params;
+  const uid = ++paneHeaderCounter;
   const root = doc.createElement("div");
   root.id = "paper-pilot-pane-header";
   root.className = "pp-pane-header";
@@ -169,7 +172,7 @@ export function createPaneHeader(params: {
   trigger.className = "pp-pane-header__trigger";
   trigger.setAttribute("aria-haspopup", "dialog");
   trigger.setAttribute("aria-expanded", "false");
-  trigger.setAttribute("aria-controls", "paper-pilot-engine-popover");
+  trigger.setAttribute("aria-controls", `paper-pilot-engine-popover-${uid}`);
 
   const dot = doc.createElement("span");
   dot.className = "pp-pane-header__dot";
@@ -189,7 +192,7 @@ export function createPaneHeader(params: {
   newSessionButton.title = "New session";
 
   const popover = doc.createElement("div");
-  popover.id = "paper-pilot-engine-popover";
+  popover.id = `paper-pilot-engine-popover-${uid}`;
   popover.className = "pp-pane-header__popover";
   popover.setAttribute("role", "dialog");
   popover.setAttribute("aria-label", "AI engine settings");
@@ -201,7 +204,7 @@ export function createPaneHeader(params: {
   modeStatus.className = "pp-pane-header__status";
 
   const engineLabel = doc.createElement("div");
-  engineLabel.id = "paper-pilot-engine-label";
+  engineLabel.id = `paper-pilot-engine-label-${uid}`;
   engineLabel.className = "pp-pane-header__row-label";
   engineLabel.textContent = "Engine for this paper";
   const modeActions = doc.createElement("div");
@@ -219,10 +222,12 @@ export function createPaneHeader(params: {
   modelRow.id = "paper-pilot-model-row";
   modelRow.className = "pp-model-row";
   const modelLabel = doc.createElement("label");
-  modelLabel.htmlFor = "chat-codex-model";
+  modelLabel.htmlFor = `chat-codex-model-${uid}`;
   modelLabel.textContent = "Default model (all papers)";
   const modelInput = doc.createElement("select");
-  modelInput.id = "chat-codex-model";
+  modelInput.id = `chat-codex-model-${uid}`;
+  // Lookups use the class; the ID only names the select for its label.
+  modelInput.classList.add("pp-codex-model");
   const modelSaveButton = makeButton(
     doc,
     "chat-codex-model-save",
@@ -261,13 +266,13 @@ export function createPaneHeader(params: {
   const codexAuthButton = makeButton(
     doc,
     "chat-codex-auth",
-    "Authenticate Codex",
+    "How to sign in",
     "pp-btn pp-btn--secondary",
   );
   const codexDeviceAuthButton = makeButton(
     doc,
     "chat-codex-device-auth",
-    "Use device auth",
+    "Sign in with a device code",
     "pp-btn pp-btn--secondary",
   );
   const codexRecheckButton = makeButton(
@@ -365,12 +370,19 @@ export function createPaneHeader(params: {
       setOpen(false, true);
     }
   };
+  // Tabbing out of the header leaves no open popover behind.
+  const onFocusOut = (event: FocusEvent) => {
+    if (popover.hidden) return;
+    const next = event.relatedTarget as Node | null;
+    if (next && !root.contains(next)) setOpen(false);
+  };
   trigger.addEventListener("click", onTrigger);
   modelInput.addEventListener("change", onModelSelectionChange);
   effortInput.addEventListener("change", onEffortSelectionChange);
   doc.addEventListener("pointerdown", onDocumentPointerDown, true);
   doc.addEventListener("click", onDocumentClick);
   doc.addEventListener("keydown", onDocumentKeyDown, true);
+  root.addEventListener("focusout", onFocusOut);
   let disposed = false;
 
   return {
@@ -414,6 +426,7 @@ export function createPaneHeader(params: {
       doc.removeEventListener("pointerdown", onDocumentPointerDown, true);
       doc.removeEventListener("click", onDocumentClick);
       doc.removeEventListener("keydown", onDocumentKeyDown, true);
+      root.removeEventListener("focusout", onFocusOut);
     },
   };
 }
@@ -435,7 +448,7 @@ function setTextWithInlineCode(element: HTMLElement, text: string) {
 function syncModelSaveState(rowElement: HTMLElement) {
   const row = rowElement.closest?.(".pp-model-row");
   const modelInput = row?.querySelector(
-    "#chat-codex-model",
+    "select.pp-codex-model",
   ) as HTMLSelectElement | null;
   const effortInput = row?.querySelector(
     "#chat-model-effort",
@@ -518,7 +531,7 @@ export function renderModeHeader(
 ) {
   const root = chip.closest(".pp-pane-header") as HTMLElement | null;
   const modelInput = root?.querySelector(
-    "#chat-codex-model",
+    "select.pp-codex-model",
   ) as HTMLSelectElement | null;
   // The chip shows the saved default, not an unsaved choice in the picker.
   const modelOption = modelInput

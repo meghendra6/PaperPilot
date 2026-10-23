@@ -36,6 +36,21 @@ function safeArtifactName(artifactID: string) {
   return artifactID.replace(/[^a-zA-Z0-9._-]/g, "-").slice(0, 100);
 }
 
+/**
+ * Citation stance sends only the snippets the user approved, and its prompt
+ * already carries them. The workspace therefore stages an index and no paper
+ * text, so the provider cannot read the full papers.
+ */
+export function buildCitationStanceWorkspaceFiles(): WorkspaceSupplementalFiles {
+  return {
+    "PROJECT_INDEX.md": [
+      "# Citation stance input",
+      "The citation snippets in the request are the only admitted source data.",
+      "No paper text is staged for this operation. Do not look for other files.",
+    ].join("\n"),
+  };
+}
+
 export function buildResearchWorkspaceProjectWorkspace(params: {
   details: ResearchWorkspaceProjectDetails;
   papers: readonly ResearchWorkspacePaper[];

@@ -26,6 +26,10 @@ import { resolveFigureTarget } from "./figureExplain/workflow";
 import { isReaderChatBusy } from "./ai/readerBusy";
 import { getDiscoveryAvailability } from "./discovery/capabilities";
 import { DISCOVERY_ALREADY_RUNNING_MESSAGE } from "./ui/discoveryEntryState";
+import {
+  isStandaloneReaderWindow,
+  STANDALONE_READER_ACTION_MESSAGE,
+} from "./ui/pendingReaderAction";
 
 function isDiscoveryRunning(itemID: number): boolean {
   return Boolean(addon.data.relatedRecommendationStates?.get(itemID)?.running);
@@ -86,7 +90,11 @@ type ReaderAttachment = {
 type AnnotationContextMenuEvent = {
   reader?: { itemID?: number; _item?: ReaderAttachment };
   params: { ids?: string[] };
-  append: (params: { label: string; onCommand: () => void }) => void;
+  append: (params: {
+    label: string;
+    disabled?: boolean;
+    onCommand: () => void;
+  }) => void;
 };
 
 type ToolbarEvent = {
@@ -130,6 +138,11 @@ function saveDraft(
     },
     { attachToComposer },
   );
+}
+
+/** The reader's attachment type; undefined counts as PDF for older APIs. */
+function readerType(reader: unknown) {
+  return (reader as { _type?: string } | undefined)?._type ?? "pdf";
 }
 
 function eventItemID(event: {
@@ -207,15 +220,16 @@ function buildSelectionActionButton(params: {
   pageIndex?: number;
   pageLabel?: string;
   itemID?: number;
+  standaloneWindow?: boolean;
 }) {
   const button = params.doc.createElement("button");
   button.type = "button";
   button.textContent = params.label;
   button.className = "pp-btn pp-btn--secondary pp-selection-action";
-  const blockReason = getSelectionActionBlockReason(
-    params.itemID,
-    params.action,
-  );
+  // A standalone reader window has no item pane to show the answer in.
+  const blockReason = params.standaloneWindow
+    ? STANDALONE_READER_ACTION_MESSAGE
+    : getSelectionActionBlockReason(params.itemID, params.action);
   button.disabled = Boolean(blockReason);
   if (blockReason) button.title = blockReason;
   button.addEventListener("click", () => {
@@ -269,12 +283,17 @@ const renderTextSelectionPopup = (event: TextSelectionPopupEvent) => {
     event.params.annotation?.text,
   );
   if (dictionary) wrapper.append(dictionary);
-  for (const item of SELECTION_ACTIONS) {
+  const standaloneWindow = isStandaloneReaderWindow(event.reader);
+  // Paper Pilot reads PDF attachments only; EPUB and snapshot readers get
+  // the dictionary alone.
+  const pdfReader = readerType(event.reader) === "pdf";
+  for (const item of pdfReader ? SELECTION_ACTIONS : []) {
     wrapper.append(
       buildSelectionActionButton({
         doc: event.doc,
         label: item.label(),
         action: item.action,
+        standaloneWindow,
         text: event.params.annotation?.text,
         itemID: eventItemID(event),
         attachmentID: event.reader?._item?.id ?? event.reader?.itemID,
@@ -294,10 +313,14 @@ const createAnnotationContextMenu = (event: AnnotationContextMenuEvent) => {
       onCommand: () => showFigureExplanation(figure),
     });
   }
+  const standaloneWindow = isStandaloneReaderWindow(event.reader);
+  if (readerType(event.reader) !== "pdf") return;
   for (const item of ANNOTATION_ACTIONS) {
     event.append({
       label: item.label(),
+      disabled: standaloneWindow,
       onCommand: () => {
+        if (standaloneWindow) return;
         triggerAction({
           source: "annotation-menu",
           action: item.action,

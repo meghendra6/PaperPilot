@@ -219,3 +219,23 @@ test("primary Citation Stance UI is local-first and has no manual JSON input", (
   assert.doesNotMatch(source, /JSON array:.*citingPaperKey/);
   assert.doesNotMatch(source, /JSON\.parse\(citationInput\.value\)/);
 });
+
+test("an unterminated bracket of digits does not stall citation extraction", () => {
+  const citing = paper("A", {
+    structuredChunks: [
+      {
+        id: "body",
+        text: `Axis ticks [${"1234567890".repeat(4)} x continue here. Prior work agrees [1, 2-3; 4].`,
+        attachmentKey: "PDF-A",
+        metadata: { paperKey: "A" },
+      },
+    ],
+  });
+  const started = Date.now();
+  const result = extractResearchWorkspaceCitationContexts({
+    papers: [citing],
+    libraryCandidates: [],
+  });
+  assert.ok(Date.now() - started < 1_000, "extraction must stay linear");
+  assert.equal(result.coverage.markersFound, 4);
+});

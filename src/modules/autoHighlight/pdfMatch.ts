@@ -1,6 +1,7 @@
 import type { MatchedHighlight, PDFPageText, PDFTextSpan } from "./types";
+import { getAddonRootURI } from "../../utils/addonScope";
 import { buildCodexCommandEnvironment } from "../codex/environment";
-import { shellEscape } from "../codex/shell";
+import { shellEscape, shellExportLine } from "../codex/shell";
 
 export const MIN_HIGHLIGHT_NORMALIZED_LENGTH = 24;
 export const MIN_HIGHLIGHT_RETAINED_RATIO = 0.6;
@@ -38,9 +39,7 @@ export async function resolvePdfJsModuleSpecifier(options?: {
   exists?: (path: string) => Promise<boolean>;
 }) {
   const exists = options?.exists ?? pathExists;
-  const rootUri =
-    options?.rootUri ??
-    ((globalThis as typeof globalThis & { rootURI?: string }).rootURI || "");
+  const rootUri = options?.rootUri ?? getAddonRootURI();
 
   const candidates: string[] = [];
   if (rootUri.startsWith("file:")) {
@@ -70,6 +69,17 @@ export async function resolvePdfJsModuleSpecifier(options?: {
 }
 
 async function readBinary(filePath: string) {
+  // IOUtils returns bytes directly. Zotero.File.getBinaryContentsAsync builds
+  // a binary string on the main thread, several times the file size.
+  const io = (globalThis as { IOUtils?: { read?: (path: string) => unknown } })
+    .IOUtils;
+  if (typeof io?.read === "function") {
+    const bytes = await io.read(filePath);
+    // A typed array from another compartment fails instanceof; copy it.
+    return bytes instanceof Uint8Array
+      ? bytes
+      : new Uint8Array(bytes as ArrayLike<number>);
+  }
   const zoteroFile = (globalThis as { Zotero?: any }).Zotero?.File;
   if (zoteroFile?.getBinaryContentsAsync) {
     const contents = await Promise.resolve(
@@ -180,6 +190,7 @@ async function extractTextContentFromPageLike(pageLike: {
 function buildSpansFromTextContent(
   textContent: { items: Array<Record<string, unknown>> },
   pageIndex: number,
+  pageLabel = String(pageIndex + 1),
 ) {
   return textContent.items
     .map((item): PDFTextSpan | undefined => {
@@ -191,7 +202,7 @@ function buildSpansFromTextContent(
       }
       return {
         pageIndex,
-        pageLabel: String(pageIndex + 1),
+        pageLabel,
         text,
         normalizedText,
         rect,
@@ -200,25 +211,74 @@ function buildSpansFromTextContent(
     .filter((item): item is PDFTextSpan => Boolean(item));
 }
 
-export async function extractPdfTextPagesFromPdfDocument(pdfDocument: {
-  numPages: number;
-  getPage: (pageNumber: number) => Promise<{
-    getTextContent?: () => Promise<{ items: Array<Record<string, unknown>> }>;
-    pdfPage?: {
+type PageLabelSource = {
+  getPageLabels2?: () => Promise<unknown>;
+  getPageLabels?: () => Promise<unknown>;
+};
+
+/**
+ * The PDF's own page labels, as Zotero's reader uses for highlights and
+ * citation locators. Printed page numbers often differ from the index.
+ */
+async function readPageLabels(pdfDocument: PageLabelSource | undefined) {
+  for (const read of [
+    pdfDocument?.getPageLabels2,
+    pdfDocument?.getPageLabels,
+  ]) {
+    if (typeof read !== "function") continue;
+    try {
+      const labels = await read.call(pdfDocument);
+      if (Array.isArray(labels)) return labels as unknown[];
+    } catch {
+      // Fall back to physical page numbers below.
+    }
+  }
+  return undefined;
+}
+
+function pageLabelAt(labels: unknown[] | undefined, pageIndex: number) {
+  const label = labels?.[pageIndex];
+  return typeof label === "string" && label.trim()
+    ? label.trim()
+    : String(pageIndex + 1);
+}
+
+/** Height of a PDF.js page view box `[x0, y0, x1, y1]`, when known. */
+function pageHeightOf(view: unknown) {
+  if (!Array.isArray(view) || view.length !== 4) return undefined;
+  const height = Number(view[3]) - Number(view[1]);
+  return Number.isFinite(height) && height > 0 ? height : undefined;
+}
+
+export async function extractPdfTextPagesFromPdfDocument(
+  pdfDocument: {
+    numPages: number;
+    getPage: (pageNumber: number) => Promise<{
       getTextContent?: () => Promise<{ items: Array<Record<string, unknown>> }>;
-    };
-  }>;
-}): Promise<PDFPageText[]> {
+      view?: number[];
+      pdfPage?: {
+        getTextContent?: () => Promise<{
+          items: Array<Record<string, unknown>>;
+        }>;
+        view?: number[];
+      };
+    }>;
+  } & PageLabelSource,
+): Promise<PDFPageText[]> {
   const pages: PDFPageText[] = [];
+  const labels = await readPageLabels(pdfDocument);
   for (let pageIndex = 0; pageIndex < pdfDocument.numPages; pageIndex += 1) {
     const page = await pdfDocument.getPage(pageIndex + 1);
     const textContent = await extractTextContentFromPageLike(page);
-    const spans = buildSpansFromTextContent(textContent, pageIndex);
+    const pageLabel = pageLabelAt(labels, pageIndex);
+    const spans = buildSpansFromTextContent(textContent, pageIndex, pageLabel);
+    const height = pageHeightOf(page.view ?? page.pdfPage?.view);
 
     pages.push({
       pageIndex,
-      pageLabel: String(pageIndex + 1),
+      pageLabel,
       spans,
+      ...(height !== undefined ? { height } : {}),
     });
   }
   return pages;
@@ -238,6 +298,7 @@ export async function extractPdfTextPagesFromReader(reader: {
                 getTextContent?: () => Promise<{
                   items: Array<Record<string, unknown>>;
                 }>;
+                view?: number[];
               };
             };
             _pages?: Array<{
@@ -255,7 +316,7 @@ export async function extractPdfTextPagesFromReader(reader: {
                 items: Array<Record<string, unknown>>;
               }>;
             }>;
-          };
+          } & PageLabelSource;
         };
       };
     };
@@ -269,6 +330,7 @@ export async function extractPdfTextPagesFromReader(reader: {
   if (pdfViewer) {
     const pagesCount = application?.pagesCount || pdfViewer._pages?.length || 0;
     const pages: PDFPageText[] = [];
+    const labels = await readPageLabels(application?.pdfDocument);
     for (let pageIndex = 0; pageIndex < pagesCount; pageIndex += 1) {
       const pageView =
         pdfViewer.getPageView?.(pageIndex) || pdfViewer._pages?.[pageIndex];
@@ -276,10 +338,15 @@ export async function extractPdfTextPagesFromReader(reader: {
         continue;
       }
       const textContent = await extractTextContentFromPageLike(pageView);
+      const pageLabel = pageLabelAt(labels, pageIndex);
+      const height = pageHeightOf(
+        (pageView.pdfPage as { view?: unknown } | undefined)?.view,
+      );
       pages.push({
         pageIndex,
-        pageLabel: String(pageIndex + 1),
-        spans: buildSpansFromTextContent(textContent, pageIndex),
+        pageLabel,
+        spans: buildSpansFromTextContent(textContent, pageIndex, pageLabel),
+        ...(height !== undefined ? { height } : {}),
       });
     }
     if (pages.length) {
@@ -462,7 +529,7 @@ async function extractPdfTextPagesViaSubprocess(
   const environment = buildCodexCommandEnvironment("/opt/homebrew/bin/node");
   const exports = Object.entries(environment)
     .filter((entry): entry is [string, string] => Boolean(entry[0] && entry[1]))
-    .map(([key, value]) => `export ${key}=${shellEscape(value)}`);
+    .map(([key, value]) => shellExportLine(key, value));
   const pdfjsSpecifier = await resolvePdfJsModuleSpecifier();
   const nodeScript = `
 import fs from "node:fs";
@@ -638,16 +705,27 @@ export async function extractPdfTextPages(
   return extractPdfTextPagesWithFallback(filePath);
 }
 
-export function buildSortIndex(pageIndex: number, rects: number[][]) {
-  const [x1, y1] = rects[0] || [0, 0];
+/**
+ * Zotero's PDF sort index: `page(5)|charOffset(6)|top(5)`, where top is the
+ * distance from the page top. Zotero orders annotations by this string, so
+ * the character offset keeps reading order on a page even without a page
+ * height, and auto-highlights interleave correctly with the reader's own.
+ */
+export function buildSortIndex(
+  pageIndex: number,
+  rects: number[][],
+  position: { charOffset?: number; pageHeight?: number } = {},
+) {
   const pagePart = Math.max(0, pageIndex).toString().padStart(5, "0");
-  const topPart = Math.max(0, Math.round(y1 * 10))
+  const offsetPart = Math.max(0, Math.floor(position.charOffset ?? 0))
     .toString()
     .padStart(6, "0");
-  const leftPart = Math.max(0, Math.round(x1 * 10))
-    .toString()
-    .padStart(5, "0");
-  return `${pagePart}|${topPart}|${leftPart}`;
+  const topEdge = Math.max(...rects.map((rect) => rect[3] ?? 0), 0);
+  const top =
+    position.pageHeight !== undefined
+      ? Math.max(0, Math.floor(position.pageHeight - topEdge))
+      : 0;
+  return `${pagePart}|${offsetPart}|${top.toString().padStart(5, "0")}`;
 }
 
 export function mergeRectsOnSameLine(
@@ -688,6 +766,30 @@ export function mergeRectsOnSameLine(
   merged.push(current);
 
   return merged;
+}
+
+/**
+ * How many times the normalized quote occurs in the pages, counted up to
+ * `limit`. matchQuoteInPages() accepts only a single occurrence.
+ */
+export function countQuoteOccurrences(
+  quote: string,
+  pages: PDFPageText[],
+  limit = 2,
+): number {
+  const normalizedQuote = normalizeQuoteText(quote);
+  if (!normalizedQuote) return 0;
+  let count = 0;
+  for (const page of pages) {
+    const combined = buildPageIndex(page).combined;
+    let start = combined.indexOf(normalizedQuote);
+    while (start >= 0) {
+      count += 1;
+      if (count >= limit) return count;
+      start = combined.indexOf(normalizedQuote, start + 1);
+    }
+  }
+  return count;
 }
 
 export function matchQuoteInPages(
@@ -796,12 +898,28 @@ export function matchQuoteInPages(
     return undefined;
   }
 
+  // Raw character offset of the match start within the page's span order.
+  const firstSpanIndex = Math.min(...spanMatchRanges.keys());
+  const firstSpan = page.spans[firstSpanIndex];
+  const startInFirstSpan = firstSpan
+    ? (buildNormalizedToOriginalMap(firstSpan.text)[
+        spanMatchRanges.get(firstSpanIndex)?.startInSpan ?? 0
+      ] ?? 0)
+    : 0;
+  const charOffset =
+    page.spans
+      .slice(0, firstSpanIndex)
+      .reduce((total, span) => total + span.text.length, 0) + startInFirstSpan;
+
   return {
     quote: matchedTextParts.join(" ").replace(/\s+/g, " ").trim() || quote,
     normalizedQuote,
     pageIndex: page.pageIndex,
     pageLabel: page.pageLabel,
     rects,
-    sortIndex: buildSortIndex(page.pageIndex, rects),
+    sortIndex: buildSortIndex(page.pageIndex, rects, {
+      charOffset,
+      pageHeight: page.height,
+    }),
   };
 }

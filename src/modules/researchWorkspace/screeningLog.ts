@@ -288,7 +288,10 @@ export function detectScreeningIssues(
         issueID: `screening-issue-missing-${stableHash(source.sourceID)}`,
         kind: "missing-pdf",
         sourceIDs: [source.sourceID],
-        detail: `Local PDF is ${source.availability}; full-text screening is unavailable.`,
+        detail:
+          source.availability === "ready"
+            ? "Local PDF is available, but its text could not be extracted; full-text screening is unavailable."
+            : `Local PDF is ${source.availability}; full-text screening is unavailable.`,
       });
     }
   }

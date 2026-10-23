@@ -5,19 +5,24 @@ const WORKSPACE_FILE_LABELS: Array<[RegExp, string]> = [
   [/\bCONTEXT_INDEX\.md\b/gi, "the workspace context"],
   [/\bselection\.json\b/gi, "the current selection"],
   [/\brecent-turns\.json\b/gi, "our earlier chat context"],
+  [/\bconversation-context\.md\b/gi, "our earlier chat context"],
   [/\bannotations\.json\b/gi, "the annotations"],
   [/\bmetadata\.json\b/gi, "the paper metadata"],
   [/\bprompt\.txt\b/gi, "the prompt"],
 ];
 
 function stripPrivateLinks(text: string) {
-  return text
-    .replace(
-      /\[([^\]]+)\]\((?:file|javascript|zotero|chrome|resource|data):[^)]*\)/gi,
-      "$1",
-    )
-    .replace(/<(?:file|javascript|zotero|chrome|resource|data):[^>]+>/gi, "")
-    .replace(/(?:file|zotero|chrome|resource):\/\/\S+/gi, "");
+  return (
+    text
+      .replace(
+        /\[([^\]]+)\]\((?:file|javascript|zotero|chrome|resource|data):[^)]*\)/gi,
+        "$1",
+      )
+      .replace(/<(?:file|javascript|zotero|chrome|resource|data):[^>]+>/gi, "")
+      // Stop at quotes and brackets so a URL inside JSON or Markdown does not
+      // take the closing delimiter and the rest of the line with it.
+      .replace(/(?:file|zotero|chrome|resource):\/\/[^\s"'<>)\]}]+/gi, "")
+  );
 }
 
 function sanitizeProseLine(line: string) {
@@ -48,6 +53,15 @@ function sanitizeProseLine(line: string) {
       /@@PAPERPILOT_INLINE_CODE_(\d+)@@/g,
       (_match, index: string) => inlineCode[Number(index)] ?? "",
     );
+}
+
+/**
+ * Chat prose is sanitized for display. Structured workflow output goes to a
+ * parser verbatim: rewriting workspace file names would break exact quotes,
+ * and direct workspace runs already pass it through unchanged.
+ */
+export function presentRunAnswer(text: string, profile: string) {
+  return profile === "chat" ? sanitizeAssistantText(text) : text;
 }
 
 export function sanitizeAssistantText(text: string) {

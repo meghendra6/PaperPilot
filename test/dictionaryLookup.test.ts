@@ -205,3 +205,17 @@ test("dictionary lookup rejects empty, non-word, and long selections without tru
   assert.equal(buildDictionaryLookup("a".repeat(80))?.term.length, 80);
   assert.ok(buildDictionaryLookup("one two three four five six seven eight"));
 });
+
+test("dictionary lookup ignores punctuation around a selected word", () => {
+  for (const text of [
+    "attention,",
+    "(attention)",
+    "attention.",
+    "“attention”",
+  ]) {
+    assert.equal(buildDictionaryLookup(text)?.term, "attention", text);
+  }
+  assert.equal(buildDictionaryLookup("atten-\ntion")?.term, "attention");
+  assert.equal(buildDictionaryLookup("C++")?.term, "C++");
+  assert.equal(buildDictionaryLookup("O'Brien")?.term, "O'Brien");
+});

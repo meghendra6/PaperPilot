@@ -96,7 +96,9 @@ async function waitForWorkspaceText(params: {
   let responseText: string | undefined;
   let runError: unknown;
   try {
-    for (let attempts = 0; attempts < 300; attempts += 1) {
+    // The shared run deadline bounds this loop; a fixed poll count ended
+    // runs after about four minutes although the deadline allows thirty.
+    for (let attempts = 0; ; attempts += 1) {
       if (params.signal?.aborted) {
         throw new Error("Automatic highlighting cancelled.");
       }
@@ -123,10 +125,6 @@ async function waitForWorkspaceText(params: {
         params.onStatus?.("Finding important passages…");
       }
       await sleep(800);
-    }
-
-    if (!completed) {
-      throw new Error(`${engineLabel} highlight run timed out.`);
     }
   } catch (error) {
     runError = error;
@@ -231,6 +229,17 @@ export async function runAutoHighlightWorkflow(params: {
   const deadline = params.deadline ?? Date.now() + RUN_TIMEOUT_MS;
   if (params.signal?.aborted) {
     throw new Error("Automatic highlighting cancelled.");
+  }
+  const item = Zotero.Items?.get?.(params.itemID);
+  const library = item
+    ? (Zotero.Libraries?.get?.(item.libraryID) as
+        | { editable?: boolean }
+        | false)
+    : undefined;
+  if (library && library.editable === false) {
+    throw new Error(
+      "This Zotero library is read-only, so Paper Pilot cannot save highlights in it.",
+    );
   }
   const mode = getModeForItem(params.itemID);
   const reservationToken = claimWorkspaceRunReservation(mode, params.itemID);

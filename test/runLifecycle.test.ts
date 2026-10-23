@@ -28,6 +28,7 @@ import {
   getActiveReaderRunMode,
   markReaderRunFinished,
   markReaderRunStarted,
+  subscribeToReaderRunEvents,
 } from "../src/modules/ai/runPresentation";
 
 test("cancelling request preparation retains admission until it settles and stays paper-scoped", () => {
@@ -147,10 +148,18 @@ test("session transitions and Retry use item-scoped atomic claims", () => {
     assert.ok(sessionToken);
     assert.equal(isReaderSessionTransitionActive(53), true);
     assert.equal(claimReaderSessionTransition(53), undefined);
+    const events: string[] = [];
+    const unsubscribe = subscribeToReaderRunEvents(53, (event) =>
+      events.push(event.type),
+    );
     releaseReaderSessionTransition(53, Symbol("stale"));
     assert.equal(isReaderSessionTransitionActive(53), true);
+    assert.deepEqual(events, []);
     releaseReaderSessionTransition(53, sessionToken);
     assert.equal(isReaderSessionTransitionActive(53), false);
+    // The pane re-enables busy-gated controls on this event.
+    assert.deepEqual(events, ["state_changed"]);
+    unsubscribe();
 
     const retryToken = claimRetryEngineRequest(53);
     assert.ok(retryToken);

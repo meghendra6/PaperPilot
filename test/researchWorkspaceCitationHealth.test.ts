@@ -528,6 +528,39 @@ test("ordinary title words do not become correction or withdrawal signals", asyn
   assert.deepEqual(snapshot.items[0].signals, []);
 });
 
+test("topic keyword tags are not retraction or withdrawal signals", async () => {
+  const item = (id: number, tags: string[], extra = "") => ({
+    id,
+    libraryID: 1,
+    key: `ITEM-${id}`,
+    isAttachment: () => false,
+    isNote: () => false,
+    getField: (field: string) =>
+      field === "title" ? "A clinical study" : field === "extra" ? extra : "",
+    getCreators: () => [],
+    getTags: () => tags.map((tag) => ({ tag })),
+  });
+  const snapshot = await collectCitationHealthLocalLibrarySnapshot([1], {
+    observedAt: GENERATED_AT,
+    getAllItems: async () => [
+      item(
+        1,
+        ["Opioid withdrawal", "Error correction", "Gingival retraction"],
+        "Keywords: corrections, retraction of gums",
+      ),
+      item(2, ["Retracted"]),
+    ],
+  });
+  const signals = new Map(
+    snapshot.items.map((entry) => [entry.itemKey, entry.signals]),
+  );
+  assert.deepEqual(signals.get("ITEM-1"), []);
+  assert.deepEqual(
+    signals.get("ITEM-2")?.map((signal) => [signal.kind, signal.field]),
+    [["retraction", "tag"]],
+  );
+});
+
 test("optional external provider signals remain explicitly supplementary", () => {
   const setup = details();
   const report = buildCitationHealthReport({

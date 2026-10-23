@@ -102,6 +102,7 @@ function normalizeBoundingBox(
   if (!isRecord(value)) return undefined;
   if (
     value.pageIndex !== undefined &&
+    value.pageIndex !== null &&
     readPageIndex(value.pageIndex) === undefined
   )
     return undefined;
@@ -166,7 +167,13 @@ function normalizeEvidenceReference(
   const rawExtractionMethod = readString(value.extractionMethod);
   const confidence = readFiniteNumber(value.confidence);
   const explicitPageIndex = readPageIndex(value.pageIndex);
-  if (value.pageIndex !== undefined && explicitPageIndex === undefined)
+  // The strict native schemas require every locator key, so an unknown page
+  // arrives as null. Keep the reference: its quote can still be verified.
+  if (
+    value.pageIndex !== undefined &&
+    value.pageIndex !== null &&
+    explicitPageIndex === undefined
+  )
     return null;
   const rawBoundingBox = normalizeBoundingBox(
     value.boundingBox,
