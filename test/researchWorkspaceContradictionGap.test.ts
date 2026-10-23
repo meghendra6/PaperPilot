@@ -589,6 +589,56 @@ test("refreshing the dashboard keeps reviews of relationships it still detects",
   );
 });
 
+test("a review does not carry onto changed evidence under the same atom ID", () => {
+  const dashboard = buildContradictionGapDashboard({
+    details: fixture(),
+    generatedAt: NOW,
+  });
+  const relationship = dashboard.relationships[0];
+  const reviewed = applyContradictionGapReview({
+    dashboard,
+    input: {
+      relationshipID: relationship.relationshipID,
+      action: "confirm",
+      submissionID: "submission-evidence",
+      expectedDashboardRevision: 0,
+    },
+    eventID: "event-evidence",
+    reviewedAt: NOW,
+  });
+  const rebuilt = buildContradictionGapDashboard({
+    details: fixture(),
+    generatedAt: NOW,
+  });
+  // Identical content keeps the review.
+  assert.equal(
+    carryForwardContradictionGapReviews(rebuilt, reviewed).relationships[0]
+      .reviewState,
+    "confirmed",
+  );
+  // The same atom ID with a different quote is new evidence.
+  const comparedAtomID = relationship.sides[0].atomIDs[0];
+  const changed = {
+    ...rebuilt,
+    atoms: rebuilt.atoms.map((atom) =>
+      atom.atomID === comparedAtomID
+        ? {
+            ...atom,
+            evidence: atom.evidence.map((reference) => ({
+              ...reference,
+              exactQuote: "A corrected quote from a revised PDF.",
+            })),
+          }
+        : atom,
+    ),
+  };
+  assert.equal(
+    carryForwardContradictionGapReviews(changed, reviewed).relationships[0]
+      .reviewState,
+    "unreviewed",
+  );
+});
+
 test("contradiction dashboard uses its semantic artifact view", () => {
   const dashboard = buildContradictionGapDashboard({
     details: fixture(),

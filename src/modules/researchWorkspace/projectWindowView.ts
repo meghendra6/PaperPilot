@@ -157,6 +157,9 @@ async function renderProject(
   ]);
   if (!isCurrent(root, generation)) return;
   const doc = root.ownerDocument;
+  // A rebuild of the same project keeps unsaved panel choices, whether or
+  // not an analysis has been prepared.
+  const sameProject = projectContexts.get(root)?.projectID === projectID;
   projectContexts.set(root, {
     projectID,
     projectName: details.project.name,
@@ -420,6 +423,7 @@ async function renderProject(
       "aria-label",
       `Analyze ${source?.title ?? member.sourceID}`,
     );
+    input.dataset.restoreKey = `scope:${member.sourceID}`;
     label.append(
       input,
       element(
@@ -588,8 +592,8 @@ async function renderProject(
   }
   content.append(scope);
   trackDirtyInputs(root);
-  const surfaceState = keepOperations
-    ? captureSurfaceState(root, operations)
+  const surfaceState = sameProject
+    ? captureSurfaceState(root, previousOperations ?? operations)
     : undefined;
   if (keepOperations) {
     for (const child of Array.from(root.children)) {
@@ -646,6 +650,11 @@ function keyedControls(root: HTMLElement, operations: HTMLElement) {
   ) as HTMLElement[];
   for (const node of nodes) {
     if (operations.contains(node)) continue;
+    // A source control carries a stable key of source ID and purpose.
+    if (node.dataset.restoreKey) {
+      controls.push({ node, key: `key:${node.dataset.restoreKey}`, index: 0 });
+      continue;
+    }
     // A checkbox is named by its wrapping label; a select by its aria-label.
     const label =
       node.getAttribute("aria-label") ||
@@ -716,8 +725,14 @@ function restoreSurfaceState(
         (Array.from(select.options) as HTMLOptionElement[]).some(
           (option) => option.value === entry.value,
         )
-      )
+      ) {
         select.value = entry.value;
+        // Filters render their result in the change handler, which has no
+        // side effects, so it runs again for the restored value.
+        const EventClass = root.ownerDocument.defaultView?.Event;
+        if (select.dataset.restoreRefresh === "true" && EventClass)
+          select.dispatchEvent(new EventClass("change"));
+      }
     } else if (node.value !== entry.value) {
       node.value = entry.value;
     }

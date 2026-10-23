@@ -1193,7 +1193,10 @@ export function applyContradictionGapReview(params: {
     eventID: params.eventID,
     submissionID: params.input.submissionID,
     relationshipID: params.input.relationshipID,
-    relationshipFingerprint: contradictionRelationshipFingerprint(relationship),
+    relationshipFingerprint: contradictionRelationshipFingerprint(
+      relationship,
+      params.dashboard.atoms,
+    ),
     action: params.input.action,
     fromClassification:
       relationship.userClassification ?? relationship.classification,
@@ -1216,13 +1219,60 @@ export function applyContradictionGapReview(params: {
   };
 }
 
+const COMPARABILITY_DIMENSIONS = new Set<ContradictionGapDimension>([
+  "method",
+  "population",
+  "dataset",
+  "replication",
+]);
+
+/** An atom's statement and evidence, without run-time timestamps. */
+function atomContent(atom: VerifiedFactAtom) {
+  return {
+    atomID: atom.atomID,
+    sourceID: atom.sourceID,
+    dimension: atom.dimension,
+    statement: atom.statement,
+    evidence: atom.evidence.map((reference) => ({
+      sourceID: reference.sourceID,
+      attachmentKey: reference.attachmentKey,
+      pageIndex: reference.pageIndex ?? null,
+      pageLabel: reference.pageLabel ?? null,
+      elementID: reference.elementID ?? null,
+      exactQuote: reference.exactQuote ?? null,
+      status: reference.verification?.status ?? null,
+    })),
+  };
+}
+
 /**
  * The reviewed content of a relationship. Relationship IDs hash only the
- * column and source IDs, so changed claims or evidence keep the same ID.
+ * column and source IDs, so the fingerprint also covers the compared atoms'
+ * statements and evidence, and the design atoms of both sources that decide
+ * comparability (method, population, dataset, replication).
  */
 export function contradictionRelationshipFingerprint(
   relationship: ContradictionRelationship,
+  atoms: readonly VerifiedFactAtom[],
 ) {
+  const referenced = new Set([
+    ...relationship.sides.flatMap((side) => side.atomIDs),
+    ...relationship.comparability.differences.flatMap(
+      (difference) => difference.atomIDs,
+    ),
+  ]);
+  const sourceIDs = new Set(
+    relationship.sides.flatMap((side) => side.sourceIDs),
+  );
+  const content = atoms
+    .filter(
+      (atom) =>
+        referenced.has(atom.atomID) ||
+        (sourceIDs.has(atom.sourceID) &&
+          COMPARABILITY_DIMENSIONS.has(atom.dimension)),
+    )
+    .map(atomContent)
+    .sort((left, right) => left.atomID.localeCompare(right.atomID));
   return `relationship-content-${stableHash(
     JSON.stringify({
       topic: relationship.topic,
@@ -1233,6 +1283,7 @@ export function contradictionRelationshipFingerprint(
         sourceIDs: [...side.sourceIDs].sort(),
       })),
       comparability: relationship.comparability,
+      atoms: content,
     }),
   )}`;
 }
@@ -1285,7 +1336,10 @@ export function carryForwardContradictionGapReviews(
     if (!events?.length) return relationship;
     // A review applies only to the evidence it judged. Changed positions or
     // atoms, or a review without a recorded fingerprint, start unreviewed.
-    const fingerprint = contradictionRelationshipFingerprint(relationship);
+    const fingerprint = contradictionRelationshipFingerprint(
+      relationship,
+      dashboard.atoms,
+    );
     if (
       events[0].fromClassification !== relationship.classification ||
       events.some((event) => event.relationshipFingerprint !== fingerprint)

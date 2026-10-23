@@ -321,6 +321,8 @@ export function renderLivingReviewPanel(
   section.append(actions);
 
   const filter = element(doc, "select", "pprw-select");
+  // A restored filter value is applied again by its own change handler.
+  filter.dataset.restoreRefresh = "true";
   filter.setAttribute("aria-label", "Filter living-review changes");
   for (const [value, label] of [
     ["pending", "Pending"],
@@ -776,6 +778,8 @@ export function renderScreeningLog(
 
   const actions = element(doc, "div", "pprw-row");
   const filter = element(doc, "select", "pprw-select");
+  // A restored filter value is applied again by its own change handler.
+  filter.dataset.restoreRefresh = "true";
   filter.setAttribute("aria-label", "Filter screening rows");
   for (const [value, label] of [
     ["all", "All papers"],
@@ -867,6 +871,10 @@ export function renderScreeningLog(
     const form = element(doc, "div", "pprw-screening-controls");
     const stage = element(doc, "select", "pprw-select");
     stage.setAttribute("aria-label", `Screening stage for ${rowView.title}`);
+    // Restore keys follow the source, not its title or row position.
+    const restoreKey = (purpose: string) =>
+      `screening:${rowView.sourceID}:${purpose}`;
+    stage.dataset.restoreKey = restoreKey("stage");
     for (const [value, label] of [
       ["abstract", "Abstract"],
       ["full-text", "Full text"],
@@ -884,6 +892,7 @@ export function renderScreeningLog(
       "aria-label",
       `Screening decision for ${rowView.title}`,
     );
+    decision.dataset.restoreKey = restoreKey("decision");
     for (const [value, label] of [
       ["maybe", "Maybe"],
       ["include", "Include"],
@@ -897,6 +906,7 @@ export function renderScreeningLog(
     }
     const reasonCode = element(doc, "select", "pprw-select");
     reasonCode.setAttribute("aria-label", `Reason type for ${rowView.title}`);
+    reasonCode.dataset.restoreKey = restoreKey("reason-code");
     for (const [value, label] of [
       ["other", "Other reason"],
       ["criterion", "Protocol criterion"],
@@ -913,6 +923,7 @@ export function renderScreeningLog(
       "aria-label",
       `Protocol criterion for ${rowView.title}`,
     );
+    criterion.dataset.restoreKey = restoreKey("criterion");
     const noCriterion = element(doc, "option", "", "No criterion selected");
     noCriterion.value = "";
     criterion.append(noCriterion);
@@ -929,8 +940,10 @@ export function renderScreeningLog(
       current?.reason?.text ?? "",
     );
     reason.setAttribute("aria-label", `Screening reason for ${rowView.title}`);
+    reason.dataset.restoreKey = restoreKey("reason");
     const note = textInput(doc, "Optional reviewer note", current?.note ?? "");
     note.setAttribute("aria-label", `Reviewer note for ${rowView.title}`);
+    note.dataset.restoreKey = restoreKey("note");
     let submissionID: string | undefined;
     const recordButton = button(
       doc,
