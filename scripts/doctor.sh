@@ -27,10 +27,12 @@ if command -v node >/dev/null 2>&1; then
     node_version="$(node --version)"
     node_major="${node_version#v}"
     node_major="${node_major%%.*}"
-    if [ "${node_major}" -ge 20 ] 2>/dev/null; then
+    node_minor="${node_version#*.}"
+    node_minor="${node_minor%%.*}"
+    if [ "${node_major}" -gt 22 ] 2>/dev/null || { [ "${node_major}" -eq 22 ] 2>/dev/null && [ "${node_minor}" -ge 18 ] 2>/dev/null; }; then
         ok "Node ${node_version}"
     else
-        error "Node 20 or newer is required; found ${node_version}"
+        error "Node 22.18 or newer is required; found ${node_version}"
     fi
 else
     error "Node is not installed"

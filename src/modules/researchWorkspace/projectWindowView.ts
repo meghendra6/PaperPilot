@@ -1,4 +1,5 @@
 import { renderProjectCandidateInbox } from "./projectCandidatePanel";
+import { openStudio } from "../studio/window";
 import { isResearchWorkspaceMemberExcluded } from "./memberState";
 import { isResearchWorkspaceOwnerActive } from "./projectRunAdmission";
 import { element } from "./dom";
@@ -151,6 +152,7 @@ async function renderProject(
       renderResearchWorkspaceProjectSurface(root, { capturedPapers }),
     ),
     element(doc, "h2", "", details.project.name),
+    button(doc, "Write & run", () => openStudio(projectID)),
   );
   content.append(toolbar);
 

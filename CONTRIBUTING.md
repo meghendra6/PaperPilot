@@ -11,7 +11,7 @@ This repository contains a Zotero 7-10 plugin that adds an AI reader workbench w
 Recommended baseline:
 
 - Zotero 7, 8, 9, or 10
-- Node.js 20+
+- Node.js 22.18+
 - npm
 - Java 11+ if you want OpenDataLoader-backed structured PDF extraction instead of the text fallback
 - at least one local provider CLI if you want to validate real provider flows

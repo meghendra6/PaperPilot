@@ -13,8 +13,26 @@ import type {
   ResearchWorkspaceSourceRecord,
 } from "../src/modules/researchWorkspace/persistence/contracts";
 import type { ResearchWorkspaceProjectDetails } from "../src/modules/researchWorkspace/projectController";
+import { referencePassages } from "../src/modules/studio/referenceEvidence";
 
 const NOW = "2026-08-30T12:00:00.000Z";
+
+test("Studio citation passages reuse current workspace evidence and cannot cross citation source scope", () => {
+  const details = fixture();
+  const passages = referencePassages(details, "pp_1_ITEM-A");
+  assert.ok(passages.length > 0);
+  assert.ok(
+    passages.every(
+      (passage) => passage.reference.sourceID === "zotero:1:ITEM-A:PDF-A",
+    ),
+  );
+  assert.ok(
+    passages.every((passage) => passage.quote === "Evidence from Paper A"),
+  );
+  assert.deepEqual(referencePassages(details, "unrelated-key"), []);
+  details.sources[0].contentFingerprint!.value = "changed-pdf";
+  assert.deepEqual(referencePassages(details, "pp_1_ITEM-A"), []);
+});
 
 test("metric direction handles negation, metric polarity, and bare values", () => {
   assert.equal(

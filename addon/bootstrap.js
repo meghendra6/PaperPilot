@@ -23,6 +23,14 @@ async function startup({ id, version, resourceURI, rootURI }, reason) {
   var manifestURI = Services.io.newURI(rootURI + "manifest.json");
   chromeHandle = aomStartup.registerChrome(manifestURI, [
     ["content", "__addonRef__", rootURI + "chrome/content/"],
+    // Only static editor assets are readable from the opaque-origin iframe.
+    // The privileged plugin bundle and other chrome resources stay private.
+    [
+      "content",
+      "__addonRef__-studio",
+      rootURI + "chrome/content/studio/",
+      "contentaccessible=yes",
+    ],
   ]);
 
   /**
