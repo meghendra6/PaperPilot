@@ -170,6 +170,10 @@ const referencesButton = button("References", () => {
   assistant.close(false);
   return references.open(referencesButton);
 });
+referencesButton.title =
+  "Cite this project's Zotero papers and build a bibliography.";
+assistantButton.title =
+  "Ask about project files and papers. Edits arrive as proposals you approve.";
 header.append(filesButton, title, referencesButton, assistantButton);
 const sidebar = node("aside", undefined, "files");
 sidebar.setAttribute("aria-label", "Project files");
@@ -277,8 +281,13 @@ newType.onchange = () => {
   if (newName.value.trim())
     newName.value = newName.value.replace(/(\.[^./]+)?$/, `.${newType.value}`);
 };
-function showNewDocument() {
+/** Opens the new-document dialog, optionally with a format chosen. */
+function showNewDocument(extension?: string) {
   newError.textContent = "";
+  if (extension && newType.value !== extension) {
+    newType.value = extension;
+    newType.onchange?.(new Event("change"));
+  }
   newDialog.showModal();
   newName.focus();
 }
@@ -384,7 +393,7 @@ newName.addEventListener("keydown", (event) => {
 const fileHeading = node("div", undefined, "file-heading");
 fileHeading.append(fileCount, archivedLabel);
 const fileCommands = node("div", undefined, "file-commands");
-const newButton = button("New document", showNewDocument);
+const newButton = button("New document", () => showNewDocument());
 newButton.className = "primary";
 fileCommands.append(
   newButton,
@@ -667,15 +676,65 @@ documentTools.hidden = true;
 documentTools.append(commentButton, assetTools, structure.element);
 const welcome = node("section", undefined, "studio-welcome");
 welcome.inert = true;
+/** A start card: a title and one line about what it opens. */
+function welcomeCard(
+  heading: string,
+  text: string,
+  action: () => unknown,
+): HTMLButtonElement {
+  const card = node("button", undefined, "welcome-card");
+  card.type = "button";
+  card.append(node("strong", heading), node("span", text));
+  card.addEventListener("click", () => {
+    void Promise.resolve(action()).catch(showError);
+  });
+  return card;
+}
+const welcomeCards = node("div", undefined, "welcome-cards");
+welcomeCards.append(
+  welcomeCard(
+    "Write a draft",
+    "Word, Markdown, LaTeX, or Typst, with citations from your papers.",
+    () => showNewDocument("docx"),
+  ),
+  welcomeCard(
+    "Cite your papers",
+    "Insert citations and a bibliography from this project's Zotero papers.",
+    () => referencesButton.click(),
+  ),
+  welcomeCard(
+    "Ask the assistant",
+    "Ask about your files and papers. Edits arrive as proposals you approve.",
+    () => assistantButton.click(),
+  ),
+  welcomeCard(
+    "Analyze data",
+    "A Python or R notebook whose figures and tables can go into a draft.",
+    () => showNewDocument("ipynb"),
+  ),
+  welcomeCard(
+    "Plan the work",
+    "A board for tasks, reading, and screening.",
+    () => showNewDocument("kanban"),
+  ),
+  welcomeCard(
+    "Import files",
+    "Bring in DOCX, PDF, data, or images from this computer.",
+    () => importInput.click(),
+  ),
+);
 welcome.append(
-  node("p", "WRITE · ANALYZE · REVIEW", "welcome-eyebrow"),
-  node("h2", "A place for your research"),
+  node("h2", "Write up this project"),
   node(
     "p",
-    "Open a project file, or start a document. Drafts, data and notebook results stay together on this device.",
+    "Drafts, data, and notebook results stay together with the project's papers on this computer. Start with one of these, or open a file on the left.",
   ),
-  button("Create a document", showNewDocument),
-  button("Import files…", () => importInput.click()),
+  welcomeCards,
+  node(
+    "p",
+    "Shortcuts: Ctrl or ⌘ + S saves. Ctrl or ⌘ + P finds a file.",
+    "welcome-shortcuts",
+  ),
 );
 const statusBar = node("footer", undefined, "studio-status");
 statusBar.append(status, revealButton);

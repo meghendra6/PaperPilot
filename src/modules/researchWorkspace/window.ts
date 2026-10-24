@@ -2,6 +2,7 @@ import { DialogHelper } from "zotero-plugin-toolkit";
 import { config } from "../../../package.json";
 import {
   addPapersToResearchWorkspaceProject,
+  loadResearchWorkspaceProject,
   loadResearchWorkspaceState,
 } from "./facade";
 import {
@@ -11,6 +12,7 @@ import {
   type ResearchWorkspaceSelectionSnapshot,
   type ResearchWorkspaceSkippedSelection,
 } from "./selectionSnapshot";
+import { createResearchWorkspaceSurfaceSelection } from "./surfaceSelection";
 import {
   disposeResearchWorkspaceProjectSurface,
   getResearchWorkspaceSurfaceProject,
@@ -21,14 +23,13 @@ import {
   hasRunningOperation,
   releaseOperations,
   setMessage,
+  surfaceSelections,
 } from "./projectSurfaceShared";
 import { confirmCancelRunningAnalysis } from "./runGuard";
 import { planResearchWorkspaceSelectionOffer } from "./selectionOffer";
-import {
-  replaceResearchWorkspaceDialogAfterCreate,
-  runResearchWorkspaceSurfaceAction,
-} from "./surfaceAction";
+import { runResearchWorkspaceSurfaceAction } from "./surfaceAction";
 import { element } from "./dom";
+import { pluginStylesheetURL } from "../../utils/stylesheet";
 
 declare const addon: any;
 declare const Zotero: any;
@@ -108,45 +109,31 @@ function windowIsOpen() {
 }
 
 function installWindowStyles(doc: Document) {
-  const cssID = `${config.addonRef}-research-workspace-window-stylesheet`;
+  installStylesheet(doc, "stylesheet", pluginStylesheetURL("zoteroPane.css"));
+  // The window design comes after the shared pane styles and overrides them
+  // only inside the window.
+  installStylesheet(
+    doc,
+    "design",
+    pluginStylesheetURL("researchWorkspaceWindow.css"),
+  );
+}
+
+function installStylesheet(doc: Document, suffix: string, href: string) {
+  const cssID = `${config.addonRef}-research-workspace-window-${suffix}`;
   if (doc.getElementById(cssID)) return;
   const link = element(doc, "link");
   link.id = cssID;
   link.rel = "stylesheet";
-  link.href = `chrome://${config.addonRef}/content/zoteroPane.css`;
+  link.href = href;
   doc.head.append(link);
 }
 
-function renderSkipped(
-  doc: Document,
-  skipped: readonly ResearchWorkspaceSkippedSelection[],
-) {
-  if (!skipped.length) return undefined;
-  const details = element(doc, "details", "pprw-capture-skipped");
-  const summary = element(
-    doc,
-    "summary",
-    "pprw-capture-skipped-title",
-    `${skipped.length} selected row${skipped.length === 1 ? " was" : "s were"} skipped`,
-  );
-  const list = element(doc, "ul", "pprw-capture-list");
-  for (const entry of skipped) {
-    const item = element(doc, "li", "pprw-capture-list-item");
-    item.append(
-      element(doc, "strong", "", entry.title),
-      element(doc, "span", "", `${entry.code}: ${entry.reason}`),
-    );
-    list.append(item);
-  }
-  details.append(summary, list);
-  return details;
-}
-
-function renderWindowFrame(
-  root: HTMLElement,
-  snapshot: ResearchWorkspaceSelectionSnapshot,
-  skipped: readonly ResearchWorkspaceSkippedSelection[],
-) {
+/**
+ * Draws the window header and an empty body. The selected papers are shown
+ * in the body, where the reader decides what to do with them.
+ */
+function renderWindowFrame(root: HTMLElement) {
   const doc = root.ownerDocument;
   const header = element(doc, "header", "pprw-window-header");
   const heading = element(doc, "div", "pprw-window-heading");
@@ -156,51 +143,42 @@ function renderWindowFrame(
       doc,
       "p",
       "",
-      `${snapshot.selectedCount} selected · ${snapshot.candidates.length} exact PDF${snapshot.candidates.length === 1 ? "" : "s"} captured at ${new Date(snapshot.capturedAt).toLocaleString()}.`,
+      "Collect papers in a project, compare them with page-linked evidence, and write up what you find.",
     ),
   );
-  header.append(
-    heading,
-    actionButton(
-      doc,
-      "Start a new selection",
-      replaceResearchWorkspaceSelection,
-    ),
+  const useSelection = actionButton(
+    doc,
+    "Use Zotero selection",
+    useCurrentZoteroSelection,
+    "secondary",
   );
+  useSelection.title =
+    "Bring in the items that are selected in the Zotero library now.";
+  header.append(heading, useSelection);
 
-  const sources = element(doc, "div", "pprw-capture-sources");
-  if (snapshot.candidates.length) {
-    for (const candidate of snapshot.candidates) {
-      const source = element(doc, "div", "pprw-capture-source");
-      source.append(
-        element(doc, "strong", "", candidate.title),
-        element(
-          doc,
-          "span",
-          "",
-          `Library ${candidate.libraryID} · PDF ${candidate.attachmentKey}`,
-        ),
-      );
-      sources.append(source);
-    }
-  } else {
-    sources.append(
-      element(
-        doc,
-        "p",
-        "pprw-muted",
-        "No readable PDF was captured. The workspace home remains available.",
-      ),
-    );
-  }
-
-  const skippedPanel = renderSkipped(doc, skipped);
   const body = element(doc, "main", "pprw-window-body");
   body.id = WINDOW_BODY_ID;
-  root.replaceChildren(header, sources);
-  if (skippedPanel) root.append(skippedPanel);
-  root.append(body);
+  root.replaceChildren(header, body);
   return body;
+}
+
+/** Reads the snapshot's PDFs once and records them in the window state. */
+function surfaceSelection(snapshot: ResearchWorkspaceSelectionSnapshot) {
+  return createResearchWorkspaceSurfaceSelection(snapshot, async () => {
+    const state = await loadResearchWorkspaceState();
+    const loaded = await loadResearchWorkspaceSnapshotPapers(
+      snapshot,
+      state.preferences.maxPaperCharacters,
+    );
+    updateWindowState(snapshot, {
+      status: "ready",
+      loadedSourceIDs: Object.freeze(
+        loaded.papers.map((paper) => paper.sourceID),
+      ),
+      skipped: loaded.skipped,
+    });
+    return loaded;
+  });
 }
 
 function updateWindowState(
@@ -219,6 +197,7 @@ function updateWindowState(
 async function initializeResearchWorkspaceDialog(
   dialog: DialogHelper,
   snapshot: ResearchWorkspaceSelectionSnapshot,
+  options: { preferredProjectID?: string } = {},
 ) {
   const doc = dialog.window.document;
   installWindowStyles(doc);
@@ -232,11 +211,15 @@ async function initializeResearchWorkspaceDialog(
     loadedSourceIDs: Object.freeze([]),
     skipped: snapshot.skipped,
   });
-  const initialBody = renderWindowFrame(root, snapshot, snapshot.skipped);
+  const initialBody = renderWindowFrame(root);
   flushPendingSelectionOffer(dialog);
   try {
-    // Saved projects and results are available before any PDF extraction.
-    await renderResearchWorkspaceProjectSurface(initialBody);
+    // Saved projects are available at once. The selected PDFs are read only
+    // when the reader creates or extends a project with them.
+    await renderResearchWorkspaceProjectSurface(initialBody, {
+      selection: surfaceSelection(snapshot),
+      preferredProjectID: options.preferredProjectID,
+    });
     // A newer selection may have re-initialized this window meanwhile.
     if (
       addon.data.dialog !== dialog ||
@@ -245,52 +228,16 @@ async function initializeResearchWorkspaceDialog(
       !initialBody.isConnected
     )
       return;
-    updateWindowState(snapshot, {
-      status: "ready",
-      loadedSourceIDs: Object.freeze([]),
-      skipped: snapshot.skipped,
-    });
-    if (snapshot.candidates.length) {
-      const prepare = actionButton(
-        doc,
-        `Prepare captured PDFs (${snapshot.candidates.length})`,
-        async () => {
-          // Ask before loading so a kept run does not waste the extraction.
-          if (!releaseWindowBody(doc, "Preparing the captured PDFs")) return;
-          prepare.disabled = true;
-          prepare.textContent = "Loading captured PDFs…";
-          try {
-            const state = await loadResearchWorkspaceState();
-            const loaded = await loadResearchWorkspaceSnapshotPapers(
-              snapshot,
-              state.preferences.maxPaperCharacters,
-            );
-            if (addon.data.dialog !== dialog || dialog.window.closed) return;
-            // A run started while the PDFs loaded still needs a choice.
-            if (!releaseWindowBody(doc, "Preparing the captured PDFs")) return;
-            const body = renderWindowFrame(root, snapshot, loaded.skipped);
-            updateWindowState(snapshot, {
-              status: "ready",
-              loadedSourceIDs: Object.freeze(
-                loaded.papers.map((paper) => paper.sourceID),
-              ),
-              skipped: loaded.skipped,
-            });
-            await renderResearchWorkspaceProjectSurface(body, {
-              capturedPapers: loaded.papers,
-            });
-          } finally {
-            prepare.disabled = false;
-            prepare.textContent = `Prepare captured PDFs (${snapshot.candidates.length})`;
-          }
-        },
-      );
-      root.querySelector(".pprw-window-header")?.append(prepare);
-    }
+    if (addon.data.researchWorkspaceWindowState?.status === "loading")
+      updateWindowState(snapshot, {
+        status: "ready",
+        loadedSourceIDs: Object.freeze([]),
+        skipped: snapshot.skipped,
+      });
   } catch (error) {
     if (addon.data.dialog !== dialog || dialog.window.closed) return;
     const message = error instanceof Error ? error.message : String(error);
-    const body = renderWindowFrame(root, snapshot, snapshot.skipped);
+    const body = renderWindowFrame(root);
     body.replaceChildren(element(doc, "div", "pprw-window-error", message));
     updateWindowState(snapshot, {
       status: "error",
@@ -322,10 +269,14 @@ function installCloseGuard(dialog: DialogHelper) {
   });
 }
 
-/** Re-initializes the open window with a newly captured selection. */
+/**
+ * Re-initializes the open window with a newly captured selection. The
+ * project the reader came from is offered first for adding the papers.
+ */
 async function useResearchWorkspaceSnapshot(
   dialog: DialogHelper,
   snapshot: ResearchWorkspaceSelectionSnapshot,
+  options: { preferredProjectID?: string } = {},
 ) {
   const doc = dialog.window.document;
   if (!releaseWindowBody(doc, "Using the new selection")) return;
@@ -335,7 +286,89 @@ async function useResearchWorkspaceSnapshot(
     loadedSourceIDs: Object.freeze([]),
     skipped: snapshot.skipped,
   });
-  await initializeResearchWorkspaceDialog(dialog, snapshot);
+  await initializeResearchWorkspaceDialog(dialog, snapshot, options);
+}
+
+/**
+ * Makes snapshot the window's current selection without re-rendering, so
+ * later selection actions and offers compare against it.
+ */
+function adoptSelection(
+  body: HTMLElement,
+  snapshot: ResearchWorkspaceSelectionSnapshot,
+) {
+  addon.data.researchWorkspaceWindowState = Object.freeze({
+    snapshot,
+    status: "ready",
+    loadedSourceIDs: Object.freeze([]),
+    skipped: snapshot.skipped,
+  });
+  const selection = surfaceSelection(snapshot);
+  surfaceSelections.set(body, selection);
+  return selection;
+}
+
+/**
+ * True when leaving the current view would lose typed text. Changed
+ * checkboxes and menus are quick to redo and do not hold the view.
+ */
+function hasUnsavedEdits(body: HTMLElement) {
+  return Boolean(
+    body.querySelector(
+      "textarea[data-dirty='true'], input[type='text'][data-dirty='true']",
+    ),
+  );
+}
+
+/**
+ * Shows a new Zotero selection in the open window. The window moves to the
+ * selection unless that would cancel a run or drop typed input; then a
+ * banner offers it instead (spec §12.1). A selection that the open project
+ * already holds keeps the project in view.
+ */
+async function bringSelectionIntoWindow(
+  dialog: DialogHelper,
+  snapshot: ResearchWorkspaceSelectionSnapshot,
+  explicit: boolean,
+) {
+  if (!snapshot.candidates.length && !snapshot.skipped.length) {
+    if (!explicit) return;
+    throw new Error(
+      "Nothing is selected in the Zotero library. Select papers there, then choose Use Zotero selection again.",
+    );
+  }
+  const body = windowBody(dialog.window.document);
+  const project = body ? getResearchWorkspaceSurfaceProject(body) : undefined;
+  if (body && project && snapshot.candidates.length) {
+    const details = await loadResearchWorkspaceProject(project.projectID);
+    if (addon.data.dialog !== dialog || dialog.window.closed) return;
+    const members = new Set(details.members.map((member) => member.sourceID));
+    if (
+      snapshot.candidates.every((candidate) => members.has(candidate.sourceID))
+    ) {
+      // Stay in the project; its selection actions now use these papers.
+      adoptSelection(body, snapshot);
+      if (!hasRunningOperation(body))
+        await refreshResearchWorkspaceProject(body);
+      setMessage(
+        body,
+        `“${project.projectName}” already has the ${snapshot.candidates.length === 1 ? "selected paper" : `${snapshot.candidates.length} selected papers`}.`,
+      );
+      return;
+    }
+  }
+  if (body && (hasRunningOperation(body) || hasUnsavedEdits(body))) {
+    showSelectionOffer(dialog, snapshot, {
+      evenIfUnchanged: true,
+      reason: hasRunningOperation(body)
+        ? "An analysis is running here, so this view stays until you choose."
+        : "This view has unsaved changes, so it stays until you choose.",
+    });
+    return;
+  }
+  await useResearchWorkspaceSnapshot(dialog, snapshot, {
+    preferredProjectID: project?.projectID,
+  });
 }
 
 /** Adds the new selection to the project open in the window. */
@@ -363,11 +396,9 @@ async function addSnapshotToOpenProject(
     );
   }
   setMessage(body, `Loading ${snapshot.candidates.length} selected PDF(s)…`);
-  const state = await loadResearchWorkspaceState();
-  const loaded = await loadResearchWorkspaceSnapshotPapers(
-    snapshot,
-    state.preferences.maxPaperCharacters,
-  );
+  // The project page now offers this selection, read once.
+  const selection = adoptSelection(body, snapshot);
+  const loaded = await selection.load();
   if (!loaded.papers.length) {
     throw new Error("None of the selected PDFs could be loaded.");
   }
@@ -401,6 +432,7 @@ function flushPendingSelectionOffer(dialog: DialogHelper) {
 function showSelectionOffer(
   dialog: DialogHelper,
   snapshot: ResearchWorkspaceSelectionSnapshot,
+  options: { evenIfUnchanged?: boolean; reason?: string } = {},
 ) {
   const doc = dialog.window.document;
   const root = doc.getElementById(WINDOW_ROOT_ID);
@@ -415,7 +447,10 @@ function showSelectionOffer(
     ? getResearchWorkspaceSurfaceProject(body)
     : undefined;
   const offer = planResearchWorkspaceSelectionOffer({
-    current: addon.data.researchWorkspaceWindowState?.snapshot,
+    // An explicit request offers the selection even when it is unchanged.
+    current: options.evenIfUnchanged
+      ? undefined
+      : addon.data.researchWorkspaceWindowState?.snapshot,
     next: snapshot,
     currentProjectName: offeredProject?.projectName,
   });
@@ -440,7 +475,9 @@ function showSelectionOffer(
   actions.append(
     // Re-initializing the window replaces the banner; a kept run leaves it.
     actionButton(doc, offer.useLabel, () =>
-      useResearchWorkspaceSnapshot(dialog, snapshot),
+      useResearchWorkspaceSnapshot(dialog, snapshot, {
+        preferredProjectID: offeredProject?.projectID,
+      }),
     ),
   );
   if (offer.addLabel) {
@@ -467,7 +504,12 @@ function showSelectionOffer(
   }
   const dismiss = actionButton(doc, "Dismiss", () => banner.remove(), "ghost");
   actions.append(dismiss);
-  const message = element(doc, "p", "", offer.message);
+  const message = element(
+    doc,
+    "p",
+    "",
+    options.reason ? `${offer.message} ${options.reason}` : offer.message,
+  );
   message.setAttribute("role", "status");
   banner.append(message, titles, actions);
   root.querySelector(".pprw-window-header")?.after(banner);
@@ -553,16 +595,42 @@ async function offerToOpenWindow(options: OpenResearchWorkspaceOptions) {
   dialog.window.focus();
   const snapshot = await captureResearchWorkspaceSelection(options);
   if (addon.data.dialog !== dialog || dialog.window.closed) return;
-  showSelectionOffer(dialog, snapshot);
+  // The home already shows this exact selection; focusing is enough.
+  const body = windowBody(dialog.window.document);
+  const current = addon.data.researchWorkspaceWindowState?.snapshot as
+    | ResearchWorkspaceSelectionSnapshot
+    | undefined;
+  if (
+    body &&
+    !getResearchWorkspaceSurfaceProject(body) &&
+    current &&
+    sameSources(current, snapshot)
+  )
+    return;
+  await bringSelectionIntoWindow(dialog, snapshot, false);
 }
 
-export async function replaceResearchWorkspaceSelection() {
-  const current = addon.data.dialog as DialogHelper | undefined;
-  const doc = current?.window?.document;
-  if (doc && !releaseWindowBody(doc, "Starting a new selection")) return;
-  await replaceResearchWorkspaceDialogAfterCreate(current, () =>
-    createResearchWorkspaceDialog({ origin: "workspace-new-selection" }),
+function sameSources(
+  left: ResearchWorkspaceSelectionSnapshot,
+  right: ResearchWorkspaceSelectionSnapshot,
+) {
+  const sources = new Set(left.candidates.map((entry) => entry.sourceID));
+  return (
+    left.candidates.length === right.candidates.length &&
+    left.skipped.length === right.skipped.length &&
+    right.candidates.every((entry) => sources.has(entry.sourceID))
   );
+}
+
+/** Brings the items selected in the Zotero library into the open window. */
+export async function useCurrentZoteroSelection() {
+  const dialog = addon.data.dialog as DialogHelper | undefined;
+  if (!dialog || !windowIsOpen()) return;
+  const snapshot = await captureResearchWorkspaceSelection({
+    origin: "workspace-new-selection",
+  });
+  if (addon.data.dialog !== dialog || dialog.window.closed) return;
+  await bringSelectionIntoWindow(dialog, snapshot, true);
 }
 
 export function closeResearchWorkspaceWindow() {

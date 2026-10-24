@@ -1,10 +1,7 @@
 import { test } from "node:test";
 import * as assert from "node:assert/strict";
 
-import {
-  replaceResearchWorkspaceDialogAfterCreate,
-  runResearchWorkspaceSurfaceAction,
-} from "../src/modules/researchWorkspace/surfaceAction";
+import { runResearchWorkspaceSurfaceAction } from "../src/modules/researchWorkspace/surfaceAction";
 
 class FakeSurface {
   readonly attributes = new Map<string, string>();
@@ -81,32 +78,48 @@ test("Research Workspace surface actions report failures and restore state", asy
   assert.equal(surface.attributes.has("aria-busy"), false);
 });
 
-test("Research Workspace dialog replacement closes the old window only after creation", async () => {
-  let closed = false;
-  const current = {
-    window: {
-      close: () => {
-        closed = true;
-      },
-    },
-  };
-  const replacement = { window: { close: () => undefined } };
+test("Research Workspace surface actions name the running action to a second click", async () => {
+  const surface = new FakeSurface();
+  let release!: () => void;
+  const waiting = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const first = runResearchWorkspaceSurfaceAction({
+    surface,
+    trigger: { disabled: false },
+    label: "Open LLM evaluation review",
+    action: () => waiting,
+    onError: (error) => assert.fail(String(error)),
+  });
+  const busy: (string | undefined)[] = [];
 
   assert.equal(
-    await replaceResearchWorkspaceDialogAfterCreate(
-      current,
-      async () => replacement,
-    ),
-    replacement,
-  );
-  assert.equal(closed, true);
-
-  closed = false;
-  await assert.rejects(
-    replaceResearchWorkspaceDialogAfterCreate(current, async () => {
-      throw new Error("capture failed");
+    await runResearchWorkspaceSurfaceAction({
+      surface,
+      trigger: { disabled: false },
+      label: "Open Studio for LLM evaluation review",
+      action: () => assert.fail("the second action must not run"),
+      onError: (error) => assert.fail(String(error)),
+      onBusy: (active) => busy.push(active),
     }),
-    /capture failed/,
+    false,
   );
-  assert.equal(closed, false);
+  assert.deepEqual(busy, ["Open LLM evaluation review"]);
+
+  release();
+  assert.equal(await first, true);
+  let ran = false;
+  assert.equal(
+    await runResearchWorkspaceSurfaceAction({
+      surface,
+      trigger: { disabled: false },
+      action: () => {
+        ran = true;
+      },
+      onError: (error) => assert.fail(String(error)),
+      onBusy: () => assert.fail("the surface is idle again"),
+    }),
+    true,
+  );
+  assert.equal(ran, true);
 });

@@ -1,3 +1,4 @@
+import { listResearchWorkspaceCapabilities } from "./capabilityRegistry";
 import { element } from "./dom";
 import {
   createResearchWorkspaceProjectFromTemplate,
@@ -9,66 +10,85 @@ import {
 import type { ResearchWorkspacePaper } from "./paperSource";
 import type { ResearchWorkspaceProjectDetails } from "./projectController";
 import {
+  addedPapersMessage,
   button,
-  capabilityPresetIDs,
-  logProjectError,
+  formStatus,
+  labeledField,
   setMessage,
   textArea,
   textInput,
   type ProjectNavigation,
 } from "./projectSurfaceShared";
 import type { ResearchWorkspaceProjectTemplatePreview } from "./projectTemplates";
-export function renderSelectionReview(
-  doc: Document,
-  papers: readonly ResearchWorkspacePaper[],
-) {
-  const section = element(doc, "section", "pprw-project-panel");
-  section.append(
-    element(doc, "h2", "", "Review captured selection"),
-    element(
-      doc,
-      "p",
-      "pprw-muted",
-      `${papers.length} exact PDF${papers.length === 1 ? " is" : "s are"} ready. No analysis starts until you choose a project and an operation.`,
-    ),
-  );
-  const list = element(doc, "div", "pprw-project-paper-list");
-  for (const paper of papers) {
-    const row = element(doc, "div", "pprw-project-paper-row");
-    row.append(
-      element(doc, "strong", "", paper.title),
-      element(
-        doc,
-        "span",
-        "pprw-muted",
-        `Library ${paper.libraryID} · PDF ${paper.attachmentKey} · ${paper.extractionQuality}`,
-      ),
-    );
-    list.append(row);
+import { papersLabel } from "./surfaceSelection";
+
+export interface ProjectTemplateCreatorOptions {
+  /** How many selected papers a new project would include. */
+  includedPapers: number;
+  /** Reads the papers to include; reports progress through `report`. */
+  papers(
+    report: (message: string) => void,
+  ): Promise<{ papers: readonly ResearchWorkspacePaper[]; unread: number }>;
+  open(
+    projectID: string,
+    papers: readonly ResearchWorkspacePaper[],
+    message: { text: string; kind: "info" | "success" | "warning" },
+  ): Promise<void>;
+}
+
+/**
+ * Checkboxes for the tools a template recommends. Recommendations only add
+ * emphasis; every tool stays available. `selected()` reads the boxes, so a
+ * choice restored after a project rebuild is the one that is saved.
+ */
+function renderPresetChoices(doc: Document, selected: readonly string[]) {
+  const fieldset = element(doc, "fieldset", "pprw-preset-choices");
+  fieldset.append(element(doc, "legend", "", "Recommended tools"));
+  const current = new Set(selected);
+  const boxes: HTMLInputElement[] = [];
+  for (const capability of listResearchWorkspaceCapabilities()) {
+    const label = element(doc, "label", "pprw-preset-choice");
+    const box = element(doc, "input", "");
+    box.type = "checkbox";
+    box.value = capability.id;
+    box.checked = current.has(capability.id);
+    box.dataset.restoreKey = `preset:${capability.id}`;
+    boxes.push(box);
+    label.append(box, ` ${capability.label}`);
+    fieldset.append(label);
   }
-  section.append(list);
-  return section;
+  return {
+    element: fieldset,
+    selected: () =>
+      boxes.filter((entry) => entry.checked).map((entry) => entry.value),
+  };
 }
 
 export function renderProjectTemplateCreator(
   doc: Document,
-  root: HTMLElement,
-  capturedPapers: readonly ResearchWorkspacePaper[],
-  generation: symbol,
-  navigation: ProjectNavigation,
+  options: ProjectTemplateCreatorOptions,
 ) {
   const section = element(
     doc,
-    "section",
+    "details",
     "pprw-project-panel pprw-template-creator",
   );
   section.append(
-    element(doc, "h2", "", "Create from a research project template"),
+    element(
+      doc,
+      "summary",
+      "pprw-section-title",
+      "Create from a research project template",
+    ),
     element(
       doc,
       "p",
       "pprw-muted",
-      "Choose a template, edit its preview, and create explicitly. Presets only highlight recommendations; no capability runs automatically and no other capability is hidden.",
+      `Templates fill in a name, a research question, and assumptions for common review types, and highlight the tools that suit them. Edit anything before you create.${
+        options.includedPapers
+          ? ` The ${papersLabel(options.includedPapers)} selected in Zotero are added.`
+          : ""
+      } No capability runs automatically and no other capability is hidden.`,
     ),
   );
   const templates = listResearchWorkspaceProjectTemplateOptions();
@@ -80,7 +100,7 @@ export function renderProjectTemplateCreator(
     selector.append(option);
   }
   const previewHost = element(doc, "div", "pprw-template-preview");
-  const status = element(doc, "p", "pprw-muted", "");
+  const status = formStatus(doc);
   let preview: ResearchWorkspaceProjectTemplatePreview | undefined;
 
   const renderPreview = () => {
@@ -92,13 +112,13 @@ export function renderProjectTemplateCreator(
       "Project description",
       preview.description,
     );
-    description.rows = 4;
+    description.rows = 3;
     const researchQuestion = textArea(
       doc,
       "Research question",
       preview.researchQuestion,
     );
-    researchQuestion.rows = 3;
+    researchQuestion.rows = 2;
     projectName.addEventListener("input", () => {
       if (preview) preview.projectName = projectName.value;
     });
@@ -110,12 +130,9 @@ export function renderProjectTemplateCreator(
     });
     previewHost.append(
       element(doc, "h3", "", "Editable preview"),
-      element(doc, "label", "pprw-field-label", "Project name"),
-      projectName,
-      element(doc, "label", "pprw-field-label", "Description"),
-      description,
-      element(doc, "label", "pprw-field-label", "Research question"),
-      researchQuestion,
+      labeledField(doc, "Project name", projectName),
+      labeledField(doc, "Description", description),
+      labeledField(doc, "Research question", researchQuestion),
       element(doc, "h4", "", "Editable assumptions"),
     );
     for (const assumption of preview.assumptions) {
@@ -125,25 +142,11 @@ export function renderProjectTemplateCreator(
       input.addEventListener("input", () => {
         assumption.value = input.value;
       });
-      previewHost.append(
-        element(doc, "label", "pprw-field-label", assumption.label),
-        input,
-      );
+      previewHost.append(labeledField(doc, assumption.label, input));
     }
-    const presets = textInput(
-      doc,
-      "Capability preset IDs",
-      preview.capabilityPresetIDs.join(", "),
-    );
-    presets.setAttribute("aria-label", "Recommended capability preset IDs");
-    presets.addEventListener("input", () => {
-      if (preview) {
-        preview.capabilityPresetIDs = capabilityPresetIDs(presets.value);
-      }
-    });
+    const presets = renderPresetChoices(doc, preview.capabilityPresetIDs);
     previewHost.append(
-      element(doc, "h4", "", "Recommended capability presets"),
-      presets,
+      presets.element,
       element(
         doc,
         "p",
@@ -152,35 +155,41 @@ export function renderProjectTemplateCreator(
       ),
       button(
         doc,
-        "Create project from template",
+        options.includedPapers
+          ? `Create project from template with ${papersLabel(options.includedPapers)}`
+          : "Create project from template",
         async () => {
           if (!preview) return;
+          preview.capabilityPresetIDs = presets.selected();
+          status.clear();
           try {
-            status.textContent =
-              "Creating the project without running capabilities…";
+            const loaded = await options.papers(status.info);
+            status.info("Creating the project without running capabilities…");
             const created = await createResearchWorkspaceProjectFromTemplate(
               preview,
-              capturedPapers,
+              loaded.papers,
             );
-            await navigation.renderProject(
-              root,
-              created.project.projectID,
-              capturedPapers,
-              generation,
-            );
+            await options.open(created.project.projectID, loaded.papers, {
+              text: loaded.papers.length
+                ? `${addedPapersMessage(
+                    `Created “${created.project.name}” from a template with`,
+                    loaded.papers.length,
+                    loaded.unread,
+                  )} Recommended tools are highlighted below.`
+                : `Created “${created.project.name}” from a template. Add papers from the Papers tab.`,
+              kind: loaded.unread ? "warning" : "success",
+            });
           } catch (error) {
-            status.textContent =
-              error instanceof Error ? error.message : String(error);
-            status.className = "pprw-project-warning";
-            logProjectError(error);
+            status.error(error);
           }
         },
         true,
       ),
+      status.node,
     );
   };
   selector.addEventListener("change", renderPreview);
-  section.append(selector, previewHost, status);
+  section.append(labeledField(doc, "Template", selector), previewHost);
   if (templates[0]) {
     selector.value = templates[0].templateID;
     renderPreview();
@@ -209,30 +218,27 @@ export function renderProjectTemplateSettings(
       doc,
       "p",
       "pprw-muted",
-      `${snapshot.templateName} · ${snapshot.templateID} v${snapshot.templateVersion} · applied ${new Date(snapshot.appliedAt).toLocaleString()}`,
+      `${snapshot.templateName} · version ${snapshot.templateVersion} · applied ${new Date(snapshot.appliedAt).toLocaleString()}`,
     ),
   );
-  const assumptions = (details.project.templateAssumptions ?? []).map(
-    (assumption) => ({ ...assumption }),
+  // Saving reads the fields themselves. A rebuild restores typed values
+  // without input events, so a copy kept by listeners would be stale.
+  const assumptionInputs = (details.project.templateAssumptions ?? []).map(
+    (assumption) => {
+      const input = textArea(doc, assumption.label, assumption.value);
+      input.rows = 2;
+      input.setAttribute("aria-label", assumption.label);
+      section.append(labeledField(doc, assumption.label, input));
+      return { assumption, input };
+    },
   );
-  for (const assumption of assumptions) {
-    const input = textArea(doc, assumption.label, assumption.value);
-    input.rows = 2;
-    input.setAttribute("aria-label", assumption.label);
-    input.addEventListener("input", () => {
-      assumption.value = input.value;
-    });
-    section.append(
-      element(doc, "label", "pprw-field-label", assumption.label),
-      input,
-    );
-  }
-  const presets = textInput(
+  const presets = renderPresetChoices(
     doc,
-    "Capability preset IDs",
-    (details.project.capabilityPresetIDs ?? []).join(", "),
+    details.project.capabilityPresetIDs ?? [],
   );
-  presets.setAttribute("aria-label", "Recommended capability preset IDs");
+  const capabilityLabels = new Map<string, string>(
+    listResearchWorkspaceCapabilities().map((entry) => [entry.id, entry.label]),
+  );
   const original = element(doc, "details", "pprw-section");
   original.append(
     element(doc, "summary", "pprw-section-title", "Original template snapshot"),
@@ -249,7 +255,11 @@ export function renderProjectTemplateSettings(
       doc,
       "p",
       "pprw-muted",
-      `Original presets: ${snapshot.registryCapabilityPresetIDs.join(", ") || "None"}`,
+      `Original recommended tools: ${
+        snapshot.registryCapabilityPresetIDs
+          .map((id) => capabilityLabels.get(id) ?? id)
+          .join(", ") || "None"
+      }`,
     ),
   );
   const actions = element(doc, "div", "pprw-row");
@@ -263,8 +273,11 @@ export function renderProjectTemplateSettings(
           await updateResearchWorkspaceProjectTemplateSettings({
             projectID: details.project.projectID,
             expectedProjectRevision: details.projectRevision,
-            assumptions,
-            capabilityPresetIDs: capabilityPresetIDs(presets.value),
+            assumptions: assumptionInputs.map(({ assumption, input }) => ({
+              ...assumption,
+              value: input.value,
+            })),
+            capabilityPresetIDs: presets.selected(),
           });
           await navigation.renderProject(
             root,
@@ -272,6 +285,7 @@ export function renderProjectTemplateSettings(
             capturedPapers,
             generation,
           );
+          setMessage(root, "Template settings saved.", "success");
         } catch (error) {
           setMessage(
             root,
@@ -302,8 +316,7 @@ export function renderProjectTemplateSettings(
     }),
   );
   section.append(
-    element(doc, "label", "pprw-field-label", "Recommended capability presets"),
-    presets,
+    presets.element,
     element(
       doc,
       "p",

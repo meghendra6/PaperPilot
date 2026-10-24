@@ -2,14 +2,14 @@ import { renderProjectCandidateInbox } from "./projectCandidatePanel";
 import { openStudio } from "../studio/window";
 import { isResearchWorkspaceMemberExcluded } from "./memberState";
 import { isResearchWorkspaceOwnerActive } from "./projectRunAdmission";
-import { element } from "./dom";
+import { button as plainButton, element } from "./dom";
 import { planResearchWorkspaceArtifactRerun } from "./artifactRerun";
 import {
   addPapersToResearchWorkspaceProject,
   archiveResearchWorkspaceProject,
-  createResearchWorkspaceProject,
   deleteResearchWorkspaceProject,
   exportIntegratedResearchWorkspace,
+  findResearchWorkspaceProjectsWithSources,
   listResearchWorkspaceZoteroSyncReceipts,
   loadResearchWorkspaceChangeInbox,
   loadResearchWorkspaceHome,
@@ -24,10 +24,8 @@ import {
   type ResearchWorkspaceArtifact,
   type ResearchWorkspaceChangeInboxFile,
 } from "./persistence/contracts";
-import type {
-  ResearchWorkspaceProjectDetails,
-  ResearchWorkspaceProjectHome,
-} from "./projectController";
+import type { ResearchWorkspaceProjectDetails } from "./projectController";
+import { renderProjectHome } from "./projectHomeView";
 import {
   renderArtifactHistory,
   renderCitationHealthPanel,
@@ -38,22 +36,39 @@ import {
 } from "./projectReviewPanels";
 import {
   activeOperationRoots,
+  addedPapersMessage,
   button,
   disposeOperations,
   generations,
   isCurrent,
+  labeledField,
+  loadSelectionPapers,
   logProjectError,
-  metric,
   releaseOperations,
+  selectionWithPapers,
   setMessage,
+  surfaceSelections,
   textInput,
+  type ProjectNavigation,
+  type ProjectOpenOptions,
 } from "./projectSurfaceShared";
+import {
+  captureSurfaceState,
+  restoreSurfaceState,
+  trackDirtyInputs,
+} from "./projectSurfaceState";
 import { renderSafeZoteroSyncPanel } from "./projectSyncPanel";
 import {
-  renderProjectTemplateCreator,
-  renderProjectTemplateSettings,
-  renderSelectionReview,
-} from "./projectTemplatePanels";
+  DEFAULT_RESEARCH_WORKSPACE_PROJECT_TAB,
+  projectTabOf,
+  renderProjectTabBar,
+  renderProjectTabPanel,
+  showProjectTab,
+  type ResearchWorkspaceProjectTab,
+} from "./projectTabs";
+import { renderProjectTemplateSettings } from "./projectTemplatePanels";
+import { papersLabel } from "./surfaceSelection";
+import type { ResearchWorkspaceSurfaceSelection } from "./surfaceSelection";
 import {
   renderResearchWorkspaceView,
   triggerResearchWorkspaceViewAction,
@@ -64,15 +79,44 @@ interface ProjectSurfaceContext {
   projectID: string;
   projectName: string;
   capturedPapers: readonly ResearchWorkspacePaper[];
+  tab: ResearchWorkspaceProjectTab;
 }
 
 /** The project currently shown on each surface root, for window actions. */
 const projectContexts = new WeakMap<HTMLElement, ProjectSurfaceContext>();
 
-const navigation = {
+/** Tab IDs stay stable per surface, so a kept analysis panel keeps its ID. */
+const tabSuffixes = new WeakMap<HTMLElement, string>();
+let tabSuffixCounter = 0;
+
+function tabSuffix(root: HTMLElement) {
+  let suffix = tabSuffixes.get(root);
+  if (!suffix) {
+    suffix = String(++tabSuffixCounter);
+    tabSuffixes.set(root, suffix);
+  }
+  return suffix;
+}
+
+const navigation: ProjectNavigation = {
   renderProject,
   renderHome: renderResearchWorkspaceProjectSurface,
 };
+
+const SELECTION_SCOPE_LABEL = "Zotero selection";
+const ANALYSIS_BATCH_LIMIT = 12;
+
+function selectProjectTab(root: HTMLElement, tab: ResearchWorkspaceProjectTab) {
+  const context = projectContexts.get(root);
+  if (context) context.tab = tab;
+  showProjectTab(root, tab);
+}
+
+/** Shows the tab that holds node, for actions that point at a panel. */
+function revealProjectPanel(root: HTMLElement, node: Element | null) {
+  const tab = projectTabOf(node);
+  if (tab) selectProjectTab(root, tab);
+}
 
 function archiveNotice(
   doc: Document,
@@ -103,7 +147,7 @@ function archiveNotice(
           capturedPapers,
           generation,
         );
-        setMessage(root, "Project restored to Recent projects.", "success");
+        setMessage(root, "Project restored to Your projects.", "success");
       },
       true,
     ),
@@ -111,102 +155,58 @@ function archiveNotice(
   return notice;
 }
 
-async function renderProject(
+function renderProjectHeader(
+  doc: Document,
   root: HTMLElement,
-  projectID: string,
+  details: ResearchWorkspaceProjectDetails,
   capturedPapers: readonly ResearchWorkspacePaper[],
-  _parentGeneration: symbol,
 ) {
-  const generation = Symbol("project-render");
-  // Refreshing the same project keeps the analysis area, its running
-  // operation, and its last result in place. Panels around it are rebuilt.
-  // Ask before this render takes over the window, so "Keep running" leaves
-  // the current project fully working.
-  const previousOperations = activeOperationRoots.get(root);
-  const keepOperations = previousOperations?.dataset.projectId === projectID;
-  if (!keepOperations && !releaseOperations(root, "Opening another project"))
-    return;
-  generations.set(root, generation);
-  const [details, changeInboxResult, syncReceiptResult] = await Promise.all([
-    loadResearchWorkspaceProject(projectID),
-    // Only the Living Review panel needs the inbox. An unreadable file (for
-    // example after a downgrade) must not keep the whole project closed.
-    loadResearchWorkspaceChangeInbox(projectID)
-      .then((inbox) => ({ inbox, warning: undefined as string | undefined }))
-      .catch(() => ({
-        inbox: {
-          schemaVersion: RESEARCH_WORKSPACE_CHANGE_INBOX_SCHEMA_VERSION,
-          revision: 0,
-          projectID,
-          snapshots: [],
-          changes: [],
-        } satisfies ResearchWorkspaceChangeInboxFile,
-        warning:
-          "The Living Review change inbox could not be read. The file was preserved; Living Review stays unavailable until it is repaired.",
-      })),
-    listResearchWorkspaceZoteroSyncReceipts(projectID)
-      .then((receipts) => ({
-        receipts,
-        warning: undefined as string | undefined,
-      }))
-      .catch(() => ({
-        receipts: [] as ResearchWorkspaceZoteroSyncReceiptFile[],
-        warning:
-          "Sync receipt history could not be read. Existing receipt files were preserved; apply and undo remain unavailable until the history is repaired.",
-      })),
-  ]);
-  if (!isCurrent(root, generation)) return;
-  const doc = root.ownerDocument;
-  // A rebuild of the same project keeps unsaved panel choices, whether or
-  // not an analysis has been prepared.
-  const sameProject = projectContexts.get(root)?.projectID === projectID;
-  projectContexts.set(root, {
-    projectID,
-    projectName: details.project.name,
-    capturedPapers,
-  });
-  const content = doc.createDocumentFragment();
-
+  const header = element(doc, "div", "pprw-project-header");
   const toolbar = element(doc, "div", "pprw-project-toolbar");
-  toolbar.append(
-    button(doc, "All projects", () =>
-      renderResearchWorkspaceProjectSurface(root, { capturedPapers }),
-    ),
-    element(doc, "h2", "", details.project.name),
-    button(doc, "Write & run", () => openStudio(projectID)),
+  const back = button(doc, "← All projects", () =>
+    renderResearchWorkspaceProjectSurface(root, { capturedPapers }),
   );
-  content.append(toolbar);
-
-  const message = element(doc, "div", "pprw-status", "Project ready.");
-  message.dataset.projectMessage = "true";
-  message.dataset.kind = "success";
-  message.setAttribute("role", "status");
-  message.setAttribute("aria-live", "polite");
-  message.tabIndex = -1;
-  content.append(message);
-  // F232: unreadable artifacts and missing sources are listed, not hidden.
-  if (details.warnings.length) {
-    const warnings = element(doc, "ul", "pprw-project-warning");
-    warnings.setAttribute("aria-label", "Project warnings");
-    for (const warning of details.warnings.slice(0, 10)) {
-      warnings.append(element(doc, "li", "", warning));
-    }
-    if (details.warnings.length > 10) {
-      warnings.append(
-        element(doc, "li", "", `and ${details.warnings.length - 10} more`),
-      );
-    }
-    content.append(warnings);
-  }
-  const archived = archiveNotice(
+  back.setAttribute("aria-label", "All projects");
+  const title = element(doc, "h2", "", details.project.name);
+  title.title = details.project.name;
+  const studio = button(
     doc,
-    root,
-    details,
-    capturedPapers,
-    generation,
+    "Open Studio",
+    () => openStudio(details.project.projectID),
+    true,
   );
-  if (archived) content.append(archived);
+  studio.title =
+    "Write drafts, cite this project's Zotero papers, run notebooks, and ask the assistant in Research Studio.";
+  toolbar.append(back, title, studio);
+  // The research question reads as the project's subtitle. Without one,
+  // the line says where to add it.
+  const question = details.project.researchQuestion?.trim();
+  const questionLine = question
+    ? element(doc, "p", "pprw-project-question", question)
+    : element(
+        doc,
+        "p",
+        "pprw-project-question pprw-project-question--empty",
+        "No research question yet. Add one in Settings.",
+      );
+  const meta = element(
+    doc,
+    "p",
+    "pprw-project-meta",
+    `${papersLabel(details.members.length)}, ${details.artifacts.length} saved result${details.artifacts.length === 1 ? "" : "s"}`,
+  );
+  header.append(toolbar, questionLine, meta);
+  return header;
+}
 
+function renderProjectSettings(
+  doc: Document,
+  root: HTMLElement,
+  details: ResearchWorkspaceProjectDetails,
+  capturedPapers: readonly ResearchWorkspacePaper[],
+  generation: symbol,
+) {
+  const projectID = details.project.projectID;
   const settings = element(doc, "section", "pprw-project-panel");
   settings.append(element(doc, "h3", "", "Project settings"));
   const name = textInput(doc, "Project name", details.project.name);
@@ -293,149 +293,212 @@ async function renderProject(
       await renderResearchWorkspaceProjectSurface(root, { capturedPapers });
     }),
   );
-  settings.append(name, question, settingsActions);
-  content.append(settings);
-  const templateSettings = renderProjectTemplateSettings(
+  settings.append(
+    labeledField(doc, "Project name", name),
+    labeledField(
+      doc,
+      "Research question",
+      question,
+      "Project synthesis and other analyses start from this question.",
+    ),
+    settingsActions,
+  );
+  return settings;
+}
+
+/**
+ * The papers selected in Zotero that this project could add, with an add
+ * action, or a hint for bringing papers in.
+ */
+function renderAddFromZotero(
+  doc: Document,
+  root: HTMLElement,
+  details: ResearchWorkspaceProjectDetails,
+  addSelection: () => Promise<void>,
+) {
+  const section = element(doc, "section", "pprw-project-panel pprw-add-papers");
+  section.append(element(doc, "h3", "", "Add papers from Zotero"));
+  const selection = selectionWithPapers(root);
+  const members = new Set(details.members.map((member) => member.sourceID));
+  const fresh = selection
+    ? selection.sourceIDs.filter((sourceID) => !members.has(sourceID)).length
+    : 0;
+  if (!selection || !fresh) {
+    section.append(
+      element(
+        doc,
+        "p",
+        "pprw-muted",
+        selection
+          ? `The ${papersLabel(selection.titles.length)} selected in Zotero ${selection.titles.length === 1 ? "is" : "are"} already in this project.`
+          : "Select papers in the Zotero library, then choose Use Zotero selection at the top of this window. You can also right-click them and choose Open Research Workspace….",
+      ),
+    );
+    return section;
+  }
+  section.append(
+    element(
+      doc,
+      "p",
+      "pprw-muted",
+      `${papersLabel(fresh)} selected in Zotero ${fresh === 1 ? "is" : "are"} not in this project yet.`,
+    ),
+    button(
+      doc,
+      `Add ${papersLabel(fresh)} to this project`,
+      addSelection,
+      true,
+    ),
+  );
+  return section;
+}
+
+/** The analysis placeholder until the reader opens the tools. */
+function renderAnalysisPlaceholder(doc: Document) {
+  const placeholder = element(doc, "div", "pprw-analysis-placeholder");
+  placeholder.append(
+    element(doc, "h3", "", "Analysis tools"),
+    element(
+      doc,
+      "p",
+      "pprw-muted",
+      "Choose papers above and select Open analysis tools. Paper Pilot reads their PDFs on this computer. Nothing is sent to a model until you run a tool.",
+    ),
+  );
+  const tools = element(doc, "ul", "pprw-tool-preview");
+  for (const [name, text] of [
+    [
+      "Quick Compare and Evidence Matrix",
+      "compare methods, data, and results side by side, with quotes linked to PDF pages.",
+    ],
+    ["Project synthesis", "answers the research question across the papers."],
+    [
+      "Claim ledger, Methodology Audit, Reproducibility",
+      "examine one paper closely.",
+    ],
+  ]) {
+    const item = element(doc, "li", "");
+    item.append(element(doc, "strong", "", name), ` ${text}`);
+    tools.append(item);
+  }
+  placeholder.append(tools);
+  return placeholder;
+}
+
+async function renderProject(
+  root: HTMLElement,
+  projectID: string,
+  capturedPapers: readonly ResearchWorkspacePaper[],
+  _parentGeneration: symbol,
+  options: ProjectOpenOptions = {},
+) {
+  const generation = Symbol("project-render");
+  // Refreshing the same project keeps the analysis area, its running
+  // operation, and its last result in place. Panels around it are rebuilt.
+  // Ask before this render takes over the window, so "Keep running" leaves
+  // the current project fully working.
+  const previousOperations = activeOperationRoots.get(root);
+  const keepOperations = previousOperations?.dataset.projectId === projectID;
+  if (!keepOperations && !releaseOperations(root, "Opening another project"))
+    return;
+  generations.set(root, generation);
+  const [details, changeInboxResult, syncReceiptResult] = await Promise.all([
+    loadResearchWorkspaceProject(projectID),
+    // Only the Living Review panel needs the inbox. An unreadable file (for
+    // example after a downgrade) must not keep the whole project closed.
+    loadResearchWorkspaceChangeInbox(projectID)
+      .then((inbox) => ({ inbox, warning: undefined as string | undefined }))
+      .catch(() => ({
+        inbox: {
+          schemaVersion: RESEARCH_WORKSPACE_CHANGE_INBOX_SCHEMA_VERSION,
+          revision: 0,
+          projectID,
+          snapshots: [],
+          changes: [],
+        } satisfies ResearchWorkspaceChangeInboxFile,
+        warning:
+          "The Living Review change inbox could not be read. The file was preserved; Living Review stays unavailable until it is repaired.",
+      })),
+    listResearchWorkspaceZoteroSyncReceipts(projectID)
+      .then((receipts) => ({
+        receipts,
+        warning: undefined as string | undefined,
+      }))
+      .catch(() => ({
+        receipts: [] as ResearchWorkspaceZoteroSyncReceiptFile[],
+        warning:
+          "Sync receipt history could not be read. Existing receipt files were preserved; apply and undo remain unavailable until the history is repaired.",
+      })),
+  ]);
+  if (!isCurrent(root, generation)) return;
+  const doc = root.ownerDocument;
+  // A rebuild of the same project keeps unsaved panel choices and the open
+  // tab, whether or not an analysis has been prepared.
+  const previous = projectContexts.get(root);
+  const sameProject = previous?.projectID === projectID;
+  const tab: ResearchWorkspaceProjectTab = options.analyze
+    ? "analyze"
+    : sameProject
+      ? previous.tab
+      : DEFAULT_RESEARCH_WORKSPACE_PROJECT_TAB;
+  projectContexts.set(root, {
+    projectID,
+    projectName: details.project.name,
+    capturedPapers,
+    tab,
+  });
+  const suffix = tabSuffix(root);
+
+  const before = doc.createDocumentFragment();
+  before.append(renderProjectHeader(doc, root, details, capturedPapers));
+  const message = element(doc, "div", "pprw-status", "Project ready.");
+  message.dataset.projectMessage = "true";
+  message.dataset.kind = "success";
+  message.setAttribute("role", "status");
+  message.setAttribute("aria-live", "polite");
+  message.tabIndex = -1;
+  before.append(message);
+  // F232: unreadable artifacts and missing sources are listed, not hidden.
+  if (details.warnings.length) {
+    const warnings = element(doc, "ul", "pprw-project-warning");
+    warnings.setAttribute("aria-label", "Project warnings");
+    for (const warning of details.warnings.slice(0, 10)) {
+      warnings.append(element(doc, "li", "", warning));
+    }
+    if (details.warnings.length > 10) {
+      warnings.append(
+        element(doc, "li", "", `and ${details.warnings.length - 10} more`),
+      );
+    }
+    before.append(warnings);
+  }
+  const archived = archiveNotice(
     doc,
     root,
     details,
     capturedPapers,
     generation,
-    navigation,
   );
-  if (templateSettings) content.append(templateSettings);
-
-  content.append(
-    renderProjectCandidateInbox(doc, root, details, () =>
-      renderProject(root, projectID, capturedPapers, generation),
-    ),
-  );
-
-  if (capturedPapers.length) {
-    const captured = element(doc, "section", "pprw-project-panel");
-    captured.append(
-      element(doc, "h3", "", "Captured papers"),
-      element(
-        doc,
-        "p",
-        "pprw-muted",
-        `${capturedPapers.length} paper${capturedPapers.length === 1 ? "" : "s"} from this immutable selection can be analyzed in this project.`,
-      ),
-      button(
-        doc,
-        "Add captured papers",
-        async () => {
-          setMessage(root, "Adding captured papers…");
-          await addPapersToResearchWorkspaceProject(projectID, capturedPapers);
-          await renderProject(root, projectID, capturedPapers, generation);
-        },
-        true,
-      ),
-    );
-    content.append(captured);
-  }
-
-  content.append(
-    renderScreeningLog(
-      doc,
-      root,
-      details,
-      capturedPapers,
-      generation,
-      navigation,
-    ),
-    renderProjectPapers(
-      doc,
-      root,
-      details,
-      capturedPapers,
-      generation,
-      navigation,
-    ),
-  );
-  content.append(
-    renderLivingReviewPanel(
-      doc,
-      root,
-      details,
-      changeInboxResult.inbox,
-      capturedPapers,
-      generation,
-      navigation,
-      changeInboxResult.warning,
-    ),
-  );
-  content.append(
-    renderCitationHealthPanel(
-      doc,
-      root,
-      details,
-      capturedPapers,
-      generation,
-      navigation,
-    ),
-  );
-  content.append(
-    renderSafeZoteroSyncPanel(
-      doc,
-      root,
-      details,
-      syncReceiptResult.receipts,
-      capturedPapers,
-      generation,
-      syncReceiptResult.warning,
-      navigation,
-    ),
-  );
-  content.append(
-    renderContradictionGapPanel(
-      doc,
-      root,
-      details,
-      capturedPapers,
-      generation,
-      navigation,
-    ),
+  if (archived) before.append(archived);
+  before.append(
+    renderProjectTabBar(doc, {
+      idSuffix: suffix,
+      active: tab,
+      counts: {
+        papers: details.members.length,
+        results: details.artifacts.length,
+      },
+      onSelect: (next) => selectProjectTab(root, next),
+    }),
   );
 
-  const scope = element(doc, "section", "pprw-project-panel");
-  scope.append(
-    element(doc, "h3", "", "Analysis scope"),
-    element(
-      doc,
-      "p",
-      "pprw-muted",
-      "Choose up to 12 project sources for this batch. Excluded sources are omitted. Unreviewed or maybe papers are not counted as screening inclusions.",
-    ),
-  );
-  const checks: Array<{ sourceID: string; input: HTMLInputElement }> = [];
-  let defaults = 0;
-  for (const member of details.members) {
-    const source = details.sources.find(
-      (entry) => entry.sourceID === member.sourceID,
-    );
-    const label = element(doc, "label", "pprw-row");
-    const input = element(doc, "input", "");
-    input.type = "checkbox";
-    input.disabled = isResearchWorkspaceMemberExcluded(member);
-    input.checked = !input.disabled && defaults++ < 12;
-    input.setAttribute(
-      "aria-label",
-      `Analyze ${source?.title ?? member.sourceID}`,
-    );
-    input.dataset.restoreKey = `scope:${member.sourceID}`;
-    label.append(
-      input,
-      element(
-        doc,
-        "span",
-        "",
-        `${source?.title ?? member.sourceID} · ${input.disabled ? "excluded" : (source?.availability ?? "unavailable")}`,
-      ),
-    );
-    scope.append(label);
-    checks.push({ sourceID: member.sourceID, input });
-  }
+  const panels = {
+    papers: renderProjectTabPanel(doc, suffix, "papers"),
+    results: renderProjectTabPanel(doc, suffix, "results"),
+    checks: renderProjectTabPanel(doc, suffix, "checks"),
+    settings: renderProjectTabPanel(doc, suffix, "settings"),
+  };
+
   const operations =
     keepOperations && previousOperations
       ? previousOperations
@@ -443,6 +506,8 @@ async function renderProject(
   operations.dataset.projectId = projectID;
   operations.tabIndex = -1;
   operations.setAttribute("aria-label", "Analysis");
+  if (!operations.childElementCount)
+    operations.append(renderAnalysisPlaceholder(doc));
   const activate = async (
     papers: readonly ResearchWorkspacePaper[],
     scopeLabel: string,
@@ -454,6 +519,7 @@ async function renderProject(
       );
     if (!releaseOperations(root, "Preparing a new analysis scope"))
       return false;
+    selectProjectTab(root, "analyze");
     activeOperationRoots.set(root, operations);
     await renderResearchWorkspaceView(operations, undefined, {
       preloadedPaper: papers[0],
@@ -466,8 +532,8 @@ async function renderProject(
       // New artifacts unlock prerequisite-gated panels.
       onRunSettled: () => void refreshResearchWorkspaceProject(root),
     });
-    // The analysis panel sits below the project panels. Bring it into view
-    // and move focus there so keyboard and screen-reader users follow.
+    // The analysis panel sits below the scope. Bring it into view and move
+    // focus there so keyboard and screen-reader users follow.
     operations.scrollIntoView?.({ block: "start" });
     operations.focus?.({ preventScroll: true });
     return true;
@@ -480,6 +546,7 @@ async function renderProject(
     }
     if (plan.kind === "panel") {
       const panel = root.querySelector<HTMLElement>(`.${plan.panelClass}`);
+      revealProjectPanel(root, panel);
       const target = (
         Array.from(
           panel?.querySelectorAll("button") ?? [],
@@ -511,7 +578,8 @@ async function renderProject(
       throw new Error(
         `Rerunning “${artifact.title}” needs ${plan.minSources} readable source${plan.minSources === 1 ? "" : "s"}; ${loaded.papers.length} loaded.${loaded.skipped.length ? ` Omitted: ${loaded.skipped.join("; ")}` : ""}`,
       );
-    if (!(await activate(loaded.papers, `Rerun · ${artifact.title}`))) return;
+    if (!(await activate(loaded.papers, `rerun of “${artifact.title}”`)))
+      return;
     const started = triggerResearchWorkspaceViewAction(
       operations,
       plan.buttonLabel,
@@ -524,24 +592,310 @@ async function renderProject(
       started ? "info" : "warning",
     );
   };
-  content.append(
+
+  /** Adds the Zotero selection (read once) and opens the tools with it. */
+  const addSelection = async () => {
+    if (isResearchWorkspaceOwnerActive({ kind: "project", projectID }))
+      throw new Error("Finish or cancel the active project analysis first.");
+    // Always the window's current selection. Papers read for an earlier
+    // selection are never added in its place.
+    const selection = selectionWithPapers(root);
+    if (!selection)
+      throw new Error(
+        "Select papers in the Zotero library, then choose Use Zotero selection.",
+      );
+    const loaded = await loadSelectionPapers(selection, (text) =>
+      setMessage(root, text),
+    );
+    setMessage(root, "Adding the selected papers…");
+    await addPapersToResearchWorkspaceProject(projectID, loaded.papers);
+    const refreshed = await loadResearchWorkspaceProject(projectID);
+    const papers = loaded.papers.filter((paper) =>
+      refreshed.members.some(
+        (member) =>
+          member.sourceID === paper.sourceID &&
+          !isResearchWorkspaceMemberExcluded(member),
+      ),
+    );
+    await activate(papers, SELECTION_SCOPE_LABEL);
+    // New members change the revisions and the member lists. The
+    // re-render keeps the analysis area for the same project.
+    await refreshResearchWorkspaceProject(root);
+    setMessage(
+      root,
+      `${addedPapersMessage("Added", loaded.papers.length, loaded.unread)} The analysis tools below use them.`,
+      loaded.unread ? "warning" : "success",
+    );
+  };
+
+  // Analyze: choose papers, then the analysis tools.
+  const scope = renderAnalysisScope(doc, root, details, {
+    projectID,
+    activate,
+    addSelection,
+  });
+
+  // Papers: bring papers in, track reading, and screen them.
+  panels.papers.append(
+    renderAddFromZotero(doc, root, details, addSelection),
+    renderProjectPapers(
+      doc,
+      root,
+      details,
+      capturedPapers,
+      generation,
+      navigation,
+    ),
+    renderScreeningLog(
+      doc,
+      root,
+      details,
+      capturedPapers,
+      generation,
+      navigation,
+    ),
+    renderProjectCandidateInbox(doc, root, details, () =>
+      renderProject(root, projectID, capturedPapers, generation),
+    ),
+  );
+  // Results: every saved analysis.
+  panels.results.append(
     renderArtifactHistory(doc, root, details, { onRerun: rerunArtifact }),
   );
-  scope.append(
+  // Checks: reviews that read saved results and Zotero metadata.
+  panels.checks.append(
+    renderContradictionGapPanel(
+      doc,
+      root,
+      details,
+      capturedPapers,
+      generation,
+      navigation,
+    ),
+    renderCitationHealthPanel(
+      doc,
+      root,
+      details,
+      capturedPapers,
+      generation,
+      navigation,
+    ),
+    renderLivingReviewPanel(
+      doc,
+      root,
+      details,
+      changeInboxResult.inbox,
+      capturedPapers,
+      generation,
+      navigation,
+      changeInboxResult.warning,
+    ),
+  );
+  // Settings: the project itself, its template, and Zotero writes.
+  panels.settings.append(
+    renderProjectSettings(doc, root, details, capturedPapers, generation),
+  );
+  const templateSettings = renderProjectTemplateSettings(
+    doc,
+    root,
+    details,
+    capturedPapers,
+    generation,
+    navigation,
+  );
+  if (templateSettings) panels.settings.append(templateSettings);
+  panels.settings.append(
+    renderSafeZoteroSyncPanel(
+      doc,
+      root,
+      details,
+      syncReceiptResult.receipts,
+      capturedPapers,
+      generation,
+      syncReceiptResult.warning,
+      navigation,
+    ),
+  );
+
+  trackDirtyInputs(root);
+  const surfaceState = sameProject
+    ? captureSurfaceState(root, previousOperations ?? operations)
+    : undefined;
+  // A kept analysis area stays in its panel, so a running tool keeps its
+  // focus and output. Everything around it is replaced.
+  const keptPanel = keepOperations
+    ? operations.parentElement?.closest<HTMLElement>(".pprw-project-tabpanel")
+    : undefined;
+  const analyze =
+    keptPanel?.parentElement === root
+      ? keptPanel
+      : renderProjectTabPanel(doc, suffix, "analyze");
+  for (const child of Array.from(analyze.children)) {
+    if (child !== operations) child.remove();
+  }
+  analyze.insertBefore(scope.section, analyze.firstChild);
+  if (operations.parentElement !== analyze) analyze.append(operations);
+  for (const child of Array.from(root.children)) {
+    if (child !== analyze) child.remove();
+  }
+  root.insertBefore(before, analyze.parentElement === root ? analyze : null);
+  if (analyze.parentElement !== root) root.append(analyze);
+  root.append(panels.papers, panels.results, panels.checks, panels.settings);
+  showProjectTab(root, tab);
+  if (surfaceState) restoreSurfaceState(root, operations, surfaceState);
+  scope.sync();
+  if (options.message)
+    setMessage(root, options.message.text, options.message.kind);
+  if (options.analyze) {
+    // Papers excluded in screening stay out of the analysis.
+    const included = new Set(
+      details.members
+        .filter((member) => !isResearchWorkspaceMemberExcluded(member))
+        .map((member) => member.sourceID),
+    );
+    const papers = options.analyze.papers.filter((paper) =>
+      included.has(paper.sourceID),
+    );
+    if (papers.length) await activate(papers, options.analyze.scopeLabel);
+  }
+}
+
+/** The Analyze tab's paper choice and the action that opens the tools. */
+function renderAnalysisScope(
+  doc: Document,
+  root: HTMLElement,
+  details: ResearchWorkspaceProjectDetails,
+  actions: {
+    projectID: string;
+    activate: (
+      papers: readonly ResearchWorkspacePaper[],
+      scopeLabel: string,
+    ) => Promise<boolean>;
+    addSelection: () => Promise<void>;
+  },
+) {
+  const { projectID, activate } = actions;
+  const section = element(
+    doc,
+    "section",
+    "pprw-project-panel pprw-analyze-scope",
+  );
+  const heading = element(doc, "div", "pprw-panel-heading");
+  const count = element(doc, "p", "pprw-muted pprw-scope-count");
+  heading.append(element(doc, "h3", "", "Choose papers to analyze"), count);
+  section.append(heading);
+  const selection: ResearchWorkspaceSurfaceSelection | undefined =
+    selectionWithPapers(root);
+  if (!details.members.length) {
+    section.append(
+      element(
+        doc,
+        "p",
+        "pprw-muted",
+        "This project has no papers yet. Add papers from the Zotero library to analyze them.",
+      ),
+    );
+    if (selection)
+      section.append(
+        button(
+          doc,
+          `Add the ${papersLabel(selection.titles.length)} selected in Zotero`,
+          actions.addSelection,
+          true,
+        ),
+      );
+    else
+      section.append(
+        element(
+          doc,
+          "p",
+          "pprw-muted",
+          "Select papers in the Zotero library, then choose Use Zotero selection at the top of this window.",
+        ),
+      );
+    return { section, sync: () => undefined };
+  }
+  const list = element(doc, "div", "pprw-scope-list");
+  const checks: Array<{ sourceID: string; input: HTMLInputElement }> = [];
+  let defaults = 0;
+  for (const member of details.members) {
+    const source = details.sources.find(
+      (entry) => entry.sourceID === member.sourceID,
+    );
+    const label = element(doc, "label", "pprw-scope-item");
+    const input = element(doc, "input", "");
+    input.type = "checkbox";
+    input.disabled = isResearchWorkspaceMemberExcluded(member);
+    input.checked = !input.disabled && defaults++ < ANALYSIS_BATCH_LIMIT;
+    input.setAttribute(
+      "aria-label",
+      `Analyze ${source?.title ?? member.sourceID}`,
+    );
+    input.dataset.restoreKey = `scope:${member.sourceID}`;
+    const state = input.disabled
+      ? "excluded in screening"
+      : source?.availability === "ready"
+        ? ""
+        : (source?.availability ?? "unavailable");
+    label.append(
+      input,
+      element(doc, "span", "", source?.title ?? member.sourceID),
+    );
+    if (state) label.append(element(doc, "span", "pprw-muted", state));
+    list.append(label);
+    checks.push({ sourceID: member.sourceID, input });
+  }
+  const selected = () => checks.filter((entry) => entry.input.checked);
+  const sync = () => {
+    const chosen = selected().length;
+    count.textContent = `${chosen} of ${checks.length} selected. Up to ${ANALYSIS_BATCH_LIMIT} at a time.`;
+  };
+  list.addEventListener("change", sync);
+  const choices = element(doc, "div", "pprw-row pprw-scope-choices");
+  const setAll = (checked: boolean) => {
+    let enabled = 0;
+    for (const entry of checks) {
+      if (entry.input.disabled) continue;
+      entry.input.checked = checked && enabled++ < ANALYSIS_BATCH_LIMIT;
+      entry.input.dataset.dirty = "true";
+    }
+    sync();
+  };
+  choices.append(
+    plainButton(
+      doc,
+      "Select all",
+      () => setAll(true),
+      "pprw-button pp-btn pp-btn--ghost",
+    ),
+    plainButton(
+      doc,
+      "Clear",
+      () => setAll(false),
+      "pprw-button pp-btn pp-btn--ghost",
+    ),
+  );
+  const run = element(doc, "div", "pprw-row pprw-scope-actions");
+  run.append(
     button(
       doc,
-      "Prepare selected project papers",
+      "Open analysis tools",
       async () => {
         if (isResearchWorkspaceOwnerActive({ kind: "project", projectID }))
           throw new Error(
             "Finish or cancel the active project analysis before changing its scope.",
           );
-        const sourceIDs = checks
-          .filter((entry) => entry.input.checked)
-          .map((entry) => entry.sourceID);
+        const sourceIDs = selected().map((entry) => entry.sourceID);
         if (!sourceIDs.length)
-          throw new Error("Select one or more project sources.");
-        setMessage(root, "Preparing the selected project PDFs…");
+          throw new Error("Select one or more papers to analyze.");
+        if (sourceIDs.length > ANALYSIS_BATCH_LIMIT)
+          throw new Error(
+            `Select up to ${ANALYSIS_BATCH_LIMIT} papers for one analysis.`,
+          );
+        setMessage(
+          root,
+          `Reading ${papersLabel(sourceIDs.length)} on this computer…`,
+        );
         const loaded = await loadResearchWorkspaceProjectPapers(
           projectID,
           sourceIDs,
@@ -549,39 +903,33 @@ async function renderProject(
         if (!(await activate(loaded.papers, "Selected project papers"))) return;
         setMessage(
           root,
-          `${loaded.papers.length} exact PDFs ready in the analysis panel below.${loaded.skipped.length ? ` Omitted: ${loaded.skipped.join("; ")}` : ""}`,
+          `${papersLabel(loaded.papers.length)} ready. Pick a tool below.${loaded.skipped.length ? ` Left out: ${loaded.skipped.join("; ")}` : ""}`,
           loaded.skipped.length ? "warning" : "success",
         );
       },
       true,
     ),
   );
-  if (capturedPapers.length)
-    scope.append(
-      button(doc, `Use captured PDFs (${capturedPapers.length})`, async () => {
-        if (isResearchWorkspaceOwnerActive({ kind: "project", projectID }))
-          throw new Error(
-            "Finish or cancel the active project analysis first.",
-          );
-        await addPapersToResearchWorkspaceProject(projectID, capturedPapers);
-        const refreshed = await loadResearchWorkspaceProject(projectID);
-        const papers = capturedPapers.filter((paper) =>
-          refreshed.members.some(
-            (member) =>
-              member.sourceID === paper.sourceID &&
-              !isResearchWorkspaceMemberExcluded(member),
-          ),
-        );
-        await activate(papers, "Captured PDFs");
-        // New members change the revisions and the member lists. The
-        // re-render keeps the analysis area for the same project.
-        await refreshResearchWorkspaceProject(root);
-      }),
+  const members = new Set(details.members.map((member) => member.sourceID));
+  if (selection) {
+    const inProject = selection.sourceIDs.every((sourceID) =>
+      members.has(sourceID),
     );
+    run.append(
+      button(
+        doc,
+        inProject
+          ? `Analyze the Zotero selection (${selection.titles.length})`
+          : `Add and analyze the Zotero selection (${selection.titles.length})`,
+        actions.addSelection,
+      ),
+    );
+  }
+  section.append(list, choices, run);
   if (details.project.comparisonQuestions?.length) {
-    scope.append(element(doc, "h4", "", "Comparison questions from chat"));
+    section.append(element(doc, "h4", "", "Comparison questions from chat"));
     for (const question of details.project.comparisonQuestions)
-      scope.append(
+      section.append(
         element(
           doc,
           "p",
@@ -590,375 +938,56 @@ async function renderProject(
         ),
       );
   }
-  content.append(scope);
-  trackDirtyInputs(root);
-  const surfaceState = sameProject
-    ? captureSurfaceState(root, previousOperations ?? operations)
-    : undefined;
-  if (keepOperations) {
-    for (const child of Array.from(root.children)) {
-      if (child !== operations) child.remove();
-    }
-    root.insertBefore(content, operations);
-  } else {
-    root.replaceChildren(content, operations);
-  }
-  if (surfaceState) restoreSurfaceState(root, operations, surfaceState);
-}
-
-const dirtyTrackedRoots = new WeakSet<HTMLElement>();
-
-/** Marks text a reader typed, so a panel rebuild can keep it. */
-function trackDirtyInputs(root: HTMLElement) {
-  if (dirtyTrackedRoots.has(root)) return;
-  dirtyTrackedRoots.add(root);
-  // Text fields, selects (a screening decision), and checkboxes (the
-  // analysis scope) all hold unsaved choices.
-  const markDirty = (event: Event) => {
-    const target = event.target as HTMLElement | null;
-    if (
-      target?.tagName === "TEXTAREA" ||
-      target?.tagName === "INPUT" ||
-      target?.tagName === "SELECT"
-    )
-      target.dataset.dirty = "true";
-  };
-  root.addEventListener("input", markDirty);
-  root.addEventListener("change", markDirty);
-}
-
-function isToggle(node: HTMLElement) {
-  const type = (node as HTMLInputElement).type;
-  return node.tagName === "INPUT" && (type === "checkbox" || type === "radio");
-}
-
-interface KeyedControl {
-  node: HTMLElement;
-  key: string;
-  index: number;
-}
-
-/**
- * Panel controls with a stable key: panel heading, tag, and label, plus
- * the position among equal keys (one "Record decision" per paper row).
- */
-function keyedControls(root: HTMLElement, operations: HTMLElement) {
-  const counts = new Map<string, number>();
-  const controls: KeyedControl[] = [];
-  const nodes = Array.from(
-    root.querySelectorAll("button, input, textarea, select, summary"),
-  ) as HTMLElement[];
-  for (const node of nodes) {
-    if (operations.contains(node)) continue;
-    // A source control carries a stable key of source ID and purpose.
-    if (node.dataset.restoreKey) {
-      controls.push({ node, key: `key:${node.dataset.restoreKey}`, index: 0 });
-      continue;
-    }
-    // A checkbox is named by its wrapping label; a select by its aria-label.
-    const label =
-      node.getAttribute("aria-label") ||
-      (node as HTMLInputElement).placeholder ||
-      (isToggle(node)
-        ? node.closest("label")?.textContent?.trim()
-        : node.textContent?.trim()) ||
-      "";
-    if (!label) continue;
-    const heading =
-      node.closest("section")?.querySelector("h3, h2")?.textContent?.trim() ??
-      "";
-    const key = `${heading}|${node.tagName}|${label}`;
-    const index = counts.get(key) ?? 0;
-    counts.set(key, index + 1);
-    controls.push({ node, key, index });
-  }
-  return controls;
-}
-
-function captureSurfaceState(root: HTMLElement, operations: HTMLElement) {
-  const active = root.ownerDocument.activeElement;
-  const controls = keyedControls(root, operations);
-  const focused = controls.find((entry) => entry.node === active);
-  return {
-    focused: focused && { key: focused.key, index: focused.index },
-    focusWasInPanels: Boolean(
-      active && root.contains(active) && !operations.contains(active),
-    ),
-    dirty: controls
-      .filter(
-        (entry) =>
-          entry.node.dataset.dirty === "true" &&
-          (entry.node as HTMLInputElement).type !== "file",
-      )
-      .map((entry) => ({
-        key: entry.key,
-        index: entry.index,
-        toggle: isToggle(entry.node),
-        value: (entry.node as HTMLInputElement).value,
-        checked: Boolean((entry.node as HTMLInputElement).checked),
-      })),
-  };
-}
-
-function restoreSurfaceState(
-  root: HTMLElement,
-  operations: HTMLElement,
-  state: ReturnType<typeof captureSurfaceState>,
-) {
-  const controls = keyedControls(root, operations);
-  const find = (key: string, index: number) =>
-    controls.find((entry) => entry.key === key && entry.index === index)?.node;
-  // Values are restored without events, so no change handler (such as an
-  // autosave) runs for a choice the reader has not confirmed.
-  for (const entry of state.dirty) {
-    const node = find(entry.key, entry.index) as
-      | HTMLInputElement
-      | HTMLSelectElement
-      | undefined;
-    if (!node) continue;
-    if (entry.toggle) {
-      if (isToggle(node) && !(node as HTMLInputElement).disabled)
-        (node as HTMLInputElement).checked = entry.checked;
-    } else if (node.tagName === "SELECT") {
-      const select = node as HTMLSelectElement;
-      if (
-        (Array.from(select.options) as HTMLOptionElement[]).some(
-          (option) => option.value === entry.value,
-        )
-      ) {
-        select.value = entry.value;
-        // Filters render their result in the change handler, which has no
-        // side effects, so it runs again for the restored value.
-        const EventClass = root.ownerDocument.defaultView?.Event;
-        if (select.dataset.restoreRefresh === "true" && EventClass)
-          select.dispatchEvent(new EventClass("change"));
-      }
-    } else if (node.value !== entry.value) {
-      node.value = entry.value;
-    }
-    node.dataset.dirty = "true";
-  }
-  if (!state.focusWasInPanels) return;
-  const target = state.focused
-    ? (find(state.focused.key, state.focused.index) as
-        | HTMLButtonElement
-        | undefined)
-    : undefined;
-  if (target && !target.disabled) {
-    target.focus();
-    return;
-  }
-  // The control is gone (a row was resolved), so focus the status line.
-  root.querySelector<HTMLElement>("[data-project-message]")?.focus();
-}
-
-function renderHomeCards(
-  doc: Document,
-  root: HTMLElement,
-  home: ResearchWorkspaceProjectHome,
-  capturedPapers: readonly ResearchWorkspacePaper[],
-  generation: symbol,
-) {
-  const section = element(doc, "section", "pprw-project-panel");
-  section.append(element(doc, "h2", "", "Recent projects"));
-  if (!home.projects.length) {
-    section.append(
-      element(doc, "p", "pprw-muted", "Create the first research project."),
-    );
-    return section;
-  }
-  const grid = element(doc, "div", "pprw-project-grid");
-  for (const project of home.projects) {
-    const card = element(doc, "article", "pprw-project-card");
-    card.append(
-      element(doc, "h3", "", project.name),
-      element(
-        doc,
-        "p",
-        "pprw-muted",
-        `${project.memberCount} papers · ${project.staleArtifactCount} stale · updated ${new Date(project.updatedAt).toLocaleDateString()}`,
-      ),
-    );
-    const actions = element(doc, "div", "pprw-row");
-    actions.append(
-      button(doc, "Open", () =>
-        renderProject(root, project.projectID, capturedPapers, generation),
-      ),
-    );
-    if (capturedPapers.length) {
-      actions.append(
-        button(
-          doc,
-          "Add captured papers",
-          async () => {
-            await addPapersToResearchWorkspaceProject(
-              project.projectID,
-              capturedPapers,
-            );
-            await renderProject(
-              root,
-              project.projectID,
-              capturedPapers,
-              generation,
-            );
-          },
-          true,
-        ),
-      );
-    }
-    card.append(actions);
-    grid.append(card);
-  }
-  section.append(grid);
-  return section;
-}
-
-function renderArchivedProjects(
-  doc: Document,
-  root: HTMLElement,
-  home: ResearchWorkspaceProjectHome,
-  capturedPapers: readonly ResearchWorkspacePaper[],
-  generation: symbol,
-) {
-  const archived = element(doc, "details", "pprw-project-panel");
-  archived.append(
-    element(
-      doc,
-      "summary",
-      "pprw-section-title",
-      `Archived projects · ${home.archivedProjects.length}`,
-    ),
-  );
-  const list = element(doc, "ul", "pprw-capture-list pprw-archived-list");
-  for (const project of home.archivedProjects) {
-    const item = element(doc, "li", "pprw-archived-project");
-    item.append(
-      element(
-        doc,
-        "span",
-        "",
-        `${project.name}${project.archivedAt ? ` · archived ${new Date(project.archivedAt).toLocaleDateString()}` : ""}`,
-      ),
-      button(doc, "Open", () =>
-        renderProject(root, project.projectID, capturedPapers, generation),
-      ),
-      button(doc, "Restore", async () => {
-        await restoreResearchWorkspaceProject(project.projectID);
-        await renderResearchWorkspaceProjectSurface(root, { capturedPapers });
-        setMessage(
-          root,
-          `Restored “${project.name}” to Recent projects.`,
-          "success",
-        );
-      }),
-    );
-    list.append(item);
-  }
-  archived.append(list);
-  return archived;
+  return { section, sync };
 }
 
 export async function renderResearchWorkspaceProjectSurface(
   root: HTMLElement,
-  options: { capturedPapers?: readonly ResearchWorkspacePaper[] } = {},
+  options: {
+    capturedPapers?: readonly ResearchWorkspacePaper[];
+    selection?: ResearchWorkspaceSurfaceSelection;
+    /** The project the reader came from, offered first for adding. */
+    preferredProjectID?: string;
+  } = {},
 ) {
   if (!releaseOperations(root, "Opening all projects")) return;
   projectContexts.delete(root);
   root.dataset.researchWorkspaceProjectSurface = "true";
+  if (options.selection) surfaceSelections.set(root, options.selection);
+  const selection = surfaceSelections.get(root);
   const generation = Symbol("project-surface");
   generations.set(root, generation);
-  const capturedPapers = options.capturedPapers ?? [];
+  // Read papers belong to the current selection only, so a project opened
+  // from here cannot carry papers of a replaced selection.
+  const capturedPapers = selection
+    ? (selection.loaded()?.papers ?? [])
+    : (options.capturedPapers ?? []);
   const doc = root.ownerDocument;
   root.replaceChildren(
     element(doc, "div", "pprw-window-loading", "Loading projects…"),
   );
   try {
-    const home = await loadResearchWorkspaceHome();
+    const [home, projectsWithSelection] = await Promise.all([
+      loadResearchWorkspaceHome(),
+      // Projects that already hold the whole selection are offered first,
+      // so the same papers do not become a duplicate project.
+      selection?.sourceIDs.length
+        ? findResearchWorkspaceProjectsWithSources(selection.sourceIDs)
+        : Promise.resolve([]),
+    ]);
     if (!isCurrent(root, generation)) return;
-    root.replaceChildren();
-    const intro = element(doc, "section", "pprw-home");
-    intro.append(
-      element(doc, "h2", "", "Workspace home"),
-      element(
-        doc,
-        "p",
-        "pprw-muted",
-        "Projects retain exact Zotero sources, versioned artifacts, and run history independently of the current selection.",
-      ),
-    );
-    const metrics = element(doc, "div", "pprw-home-metrics");
-    metrics.append(
-      metric(doc, home.projects.length, "Active projects"),
-      metric(doc, home.dueMasteryReviews, "Mastery reviews due"),
-      metric(doc, home.staleArtifacts, "Stale artifacts"),
-    );
-    intro.append(metrics);
-    root.append(intro);
-    if (capturedPapers.length) {
-      root.append(renderSelectionReview(doc, capturedPapers));
-    }
-    root.append(
-      renderProjectTemplateCreator(
-        doc,
+    root.replaceChildren(
+      ...renderProjectHome({
         root,
-        capturedPapers,
+        home,
         generation,
         navigation,
-      ),
+        selection,
+        capturedPapers,
+        projectsWithSelection,
+        preferredProjectID: options.preferredProjectID,
+      }),
     );
-
-    const create = element(doc, "section", "pprw-project-panel");
-    create.append(element(doc, "h2", "", "Create blank project"));
-    const name = textInput(
-      doc,
-      "Project name",
-      capturedPapers.length
-        ? `Research set · ${new Date().toLocaleDateString()}`
-        : "",
-    );
-    const question = textInput(doc, "Research question (optional)");
-    create.append(
-      name,
-      question,
-      button(
-        doc,
-        capturedPapers.length
-          ? "Create with captured papers"
-          : "Create empty project",
-        async () => {
-          try {
-            const created = await createResearchWorkspaceProject({
-              name: name.value,
-              researchQuestion: question.value || undefined,
-              papers: capturedPapers,
-            });
-            await renderProject(
-              root,
-              created.project.projectID,
-              capturedPapers,
-              generation,
-            );
-          } catch (error) {
-            const message = element(
-              doc,
-              "p",
-              "pprw-project-warning",
-              error instanceof Error ? error.message : String(error),
-            );
-            create.append(message);
-            logProjectError(error);
-          }
-        },
-        true,
-      ),
-    );
-    root.append(create);
-    root.append(renderHomeCards(doc, root, home, capturedPapers, generation));
-    if (home.archivedProjects.length) {
-      root.append(
-        renderArchivedProjects(doc, root, home, capturedPapers, generation),
-      );
-    }
   } catch (error) {
     if (!isCurrent(root, generation)) return;
     logProjectError(error);

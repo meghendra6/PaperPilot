@@ -3,6 +3,7 @@ import type { ResearchWorkspacePaper } from "./paperSource";
 import type { ResearchWorkspaceProjectDetails } from "./projectController";
 import { confirmCancelRunningAnalysis } from "./runGuard";
 import { runResearchWorkspaceSurfaceAction } from "./surfaceAction";
+import type { ResearchWorkspaceSurfaceSelection } from "./surfaceSelection";
 import {
   disposeResearchWorkspaceView,
   isResearchWorkspaceViewRunning,
@@ -10,6 +11,57 @@ import {
 export const generations = new WeakMap<HTMLElement, symbol>();
 
 export const activeOperationRoots = new WeakMap<HTMLElement, HTMLElement>();
+
+/** The Zotero selection the window offers on each surface root. */
+export const surfaceSelections = new WeakMap<
+  HTMLElement,
+  ResearchWorkspaceSurfaceSelection
+>();
+
+/** The selected papers that have a PDF, or undefined without a selection. */
+export function selectionWithPapers(
+  root: HTMLElement,
+): ResearchWorkspaceSurfaceSelection | undefined {
+  const selection = surfaceSelections.get(root);
+  return selection?.titles.length ? selection : undefined;
+}
+
+/**
+ * Reads the selected PDFs and reports progress through `report`. Throws
+ * when none of them could be read. `unread` counts the PDFs that failed to
+ * load, not the items the launcher skipped.
+ */
+export async function loadSelectionPapers(
+  selection: ResearchWorkspaceSurfaceSelection,
+  report: (message: string) => void,
+): Promise<{ papers: readonly ResearchWorkspacePaper[]; unread: number }> {
+  if (!selection.loaded())
+    report(
+      `Reading ${selection.titles.length} PDF${selection.titles.length === 1 ? "" : "s"} on this computer…`,
+    );
+  const loaded = await selection.load();
+  if (!loaded.papers.length)
+    throw new Error(
+      "None of the selected PDFs could be read. Check that the files exist in Zotero, then try again.",
+    );
+  return {
+    papers: loaded.papers,
+    unread: Math.max(0, loaded.skipped.length - selection.skipped.length),
+  };
+}
+
+/** For example "Created “Review” with 3 papers. 1 PDF could not be read." */
+export function addedPapersMessage(
+  lead: string,
+  added: number,
+  unread: number,
+): string {
+  return `${lead} ${added} paper${added === 1 ? "" : "s"}.${
+    unread
+      ? ` ${unread} PDF${unread === 1 ? "" : "s"} could not be read and ${unread === 1 ? "was" : "were"} left out.`
+      : ""
+  }`;
+}
 
 export function disposeOperations(root: HTMLElement) {
   const operations = activeOperationRoots.get(root);
@@ -65,10 +117,57 @@ export function button(
         trigger: node,
         action,
         onError: (error) => reportProjectError(root, error),
+        label: node.getAttribute("aria-label") || node.textContent || undefined,
+        // A click that has to wait is announced, so the button does not
+        // look broken while an earlier action reads PDFs or opens a window.
+        onBusy: (active) =>
+          setMessage(
+            root,
+            active
+              ? `Still working on “${active}”. Try again when it finishes.`
+              : "Still working on the previous action. Try again when it finishes.",
+          ),
       });
     },
     `pprw-button pp-btn ${primary ? "pp-btn--primary" : "pp-btn--secondary"}`,
   );
+}
+
+/** A visible label around a form control. */
+export function labeledField(
+  doc: Document,
+  label: string,
+  control: HTMLElement,
+  hint?: string,
+) {
+  const field = element(doc, "label", "pprw-field");
+  field.append(element(doc, "span", "pprw-field-label", label), control);
+  if (hint) field.append(element(doc, "span", "pprw-field-hint", hint));
+  return field;
+}
+
+/** A status line next to a form, so its errors stay beside the control. */
+export function formStatus(doc: Document) {
+  const node = element(doc, "p", "pprw-form-status");
+  node.setAttribute("role", "status");
+  node.setAttribute("aria-live", "polite");
+  const show = (text: string, kind: string) => {
+    node.setAttribute("role", kind === "error" ? "alert" : "status");
+    node.textContent = text;
+    node.dataset.kind = kind;
+  };
+  return {
+    node,
+    info: (text: string) => show(text, "info"),
+    error(error: unknown) {
+      show(error instanceof Error ? error.message : String(error), "error");
+      logProjectError(error);
+    },
+    clear() {
+      node.textContent = "";
+      delete node.dataset.kind;
+    },
+  };
 }
 
 export function textInput(doc: Document, placeholder: string, value = "") {
@@ -134,13 +233,6 @@ export function metric(doc: Document, value: number, label: string) {
   });
 }
 
-export function capabilityPresetIDs(value: string) {
-  return value
-    .split(",")
-    .map((entry) => entry.trim())
-    .filter(Boolean);
-}
-
 export function markTemplateRecommendation(
   doc: Document,
   section: HTMLElement,
@@ -155,12 +247,23 @@ export function markTemplateRecommendation(
     element(doc, "span", "pprw-template-recommended-badge", "Recommended"),
   );
 }
+export interface ProjectOpenOptions {
+  /** Papers that are already read; the analysis tools open with them. */
+  analyze?: {
+    papers: readonly ResearchWorkspacePaper[];
+    scopeLabel: string;
+  };
+  /** A status line shown once the project is drawn. */
+  message?: { text: string; kind: "info" | "success" | "warning" };
+}
+
 export interface ProjectNavigation {
   renderProject(
     root: HTMLElement,
     projectID: string,
     papers: readonly ResearchWorkspacePaper[],
     generation: symbol,
+    options?: ProjectOpenOptions,
   ): Promise<void>;
   renderHome(
     root: HTMLElement,

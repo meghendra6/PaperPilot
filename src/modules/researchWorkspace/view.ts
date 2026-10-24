@@ -73,6 +73,21 @@ export interface ResearchWorkspaceViewOptions {
   deferPaperLoad?: boolean;
   /** Called after an analysis finished, fully or partly. */
   onRunSettled?: () => void;
+  /** Multi-paper work kept when only the single-paper choice changes. */
+  keep?: ResearchWorkspaceViewKeep;
+}
+
+interface ResearchWorkspaceViewKeep {
+  synthesisQuestion: string;
+  crossQuestion: string;
+  crossAnswer: string;
+  crossConfidence: string;
+  quizOpen: boolean;
+  session: Pick<
+    ViewRuntime,
+    "crossSessionID" | "crossSessionRevision" | "crossSubmissionID"
+  >;
+  result: Node[];
 }
 
 const runtime = new WeakMap<HTMLElement, ViewRuntime>();
@@ -110,6 +125,56 @@ const SINGLE_RESULT_ARTIFACT_TYPES: Record<
   reproducibility: "reproducibility",
   "paper-to-code": "paper-to-code",
 };
+
+/** One line per tool, shown next to its button. Labels stay unchanged. */
+const TOOL_DESCRIPTIONS = new Map<string, string>([
+  ["Extract claims", "List the paper's claims with the quotes behind them."],
+  ["Open Critical Read", "Read critically, step by step, in the Reader pane."],
+  ["Methodology Audit", "Check design, sampling, and analysis for weaknesses."],
+  ["Reproducibility", "Score whether code, data, and settings are reported."],
+  ["Paper-to-Code", "Map methods and equations to an implementation plan."],
+  ["Open Paper Mastery", "Quiz yourself on the paper in the Reader pane."],
+  ["Quick Compare", "A short side-by-side comparison of the papers."],
+  [
+    "Evidence Matrix",
+    "A table of methods, data, and results per paper, with quotes.",
+  ],
+  [
+    "Relationship Graph",
+    "How the papers build on, support, or contradict each other.",
+  ],
+  [
+    "Project synthesis",
+    "Answer the question above across the papers, with citations.",
+  ],
+  [
+    "Cross-paper question",
+    "Get a question that needs several papers to answer.",
+  ],
+  [
+    "Grade cross-paper answer",
+    "Grade your answer and compare it with your confidence.",
+  ],
+]);
+
+let toolDescriptionCounter = 0;
+
+/** Puts each known tool button beside its one-line description. */
+function describeTools(doc: Document, row: HTMLElement) {
+  row.classList.add("pprw-tool-grid");
+  for (const node of Array.from(row.children) as HTMLElement[]) {
+    if (node.tagName !== "BUTTON") continue;
+    const text = TOOL_DESCRIPTIONS.get(node.textContent?.trim() ?? "");
+    if (!text) continue;
+    const tool = element(doc, "div", "pprw-tool");
+    const description = element(doc, "span", "pprw-tool-description", text);
+    description.id = `pprw-tool-description-${++toolDescriptionCounter}`;
+    node.setAttribute("aria-describedby", description.id);
+    node.replaceWith(tool);
+    tool.append(node, description);
+  }
+  return row;
+}
 
 function markRecommendedCapabilityButtons(
   root: HTMLElement,
@@ -301,6 +366,11 @@ async function guarded(
   }
 }
 
+/** Tools sit above the result, so a finished result is scrolled into view. */
+function revealResult(panel: HTMLElement) {
+  panel.scrollIntoView?.({ block: "start" });
+}
+
 function renderOutput(
   root: HTMLElement,
   title: string,
@@ -336,16 +406,18 @@ function renderOutput(
             reference as unknown as EvidenceReferenceV2,
           );
         } catch (error) {
+          // No generation check: a kept result can outlive the render that
+          // drew it, and its failures belong on the current status line.
           setStatus(
             root,
             error instanceof Error ? error.message : String(error),
             "error",
-            generation,
           );
         }
       },
     }),
   );
+  revealResult(panel);
 }
 
 /**
@@ -407,6 +479,7 @@ function renderSearchHits(
     list.append(item);
   }
   panel.append(list);
+  revealResult(panel);
 }
 
 /** Renders a short plain message without exposing internal fields. */
@@ -423,6 +496,7 @@ function renderNotice(
     element(root.ownerDocument, "h3", "pprw-result-title", title),
     element(root.ownerDocument, "p", "pprw-muted", message),
   );
+  revealResult(panel);
 }
 
 function paperSummary(doc: Document, paper: ResearchWorkspacePaper) {
@@ -433,7 +507,7 @@ function paperSummary(doc: Document, paper: ResearchWorkspacePaper) {
       doc,
       "span",
       "",
-      `${paper.extractionQuality} · ${paper.context.split(/\s+/).filter(Boolean).length.toLocaleString()} words · attachment ${paper.attachmentKey}`,
+      `${paper.extractionQuality} text · ${paper.context.split(/\s+/).filter(Boolean).length.toLocaleString()} words`,
     ),
   );
   return node;
@@ -469,15 +543,15 @@ export async function renderResearchWorkspaceView(
       "p",
       "",
       options.capturedPapers
-        ? `${options.scopeLabel ?? "Captured PDFs"} · ${options.capturedPapers.length} exact source(s). This analysis scope remains fixed until you prepare another selection.`
-        : "Evidence-grounded workflows for this paper and the current Zotero selection.",
+        ? `Analyzing ${options.capturedPapers.length} paper${options.capturedPapers.length === 1 ? "" : "s"} (${options.scopeLabel ?? "Zotero selection"}). To change them, choose papers above and select Open analysis tools.`
+        : "Tools for this paper. To compare several papers, open the Research Workspace.",
     ),
   );
   if (!options.standalone) {
     title.append(
       button(
         doc,
-        "Open Workspace",
+        "Open Research Workspace",
         async () => {
           const { openResearchWorkspace } = await import("./window");
           await openResearchWorkspace({ items: [item], origin: "item-pane" });
@@ -570,8 +644,12 @@ export async function renderResearchWorkspaceView(
       ...(options.capturedPapers
         ? { selectedPapers: [...options.capturedPapers] }
         : {}),
+      // A changed single-paper choice keeps the cross-paper quiz session.
+      ...(options.keep?.session ?? {}),
     });
-    root.insertBefore(paperSummary(doc, paper), result);
+    // With several papers, the single-paper section names its paper.
+    if (!(options.standalone && (options.capturedPapers?.length ?? 0) > 1))
+      root.insertBefore(paperSummary(doc, paper), result);
     setStatus(root, "Ready.", "success", generation);
   } catch (error) {
     setStatus(
@@ -583,7 +661,13 @@ export async function renderResearchWorkspaceView(
     return;
   }
 
-  const search = details(doc, "Local hybrid search", true);
+  const comparesPapers = (options.capturedPapers?.length ?? 0) > 1;
+  // Search reads the paper the single-paper tools use.
+  const search = details(
+    doc,
+    comparesPapers ? "Search one paper" : "Search this paper",
+    !(options.standalone && comparesPapers),
+  );
   const searchInput = input(
     doc,
     "Search concepts, symbols, sections, or exact identifiers",
@@ -620,6 +704,34 @@ export async function renderResearchWorkspaceView(
   root.insertBefore(search.root, result);
 
   const understanding = details(doc, "Understand and challenge", true);
+  understanding.content.append(
+    element(
+      doc,
+      "p",
+      "pprw-muted",
+      `These tools read one paper: “${paper.title}”.`,
+    ),
+  );
+  const scopePapers = options.capturedPapers ?? [];
+  let chooser: HTMLSelectElement | undefined;
+  if (options.standalone && scopePapers.length > 1) {
+    // Single-paper tools and search follow the chosen paper.
+    chooser = select(
+      doc,
+      scopePapers.map((entry) => ({
+        value: entry.sourceID,
+        label: entry.title,
+      })),
+    );
+    chooser.value = paper.sourceID;
+    chooser.setAttribute("aria-label", "Paper for single-paper tools");
+    const chooserField = element(doc, "label", "pprw-field pprw-paper-chooser");
+    chooserField.append(
+      element(doc, "span", "pprw-field-label", "Paper for single-paper tools"),
+      chooser,
+    );
+    understanding.content.append(chooserField);
+  }
   const runSingle = (
     operation: ResearchWorkspaceSingleOperation,
     label: string,
@@ -688,7 +800,7 @@ export async function renderResearchWorkspaceView(
       ),
     ),
   );
-  understanding.content.append(actionRow);
+  understanding.content.append(describeTools(doc, actionRow));
   root.insertBefore(understanding.root, result);
 
   const mastery = details(doc, "Paper Mastery", true);
@@ -706,18 +818,24 @@ export async function renderResearchWorkspaceView(
       openCanonical("paper-mastery", "Paper Mastery"),
     ),
   );
-  mastery.content.append(masteryRow);
+  mastery.content.append(describeTools(doc, masteryRow));
   root.insertBefore(mastery.root, result);
 
-  const collection = details(doc, "Selected-paper intelligence", false);
+  const collection = details(
+    doc,
+    "Compare and synthesize papers",
+    Boolean(options.standalone && comparesPapers),
+  );
   collection.content.append(
     element(
       doc,
       "p",
       "pprw-muted",
       options.capturedPapers
-        ? `${options.capturedPapers.length} readable paper${options.capturedPapers.length === 1 ? " was" : "s were"} captured for this workspace. Start a new selection to change them.`
-        : "Use Open Workspace to capture two or more papers before running these tools.",
+        ? comparesPapers
+          ? `These tools read all ${options.capturedPapers.length} papers in this analysis.`
+          : "Choose two or more papers above to compare them."
+        : "Open the Research Workspace with two or more papers to compare them.",
     ),
   );
   const crossQuestion = element(
@@ -745,10 +863,11 @@ export async function renderResearchWorkspaceView(
   });
   const synthesisQuestion = textarea(
     doc,
-    "Ask a project question across the captured papers",
+    "Ask a question to answer across the papers",
     3,
   );
-  synthesisQuestion.value = options.projectQuestion ?? "";
+  synthesisQuestion.value =
+    options.keep?.synthesisQuestion ?? options.projectQuestion ?? "";
   const runMulti = (
     operation: ResearchWorkspaceMultiOperation,
     label: string,
@@ -782,6 +901,7 @@ export async function renderResearchWorkspaceView(
           current.crossSubmissionID = undefined;
           current.selectedPapers = papers;
           crossQuestion.textContent = value.question.prompt;
+          crossQuestion.closest("details")?.setAttribute("open", "");
           renderOutput(
             root,
             "Cross-paper question",
@@ -910,15 +1030,49 @@ export async function renderResearchWorkspaceView(
       node.disabled = true;
     }
   }
-  collection.content.append(
+  const synthesisField = element(doc, "label", "pprw-field");
+  synthesisField.append(
+    element(doc, "span", "pprw-field-label", "Question for Project synthesis"),
     synthesisQuestion,
-    collectionRow,
+  );
+  const tools = describeTools(doc, collectionRow);
+  // The quiz has its own fields, so it sits apart from the comparison tools.
+  const quiz = element(doc, "details", "pprw-subsection");
+  const quizTools = element(doc, "div", "pprw-tool-grid");
+  for (const label of ["Cross-paper question", "Grade cross-paper answer"]) {
+    const tool = (
+      Array.from(tools.querySelectorAll("button")) as HTMLButtonElement[]
+    )
+      .find((node) => node.textContent?.trim() === label)
+      ?.closest(".pprw-tool");
+    if (tool) quizTools.append(tool);
+  }
+  quiz.append(
+    element(doc, "summary", "pprw-section-title", "Cross-paper quiz"),
+    element(
+      doc,
+      "p",
+      "pprw-muted",
+      "Test what you know across the papers. Paper Pilot asks a question that needs several papers, then grades your answer.",
+    ),
+    quizTools,
     crossQuestion,
     crossAnswer,
     crossConfidenceLabel,
     crossConfidence,
   );
-  root.insertBefore(collection.root, result);
+  collection.content.append(synthesisField, tools, quiz);
+  if (options.keep) {
+    crossQuestion.textContent = options.keep.crossQuestion;
+    crossAnswer.value = options.keep.crossAnswer;
+    crossConfidence.value = options.keep.crossConfidence;
+    crossConfidenceLabel.textContent = `Confidence before grading: ${Math.round(Number(crossConfidence.value) * 100)}%`;
+    quiz.open = options.keep.quizOpen;
+  }
+  // In a project, comparing papers is the main task, so it comes first.
+  if (options.standalone && comparesPapers)
+    root.insertBefore(collection.root, search.root);
+  else root.insertBefore(collection.root, result);
 
   const citations = details(doc, "Citation stance", false);
   const citationPrivacy = element(
@@ -1167,6 +1321,39 @@ export async function renderResearchWorkspaceView(
   );
   root.insertBefore(exportSection.root, result);
   markRecommendedCapabilityButtons(root, recommendedCapabilityIDs);
+  if (options.keep?.result.length)
+    result.replaceChildren(...options.keep.result);
+  const paperChooser = chooser;
+  paperChooser?.addEventListener("change", () => {
+    const chosen = scopePapers.find(
+      (entry) => entry.sourceID === paperChooser.value,
+    );
+    const current = runtime.get(root);
+    if (!chosen || !current || current.busy) return;
+    // Only the single-paper sections follow the chosen paper. Multi-paper
+    // drafts, the quiz session, and the last result stay as they are.
+    void renderResearchWorkspaceView(root, item, {
+      ...options,
+      preloadedPaper: chosen,
+      keep: {
+        synthesisQuestion: synthesisQuestion.value,
+        crossQuestion: crossQuestion.textContent ?? "",
+        crossAnswer: crossAnswer.value,
+        crossConfidence: crossConfidence.value,
+        quizOpen: quiz.open,
+        session: {
+          crossSessionID: current.crossSessionID,
+          crossSessionRevision: current.crossSessionRevision,
+          crossSubmissionID: current.crossSubmissionID,
+        },
+        result: Array.from(result.childNodes) as Node[],
+      },
+    }).then(() =>
+      root
+        .querySelector<HTMLSelectElement>(".pprw-paper-chooser select")
+        ?.focus(),
+    );
+  });
 }
 
 export function registerResearchWorkspacePaneSection() {

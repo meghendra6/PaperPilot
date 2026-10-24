@@ -44,6 +44,7 @@ import { closeStudioWindows } from "./modules/studio/window";
 import { clearCriticalReadViewState } from "./modules/ui/criticalReadDraft";
 import { PAPER_PILOT_PREF_PANE_ID } from "./modules/ui/runProgressCard";
 import { getString, initLocale } from "./utils/locale";
+import { pluginStylesheetURL } from "./utils/stylesheet";
 
 async function onStartup() {
   await Promise.all([
@@ -104,7 +105,7 @@ async function onMainWindowLoad(win: Window) {
     ) as HTMLLinkElement;
     link.id = cssID;
     link.rel = "stylesheet";
-    link.href = `chrome://${config.addonRef}/content/zoteroPane.css`;
+    link.href = pluginStylesheetURL("zoteroPane.css");
     win.document.documentElement.appendChild(link);
   }
 

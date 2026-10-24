@@ -10,7 +10,7 @@ Paper Pilot는 Zotero 7-10 PDF 리더를 위한 AI 읽기 워크벤치입니다.
 
 ## Research Studio (개발 중)
 
-프로젝트의 **Write & run** 창에서 원본 형식 문서, DOCX 편집기, Markdown·소스
+프로젝트의 **Open Studio** 창(Research Studio)에서 원본 형식 문서, DOCX 편집기, Markdown·소스
 편집, 데이터 표와 실행 가능한 노트북을 다룹니다. 프로젝트 AI는 선택한 파일의
 버전을 기록하고 변경 제안을 개별 검토 후 적용합니다. Codex·Claude CLI,
 로컬 루프백 모델 엔드포인트를 선택할 수 있으며, 네트워크 추론은
@@ -52,6 +52,14 @@ Studio는 Word 각주·미주·목차·캡션 필드, 적용 전 AI 제안 수�
 ## 통합 Research Workspace
 
 Research Workspace는 Paper Pilot 본체에 포함되며 동일한 로컬 엔진 선택·논문 추출·실행 생명주기를 사용합니다. 선택 항목이 0개·1개·여러 개여도 유지되는 모델리스 프로젝트 창에서 screening, claim–evidence ledger, 비교·감사·mastery·citation workflow, citation/reference health, contradiction/gap 검토, 프로젝트별 export, 로컬 Living Review 변경 인박스와 편집 가능한 다섯 가지 프로젝트 템플릿을 제공합니다. 프로젝트 템플릿 preset은 추천 capability만 강조하며 분석을 자동 실행하거나 다른 capability를 숨기지 않습니다. export에는 변경 불가능한 템플릿 snapshot과 현재 assumptions가 함께 포함됩니다. Citation & Reference Health는 현재 저장된 citation·methodology·reproducibility artifact, 로컬 Zotero correction/retraction 메타데이터 신호, 선택적인 제한된 초안 excerpt를 이용해 로컬 체크리스트를 만들며 종합 truth score는 만들지 않습니다. Living Review는 Zotero 첨부파일과 annotation의 메타데이터만 확인하며 본문을 읽거나 모델·네트워크를 호출하지 않습니다. 안전한 Zotero collection/tag 동기화는 기존 collection과 기존 tag에 대한 단방향 추가만 전체 preview와 preview-bound approval token 뒤에 수행하고, transaction 전에 별도의 revisioned receipt를 기록하며, Zotero transaction 지원이 없으면 fail closed합니다. undo는 receipt가 소유한 추가만 제거하며 Zotero item·collection·tag를 생성·삭제하거나 bibliographic field, PDF, note, attachment, annotation을 쓰지 않습니다. **Tools → Open Research Workspace…**, 라이브러리 항목 context menu, Workbench의 **Research Workspace** 버튼에서 열 수 있습니다. 분석이 실행 중일 때 프로젝트를 떠나거나 창을 닫으면 취소하기 전에 확인합니다. 일부만 성공한 실행은 실패한 논문을 알려 주고 **Resume**을 제공합니다. 보관한 프로젝트는 다시 열거나 복원할 수 있습니다. Paper Pilot XPI 하나만 설치하면 되며 companion add-on과 Research Monitor는 없습니다.
+
+### 시작하기
+
+1. Zotero 라이브러리에서 PDF가 있는 논문을 12편까지 선택하세요. 마우스 오른쪽 버튼을 누르고 **Open Research Workspace…**를 고르세요.
+2. **Selected in Zotero**에서 **Create project with N papers**를 누르세요. 기존 프로젝트에 추가할 수도 있습니다. 이 단계에서 Paper Pilot이 PDF를 컴퓨터에서 읽으며, 모델은 아직 실행하지 않습니다.
+3. 프로젝트가 **Analyze** 탭에서 열리고 분석 도구가 바로 준비됩니다. 논문 비교, Evidence Matrix, 종합 답변, 논문 한 편의 감사를 실행할 수 있습니다. 결과는 **Results**에 저장됩니다.
+4. **Papers**에는 읽기 진행 상황과 screening이 있습니다. **Checks**에는 contradiction, citation health, Living Review 점검이 있습니다. **Settings**에는 프로젝트 정보, export, Zotero 동기화가 있습니다.
+5. **Open Studio**를 누르면 Research Studio에서 프로젝트를 정리할 수 있습니다. 초안 작성, 프로젝트 Zotero 논문 인용, 노트북, 프로젝트 assistant를 제공합니다.
 
 ## 스크린샷과 데모
 

@@ -2581,12 +2581,15 @@
   color: var(--pp-text-primary);
 }
 
+/* DialogHelper wraps the root in XUL boxes whose heights are not definite,
+   so a percentage height would grow with the content and the clipped body
+   could not scroll. The root is sized to the window itself instead. */
 .pprw-window {
+  position: fixed;
+  inset: 0;
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
-  width: 100%;
-  height: 100%;
   min-height: 0;
   overflow: hidden;
   background: var(--pp-bg-primary);
@@ -2688,6 +2691,7 @@
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
+  overscroll-behavior: contain;
 }
 
 .pprw-window-loading,
@@ -3046,6 +3050,13 @@
   box-shadow: var(--pp-shadow-sm);
 }
 
+/* While an action runs, other buttons wait. The cursor says so before a
+   click, and the status line names the running action after one. */
+[data-research-workspace-project-surface][aria-busy="true"]
+  .pprw-button:not(:disabled) {
+  cursor: progress;
+}
+
 /* Buttons are inline-flex, which overrides the [hidden] presentation
    attribute. The item-pane view sits outside .pprw-window. */
 .pprw-window [hidden],
@@ -3103,6 +3114,462 @@
 .pprw-archived-project span {
   flex: 1 1 200px;
   min-width: 0;
+}
+
+/* Research Workspace home: the selection comes first with one-step
+   actions, then the reader's projects, a new project, and the guide. */
+.pprw-window-heading {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.pprw-window-header > .pprw-button {
+  flex: 0 0 auto;
+}
+
+.pprw-window-body > .pprw-project-panel:first-child {
+  margin-top: 20px;
+}
+
+.pprw-eyebrow {
+  margin: 0 0 4px;
+  color: var(--pp-text-accent);
+  font-size: var(--pp-font-size-xs);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.pprw-start-panel {
+  border-color: color-mix(
+    in srgb,
+    var(--pp-accent) 35%,
+    var(--pp-border-light)
+  );
+  background: color-mix(in srgb, var(--pp-accent) 5%, var(--pp-bg-primary));
+  box-shadow: var(--pp-shadow-md);
+}
+
+.pprw-window-body .pprw-project-panel h2 {
+  font-size: 1.2rem;
+  line-height: 1.3;
+}
+
+.pprw-start-panel h2 {
+  margin: 0 0 8px;
+}
+
+.pprw-start-panel--empty {
+  border-color: var(--pp-border-status-warning);
+  background: var(--pp-bg-status-warning);
+  box-shadow: none;
+}
+
+.pprw-selection-titles {
+  display: grid;
+  gap: 3px;
+  margin: 0 0 10px;
+  padding-inline-start: 18px;
+  font-size: var(--pp-font-size-base);
+  line-height: 1.4;
+}
+
+.pprw-selection-titles li {
+  overflow-wrap: anywhere;
+}
+
+.pprw-selection-skipped {
+  margin: 0 0 12px;
+  color: var(--pp-text-secondary);
+  font-size: var(--pp-font-size-sm);
+}
+
+.pprw-selection-skipped > summary {
+  cursor: pointer;
+  color: var(--pp-warning);
+  font-weight: 600;
+}
+
+.pprw-selection-skipped .pprw-capture-list {
+  max-height: none;
+  padding-top: 6px;
+}
+
+.pprw-start-existing {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--pp-border-status-success);
+  border-radius: var(--pp-radius-md);
+  background: var(--pp-bg-status-success);
+  color: var(--pp-text-primary);
+  font-size: var(--pp-font-size-base);
+}
+
+.pprw-start-existing > p {
+  margin: 0;
+  font-weight: 600;
+}
+
+.pprw-start-existing-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pprw-start-existing-list li {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.pprw-start-existing-list strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pprw-start-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.pprw-start-option {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--pp-border-light);
+  border-radius: var(--pp-radius-md);
+  background: var(--pp-bg-primary);
+}
+
+.pprw-start-option h3 {
+  margin: 0;
+  font-size: var(--pp-font-size-base);
+}
+
+.pprw-start-option > .pprw-button,
+.pprw-project-panel > .pprw-button {
+  justify-self: start;
+}
+
+.pprw-start-note {
+  margin-top: 12px;
+}
+
+.pprw-project-panel > p.pprw-muted {
+  margin-bottom: 10px;
+}
+
+.pprw-field {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  margin: 0 0 8px;
+}
+
+.pprw-start-option .pprw-field,
+.pprw-template-preview .pprw-field {
+  margin: 0;
+}
+
+.pprw-field-label {
+  color: var(--pp-text-secondary);
+  font-size: var(--pp-font-size-sm);
+  font-weight: 600;
+}
+
+.pprw-field-hint {
+  color: var(--pp-text-muted);
+  font-size: var(--pp-font-size-xs);
+}
+
+.pprw-field > .pprw-input,
+.pprw-field > .pprw-textarea {
+  width: 100%;
+  max-width: 720px;
+}
+
+.pprw-form-status {
+  margin: 0;
+  color: var(--pp-text-muted);
+  font-size: var(--pp-font-size-sm);
+  overflow-wrap: anywhere;
+}
+
+.pprw-form-status:empty {
+  display: none;
+}
+
+.pprw-form-status[data-kind="error"] {
+  color: var(--pp-error);
+}
+
+.pprw-panel-heading {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.pprw-project-panel .pprw-panel-heading h2,
+.pprw-project-panel .pprw-panel-heading h3 {
+  margin: 0;
+}
+
+.pprw-project-card {
+  display: grid;
+  align-content: space-between;
+  gap: 8px;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.pprw-project-card:hover,
+.pprw-project-card:focus-within {
+  border-color: color-mix(
+    in srgb,
+    var(--pp-accent) 40%,
+    var(--pp-border-light)
+  );
+  box-shadow: var(--pp-shadow-md);
+}
+
+.pprw-project-card p {
+  margin: 0;
+}
+
+.pprw-guide-steps {
+  display: grid;
+  gap: 10px;
+  margin: 10px 0 0;
+  padding-inline-start: 22px;
+  font-size: var(--pp-font-size-base);
+  line-height: 1.5;
+}
+
+.pprw-guide-steps li::marker {
+  color: var(--pp-text-accent);
+  font-weight: 700;
+}
+
+details.pprw-project-panel > .pprw-section-title {
+  padding: 0;
+}
+
+details.pprw-project-panel[open] > .pprw-section-title {
+  margin-bottom: 8px;
+}
+
+.pprw-preset-choices {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 6px 12px;
+  margin: 4px 0 0;
+  padding: 10px 12px;
+  border: 1px solid var(--pp-border-light);
+  border-radius: var(--pp-radius-md);
+}
+
+.pprw-preset-choices legend {
+  padding: 0 4px;
+  color: var(--pp-text-secondary);
+  font-size: var(--pp-font-size-sm);
+  font-weight: 600;
+}
+
+.pprw-preset-choice {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font-size: var(--pp-font-size-sm);
+}
+
+/* Project page: header, then one tab panel at a time. */
+.pprw-project-header {
+  margin: 18px 20px 0;
+}
+
+.pprw-project-header .pprw-project-toolbar {
+  margin: 0;
+}
+
+.pprw-project-header .pprw-project-toolbar h2 {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+}
+
+.pprw-project-meta {
+  margin: 6px 0 0;
+  color: var(--pp-text-muted);
+  font-size: var(--pp-font-size-sm);
+  overflow-wrap: anywhere;
+}
+
+.pprw-project-tabs {
+  display: flex;
+  gap: 2px;
+  margin: 12px 20px 0;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--pp-border-light);
+}
+
+.pprw-project-tab {
+  appearance: none;
+  margin: 0 0 -1px;
+  padding: 8px 12px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: var(--pp-radius-sm) var(--pp-radius-sm) 0 0;
+  background: transparent;
+  color: var(--pp-text-secondary);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--pp-font-size-base);
+  font-weight: 600;
+  white-space: nowrap;
+  transition:
+    color 0.15s ease,
+    background-color 0.15s ease;
+}
+
+.pprw-project-tab:hover {
+  background: var(--pp-fill-hover);
+  color: var(--pp-text-primary);
+}
+
+.pprw-project-tab:active {
+  background: var(--pp-fill-press);
+}
+
+.pprw-project-tab[aria-selected="true"] {
+  border-bottom-color: var(--pp-accent);
+  color: var(--pp-text-accent);
+}
+
+.pprw-project-tab:focus-visible {
+  outline: var(--pp-focus-width) solid var(--pp-focus-color);
+  outline-offset: -2px;
+}
+
+.pprw-project-tabpanel {
+  padding-bottom: 20px;
+}
+
+/* Analyze tab: paper choice, then the analysis tools. */
+.pprw-scope-list {
+  display: grid;
+  gap: 2px;
+  max-height: 300px;
+  margin: 0 0 8px;
+  overflow: auto;
+}
+
+.pprw-scope-item {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  padding: 6px 8px;
+  border-radius: var(--pp-radius-sm);
+  cursor: pointer;
+  font-size: var(--pp-font-size-base);
+}
+
+.pprw-scope-item:hover {
+  background: var(--pp-fill-quiet);
+}
+
+.pprw-scope-item > input {
+  flex: 0 0 auto;
+  margin: 0;
+}
+
+.pprw-scope-item > span:first-of-type {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.pprw-scope-item > .pprw-muted {
+  flex: 0 0 auto;
+}
+
+.pprw-scope-actions {
+  margin-top: 10px;
+}
+
+.pprw-analysis-placeholder {
+  display: grid;
+  gap: 8px;
+}
+
+.pprw-analysis-placeholder h3 {
+  margin: 0;
+}
+
+.pprw-tool-preview {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding-inline-start: 18px;
+  color: var(--pp-text-secondary);
+  font-size: var(--pp-font-size-sm);
+}
+
+.pprw-tool-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 8px;
+  align-items: stretch;
+}
+
+.pprw-tool {
+  display: grid;
+  align-content: start;
+  gap: 5px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--pp-border-light);
+  border-radius: var(--pp-radius-md);
+  background: var(--pp-bg-secondary);
+}
+
+.pprw-tool > .pprw-button {
+  justify-self: start;
+}
+
+.pprw-tool-description {
+  color: var(--pp-text-muted);
+  font-size: var(--pp-font-size-xs);
+  line-height: 1.4;
+}
+
+.pprw-paper-chooser {
+  max-width: 520px;
+}
+
+.pprw-subsection {
+  display: grid;
+  gap: 8px;
+  padding: 2px 10px 8px;
+  border: 1px solid var(--pp-border-light);
+  border-radius: var(--pp-radius-md);
+}
+
+.pprw-subsection:not([open]) {
+  padding-bottom: 0;
 }
 
 .pprw-render-badge--error {
