@@ -69,7 +69,7 @@ export function portableConversation(
         throw new Error("Duplicate proposal identifier.");
       changeIDs.add(change.id);
       if (
-        !["replace", "append", "create", "rename", "archive"].includes(
+        !["replace", "append", "draft", "create", "rename", "archive"].includes(
           change.kind,
         ) ||
         !["pending", "applied", "rejected"].includes(change.decision) ||

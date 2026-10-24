@@ -41,7 +41,7 @@ PDF annotation, Zotero transaction, or scholarly judgment.
 
 | Feature family                                                                                               | Automated coverage exercised                                                                                          | Runtime boundary in this audit                                                             |
 | ------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| Reader chat, per-paper engine/model, retry, branch, pins, summaries                                          | Chat contracts, context admission, source fingerprints, run states, continuity and privacy tests                      | Final installed Zotero reader smoke; not every model/effort combination                    |
+| Reader chat, per-paper engine/model, retry, branch, pins, summaries                                          | Chat contracts, context admission, source fingerprints, run states, continuity and privacy tests                      | Earlier audit-build Zotero reader smoke; not every model/effort combination                |
 | Session history, reopen, rename, clear, migration                                                            | Session repositories, mutation queues, snapshot/silent-turn filtering                                                 | Existing sessions retained; broad historical migration UI matrix not repeated              |
 | Selection Ask/Explain/Summarize/Translate                                                                    | Reader actions, selection binding, language and prompt contracts                                                      | Selection gestures and each generated answer remain separate native checks                 |
 | Dictionary                                                                                                   | Naver lookup parsing, normalization, failures, bounded selection                                                      | Live third-party dictionary response not comprehensively revalidated                       |
@@ -72,7 +72,7 @@ PDF annotation, Zotero transaction, or scholarly judgment.
 - Node 24 satisfies the repository's Node 22.18+ baseline. The shell's default
   Node 20 is not used for these checks.
 - `npm ci` completed in an isolated worktree.
-- `npm test`: 1,392 passed, zero failures/skips after the regression additions.
+- `npm test`: 1,396 passed, zero failures/skips after the regression additions.
 - `npm run build`: typechecks source/tests and packages the add-on with the
   OpenDataLoader runtime and guarded editor patches.
 - `npm run lint:check`: zero errors; 157 pre-existing warnings remain.
@@ -91,3 +91,24 @@ Zotero 7–10, Windows/Linux, R, compiler installations, third-party service
 availability and research efficacy remain distinct from the local automated
 results. The original worktree, supplied user files and unrelated worktree were
 preserved.
+
+## Academic DOCX follow-up
+
+The requested connected-agent writing workflow now includes **Draft paper**.
+The user chooses evidence and writing requirements before sending; a `draft`
+proposal appends semantic title/heading/body paragraphs while preserving the
+original text and saving a new version. Unsupported markup, stale revisions and
+exports with unrelated text changes are rejected. Portable project conversations
+retain the new proposal type. See [academic drafting](./academic-drafting.md).
+
+A real Codex workload produced a Korean protocol, clearly marking that no study
+had been run and no bibliography was supplied. Browser apply/reopen advanced v3
+to v4, retaining the original two paragraphs. Exported OOXML was inspected for
+Title, Heading1 and Normal styles. This is one observed writing example, not a
+measurement of general scientific accuracy or journal compliance.
+
+Native app control became unavailable during final verification. The final XPI
+includes all fixes and academic drafting, but the earlier installed audit build
+is the last one actually launched in Zotero. Final reinstall/restart and the new
+protocol's Word round-trip remain unverified. No hosted CI or remote publication
+is claimed for this local change set.

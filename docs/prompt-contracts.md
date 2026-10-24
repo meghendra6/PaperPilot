@@ -281,7 +281,7 @@ The UI derives citation status from local PDF matching, rechecks the source fing
 `studio/aiContracts.ts` requires `{reply, changes}`. Every change contains `kind`,
 `documentID`, `expectedRevision`, `name`, `before`, `after`, and `reason`; unused
 string fields are empty. The host assigns proposal IDs and review decisions.
-Supported operations are replace, append, create, rename and archive. There is
+Supported operations are replace, append, draft, create, rename and archive. There is
 one proposal per existing document or new filename. Existing targets must occur
 in the captured context with the exact revision. A replacement must match exactly
 once. DOCX replacement stays inside one paragraph; append/create apply to text
@@ -307,3 +307,20 @@ reviewed wording durably before applying the file change, and retains exact-matc
 revision and one-paragraph DOCX constraints. A recovered application receipt must
 therefore refer to the wording actually approved. Rename proposals use the same
 atomic literal-reference repair and format-preserving guard as manual renames.
+
+The `draft` operation appends an academic manuscript or section to a captured
+DOCX. `before` and `name` must be empty; `after` contains plain paragraphs
+separated by blank lines, with `#` title, `##` section and `###` subsection
+headings. `academicDraft.ts` rejects unsupported markup, over 100,000 characters
+or over 500 paragraphs. These blocks use the existing document's `Title`,
+`Heading1`, `Heading2` and `Normal` styles. The host checks that exported text is
+exactly the original text plus the reviewed paragraphs before committing a
+revision. Existing text is never replaced by a draft operation. User-edited
+drafts retain the original model wording and pass the same format validation.
+
+Academic prompts honor article type, journal, language and template instructions,
+with IMRaD as the default for original research. They prohibit invented data,
+completed experiments and bibliographic metadata, distinguish planned work, and
+require `[Evidence needed: ...]` or `[Citation needed: ...]` for unsupported
+claims. Plain references are not live Word citation fields. This is a writing
+contract, not an automatic factual verifier or a journal-compliance guarantee.

@@ -628,7 +628,7 @@ export class StudioRepository {
             "You · AI proposal",
           );
         } else if (change.kind === "archive") doc.archived = true;
-        else if (change.kind === "replace" || change.kind === "append") {
+        else if (["replace", "append", "draft"].includes(change.kind)) {
           if (base64 === undefined)
             throw new Error("Missing proposed document bytes.");
           const insertions = doc.versions.at(-1)?.insertions;

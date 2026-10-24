@@ -488,3 +488,55 @@ test("unconfirmed AI cleanup blocks a replacement runner for the same project", 
   assert.deepEqual(stopped, ["/owned/run-1", "/owned/run-1", "/owned/run-1"]);
   assert.equal(prepared, 2);
 });
+
+test("reviewed DOCX drafts preserve original text and reject altered or incomplete editor bytes", async () => {
+  let docID = "";
+  const { service, repository } = fixture(async () =>
+    JSON.stringify({
+      reply: "Evidence is still needed.",
+      changes: [
+        {
+          kind: "draft",
+          documentID: docID,
+          expectedRevision: 1,
+          name: "",
+          before: "",
+          after: "# Paper\n\n## Results\n\n[Evidence needed: data]",
+          reason: "Academic draft",
+        },
+      ],
+    }),
+  );
+  const doc = await repository.create(
+    "project",
+    "draft.docx",
+    encode("Original paragraph"),
+    "You",
+  );
+  docID = doc.id;
+  const history = await service.ask(config, "Draft a paper", [docID]);
+  const changeID = history.turns[0].changes[0].id;
+  await assert.rejects(service.decide(changeID, "apply"), /Open this DOCX/);
+  await assert.rejects(
+    service.decide(
+      changeID,
+      "apply",
+      encode("Paper\nResults\n[Evidence needed: data]"),
+    ),
+    /differs/,
+  );
+  assert.equal((await repository.read("project", docID)).document.revision, 1);
+  const edited = "# Paper\n\n## Results\n\n[Evidence needed: verified data]";
+  const bytes = encode(
+    "Original paragraph\nPaper\nResults\n[Evidence needed: verified data]",
+  );
+  await service.decide(changeID, "apply", bytes, edited);
+  await service.decide(changeID, "apply", bytes, edited);
+  const saved = await repository.read("project", docID);
+  assert.equal(saved.document.revision, 2);
+  assert.equal(saved.base64, bytes);
+  assert.equal(
+    (await service.history()).turns[0].changes[0].proposedAfter,
+    "# Paper\n\n## Results\n\n[Evidence needed: data]",
+  );
+});

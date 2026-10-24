@@ -1070,3 +1070,17 @@ can follow those snapshots to their original notebook execution and current
 freshness check. These are historical actions, not claims that a figure remains
 embedded after later manual deletion. Project bundle export rejects a document
 revision change while assembling conversation/research context.
+
+### Academic DOCX proposals
+
+`studio/academicDraft.ts` defines the bounded plain-paragraph/heading authoring
+format shared by response validation, reviewed-text validation and the editor.
+`aiPanel.ts` prepares an editable academic request and selects the active DOCX;
+it does not call a provider until Send. `client.ts` inserts semantic paragraphs
+through the pinned editor, exports bytes and restores the original editor on
+failure. `StudioAIService` checks the resulting document text against the reviewed
+append, and the repository applies its normal revision and receipt checks. The
+existing document owns its style definitions; no journal layout is guessed or
+hardcoded. New content uses Title, Heading1, Heading2 and Normal styles. All
+existing file parts travel through the normal editor export path; complex Word
+fields and layout still require the documented Word round-trip checks.

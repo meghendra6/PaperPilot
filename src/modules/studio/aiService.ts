@@ -1,3 +1,4 @@
+import { academicDraft } from "./academicDraft";
 import { researchProjectDirectory } from "../researchWorkspace/persistence/paths";
 import type { ResearchWorkspaceFileOps } from "../researchWorkspace/persistence/contracts";
 import { assertStudioID } from "./contracts";
@@ -331,7 +332,7 @@ export class StudioAIService {
         if (
           typeof editedAfter !== "string" ||
           editedAfter.length > 1_000_000 ||
-          !["replace", "append", "create"].includes(change.kind)
+          !["replace", "append", "draft", "create"].includes(change.kind)
         )
           throw new Error("Invalid edited proposal.");
         if (change.kind === "replace") {
@@ -345,6 +346,7 @@ export class StudioAIService {
           )
             throw new Error("DOCX proposals must stay within one paragraph.");
         }
+        if (change.kind === "draft") academicDraft(editedAfter);
         if (editedAfter !== change.after) {
           change.proposedAfter ??= change.after;
           change.after = editedAfter;
@@ -357,15 +359,15 @@ export class StudioAIService {
       else {
         let base64: string | undefined;
         if (change.kind === "create") base64 = this.ports.encode(change.after);
-        else if (change.kind === "replace" || change.kind === "append") {
+        else if (["replace", "append", "draft"].includes(change.kind)) {
           const saved = await this.repository.read(
             this.projectID,
             change.documentID,
           );
           if (/\.docx$/i.test(saved.document.name)) {
-            if (change.kind !== "replace" || !docxBase64)
+            if (!["replace", "draft"].includes(change.kind) || !docxBase64)
               throw new Error(
-                "Open this DOCX and apply the paragraph proposal in the editor.",
+                "Open this DOCX and apply the reviewed proposal in the editor.",
               );
             const before = await this.ports.text(
               saved.document.name,
@@ -375,13 +377,20 @@ export class StudioAIService {
               saved.document.name,
               docxBase64,
             );
-            if (replaceOnce(before, change.before, change.after) !== after)
+            const expected =
+              change.kind === "draft"
+                ? `${before}\n${academicDraft(change.after).text}`
+                : replaceOnce(before, change.before, change.after);
+            if (expected !== after)
               throw new Error(
                 "DOCX text differs from the reviewed proposal. No bytes were saved.",
               );
             base64 = docxBase64;
           } else {
-            if (!TEXT_DOCUMENT.test(saved.document.name))
+            if (
+              change.kind === "draft" ||
+              !TEXT_DOCUMENT.test(saved.document.name)
+            )
               throw new Error(
                 "Binary document contents are read-only for AI proposals.",
               );

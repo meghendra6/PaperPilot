@@ -1324,3 +1324,29 @@ machine only. R/IRkernel and Typst/Tectonic/MyST are absent from the current PAT
 prior dated successes are not a current-runtime pass. Full cross-version and
 cross-platform feature matrices, live scholarly-provider coverage, Zotero sync
 transactions and research efficacy remain separate gates.
+
+### Academic DOCX drafting — 2026-10-24
+
+- Open a DOCX and choose Assistant → Draft paper. Confirm that this prepares an
+  editable request without calling a model. Select evidence files and specify
+  article type, language, journal and length before Send.
+- Generate a protocol with no data or bibliography supplied. It must distinguish
+  planned work and leave missing-evidence/citation placeholders. Verify claims
+  against sources; the prompt is not an automatic factual verifier.
+- Apply a reviewed draft to both a blank DOCX and a document with existing text,
+  citations, notes and figures. Verify the original parts, new paragraph styles,
+  saved version and reopening. Reject a stale proposal after another save.
+- Edit the proposal before applying, export/restore a project bundle, then verify
+  the reviewed text and original AI wording. Inspect custom journal styles in
+  Word; refresh fields, save and reimport in a licensed Word installation.
+
+Observed: actual Codex generated a Korean protocol in the packaged browser client
+with the Node preview host. Applying it preserved two existing paragraphs and
+advanced the DOCX from v3 to v4; the editor reopened the saved document. Exported
+OOXML contains Title, Heading1 and Normal paragraphs and the original text.
+Unsupported-markup, revision, altered-editor-text and portable-history tests pass.
+The final academic feature was not reinstalled in Zotero: native app control
+became unavailable after earlier native reader and Word smoke checks. The new
+protocol was therefore not reopened in Word. Existing complex fields and a blank
+DOCX draft still need the native/Word round-trip above. Earlier Word editing was
+also blocked by the installed Word license restriction.
