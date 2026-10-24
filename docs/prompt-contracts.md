@@ -318,8 +318,14 @@ exactly the original text plus the reviewed paragraphs before committing a
 revision. Existing text is never replaced by a draft operation. User-edited
 drafts retain the original model wording and pass the same format validation.
 
-Academic prompts honor article type, journal, language and template instructions,
-with IMRaD as the default for original research. They prohibit invented data,
+Academic prompts honor article type, journal and template instructions, with
+IMRaD as the default for original research. Manuscript text (including title,
+abstract, keywords, headings, body and new captions) defaults to formal academic
+English regardless of the request/source language. Another manuscript language
+requires an explicit request. `reply` and change reasons follow the user's
+language; exact quotations, names and original bibliographic metadata are retained.
+The shared `ACADEMIC_LANGUAGE_POLICY` applies to both the Draft paper request and
+the assistant prompt, including academic revisions. They prohibit invented data,
 completed experiments and bibliographic metadata, distinguish planned work, and
 require `[Evidence needed: ...]` or `[Citation needed: ...]` for unsupported
 claims. Plain references are not live Word citation fields. This is a writing

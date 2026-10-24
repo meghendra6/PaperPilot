@@ -28,7 +28,7 @@ Local compilation uses installed Tectonic (`.tex`), Typst (`.typ`), or MyST plus
 
 Studio also provides Word footnotes/endnotes, contents/caption fields, editable AI proposals, notebook output provenance, and a project links view. Supported literal paths are repaired atomically on rename; dynamic code paths are not inferred. Output inspection flags changes to the recorded cell/output or captured inputs. Zotero reference snapshots can open currently verified supporting passages through Research Workspace.
 
-Open a DOCX (or a saved journal template), choose **Assistant → Draft paper**, select source files, and enter the topic, article type, language and journal requirements before sending. The connected provider proposes a manuscript for review; applying it appends styled title/section/body paragraphs and saves a new version. Existing content is preserved. Missing evidence and citations remain explicit placeholders; use References for live citation fields. See [academic drafting](./docs/academic-drafting.md).
+Open a DOCX (or a saved journal template), choose **Assistant → Draft paper**, select source files, and enter the topic, article type and journal requirements before sending. The connected provider proposes a manuscript for review; applying it appends styled title/section/body paragraphs and saves a new version. Existing content is preserved. Missing evidence and citations remain explicit placeholders; use References for live citation fields. See [academic drafting](./docs/academic-drafting.md). Manuscripts default to academic English, independently of the request/source language; assistant explanations follow your language. Explicit requests can select another manuscript language.
 
 ## Chat workflow
 

@@ -115,3 +115,45 @@ test("academic draft review history survives portable project export", () => {
     "draft",
   );
 });
+
+test("Korean requests and evidence do not set the academic manuscript language", () => {
+  const context = [
+    { id: "doc", name: "paper.docx", revision: 1, text: "" },
+    {
+      id: "source",
+      name: "notes.md",
+      revision: 1,
+      text: "아직 실험을 수행하지 않았습니다.",
+    },
+  ];
+  for (const prompt of [
+    academicDraftRequest("paper.docx"),
+    studioPrompt("초록을 작성해 주세요.", context, []),
+  ]) {
+    assert.match(
+      prompt,
+      /manuscript content in formal academic English by default/,
+    );
+    assert.match(
+      prompt,
+      /titles, abstracts, keywords, section headings, body paragraphs/,
+    );
+    assert.match(
+      prompt,
+      /language of the request or source documents must not change the manuscript language/,
+    );
+    assert.match(
+      prompt,
+      /another manuscript language only when the user explicitly requests it/,
+    );
+    assert.match(prompt, /reply and change reasons in the user's language/);
+    assert.match(
+      prompt,
+      /Preserve exact quotations, author names and original bibliographic metadata/,
+    );
+    assert.doesNotMatch(
+      prompt,
+      /paragraphs in my language|Answer in the user's language/,
+    );
+  }
+});

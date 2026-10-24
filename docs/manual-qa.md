@@ -1350,3 +1350,19 @@ became unavailable after earlier native reader and Word smoke checks. The new
 protocol was therefore not reopened in Word. Existing complex fields and a blank
 DOCX draft still need the native/Word round-trip above. Earlier Word editing was
 also blocked by the installed Word license restriction.
+
+### Academic manuscript language follow-up — 2026-10-24
+
+The manuscript default is now formal academic English, independent of the
+request/source language; conversational explanations follow the user's language.
+Other manuscript languages require an explicit request. Exact quotations, names
+and original bibliographic metadata are preserved. The earlier Korean protocol
+observation above remains historical evidence of that explicitly Korean request.
+
+A direct CLI smoke used the product's Studio prompt, schema, command builder and
+response parsers with actual Codex (`gpt-6-astra`). A Korean request and Korean
+research notes, without an explicit language instruction, produced an English
+title and abstract plus Korean reply/change reason. No experiment was claimed
+and missing evidence remained marked. All 1,397 Node tests, focused ESLint,
+typecheck and XPI build passed. This is a prompt/provider check; it does not close
+the outstanding native Zotero installation or Word round-trip gates.

@@ -6,7 +6,10 @@
    **Context files**, together with the target DOCX. Include source metadata and
    your actual methods/results in the selected files. The project assistant uses
    these captured files; it does not independently search the literature.
-3. Add the topic, article type, language, length and journal requirements. Choose
+3. Add the topic, article type, length and journal requirements. Manuscript text
+   defaults to academic English even when your request or sources are Korean;
+   assistant explanations follow your conversation language. Another manuscript
+   language requires an explicit request. Choose
    your connected Codex CLI, Claude Code or compatible local model and Send.
    Original research defaults to IMRaD; reviews and protocols can request a
    different structure. Local endpoints must support JSON Schema responses.
@@ -31,7 +34,7 @@ inline Markdown or equation markup.
 
 Example instructions:
 
-> Write a Korean study protocol about how explicit evidence-gap labels affect
+> Write an English study protocol about how explicit evidence-gap labels affect
 > readers' judgments. Use title, abstract, introduction, proposed methods,
 > anticipated limitations and references. No experiment has been conducted and
 > no bibliography has been supplied. Mark missing support explicitly; do not
