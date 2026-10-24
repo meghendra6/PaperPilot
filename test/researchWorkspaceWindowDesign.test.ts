@@ -47,8 +47,9 @@ test("the window design scopes its tokens and defines both themes", () => {
     "--pp-on-accent",
   ])
     assert.match(css, new RegExp(`\\.pprw-window \\{[^}]*${token}:`), token);
-  // Nothing outside the window changes.
-  for (const rule of css.matchAll(/^([^@\s/*}][^{}]*)\{/gm)) {
+  // Nothing outside the window changes, including rules inside @media.
+  const rules = css.replace(/\/\*[\s\S]*?\*\//g, "");
+  for (const rule of rules.matchAll(/(?:^|[{};])\s*([^{}@;]+?)\s*\{/g)) {
     const selectors = splitSelectors(rule[1]);
     for (const selector of selectors)
       assert.ok(
@@ -92,5 +93,24 @@ test("labels are sentence case without eyebrows", () => {
   assert.doesNotMatch(
     read("src", "modules", "studio", "client.ts"),
     /RESEARCH STUDIO/,
+  );
+});
+
+test("narrow rows and tab focus stay usable", () => {
+  const css = windowCss();
+  // A stacked paper row must not turn the menu width into a height.
+  assert.match(
+    css,
+    /\.pprw-project-paper-row > \.pprw-select \{\s*flex: 0 0 auto;\s*width: 176px;/,
+  );
+  // The tab list scrolls sideways, so the tab ring is drawn inside.
+  assert.match(
+    css,
+    /\.pprw-window \.pprw-project-tab:focus-visible \{\s*outline-offset: -2px;/,
+  );
+  // The open tab has a non-color cue besides the highlighter.
+  assert.match(
+    css,
+    /\.pprw-project-tab\[aria-selected="true"\] \{\s*box-shadow: inset 0 -2px 0 var\(--rw-ink\);/,
   );
 });

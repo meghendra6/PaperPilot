@@ -73,9 +73,10 @@ test("a new selection moves the window unless it would lose work", () => {
   );
   // A project that already holds the papers stays in view.
   const held = bring.indexOf("adoptSelection(body, snapshot);");
-  // A running analysis or typed text gets the offer banner (spec §12.1).
+  // A running analysis, a running action, or typed text gets the offer
+  // banner (spec §12.1).
   const offer = bring.indexOf(
-    "if (body && (hasRunningOperation(body) || hasUnsavedEdits(body))) {",
+    "(hasRunningOperation(body) || activity || hasUnsavedEdits(body))",
   );
   const move = bring.indexOf(
     "await useResearchWorkspaceSnapshot(dialog, snapshot, {",
@@ -213,4 +214,51 @@ test("the window body scrolls inside the dialog's XUL wrappers", () => {
   const body = rule(".pprw-window-body");
   assert.match(body, /min-height: 0;/);
   assert.match(body, /overflow: auto;/);
+});
+
+test("the home tracks typed text, so a relaunch does not drop it", () => {
+  const view = source("projectWindowView.ts");
+  const surface = view.slice(
+    view.indexOf(
+      "export async function renderResearchWorkspaceProjectSurface(",
+    ),
+  );
+  const track = surface.indexOf("trackDirtyInputs(root);");
+  const home = surface.indexOf("renderProjectHome(");
+  assert.ok(
+    track > 0 && track < home,
+    "tracking starts before the home renders",
+  );
+});
+
+test("a relaunch while the window opens draws the newest selection", () => {
+  const window = source("window.ts");
+  const bring = window.slice(
+    window.indexOf("async function bringSelectionIntoWindow("),
+  );
+  assert.match(
+    bring,
+    /!doc\.getElementById\(WINDOW_ROOT_ID\)\?\.querySelector\("\.pprw-window-header"\)\s*\) \{[\s\S]*?snapshot,\s*status: "opening",[\s\S]*?return;/,
+  );
+  assert.match(
+    window,
+    /researchWorkspaceWindowState\?\.snapshot \?\? snapshot\)[\s\S]*?initializeResearchWorkspaceDialog\(dialog, latest\)/,
+  );
+});
+
+test("a running action holds the view like a running analysis", () => {
+  const window = source("window.ts");
+  const bring = window.slice(
+    window.indexOf("async function bringSelectionIntoWindow("),
+  );
+  assert.match(
+    bring,
+    /hasRunningOperation\(body\) \|\| activity \|\| hasUnsavedEdits\(body\)/,
+  );
+  const use = window.slice(
+    window.indexOf("async function useResearchWorkspaceSnapshot("),
+  );
+  const refuse = use.indexOf("researchWorkspaceSurfaceActivity(body)");
+  const release = use.indexOf("releaseWindowBody(doc");
+  assert.ok(refuse > 0 && refuse < release, "an explicit switch waits too");
 });

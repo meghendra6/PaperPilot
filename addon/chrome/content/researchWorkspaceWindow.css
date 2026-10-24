@@ -36,6 +36,8 @@
   --rw-graphite: #5a6372;
   --rw-rule: #dfe3e8;
   --rw-rule-strong: #c3c9d2;
+  /* Form controls need a 3:1 boundary against the page and framed forms. */
+  --rw-control-border: #848d9b;
   --rw-sheet-edge: #d3d8df;
   /* Zotero's default annotation yellow. */
   --rw-mark: rgb(255 212 0 / 0.55);
@@ -107,6 +109,7 @@
     --rw-graphite: #a0a8b5;
     --rw-rule: #323843;
     --rw-rule-strong: #4a515d;
+    --rw-control-border: #747c8a;
     --rw-sheet-edge: #2c323b;
     --rw-mark: rgb(255 212 0 / 0.34);
     --rw-link: #8fb3f0;
@@ -300,8 +303,9 @@
 }
 
 .pprw-window .pprw-input,
-.pprw-window .pprw-textarea {
-  border-color: var(--rw-rule-strong);
+.pprw-window .pprw-textarea,
+.pprw-window .pprw-select {
+  border-color: var(--rw-control-border);
   border-radius: 6px;
 }
 
@@ -478,8 +482,16 @@
 }
 
 .pprw-window .pprw-project-paper-row > .pprw-select {
-  flex: 0 0 176px;
+  flex: 0 0 auto;
+  width: 176px;
   min-width: 0;
+}
+
+/* The shared styles stack a paper row below 680px; the menus then fill it. */
+@media (max-width: 680px) {
+  .pprw-window .pprw-project-paper-row > .pprw-select {
+    width: 100%;
+  }
 }
 
 /* Screening counts read as one line of figures, not a row of tiles. */
@@ -612,12 +624,13 @@
   border-bottom: 1px solid var(--rw-rule);
 }
 
+/* All tabs share one weight, so the row does not shift on selection. */
 .pprw-window .pprw-project-tab {
   padding: 9px 10px 10px;
   border-bottom: 0;
   border-radius: 6px 6px 0 0;
   color: var(--rw-graphite);
-  font-weight: 550;
+  font-weight: 600;
 }
 
 .pprw-window .pprw-project-tab:hover {
@@ -625,9 +638,16 @@
   color: var(--rw-ink);
 }
 
+/* An ink underline marks the open tab with enough contrast; the
+   highlighter below is the visible accent. */
 .pprw-window .pprw-project-tab[aria-selected="true"] {
+  box-shadow: inset 0 -2px 0 var(--rw-ink);
   color: var(--rw-ink);
-  font-weight: 650;
+}
+
+/* The tab list scrolls sideways and would clip an outside ring. */
+.pprw-window .pprw-project-tab:focus-visible {
+  outline-offset: -2px;
 }
 
 /* The open tab gets the highlighter stroke. Switching tabs draws it. */
@@ -721,6 +741,11 @@
   box-shadow: none;
 }
 
+/* The list scrolls, so it leaves room for the focus ring of its rows. */
+.pprw-window .pprw-scope-list {
+  padding: 3px;
+}
+
 .pprw-window .pprw-scope-item:hover {
   background: var(--rw-row-hover);
 }
@@ -758,8 +783,9 @@
     display: none;
   }
 
-  .pprw-window .pprw-project-tab[aria-selected="true"] {
-    border-bottom: 2px solid CanvasText;
+  .pprw-window .pprw-project-tab[aria-selected="true"] .pprw-project-tab-label {
+    text-decoration: underline 2px;
+    text-underline-offset: 4px;
   }
 
   .pprw-window .pprw-selection-title {

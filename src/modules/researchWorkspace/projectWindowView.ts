@@ -953,6 +953,8 @@ export async function renderResearchWorkspaceProjectSurface(
   if (!releaseOperations(root, "Opening all projects")) return;
   projectContexts.delete(root);
   root.dataset.researchWorkspaceProjectSurface = "true";
+  // The home forms hold typed text too, so a relaunch must see it.
+  trackDirtyInputs(root);
   if (options.selection) surfaceSelections.set(root, options.selection);
   const selection = surfaceSelections.get(root);
   const generation = Symbol("project-surface");

@@ -288,8 +288,9 @@ focus, and the open tab across a project rebuild, and the analysis panel stays
 in its tab panel while a tool runs.
 
 The window loads `researchWorkspaceWindow.css` after `zoteroPane.css`. Every
-rule in it is scoped to `.pprw-window`, so the same views keep Zotero's look in
-the item pane. It re-points the `--pp-*` tokens to the window palette and sets
+rule in it is scoped to `.pprw-window`. The item pane renders the same analysis
+view with the shared `zoteroPane.css` rules only, including the tool
+descriptions. It re-points the `--pp-*` tokens to the window palette and sets
 titles in a bundled subset of STIX Two Text. The fonts live in `studio/fonts`
 because the sandboxed Studio frame may read fonts only from its own chrome
 package; the window loads the same files from there. Stylesheet URLs carry a

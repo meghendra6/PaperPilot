@@ -451,7 +451,11 @@ output[data-error] {
   margin-top: 24px;
   border-top: 1px solid var(--border);
 }
+/* The global button:hover rule resets the background shorthand, so every
+   state repeats the divider image. */
 .welcome-card {
+  --welcome-divider: linear-gradient(var(--border), var(--border)) no-repeat
+    10px 100% / calc(100% - 20px) 1px;
   display: grid;
   align-content: start;
   gap: 2px;
@@ -459,15 +463,14 @@ output[data-error] {
   padding: 13px 10px 14px;
   border: 0;
   border-radius: 6px;
-  background: transparent linear-gradient(var(--border), var(--border))
-    no-repeat 10px 100% / calc(100% - 20px) 1px;
+  background: transparent var(--welcome-divider);
   text-align: left;
 }
 .welcome-card:hover {
-  background-color: rgb(32 94 103 / 0.07);
+  background: rgb(32 94 103 / 0.07) var(--welcome-divider);
 }
 .welcome-card:active {
-  background-color: rgb(32 94 103 / 0.12);
+  background: rgb(32 94 103 / 0.12) var(--welcome-divider);
 }
 .welcome-card strong {
   font-family: var(--serif);

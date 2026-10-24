@@ -1,7 +1,10 @@
 import { test } from "node:test";
 import * as assert from "node:assert/strict";
 
-import { runResearchWorkspaceSurfaceAction } from "../src/modules/researchWorkspace/surfaceAction";
+import {
+  researchWorkspaceSurfaceActivity,
+  runResearchWorkspaceSurfaceAction,
+} from "../src/modules/researchWorkspace/surfaceAction";
 
 class FakeSurface {
   readonly attributes = new Map<string, string>();
@@ -122,4 +125,26 @@ test("Research Workspace surface actions name the running action to a second cli
     true,
   );
   assert.equal(ran, true);
+});
+
+test("a running surface action is visible to the window until it ends", async () => {
+  const surface = new FakeSurface();
+  let release!: () => void;
+  const waiting = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  assert.equal(researchWorkspaceSurfaceActivity(surface), undefined);
+  const run = runResearchWorkspaceSurfaceAction({
+    surface,
+    trigger: { disabled: false },
+    label: "Create project with 3 papers",
+    action: () => waiting,
+    onError: (error) => assert.fail(String(error)),
+  });
+  assert.deepEqual(researchWorkspaceSurfaceActivity(surface), {
+    label: "Create project with 3 papers",
+  });
+  release();
+  await run;
+  assert.equal(researchWorkspaceSurfaceActivity(surface), undefined);
 });

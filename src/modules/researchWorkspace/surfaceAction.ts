@@ -10,6 +10,18 @@ export interface ResearchWorkspaceActionTrigger {
 /** The running action on each surface, by label. */
 const activeSurfaces = new WeakMap<object, string | undefined>();
 
+/**
+ * The action running on surface, if any. `label` is undefined when the
+ * action was started without one.
+ */
+export function researchWorkspaceSurfaceActivity(
+  surface: object,
+): { label: string | undefined } | undefined {
+  return activeSurfaces.has(surface)
+    ? { label: activeSurfaces.get(surface) }
+    : undefined;
+}
+
 export async function runResearchWorkspaceSurfaceAction(params: {
   surface: ResearchWorkspaceBusySurface;
   trigger: ResearchWorkspaceActionTrigger;

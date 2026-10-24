@@ -27,7 +27,10 @@ import {
 } from "./projectSurfaceShared";
 import { confirmCancelRunningAnalysis } from "./runGuard";
 import { planResearchWorkspaceSelectionOffer } from "./selectionOffer";
-import { runResearchWorkspaceSurfaceAction } from "./surfaceAction";
+import {
+  researchWorkspaceSurfaceActivity,
+  runResearchWorkspaceSurfaceAction,
+} from "./surfaceAction";
 import { element } from "./dom";
 import { pluginStylesheetURL } from "../../utils/stylesheet";
 
@@ -70,6 +73,17 @@ function actionButton(
       surface: root ?? node,
       trigger: node,
       action,
+      label,
+      onBusy: (active) => {
+        const body = doc.getElementById(WINDOW_BODY_ID);
+        if (body)
+          setMessage(
+            body,
+            active
+              ? `Still working on “${active}”. Try again when it finishes.`
+              : "Still working on the previous action. Try again when it finishes.",
+          );
+      },
       onError: (error) => {
         const message = error instanceof Error ? error.message : String(error);
         const banner = element(doc, "div", "pprw-window-error", message);
@@ -235,7 +249,15 @@ async function initializeResearchWorkspaceDialog(
         skipped: snapshot.skipped,
       });
   } catch (error) {
-    if (addon.data.dialog !== dialog || dialog.window.closed) return;
+    if (
+      addon.data.dialog !== dialog ||
+      dialog.window.closed ||
+      addon.data.researchWorkspaceWindowState?.snapshot.id !== snapshot.id ||
+      !initialBody.isConnected
+    ) {
+      Zotero.logError?.(error);
+      return;
+    }
     const message = error instanceof Error ? error.message : String(error);
     const body = renderWindowFrame(root);
     body.replaceChildren(element(doc, "div", "pprw-window-error", message));
@@ -279,6 +301,13 @@ async function useResearchWorkspaceSnapshot(
   options: { preferredProjectID?: string } = {},
 ) {
   const doc = dialog.window.document;
+  const body = windowBody(doc);
+  const activity = body && researchWorkspaceSurfaceActivity(body);
+  if (activity) {
+    throw new Error(
+      `Still working on “${activity.label ?? "the previous action"}”. Use the selection when it finishes.`,
+    );
+  }
   if (!releaseWindowBody(doc, "Using the new selection")) return;
   addon.data.researchWorkspaceWindowState = Object.freeze({
     snapshot,
@@ -337,11 +366,35 @@ async function bringSelectionIntoWindow(
       "Nothing is selected in the Zotero library. Select papers there, then choose Use Zotero selection again.",
     );
   }
-  const body = windowBody(dialog.window.document);
+  const doc = dialog.window.document;
+  if (
+    !doc.getElementById(WINDOW_ROOT_ID)?.querySelector(".pprw-window-header")
+  ) {
+    // The window has not drawn yet. Its load callback draws the newest
+    // snapshot, so recording it here is enough.
+    addon.data.researchWorkspaceWindowState = Object.freeze({
+      snapshot,
+      status: "opening",
+      loadedSourceIDs: Object.freeze([]),
+      skipped: snapshot.skipped,
+    });
+    return;
+  }
+  const body = windowBody(doc);
   const project = body ? getResearchWorkspaceSurfaceProject(body) : undefined;
   if (body && project && snapshot.candidates.length) {
+    const shownSnapshot = addon.data.researchWorkspaceWindowState?.snapshot.id;
     const details = await loadResearchWorkspaceProject(project.projectID);
-    if (addon.data.dialog !== dialog || dialog.window.closed) return;
+    // Another launch or a navigation may have replaced the view meanwhile.
+    if (
+      addon.data.dialog !== dialog ||
+      dialog.window.closed ||
+      !body.isConnected ||
+      getResearchWorkspaceSurfaceProject(body)?.projectID !==
+        project.projectID ||
+      addon.data.researchWorkspaceWindowState?.snapshot.id !== shownSnapshot
+    )
+      return;
     const members = new Set(details.members.map((member) => member.sourceID));
     if (
       snapshot.candidates.every((candidate) => members.has(candidate.sourceID))
@@ -357,12 +410,18 @@ async function bringSelectionIntoWindow(
       return;
     }
   }
-  if (body && (hasRunningOperation(body) || hasUnsavedEdits(body))) {
+  const activity = body && researchWorkspaceSurfaceActivity(body);
+  if (
+    body &&
+    (hasRunningOperation(body) || activity || hasUnsavedEdits(body))
+  ) {
     showSelectionOffer(dialog, snapshot, {
       evenIfUnchanged: true,
       reason: hasRunningOperation(body)
         ? "An analysis is running here, so this view stays until you choose."
-        : "This view has unsaved changes, so it stays until you choose.",
+        : activity
+          ? `“${activity.label ?? "An action"}” is still running here, so this view stays until you choose.`
+          : "This view has unsaved changes, so it stays until you choose.",
     });
     return;
   }
@@ -531,8 +590,13 @@ async function createResearchWorkspaceDialog(
     .setDialogData({
       loadCallback: () => {
         installCloseGuard(dialog);
-        void initializeResearchWorkspaceDialog(dialog, snapshot).catch(
-          (error) => Zotero.logError?.(error),
+        // A launch while the window opened may have replaced the snapshot.
+        const latest =
+          addon.data.dialog === dialog
+            ? (addon.data.researchWorkspaceWindowState?.snapshot ?? snapshot)
+            : snapshot;
+        void initializeResearchWorkspaceDialog(dialog, latest).catch((error) =>
+          Zotero.logError?.(error),
         );
       },
       beforeUnloadCallback: () => {

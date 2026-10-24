@@ -108,7 +108,9 @@ export function restoreSurfaceState(
   const find = (key: string, index: number) =>
     controls.find((entry) => entry.key === key && entry.index === index)?.node;
   // Values are restored without events, so no change handler (such as an
-  // autosave) runs for a choice the reader has not confirmed.
+  // autosave) runs for a choice the reader has not confirmed. A value equal
+  // to the fresh render was saved; it stays clean so it neither holds the
+  // window on a relaunch nor overwrites a later change made elsewhere.
   for (const entry of state.dirty) {
     const node = find(entry.key, entry.index) as
       | HTMLInputElement
@@ -116,23 +118,27 @@ export function restoreSurfaceState(
       | undefined;
     if (!node) continue;
     if (entry.toggle) {
-      if (isToggle(node) && !(node as HTMLInputElement).disabled)
-        (node as HTMLInputElement).checked = entry.checked;
+      const toggle = node as HTMLInputElement;
+      if (!isToggle(node) || toggle.disabled) continue;
+      if (toggle.checked === entry.checked) continue;
+      toggle.checked = entry.checked;
     } else if (node.tagName === "SELECT") {
       const select = node as HTMLSelectElement;
+      if (select.value === entry.value) continue;
       if (
-        (Array.from(select.options) as HTMLOptionElement[]).some(
+        !(Array.from(select.options) as HTMLOptionElement[]).some(
           (option) => option.value === entry.value,
         )
-      ) {
-        select.value = entry.value;
-        // Filters render their result in the change handler, which has no
-        // side effects, so it runs again for the restored value.
-        const EventClass = root.ownerDocument.defaultView?.Event;
-        if (select.dataset.restoreRefresh === "true" && EventClass)
-          select.dispatchEvent(new EventClass("change"));
-      }
-    } else if (node.value !== entry.value) {
+      )
+        continue;
+      select.value = entry.value;
+      // Filters render their result in the change handler, which has no
+      // side effects, so it runs again for the restored value.
+      const EventClass = root.ownerDocument.defaultView?.Event;
+      if (select.dataset.restoreRefresh === "true" && EventClass)
+        select.dispatchEvent(new EventClass("change"));
+    } else {
+      if (node.value === entry.value) continue;
       node.value = entry.value;
     }
     node.dataset.dirty = "true";
