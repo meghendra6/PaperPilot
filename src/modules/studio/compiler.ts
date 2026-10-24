@@ -104,6 +104,7 @@ export function compilerCommand(
 /** Runs only on an explicit Build action. Inputs are immutable saved revisions. */
 export class StudioCompilerService {
   private running?: { canceled: boolean };
+  private cleanupJob?: CompileJob;
   constructor(
     private projectID: string,
     private repository: StudioRepository,
@@ -126,6 +127,17 @@ export class StudioCompilerService {
       if (run.canceled) throw new Error("Build canceled.");
     };
     try {
+      if (this.cleanupJob) {
+        try {
+          await this.ports.stop(this.cleanupJob);
+          this.cleanupJob = undefined;
+        } catch (error) {
+          throw new Error(
+            `Previous compiler cleanup is unconfirmed. Retry after resolving the process error: ${String(error)}`,
+          );
+        }
+      }
+      check();
       const manifest = await this.repository.list(this.projectID);
       const selected = manifest.documents.find((doc) => doc.id === id);
       if (
@@ -248,6 +260,7 @@ export class StudioCompilerService {
       try {
         if (job && launched && !exited) await this.ports.stop(job);
       } catch (error) {
+        this.cleanupJob = job;
         if (result) result.log += `\nProcess cleanup: ${String(error)}`;
       }
       if (job && result) {

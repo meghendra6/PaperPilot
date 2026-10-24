@@ -57,7 +57,7 @@ export async function writeStudioLicenseNotices(outputDirectory) {
       "Upstream v1 source and build instructions: https://github.com/superdoc/docx-editor/tree/v1",
       "The v1 branch is mutable; package-lock.json and the npm integrity identify the bundled artifact.",
       "SuperDoc v2's separately licensed docx-engine is not included.",
-      "Paper Pilot modifies the v1 endnote export router at build time; the patch source is scripts/studio-editor-compat.mjs in the Paper Pilot source repository.",
+      "Paper Pilot modifies the v1 endnote export router and preserves the link toolbar accessibility label at build time; the patch source is scripts/studio-editor-compat.mjs in the Paper Pilot source repository.",
       "Bundled-code notices also appear in client.js.LEGAL.txt.",
       "",
     ].join("\n"),

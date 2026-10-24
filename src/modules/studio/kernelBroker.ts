@@ -42,6 +42,7 @@ interface Session {
 export class KernelBroker {
   private sessions = new Map<string, Session>();
   private starting = new Map<string, Promise<Session>>();
+  private restarting = new Map<string, Promise<void>>();
   private executionEpochs = new Map<string, number>();
   private closed = false;
   constructor(private ports: KernelPorts) {}
@@ -74,6 +75,8 @@ export class KernelBroker {
   ): Promise<Session> {
     assertStudioID(documentID);
     if (this.closed) throw new Error("This project window is closed.");
+    if (this.restarting.has(documentID))
+      throw new Error("This kernel is restarting. Wait before running a cell.");
     if (kernel !== "python3" && kernel !== "ir")
       throw new Error("Choose a Python or R kernel.");
     const current = this.sessions.get(documentID);
@@ -119,6 +122,11 @@ export class KernelBroker {
         try {
           await this.ports.kill(directory);
         } catch (cleanup) {
+          // Launch may have started a worker before its acknowledgement failed.
+          // Keep its directory owned so retry/close can terminate it, and block
+          // another worker until that termination has been confirmed.
+          session.failed = true;
+          this.sessions.set(documentID, session);
           throw new Error(
             `${String(error)} Cleanup could not be confirmed: ${String(cleanup)}`,
           );
@@ -204,18 +212,32 @@ export class KernelBroker {
       );
   }
 
-  async restart(documentID: string) {
+  restart(documentID: string): Promise<void> {
+    assertStudioID(documentID);
+    const pending = this.restarting.get(documentID);
+    if (pending) return pending;
     this.executionEpochs.set(
       documentID,
       (this.executionEpochs.get(documentID) ?? 0) + 1,
     );
-    await this.starting.get(documentID);
-    const session = this.sessions.get(documentID);
-    if (!session) return;
-    session.failed = true;
-    clearInterval(session.heartbeat);
-    await this.ports.kill(session.directory);
-    this.sessions.delete(documentID);
+    const operation = Promise.resolve()
+      .then(async () => {
+        // A failed start may retain an unconfirmed worker for this cleanup.
+        await this.starting.get(documentID)?.catch(() => {});
+        const session = this.sessions.get(documentID);
+        if (!session) return;
+        session.failed = true;
+        clearInterval(session.heartbeat);
+        await this.ports.kill(session.directory);
+        if (this.sessions.get(documentID) === session)
+          this.sessions.delete(documentID);
+      })
+      .finally(() => {
+        if (this.restarting.get(documentID) === operation)
+          this.restarting.delete(documentID);
+      });
+    this.restarting.set(documentID, operation);
+    return operation;
   }
 
   async close() {

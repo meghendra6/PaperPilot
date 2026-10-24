@@ -72,7 +72,11 @@ the host verifies the resulting document text before committing exported bytes.
 Starter and user-saved templates create original-format copies. Saved notebook
 figures/tables can be embedded in DOCX or inserted into source documents. HTML
 table previews are sanitized; merged or irregular tables require explicit repair
-before CSV extraction.
+before CSV extraction. CSV/TSV grids require a column before adding rows, and
+retain the last column until its rows are removed. Empty fields are quoted on
+serialization so a final empty row survives reopening. JSONL retains empty objects.
+The pinned editor build patch preserves both endnote export and the link button's
+accessible name across normal and headless selection updates.
 
 `StudioAIService` owns project conversation records, captured context revisions,
 review decisions and cancellation. Its operation reservation survives window
@@ -82,7 +86,10 @@ completion polling and a four-minute deadline. Codex uses read-only mode with
 host/browser/connector/delegation tools disabled; Claude uses safe mode with no
 tools. CLI capability checks fail visibly instead of weakening these settings.
 loopback calls are privileged-host requests with redirects disabled,
-bounded responses and no automatic retries. API keys remain in the window and
+bounded responses and no automatic retries. Local models receive the same JSON
+Schema as CLI providers through the structured response format. Failed CLI stop
+confirmation retains the owned job by project runtime path, including across
+replacement windows; the next run retries that cleanup before preparing a new job. API keys remain in the window and
 are excluded from conversation, document, and job files.
 PDF context is extracted by the bundled local OpenDataLoader runtime, with
 process cancellation and temporary-file cleanup. PDF bytes remain read-only for
@@ -92,7 +99,8 @@ AI proposals. Selected passages are explicitly added to the next question.
 or MyST (Typst output) in an owned build directory, polls completion every 800 ms,
 and adds a distinct PDF only after a successful exit and PDF signature check.
 Builds have a four-minute deadline and cancellation; diagnostics and input
-revisions are retained. MyST does not receive `--execute`. Project plugins and
+revisions are retained. A service retains an unconfirmed process cleanup and
+retries it before admitting another build. MyST does not receive `--execute`. Project plugins and
 notebook code run with local account permissions; runtime directories are not an
 OS security sandbox. Tectonic uses untrusted mode. Compilers can download missing
 packages/templates. A separate, bundled PDF.js worker renders local PDFs without
@@ -135,6 +143,9 @@ exported files are separate from authoritative document versions.
 Jupyter `clear_output(wait)` and display-handle updates are applied to output
 snapshots. Display handles are session-only and excluded from nbformat export.
 Output rendering reuses cell editors so running a cell retains its undo history.
+Concurrent restarts share one termination promise and block new executions until
+it settles. A failed launch whose cleanup is unconfirmed retains its session
+ownership; restart or close can retry termination before another worker starts.
 
 The local preview script uses the packaged browser assets and the same repository,
 AI service/runner and kernel broker with Node I/O. Preview proof does not establish

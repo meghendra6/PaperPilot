@@ -1278,3 +1278,49 @@ PR review regression checks:
 The Python worker integration suite is a separate CI step:
 `python test/studio_kernel_worker_test.py`, using `jupyter-client`, `ipykernel`
 and `matplotlib`. Node unit tests alone do not exercise a real kernel process.
+
+### Full feature audit follow-up — 2026-10-24
+
+See [the feature coverage and findings](./full-feature-audit-2026-10-24.md).
+
+- A single-column CSV/TSV ending in an empty row must retain that row after Save
+  and reopen. An empty CSV explains that a column is needed first. Removing the
+  final column while rows exist is disabled; JSONL empty objects remain visible.
+- Press Restart twice during termination. Only one termination owner should run;
+  a subsequent explicit Run must use the surviving new session. Simulate lost
+  launch acknowledgement plus failed cleanup: no second kernel may start until
+  termination is confirmed.
+- After failed compiler/AI stop confirmation, another request must retry cleanup
+  before preparing a new job. Replace AI service ports for the same project and
+  verify that this does not discard the pending process ownership.
+- Move the DOCX cursor into and out of a hyperlink and reopen the file. The link
+  toolbar control retains the accessible name `Link dropdown` in both editor
+  selection paths.
+- With a local OpenAI-compatible endpoint, verify the Studio request includes
+  the review JSON Schema in `response_format`. An endpoint that rejects it must
+  produce a visible error, without a hidden unconstrained retry.
+
+Current evidence: browser DOCX create/edit/save/reopen and export, Markdown
+rename/history restoration, and CSV empty-row round-trip passed. Actual Codex
+created a paragraph replacement, and applying it advanced the DOCX version while
+preserving its second paragraph. Claude `sonnet` returned the selected first
+paragraph. Ollama `qwen3:8b` initially produced malformed JSON; the same request
+completed after structured response format was added. A real Python kernel
+shared state across two cells (42, then 43) and rendered a Matplotlib figure.
+The three Python worker integration tests passed separately.
+
+The repaired XPI was installed after backing up the previous XPI and archiving
+the startup cache. In Zotero 10.0.6, the reader loaded, a Codex question about
+DeepSeek-V2 completed with two locally matched citation buttons, and clicking the
+MLA citation moved from page 9 to page 1. This 52-page paper took 120.7 seconds of
+preparation and 145.2 seconds overall; this record does not establish successful
+structured extraction rather than its supported attachment-text fallback.
+
+The exported synthetic DOCX opened and painted correctly in Microsoft Word
+16.89.1. Word disabled editing/saving with a license notice, so a Word-side save,
+field refresh and reimport were not verified. Native Workspace and Studio painted
+successfully in this audit, superseding the earlier capture failure for this
+machine only. R/IRkernel and Typst/Tectonic/MyST are absent from the current PATH;
+prior dated successes are not a current-runtime pass. Full cross-version and
+cross-platform feature matrices, live scholarly-provider coverage, Zotero sync
+transactions and research efficacy remain separate gates.

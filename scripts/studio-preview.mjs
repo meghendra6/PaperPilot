@@ -138,6 +138,7 @@ const assistant = new StudioAIService(projectID, repository, {
       config,
       prompt,
       {
+        scope: resolve(root, "runtime", projectID, "ai"),
         fetch: globalThis.fetch,
         read: fileOps.readText,
         write: fileOps.writeTextAtomic,

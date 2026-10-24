@@ -377,6 +377,7 @@ test("CLI commands keep project work read-only or tool-free and isolate customiz
 test("network requests do not follow redirects or silently retry and reject truncated completions", async () => {
   let calls = 0;
   const ports: StudioRunnerPorts = {
+    scope: "/owned/network-project/ai",
     prepare: async () => {
       throw new Error("not a CLI");
     },
@@ -388,6 +389,15 @@ test("network requests do not follow redirects or silently retry and reject trun
     fetch: async (_url, options) => {
       calls++;
       assert.equal(options?.redirect, "error");
+      const body = JSON.parse(String(options?.body));
+      assert.deepEqual(body.response_format, {
+        type: "json_schema",
+        json_schema: {
+          name: "paperpilot_studio_response",
+          strict: true,
+          schema: STUDIO_AI_SCHEMA,
+        },
+      });
       return new Response(
         JSON.stringify({
           choices: [
@@ -427,4 +437,54 @@ test("archived conversations resume without losing the current conversation or c
     (await f.service.history()).turns[0].question,
     "First conversation",
   );
+});
+
+test("unconfirmed AI cleanup blocks a replacement runner for the same project", async () => {
+  let prepared = 0;
+  let allowStop = false;
+  const stopped: string[] = [];
+  const disk = new Map<string, string>();
+  const ports: StudioRunnerPorts = {
+    scope: "/owned/cleanup-project/ai",
+    prepare: async () => ({
+      directory: `/owned/run-${++prepared}`,
+      executable: "codex",
+    }),
+    read: async (path) => disk.get(path),
+    write: async (path, text) => {
+      disk.set(path, text);
+    },
+    launch: async () => {
+      throw new Error("launch receipt lost");
+    },
+    stop: async (job) => {
+      stopped.push(job.directory);
+      if (!allowStop) throw new Error("process still running");
+    },
+    delay: async () => {},
+    fetch: globalThis.fetch,
+  };
+  const cli = { provider: "codex" as const, model: "fixture" };
+  const run = (runnerPorts = ports) =>
+    runStudioAI(cli, "prompt", runnerPorts, new AbortController().signal);
+  await assert.rejects(run(), /process still running/);
+  const recoveredPorts = {
+    ...ports,
+    launch: async (job: { directory: string }) => {
+      disk.set(`${job.directory}/exit-code`, "0");
+      disk.set(
+        `${job.directory}/stdout.txt`,
+        JSON.stringify({
+          type: "item.completed",
+          item: { type: "agent_message", text: "ok" },
+        }),
+      );
+    },
+  };
+  await assert.rejects(run(recoveredPorts), /cleanup.*unconfirmed/i);
+  assert.equal(prepared, 1);
+  allowStop = true;
+  assert.equal(await run(recoveredPorts), "ok");
+  assert.deepEqual(stopped, ["/owned/run-1", "/owned/run-1", "/owned/run-1"]);
+  assert.equal(prepared, 2);
 });

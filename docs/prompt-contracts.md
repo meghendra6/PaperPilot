@@ -295,6 +295,12 @@ The user reviews each proposal before a revision-checked mutation. Malformed
 output becomes a failed turn, never an automatic edit. The existing paper-chat
 citation verification envelope is independent of this project editing contract.
 
+Local Studio endpoints receive this same schema through the Chat Completions
+`response_format: {type: "json_schema", json_schema: {name, strict: true, schema}}`
+request field, as well as in the prompt. The endpoint/model must support that
+format; an HTTP error is reported without retrying in unconstrained mode. The
+host still validates captured IDs, revisions and exact replacement matches.
+
 Studio users may edit `after` while reviewing a text proposal. This is not a new
 model output field: the host preserves the original as `proposedAfter`, writes the
 reviewed wording durably before applying the file change, and retains exact-match,

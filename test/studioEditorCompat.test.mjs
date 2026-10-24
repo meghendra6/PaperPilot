@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { readFile, readdir } from "node:fs/promises";
 import { URL } from "node:url";
-import { patchStudioEditor } from "../scripts/studio-editor-compat.mjs";
+import {
+  patchStudioEditor,
+  patchStudioToolbar,
+} from "../scripts/studio-editor-compat.mjs";
 
 test("the pinned editor export patch preserves an endnote reference and custom mark", async () => {
   const directory = new URL(
@@ -45,4 +48,65 @@ test("the pinned editor export patch preserves an endnote reference and custom m
     name: "w:endnoteReference",
     attributes: { "w:id": "2" },
   });
+});
+
+test("the pinned link toolbar retains its accessible name across selection changes", async () => {
+  const directory = new URL(
+    "../packages/studio-editor/node_modules/superdoc/dist/chunks/",
+    import.meta.url,
+  );
+  let source;
+  for (const name of await readdir(directory)) {
+    if (!/^src-.*\.es\.js$/.test(name)) continue;
+    const candidate = await readFile(new URL(name, directory), "utf8");
+    if (candidate.includes('ariaLabel: "Link dropdown"')) source = candidate;
+  }
+  assert.ok(source);
+  const patched = patchStudioToolbar(source);
+  assert.throws(() => patchStudioToolbar(patched), /toolbar changed/);
+  const block = patched.match(
+    /const link = useToolbarItem\(\{[\s\S]*?\n\t\}\);/,
+  )[0];
+  const link = Function(
+    "useToolbarItem",
+    "toolbarIcons$1",
+    "toolbarTexts$1",
+    "renderLinkDropdown",
+    `${block}; return link;`,
+  )(
+    (item) => ({
+      ...item,
+      attributes: { value: item.attributes },
+      expand: { value: true },
+    }),
+    {},
+    {},
+    () => {},
+  );
+  link.onActivate({ href: "https://example.org" });
+  assert.deepEqual(link.attributes.value, {
+    ariaLabel: "Link dropdown",
+    href: "https://example.org",
+  });
+  link.onActivate({});
+  assert.deepEqual(link.attributes.value, { ariaLabel: "Link dropdown" });
+  link.onDeactivate();
+  assert.deepEqual(link.attributes.value, { ariaLabel: "Link dropdown" });
+  assert.equal(link.expand.value, false);
+  const stateAssignment = patched.match(
+    /item\.attributes\.value=commandState[^;]+;/,
+  )[0];
+  const update = Function("item", "commandState", stateAssignment);
+  update(link, { active: true, value: "https://example.org" });
+  assert.deepEqual(link.attributes.value, {
+    ariaLabel: "Link dropdown",
+    href: "https://example.org",
+  });
+  update(link, { active: false });
+  assert.deepEqual(link.attributes.value, { ariaLabel: "Link dropdown" });
+  const minified = await readFile(
+    new URL("../superdoc.min.js", directory),
+    "utf8",
+  );
+  assert.match(patchStudioToolbar(minified), /ariaLabel:"Link dropdown",href:/);
 });

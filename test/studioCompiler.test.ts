@@ -212,6 +212,33 @@ test("a failed launch acknowledgment still stops a potentially started compiler"
   assert.equal((await f.repository.list("project")).documents.length, 1);
 });
 
+test("an unconfirmed compiler cleanup is retried before another build can launch", async () => {
+  const f = fixture();
+  const source = await f.repository.create(
+    "project",
+    "draft.typ",
+    encode("hello"),
+    "You",
+  );
+  const launch = f.ports.launch;
+  let launches = 0;
+  let cleanupFails = true;
+  f.ports.launch = async () => {
+    launches++;
+    throw new Error("launch acknowledgement failed");
+  };
+  f.ports.stop = async () => {
+    if (cleanupFails) throw new Error("termination unconfirmed");
+  };
+  const failed = await f.service.build(source.id, 1);
+  assert.match(failed.log, /termination unconfirmed/);
+  await assert.rejects(f.service.build(source.id, 1), /cleanup.*unconfirmed/i);
+  assert.equal(launches, 1);
+  cleanupFails = false;
+  f.ports.launch = launch;
+  assert.equal((await f.service.build(source.id, 1)).status, "complete");
+});
+
 test("snapshot path collisions reject before preparing or launching a compiler", async () => {
   for (const names of [
     ["Data.csv", "data.csv"],
