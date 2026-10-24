@@ -39,11 +39,17 @@ export async function loadSelectionPapers(
     report(
       `Reading ${selection.titles.length} PDF${selection.titles.length === 1 ? "" : "s"} on this computer…`,
     );
-  const loaded = await selection.load();
-  if (!loaded.papers.length)
-    throw new Error(
-      "None of the selected PDFs could be read. Check that the files exist in Zotero, then try again.",
+  const loaded = await selection.load({ onStatus: report });
+  if (!loaded.papers.length) {
+    const failure = loaded.skipped.find(
+      (entry) => entry.code === "load-failed",
     );
+    throw new Error(
+      "None of the selected PDFs could be read. " +
+        (failure?.reason ? `${failure.reason.slice(0, 500)} ` : "") +
+        "Check the PDF in Zotero, then try again. If Zotero's PDF reader is not responding, restart Zotero before retrying.",
+    );
+  }
   return {
     papers: loaded.papers,
     unread: Math.max(0, loaded.skipped.length - selection.skipped.length),

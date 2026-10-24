@@ -209,3 +209,102 @@ test("snapshot loading resolves the captured attachment ID instead of live selec
     restore();
   }
 });
+
+test("one stalled PDF is bounded and cannot cache stale content while the remaining PDFs load", async () => {
+  const firstParent = parent({
+    id: 70,
+    key: "PAPER-70",
+    title: "Stalled",
+    attachments: [71],
+  });
+  const first = attachment({ id: 71, key: "PDF-71", parentItemID: 70 });
+  const secondParent = parent({
+    id: 80,
+    key: "PAPER-80",
+    title: "Ready",
+    attachments: [81],
+  });
+  const second = attachment({ id: 81, key: "PDF-81", parentItemID: 80 });
+  let finishOld!: (value: string) => void;
+  (first as any).attachmentText = new Promise<string>((resolve) => {
+    finishOld = resolve;
+  });
+  const restore = withZoteroItems(
+    new Map<number, any>([
+      [70, firstParent],
+      [71, first],
+      [80, secondParent],
+      [81, second],
+    ]),
+  );
+  paperWorkspaceContentCache.clearCache();
+  try {
+    const snapshot = await captureResearchWorkspaceSelection({
+      items: [firstParent, secondParent],
+    });
+    const progress: string[] = [];
+    const result = await loadResearchWorkspaceSnapshotPapers(
+      snapshot,
+      undefined,
+      { timeoutMs: 10, onStatus: (message) => progress.push(message) },
+    );
+    assert.deepEqual(
+      result.papers.map((paper) => paper.attachmentID),
+      [81],
+    );
+    assert.equal(result.skipped.length, 1);
+    assert.equal(result.skipped[0].selectedItemID, 70);
+    assert.match(result.skipped[0].reason, /timed out/);
+    assert.ok(progress.some((message) => /PDF 1 of 2/.test(message)));
+    assert.ok(progress.some((message) => /PDF 2 of 2/.test(message)));
+    finishOld("Late stale text");
+    await Promise.resolve();
+    await Promise.resolve();
+    first.attachmentText = "Recovered current text";
+    const retry = await loadResearchWorkspaceSnapshotPapers(
+      snapshot,
+      undefined,
+      { timeoutMs: 100 },
+    );
+    assert.equal(retry.papers[0].context, "Recovered current text");
+    assert.equal(retry.papers.length, 2);
+  } finally {
+    finishOld("settled");
+    paperWorkspaceContentCache.clearCache();
+    restore();
+  }
+});
+
+test("aborted selection does not continue to the next PDF", async () => {
+  const firstParent = parent({
+    id: 90,
+    key: "PAPER-90",
+    title: "A",
+    attachments: [91],
+  });
+  const first = attachment({ id: 91, key: "PDF-91", parentItemID: 90 });
+  const restore = withZoteroItems(
+    new Map<number, any>([
+      [90, firstParent],
+      [91, first],
+    ]),
+  );
+  try {
+    const snapshot = await captureResearchWorkspaceSelection({
+      items: [firstParent],
+    });
+    const controller = new AbortController();
+    controller.abort();
+    const status: string[] = [];
+    await assert.rejects(
+      loadResearchWorkspaceSnapshotPapers(snapshot, undefined, {
+        signal: controller.signal,
+        onStatus: (message) => status.push(message),
+      }),
+      /cancel/i,
+    );
+    assert.deepEqual(status, []);
+  } finally {
+    restore();
+  }
+});

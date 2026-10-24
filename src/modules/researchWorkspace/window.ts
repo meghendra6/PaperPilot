@@ -21,6 +21,7 @@ import {
 } from "./projectWindowView";
 import {
   hasRunningOperation,
+  loadSelectionPapers,
   releaseOperations,
   setMessage,
   surfaceSelections,
@@ -33,6 +34,7 @@ import {
 } from "./surfaceAction";
 import { element } from "./dom";
 import { pluginStylesheetURL } from "../../utils/stylesheet";
+import { throwIfPDFReadAborted } from "../tools/pdfReadDeadline";
 
 declare const addon: any;
 declare const Zotero: any;
@@ -178,12 +180,16 @@ function renderWindowFrame(root: HTMLElement) {
 
 /** Reads the snapshot's PDFs once and records them in the window state. */
 function surfaceSelection(snapshot: ResearchWorkspaceSelectionSnapshot) {
-  return createResearchWorkspaceSurfaceSelection(snapshot, async () => {
+  return createResearchWorkspaceSurfaceSelection(snapshot, async (options) => {
+    options.onStatus?.("Preparing PDF reading settings…");
     const state = await loadResearchWorkspaceState();
+    throwIfPDFReadAborted(options.signal);
     const loaded = await loadResearchWorkspaceSnapshotPapers(
       snapshot,
       state.preferences.maxPaperCharacters,
+      options,
     );
+    throwIfPDFReadAborted(options.signal);
     updateWindowState(snapshot, {
       status: "ready",
       loadedSourceIDs: Object.freeze(
@@ -454,16 +460,14 @@ async function addSnapshotToOpenProject(
       "An analysis is running in this project. Add the selection after it finishes.",
     );
   }
-  setMessage(body, `Loading ${snapshot.candidates.length} selected PDF(s)…`);
   // The project page now offers this selection, read once.
   const selection = adoptSelection(body, snapshot);
-  const loaded = await selection.load();
-  if (!loaded.papers.length) {
-    throw new Error("None of the selected PDFs could be loaded.");
-  }
+  const loaded = await loadSelectionPapers(selection, (message) =>
+    setMessage(body, message),
+  );
   await addPapersToResearchWorkspaceProject(project.projectID, loaded.papers);
   await refreshResearchWorkspaceProject(body);
-  const skipped = loaded.skipped.length - snapshot.skipped.length;
+  const skipped = loaded.unread;
   setMessage(
     body,
     `Added ${loaded.papers.length} paper${loaded.papers.length === 1 ? "" : "s"} to “${project.projectName}”.${skipped > 0 ? ` ${skipped} could not be loaded.` : ""}`,

@@ -4,12 +4,15 @@ import * as assert from "node:assert/strict";
 import type { ResearchWorkspaceSnapshotLoadResult } from "../src/modules/researchWorkspace/selectionSnapshot";
 import {
   createResearchWorkspaceSurfaceSelection,
+  createSelectionReadController,
   defaultResearchWorkspaceProjectName,
   describeResearchWorkspaceSkip,
   formatResearchWorkspaceDay,
   papersLabel,
   summarizeResearchWorkspaceSelection,
 } from "../src/modules/researchWorkspace/surfaceSelection";
+import { loadSelectionPapers } from "../src/modules/researchWorkspace/projectSurfaceShared";
+import { runResearchWorkspaceSurfaceAction } from "../src/modules/researchWorkspace/surfaceAction";
 
 function snapshot(titles: string[], skipped = 0) {
   return {
@@ -44,6 +47,28 @@ const LOADED: ResearchWorkspaceSnapshotLoadResult = {
   ],
   skipped: [],
 };
+
+test("PDF selection uses the window AbortController when the Zotero sandbox has none", () => {
+  const runtime = globalThis as typeof globalThis & { Zotero?: unknown };
+  const originalController = runtime.AbortController;
+  const originalZotero = runtime.Zotero;
+  try {
+    Object.assign(runtime, {
+      AbortController: undefined,
+      Zotero: {
+        getMainWindow: () => ({ AbortController: originalController }),
+      },
+    });
+    const controller = createSelectionReadController();
+    assert.equal(controller.signal.aborted, false);
+    controller.abort();
+    assert.equal(controller.signal.aborted, true);
+  } finally {
+    Object.assign(runtime, { AbortController: originalController });
+    if (originalZotero === undefined) Reflect.deleteProperty(runtime, "Zotero");
+    else runtime.Zotero = originalZotero;
+  }
+});
 
 test("a surface selection reads its PDFs once and shares the result", async () => {
   let reads = 0;
@@ -111,6 +136,92 @@ test("a read where every PDF failed is not cached either", async () => {
   // The PDF was repaired; the next action reads it again.
   assert.equal(await selection.load(), LOADED);
   assert.equal(reads, 2);
+});
+
+test("a stalled selection times out, releases the create action, and ignores late results after retry", async () => {
+  let finishOld!: (value: ResearchWorkspaceSnapshotLoadResult) => void;
+  const oldRead = new Promise<ResearchWorkspaceSnapshotLoadResult>(
+    (resolve) => {
+      finishOld = resolve;
+    },
+  );
+  let oldSignal: AbortSignal | undefined;
+  let oldStatus: ((message: string) => void) | undefined;
+  let reads = 0;
+  const status: string[] = [];
+  const selection = createResearchWorkspaceSurfaceSelection(
+    snapshot(["A"]),
+    async (options) => {
+      reads++;
+      if (reads === 1) {
+        oldSignal = options.signal;
+        oldStatus = options.onStatus;
+        options.onStatus?.("Reading PDF 1 of 1: reading Zotero text…");
+        return oldRead;
+      }
+      return LOADED;
+    },
+    { timeoutMs: 5 },
+  );
+  const attributes = new Map<string, string>();
+  const surface = {
+    setAttribute: (key: string, value: string) => attributes.set(key, value),
+    removeAttribute: (key: string) => {
+      attributes.delete(key);
+    },
+  };
+  const trigger = { disabled: false };
+  let created = 0;
+  const errors: unknown[] = [];
+  const create = () =>
+    runResearchWorkspaceSurfaceAction({
+      surface,
+      trigger,
+      action: async () => {
+        await loadSelectionPapers(selection, (message) => status.push(message));
+        created++;
+      },
+      onError: (error) => errors.push(error),
+    });
+  assert.equal(await create(), false);
+  assert.equal(created, 0);
+  assert.equal(oldSignal?.aborted, true);
+  assert.equal(trigger.disabled, false);
+  assert.equal(attributes.has("aria-busy"), false);
+  assert.match(String(errors[0]), /timed out/i);
+  assert.equal(await create(), true);
+  assert.equal(created, 1);
+  assert.equal(reads, 2);
+  const beforeLate = [...status];
+  oldStatus?.("Old read finished");
+  finishOld({ papers: [], skipped: [] });
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(selection.loaded(), LOADED);
+  assert.deepEqual(status, beforeLate);
+  assert.equal(await selection.load(), LOADED);
+  assert.equal(reads, 2);
+});
+
+test("failed PDF loading explains the stalled stage instead of hiding it behind a generic error", async () => {
+  const selection = createResearchWorkspaceSurfaceSelection(
+    snapshot(["A"]),
+    async () => ({
+      papers: [],
+      skipped: [
+        {
+          selectedIndex: 0,
+          title: "A",
+          code: "load-failed",
+          reason: "Reading Zotero PDF text timed out.",
+        },
+      ],
+    }),
+  );
+  await assert.rejects(
+    loadSelectionPapers(selection, () => {}),
+    /Reading Zotero PDF text timed out/,
+  );
 });
 
 test("the selection summary counts papers and skipped items", () => {

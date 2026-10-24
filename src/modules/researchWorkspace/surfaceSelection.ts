@@ -4,6 +4,19 @@ import type {
   ResearchWorkspaceSkippedSelection,
   ResearchWorkspaceSnapshotLoadResult,
 } from "./selectionSnapshot";
+import {
+  createPDFReadController,
+  waitForPDFRead,
+} from "../tools/pdfReadDeadline";
+
+export const SELECTED_PDF_READ_TIMEOUT_MS = 180_000;
+
+export const createSelectionReadController = createPDFReadController;
+
+export interface ResearchWorkspaceSelectionReadOptions {
+  signal: AbortSignal;
+  onStatus?: (message: string) => void;
+}
 
 /**
  * The Zotero selection a window was opened with. The surface shows its
@@ -16,7 +29,9 @@ export interface ResearchWorkspaceSurfaceSelection {
   readonly sourceIDs: readonly string[];
   readonly skipped: readonly ResearchWorkspaceSkippedSelection[];
   /** Reads the selected PDFs once. Later calls share the result. */
-  load(): Promise<ResearchWorkspaceSnapshotLoadResult>;
+  load(options?: {
+    onStatus?: (message: string) => void;
+  }): Promise<ResearchWorkspaceSnapshotLoadResult>;
   /** The result of a finished load, if any. */
   loaded(): ResearchWorkspaceSnapshotLoadResult | undefined;
 }
@@ -26,7 +41,10 @@ export function createResearchWorkspaceSurfaceSelection(
     ResearchWorkspaceSelectionSnapshot,
     "id" | "selectedCount" | "candidates" | "skipped"
   >,
-  read: () => Promise<ResearchWorkspaceSnapshotLoadResult>,
+  read: (
+    options: ResearchWorkspaceSelectionReadOptions,
+  ) => Promise<ResearchWorkspaceSnapshotLoadResult>,
+  options: { timeoutMs?: number } = {},
 ): ResearchWorkspaceSurfaceSelection {
   let pending: Promise<ResearchWorkspaceSnapshotLoadResult> | undefined;
   let result: ResearchWorkspaceSnapshotLoadResult | undefined;
@@ -38,11 +56,35 @@ export function createResearchWorkspaceSurfaceSelection(
       snapshot.candidates.map((entry) => entry.sourceID),
     ),
     skipped: snapshot.skipped,
-    load() {
+    load(loadOptions: { onStatus?: (message: string) => void } = {}) {
       // A failed read is not cached, so the next action tries again. That
       // includes a read where no selected PDF could be extracted.
-      pending ??= read().then(
+      if (pending) return pending;
+      const controller = createSelectionReadController();
+      let reading = true;
+      // This outer bound also covers preference/selection preparation before
+      // individual PDF deadlines start. A failed attempt is never cached.
+      const attempt = waitForPDFRead(
+        () =>
+          read({
+            signal: controller.signal,
+            onStatus: (message) => {
+              if (reading && !controller.signal.aborted)
+                loadOptions.onStatus?.(message);
+            },
+          }),
+        {
+          timeoutMs:
+            options.timeoutMs ??
+            30_000 +
+              Math.max(1, snapshot.candidates.length) *
+                SELECTED_PDF_READ_TIMEOUT_MS,
+          signal: controller.signal,
+          stage: "Reading selected PDFs",
+        },
+      ).then(
         (value) => {
+          reading = false;
           if (!value.papers.length && snapshot.candidates.length) {
             pending = undefined;
             return value;
@@ -51,10 +93,13 @@ export function createResearchWorkspaceSurfaceSelection(
           return value;
         },
         (error: unknown) => {
+          reading = false;
+          controller.abort();
           pending = undefined;
           throw error;
         },
       );
+      pending = attempt;
       return pending;
     },
     loaded: () => result,

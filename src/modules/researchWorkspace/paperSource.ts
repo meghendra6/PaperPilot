@@ -1,8 +1,10 @@
 import { isPdfFileAttachment } from "../../utils/pdfAttachment";
+import { throwIfPDFReadAborted } from "../tools/pdfReadDeadline";
 import {
   paperWorkspaceContentCache,
   buildPaperContentFingerprint,
   type PaperContentFingerprint,
+  type PaperWorkspaceContentOptions,
 } from "../tools/paperWorkspaceContent";
 import {
   buildZoteroSourceID,
@@ -215,8 +217,12 @@ export async function resolveResearchWorkspaceSource(
 export async function loadResearchWorkspacePaper(
   item: any,
   maxCharacters = 1_500_000,
+  options: Pick<PaperWorkspaceContentOptions, "signal" | "onStatus"> = {},
 ): Promise<ResearchWorkspacePaper> {
+  throwIfPDFReadAborted(options.signal);
+  options.onStatus?.("Resolving the selected attachment…");
   const resolved = await resolveResearchWorkspaceSource(item);
+  throwIfPDFReadAborted(options.signal);
   const { paperItem, attachment, sourceID } = resolved;
   const identity = createZoteroSourceIdentity({
     libraryID: resolved.libraryID,
@@ -225,9 +231,11 @@ export async function loadResearchWorkspacePaper(
     standaloneAttachment: resolved.itemID === resolved.attachmentID,
   });
   const content = await paperWorkspaceContentCache.getPaperContent(paperItem, {
+    ...options,
     attachment,
     source: identity,
   });
+  throwIfPDFReadAborted(options.signal);
   if (
     !content.source ||
     !content.contentFingerprint ||

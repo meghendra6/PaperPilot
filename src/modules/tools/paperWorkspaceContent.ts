@@ -10,6 +10,12 @@ import {
 } from "../ai/subprocessStatus";
 import { buildCodexCommandEnvironment } from "../codex/environment";
 import { shellEscape, shellExportLine } from "../codex/shell";
+import {
+  createPDFReadController,
+  PDFReadTimeoutError,
+  throwIfPDFReadAborted,
+  waitForPDFRead,
+} from "./pdfReadDeadline";
 
 declare const Zotero: any;
 declare const IOUtils: any;
@@ -40,10 +46,42 @@ export interface PaperContentFingerprint {
   zoteroVersion?: number;
 }
 
+export interface PDFReadTimeouts {
+  javaMs: number;
+  stageMs: number;
+  runMs: number;
+  cleanupMs: number;
+  fallbackMs: number;
+}
+
+export const PDF_READ_TIMEOUTS: Readonly<PDFReadTimeouts> = {
+  javaMs: 10_000,
+  stageMs: 30_000,
+  runMs: 120_000,
+  cleanupMs: 30_000,
+  fallbackMs: 30_000,
+};
+
 export interface PaperWorkspaceContentOptions {
   attachment?: any;
   source?: PaperWorkspaceContentSource;
+  signal?: AbortSignal;
+  onStatus?: (message: string) => void;
+  /** Internal test budgets; these are not user preferences. */
+  timeouts?: Partial<PDFReadTimeouts>;
 }
+
+type PDFReadOptions = Pick<
+  PaperWorkspaceContentOptions,
+  "signal" | "onStatus" | "timeouts"
+>;
+const readTimeouts = (options: PDFReadOptions) => ({
+  ...PDF_READ_TIMEOUTS,
+  ...options.timeouts,
+});
+const interruptedPDFRead = (error: unknown) =>
+  error instanceof PDFReadTimeoutError ||
+  (error instanceof Error && error.name === "AbortError");
 
 interface StructuredExtractionResult {
   markdownText: string;
@@ -66,18 +104,35 @@ export class PaperWorkspaceContentCache {
     item: any,
     options: PaperWorkspaceContentOptions = {},
   ): Promise<PaperWorkspaceContent> {
-    const attachment = options.attachment ?? (await resolvePdfAttachment(item));
+    throwIfPDFReadAborted(options.signal);
+    const attachment =
+      options.attachment ??
+      (await waitForPDFRead(() => resolvePdfAttachment(item), {
+        timeoutMs: readTimeouts(options).stageMs,
+        signal: options.signal,
+        stage: "Finding the selected PDF",
+      }));
     if (!attachment) {
       throw new Error("No PDF attachment found for this item");
     }
     const source =
       options.source ?? buildPaperWorkspaceContentSource(item, attachment);
     assertAttachmentMatchesSource(attachment, source);
-    const filePath = await attachment.getFilePathAsync();
+    options.onStatus?.("Locating the PDF on this computer…");
+    const filePath = await waitForPDFRead<string | undefined>(
+      () => attachment.getFilePathAsync(),
+      {
+        timeoutMs: readTimeouts(options).stageMs,
+        signal: options.signal,
+        stage: "Locating the PDF",
+      },
+    );
     const contentFingerprint = await buildPaperContentFingerprint(
       attachment,
       filePath,
+      options,
     );
+    throwIfPDFReadAborted(options.signal);
     const cacheKey = JSON.stringify([
       source.libraryID,
       source.itemKey,
@@ -98,7 +153,9 @@ export class PaperWorkspaceContentCache {
       source,
       contentFingerprint,
       filePath,
+      options,
     );
+    throwIfPDFReadAborted(options.signal);
     this.entries.set(cacheKey, content);
     while (this.entries.size > MAX_CACHE_ENTRIES) {
       const oldest = this.entries.keys().next().value as string | undefined;
@@ -117,12 +174,17 @@ export class PaperWorkspaceContentCache {
     source: PaperWorkspaceContentSource,
     contentFingerprint: PaperContentFingerprint,
     filePath: string | undefined,
+    options: PDFReadOptions,
   ): Promise<PaperWorkspaceContent> {
     const extractionNotes: string[] = [];
 
     if (filePath) {
       try {
-        const structured = await extractStructuredPdf(filePath);
+        const structured = await extractStructuredPdf(
+          filePath,
+          options.signal,
+          options,
+        );
         return {
           fullText: structured.markdownText,
           markdownText: structured.markdownText,
@@ -133,6 +195,8 @@ export class PaperWorkspaceContentCache {
           contentFingerprint,
         };
       } catch (error) {
+        throwIfPDFReadAborted(options.signal);
+        if (error instanceof Error && error.name === "AbortError") throw error;
         const reason = classifyStructuredExtractionFailure(error);
         if (reason !== "java-missing") {
           Zotero.logError?.(
@@ -149,7 +213,15 @@ export class PaperWorkspaceContentCache {
       );
     }
 
-    const fallbackText = await Promise.resolve(attachment.attachmentText || "");
+    options.onStatus?.("Reading Zotero’s PDF text…");
+    const fallbackText = await waitForPDFRead<string>(
+      () => Promise.resolve(attachment.attachmentText || ""),
+      {
+        timeoutMs: readTimeouts(options).fallbackMs,
+        signal: options.signal,
+        stage: "Reading Zotero’s PDF text",
+      },
+    );
     return {
       fullText: fallbackText,
       extractionMethod: "zotero-attachment-text",
@@ -220,6 +292,7 @@ function assertAttachmentMatchesSource(
 export async function buildPaperContentFingerprint(
   attachment: any,
   filePath?: string,
+  options: PDFReadOptions = {},
 ): Promise<PaperContentFingerprint> {
   const version = Number(attachment.version);
   let fileSize: number | undefined;
@@ -233,12 +306,18 @@ export async function buildPaperContentFingerprint(
   ).IOUtils;
   if (filePath && ioUtils?.stat) {
     try {
-      const stat = await ioUtils.stat(filePath);
+      const statFile = ioUtils.stat.bind(ioUtils);
+      const stat = await waitForPDFRead(() => statFile(filePath), {
+        timeoutMs: readTimeouts(options).stageMs,
+        signal: options.signal,
+        stage: "Checking the PDF file",
+      });
       const size = Number(stat.size);
       const modified = Number(stat.lastModified);
       if (Number.isFinite(size) && size >= 0) fileSize = size;
       if (Number.isFinite(modified) && modified >= 0) modifiedTime = modified;
-    } catch {
+    } catch (error) {
+      if (interruptedPDFRead(error)) throw error;
       // Zotero version and dateModified remain a conservative fallback.
     }
   }
@@ -288,9 +367,18 @@ async function pathExists(path: string) {
   }
 }
 
-const jarCopies = new Map<string, Promise<string>>();
+interface JarCopy {
+  promise: Promise<string>;
+  controller: AbortController;
+  readers: number;
+}
+const jarCopies = new Map<string, JarCopy>();
 
-async function fetchBundledJarToProfile(rootUri: string): Promise<string> {
+async function fetchBundledJarToProfile(
+  rootUri: string,
+  options: PDFReadOptions,
+): Promise<string> {
+  throwIfPDFReadAborted(options.signal);
   const profilePath = getZoteroProfilePath();
   if (!profilePath)
     throw new Error("Could not resolve the Zotero profile directory.");
@@ -300,8 +388,45 @@ async function fetchBundledJarToProfile(rootUri: string): Promise<string> {
     `opendataloader-pdf-cli-${openDataLoaderVersion}.jar`,
   );
   const key = `${rootUri}:${cachePath}`;
+  const awaitCopy = async (entry: JarCopy) => {
+    entry.readers++;
+    try {
+      return await waitForPDFRead(entry.promise, {
+        timeoutMs: readTimeouts(options).stageMs,
+        signal: options.signal,
+        stage: "Preparing the PDF extractor",
+      });
+    } finally {
+      if (--entry.readers === 0) entry.controller.abort();
+    }
+  };
   const pending = jarCopies.get(key);
-  if (pending) return pending;
+  if (pending) {
+    if (pending.controller.signal.aborted) {
+      // A prior last reader canceled. Let that copy settle before retrying so
+      // its writes cannot compete with a replacement copy.
+      await waitForPDFRead(
+        pending.promise.catch(() => {}),
+        {
+          timeoutMs: readTimeouts(options).stageMs,
+          signal: options.signal,
+          stage: "Waiting for the previous PDF extractor preparation",
+        },
+      );
+      return fetchBundledJarToProfile(rootUri, options);
+    }
+    return awaitCopy(pending);
+  }
+  const controller = createPDFReadController();
+  const stage = <T>(
+    action: (() => T | PromiseLike<T>) | PromiseLike<T>,
+    label: string,
+  ) =>
+    waitForPDFRead(action, {
+      timeoutMs: readTimeouts(options).stageMs,
+      signal: controller.signal,
+      stage: label,
+    });
   const copy = (async () => {
     // Packed XPIs use jar:file: roots, which WHATWG URL cannot use as a base.
     const bundledJarUrl = rootUri.startsWith("jar:")
@@ -312,52 +437,99 @@ async function fetchBundledJarToProfile(rootUri: string): Promise<string> {
     if (http?.request) {
       bundled = new Uint8Array(
         (
-          await http.request("GET", bundledJarUrl, {
-            responseType: "arraybuffer",
-          })
+          await stage<any>(
+            () =>
+              http.request("GET", bundledJarUrl, {
+                responseType: "arraybuffer",
+                timeout: readTimeouts(options).stageMs,
+              }),
+            "Reading the bundled PDF extractor",
+          )
         ).response,
       );
     } else {
-      const response = await fetch(bundledJarUrl);
+      const response = await stage(
+        () => fetch(bundledJarUrl, { signal: controller.signal }),
+        "Reading the bundled PDF extractor",
+      );
       if (!response.ok)
         throw new Error(
           `Could not read the bundled OpenDataLoader asset (${response.status}).`,
         );
-      bundled = new Uint8Array(await response.arrayBuffer());
+      bundled = new Uint8Array(
+        await stage(
+          () => response.arrayBuffer(),
+          "Reading the PDF extractor bytes",
+        ),
+      );
     }
     if (!bundled.length)
       throw new Error("The bundled OpenDataLoader asset is empty.");
     // Compare against the installed bundle, including same-version replacements.
     // A partial or old profile copy must never masquerade as the current extractor.
-    if (await pathExists(cachePath)) {
-      const cached = new Uint8Array(await IOUtils.read(cachePath));
+    if (
+      await stage(
+        () => pathExists(cachePath),
+        "Checking the PDF extractor cache",
+      )
+    ) {
+      const cached = new Uint8Array(
+        await stage<ArrayBuffer>(
+          () => IOUtils.read(cachePath),
+          "Reading the PDF extractor cache",
+        ),
+      );
       if (
         cached.length === bundled.length &&
         cached.every((byte: number, index: number) => byte === bundled[index])
       )
         return cachePath;
     }
-    await IOUtils.makeDirectory(cacheDir, { ignoreExisting: true });
+    await stage(
+      () => IOUtils.makeDirectory(cacheDir, { ignoreExisting: true }),
+      "Preparing the PDF extractor cache",
+    );
     const tmpPath = `${cachePath}.tmp-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     try {
+      throwIfPDFReadAborted(controller.signal);
+      // Native atomic writes cannot be canceled. Readers have their own bound,
+      // but retain this shared entry and its temporary file until the actual
+      // write settles, so a retry cannot race a late cache replacement.
       await IOUtils.write(cachePath, bundled, { tmpPath, flush: true });
+      throwIfPDFReadAborted(controller.signal);
     } finally {
-      await IOUtils.remove?.(tmpPath, { ignoreAbsent: true });
+      await waitForPDFRead(
+        () => IOUtils.remove?.(tmpPath, { ignoreAbsent: true }),
+        {
+          timeoutMs: readTimeouts(options).cleanupMs,
+          stage: "Cleaning the PDF extractor cache temporary file",
+        },
+      );
     }
     return cachePath;
   })();
-  jarCopies.set(key, copy);
-  try {
-    return await copy;
-  } finally {
-    jarCopies.delete(key);
-  }
+  const entry: JarCopy = { promise: copy, controller, readers: 0 };
+  jarCopies.set(key, entry);
+  const release = () => {
+    if (jarCopies.get(key) === entry) jarCopies.delete(key);
+  };
+  void copy.then(release, release);
+  return awaitCopy(entry);
 }
 
-export async function resolveOpenDataLoaderJarPath(options?: {
-  rootUri?: string;
-  exists?: (path: string) => Promise<boolean>;
-}) {
+export async function resolveOpenDataLoaderJarPath(
+  options?: PDFReadOptions & {
+    rootUri?: string;
+    exists?: (path: string) => Promise<boolean>;
+  },
+) {
+  const readOptions = options ?? {};
+  const stage = <T>(action: () => T | PromiseLike<T>) =>
+    waitForPDFRead(action, {
+      timeoutMs: readTimeouts(readOptions).stageMs,
+      signal: readOptions.signal,
+      stage: "Locating the PDF extractor",
+    });
   const exists = options?.exists ?? pathExists;
   const rootUri =
     options?.rootUri ??
@@ -369,11 +541,12 @@ export async function resolveOpenDataLoaderJarPath(options?: {
 
   if (rootUri) {
     try {
-      const bundledPath = await fetchBundledJarToProfile(rootUri);
-      if (await exists(bundledPath)) {
+      const bundledPath = await fetchBundledJarToProfile(rootUri, readOptions);
+      if (await stage(() => exists(bundledPath))) {
         return bundledPath;
       }
     } catch (error) {
+      if (interruptedPDFRead(error)) throw error;
       bundleError = error;
       // Fall back to the development-time node_modules lookup below.
     }
@@ -401,7 +574,7 @@ export async function resolveOpenDataLoaderJarPath(options?: {
   }
 
   for (const candidate of candidates) {
-    if (await exists(candidate)) {
+    if (await stage(() => exists(candidate))) {
       return candidate;
     }
   }
@@ -491,12 +664,19 @@ async function probeJavaWithExitStatus() {
 
 export async function probeJavaRuntime(
   probe: () => Promise<unknown> = probeJavaWithExitStatus,
+  options: PDFReadOptions = {},
 ) {
+  throwIfPDFReadAborted(options.signal);
   if (javaRuntimeAvailable !== undefined) return javaRuntimeAvailable;
   try {
-    await probe();
+    await waitForPDFRead(probe, {
+      timeoutMs: readTimeouts(options).javaMs,
+      signal: options.signal,
+      stage: "Checking Java for PDF extraction",
+    });
     javaRuntimeAvailable = true;
   } catch (error) {
+    if (interruptedPDFRead(error)) throw error;
     javaRuntimeAvailable = false;
     if (!javaFailureLogged) {
       javaFailureLogged = true;
@@ -530,6 +710,7 @@ export async function withOpenDataLoaderOutputCleanup<T>(
   action: () => Promise<T>,
   remove: (path: string) => Promise<unknown> = (path) =>
     IOUtils.remove(path, { recursive: true, ignoreAbsent: true }),
+  cleanupTimeoutMs = PDF_READ_TIMEOUTS.cleanupMs,
 ): Promise<T> {
   let retain = false;
   try {
@@ -538,7 +719,58 @@ export async function withOpenDataLoaderOutputCleanup<T>(
     retain = error instanceof ExtractorCleanupUnconfirmedError;
     throw error;
   } finally {
-    if (!retain) await remove(outputDir);
+    if (!retain)
+      await waitForPDFRead(() => remove(outputDir), {
+        timeoutMs: cleanupTimeoutMs,
+        stage: "Cleaning PDF extraction temporary files",
+      });
+  }
+}
+
+function confirmedExitStatus(value: string) {
+  return /^\d{1,3}$/.test(value.trim()) && Number(value.trim()) <= 255;
+}
+
+type ExtractorStop = (
+  processId: string | undefined,
+  options: { requireProcessId?: boolean },
+  deadline: number,
+) => Promise<void>;
+
+async function confirmExtractorStopped(params: {
+  exitCodePath: string;
+  pidPath: string;
+  read: (path: string) => Promise<string>;
+  stop: ExtractorStop;
+  cleanupTimeoutMs: number;
+}) {
+  const directory = params.pidPath.replace(/[\\/][^\\/]+$/, "");
+  const deadline = Date.now() + params.cleanupTimeoutMs;
+  const cleanup = <T>(action: () => T | PromiseLike<T>, stage: string) =>
+    waitForPDFRead(action, {
+      timeoutMs: Math.max(0, deadline - Date.now()),
+      stage,
+    });
+  const read = async (path: string) => {
+    try {
+      return await cleanup(
+        () => params.read(path),
+        "Checking PDF extractor shutdown",
+      );
+    } catch (error) {
+      if (interruptedPDFRead(error)) throw error;
+      return "";
+    }
+  };
+  try {
+    if (confirmedExitStatus(await read(params.exitCodePath))) return;
+    const pid = (await read(params.pidPath)).trim();
+    await cleanup(
+      () => params.stop(pid, { requireProcessId: true }, deadline),
+      "Stopping the PDF extractor",
+    );
+  } catch (error) {
+    throw new ExtractorCleanupUnconfirmedError(directory, error);
   }
 }
 
@@ -547,8 +779,10 @@ export async function waitForExtractorCompletion(params: {
   pidPath: string;
   stderrPath: string;
   timeoutMs?: number;
+  stageTimeoutMs?: number;
+  cleanupTimeoutMs?: number;
   read?: (path: string) => Promise<string>;
-  stop?: typeof stopDetachedRunProcess;
+  stop?: ExtractorStop;
   delay?: (milliseconds: number) => Promise<void>;
   signal?: AbortSignal;
 }) {
@@ -556,142 +790,288 @@ export async function waitForExtractorCompletion(params: {
   const stop = params.stop ?? stopDetachedRunProcess;
   const delay =
     params.delay ??
-    ((milliseconds: number) =>
-      new Promise<void>((resolve) => setTimeout(resolve, milliseconds)));
-  const deadline =
-    Date.now() + (params.timeoutMs ?? STRUCTURED_EXTRACTION_TIMEOUT_MS);
-  while (Date.now() < deadline) {
-    if (params.signal?.aborted) {
-      const processId = await read(params.pidPath).catch(() => "");
-      await stop(processId.trim(), { requireProcessId: true });
-      throw new Error("PDF extraction canceled.");
-    }
-    let exitCode = "";
-    try {
-      exitCode = (await read(params.exitCodePath)).trim();
-    } catch {
-      // The detached process may not have created its result file yet.
-    }
-    if (exitCode) {
-      if (exitCode !== "0") {
-        const stderr = await read(params.stderrPath).catch(() => "");
-        throw new Error(
-          `OpenDataLoader PDF exited with code ${exitCode}.${stderr ? ` ${stderr.trim()}` : ""}`,
-        );
+    ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+  const timeoutMs = params.timeoutMs ?? STRUCTURED_EXTRACTION_TIMEOUT_MS;
+  const deadline = Date.now() + timeoutMs;
+  const stage = <T>(action: () => T | PromiseLike<T>, name: string) =>
+    waitForPDFRead(action, {
+      timeoutMs: Math.max(
+        0,
+        Math.min(
+          params.stageTimeoutMs ?? PDF_READ_TIMEOUTS.stageMs,
+          deadline - Date.now(),
+        ),
+      ),
+      signal: params.signal,
+      stage: name,
+    });
+  let exited = false;
+  try {
+    while (Date.now() < deadline) {
+      throwIfPDFReadAborted(params.signal);
+      let exitCode = "";
+      try {
+        exitCode = (
+          await stage(
+            () => read(params.exitCodePath),
+            "Reading PDF extraction status",
+          )
+        ).trim();
+      } catch (error) {
+        if (interruptedPDFRead(error)) throw error;
       }
-      return;
+      if (exitCode) {
+        exited = confirmedExitStatus(exitCode);
+        if (!exited)
+          throw new Error("The PDF extractor returned an invalid exit status.");
+        if (exitCode !== "0") {
+          let stderr = "";
+          try {
+            stderr = await stage(
+              () => read(params.stderrPath),
+              "Reading PDF extraction diagnostics",
+            );
+          } catch (error) {
+            if (interruptedPDFRead(error)) throw error;
+          }
+          throw new Error(
+            `OpenDataLoader PDF exited with code ${exitCode}.${stderr ? ` ${stderr.trim()}` : ""}`,
+          );
+        }
+        return;
+      }
+      await stage(
+        () => delay(STRUCTURED_EXTRACTION_POLL_MS),
+        "Waiting for PDF extraction",
+      );
     }
-    await delay(STRUCTURED_EXTRACTION_POLL_MS);
+    throw new PDFReadTimeoutError("OpenDataLoader PDF extraction", timeoutMs);
+  } catch (error) {
+    if (!exited)
+      await confirmExtractorStopped({
+        exitCodePath: params.exitCodePath,
+        pidPath: params.pidPath,
+        read,
+        stop,
+        cleanupTimeoutMs:
+          params.cleanupTimeoutMs ?? PDF_READ_TIMEOUTS.cleanupMs,
+      });
+    throw error;
   }
+}
 
-  const processId = await read(params.pidPath).catch(() => "");
-  await stop(processId.trim(), { requireProcessId: true });
-  throw new Error(
-    `OpenDataLoader PDF extraction timed out after ${Math.round(
-      (params.timeoutMs ?? STRUCTURED_EXTRACTION_TIMEOUT_MS) / 1000,
-    )} seconds.`,
+/** Verify a late saved PID still belongs to this extractor before signaling it. */
+async function stopOwnedExtractor(
+  pid: string | undefined,
+  directory: string,
+  deadline: number,
+) {
+  if (
+    !pid ||
+    !/^[1-9]\d*$/.test(pid) ||
+    !Number.isSafeInteger(Number(pid)) ||
+    Number(pid) <= 1
+  )
+    throw new Error("The PDF extractor did not provide a valid pid.");
+  const result = parseExitStatusMarker(
+    await waitForPDFRead(
+      () =>
+        Zotero.Utilities.Internal.subprocess("/bin/zsh", [
+          "-lc",
+          withExitStatusMarker(`/bin/ps -ww -o command= -p ${pid}`),
+        ]),
+      {
+        timeoutMs: Math.max(0, deadline - Date.now()),
+        stage: "Checking PDF extractor process ownership",
+      },
+    ),
+  );
+  if (result.exitCode === 1 && !result.output.trim()) return;
+  const prefix = `${directory}/`;
+  if (
+    result.exitCode !== 0 ||
+    (!result.output.includes(prefix) &&
+      !result.output.includes(shellEscape(prefix).slice(1, -1)))
+  )
+    throw new Error(
+      "The saved PID no longer identifies the PDF extractor; no process was stopped.",
+    );
+  await waitForPDFRead(
+    () => stopDetachedRunProcess(pid, { requireProcessId: true }),
+    {
+      timeoutMs: Math.max(0, deadline - Date.now()),
+      stage: "Stopping the PDF extractor",
+    },
   );
 }
 
 export async function extractStructuredPdf(
   filePath: string,
   signal?: AbortSignal,
-  options: { outputRoot?: string } = {},
+  options: PDFReadOptions & { outputRoot?: string } = {},
 ): Promise<StructuredExtractionResult> {
-  if (signal?.aborted) throw new Error("PDF extraction canceled.");
-  if (!(await probeJavaRuntime())) throw new Error("java-missing");
-  const jarPath = await resolveOpenDataLoaderJarPath();
-  const outputDir = await IOUtils.createUniqueDirectory(
-    options.outputRoot ??
-      `${Zotero.getTempDirectory().path}/paper-pilot-opendataloader`,
-    "run",
-  );
+  const readOptions = { ...options, signal };
+  const budgets = readTimeouts(readOptions);
+  const stage = <T>(
+    action: (() => T | PromiseLike<T>) | PromiseLike<T>,
+    name: string,
+  ) =>
+    waitForPDFRead(action, {
+      timeoutMs: budgets.stageMs,
+      signal,
+      stage: name,
+    });
+  throwIfPDFReadAborted(signal);
+  options.onStatus?.("Checking Java for structured PDF extraction…");
+  if (!(await probeJavaRuntime(undefined, readOptions)))
+    throw new Error("java-missing");
+  options.onStatus?.("Preparing the PDF extractor…");
+  const jarPath = await resolveOpenDataLoaderJarPath(readOptions);
+  throwIfPDFReadAborted(signal);
+  const creating = Promise.resolve().then(() => {
+    throwIfPDFReadAborted(signal);
+    return IOUtils.createUniqueDirectory(
+      options.outputRoot ??
+        `${Zotero.getTempDirectory().path}/paper-pilot-opendataloader`,
+      "run",
+    ) as Promise<string>;
+  });
+  const remove = (path: string) =>
+    waitForPDFRead(
+      () => IOUtils.remove(path, { recursive: true, ignoreAbsent: true }),
+      {
+        timeoutMs: budgets.cleanupMs,
+        stage: "Cleaning PDF extraction temporary files",
+      },
+    );
+  const logCleanupFailure = (error: unknown) =>
+    Zotero.logError?.(
+      error instanceof Error ? error : new Error(String(error)),
+    );
+  let outputDir: string;
+  try {
+    outputDir = await stage(
+      creating,
+      "Preparing PDF extraction temporary files",
+    );
+  } catch (error) {
+    // A filesystem request can finish after cancellation. It has not launched
+    // anything, so remove only the unique directory that request allocated.
+    void creating.then(remove).catch(logCleanupFailure);
+    throw error;
+  }
   const exitCodePath = `${outputDir}/extractor-exit.txt`;
   const pidPath = `${outputDir}/extractor-pid.txt`;
   const stderrPath = `${outputDir}/extractor-stderr.log`;
-
-  return withOpenDataLoaderOutputCleanup(outputDir, async () => {
-    let stopped = false;
-    let launched = false;
-    try {
-      // Durable launch intent distinguishes an unconfirmed launch from an
-      // unused context directory when recovering after Zotero restarts.
-      await IOUtils.writeUTF8(`${outputDir}/launch-intent`, "opendataloader");
-      launched = true;
-      const launch = await launchDetachedShellScript(
-        buildOpenDataLoaderScript({
-          jarPath,
-          inputPath: filePath,
-          outputDir,
+  const stop = () =>
+    confirmExtractorStopped({
+      exitCodePath,
+      pidPath,
+      read: readTextFile,
+      stop: (pid, _options, deadline) =>
+        stopOwnedExtractor(pid, outputDir, deadline),
+      cleanupTimeoutMs: budgets.cleanupMs,
+    });
+  return withOpenDataLoaderOutputCleanup(
+    outputDir,
+    async () => {
+      let stopped = false;
+      let launched = false;
+      let launchSettled = false;
+      let launchTask: ReturnType<typeof launchDetachedShellScript> | undefined;
+      try {
+        await stage(
+          () =>
+            IOUtils.writeUTF8(`${outputDir}/launch-intent`, "opendataloader"),
+          "Preparing PDF extractor launch",
+        );
+        throwIfPDFReadAborted(signal);
+        options.onStatus?.("Extracting structured PDF text…");
+        launched = true;
+        launchTask = launchDetachedShellScript(
+          buildOpenDataLoaderScript({
+            jarPath,
+            inputPath: filePath,
+            outputDir,
+            exitCodePath,
+            pidPath,
+            stderrPath,
+          }),
+          (executable, args) =>
+            Zotero.Utilities.Internal.exec(executable, args),
+        ).then((result) => {
+          launchSettled = true;
+          return result;
+        });
+        const launch = await stage(launchTask, "Starting the PDF extractor");
+        if (!launch.ok) throw new Error(launch.error);
+        await waitForExtractorCompletion({
           exitCodePath,
           pidPath,
           stderrPath,
-        }),
-        (executable, args) => Zotero.Utilities.Internal.exec(executable, args),
-      );
-      if (!launch.ok) {
-        throw new Error(launch.error);
-      }
-      await waitForExtractorCompletion({
-        exitCodePath,
-        pidPath,
-        stderrPath,
-        signal,
-        stop: async (pid, stopOptions) => {
-          await stopDetachedRunProcess(pid, stopOptions);
-          stopped = true;
-        },
-      });
-      stopped = true;
-    } catch (error) {
-      if (launched && !stopped) {
-        try {
-          const exit = await readTextFile(exitCodePath).catch(() => "");
-          if (!/^-?\d+$/.test(exit.trim())) {
-            const pid = await readTextFile(pidPath).catch(() => "");
-            await stopDetachedRunProcess(pid.trim(), {
-              requireProcessId: true,
-            });
+          signal,
+          timeoutMs: budgets.runMs,
+          stageTimeoutMs: budgets.stageMs,
+          cleanupTimeoutMs: budgets.cleanupMs,
+          stop: async (pid, _options, deadline) => {
+            await stopOwnedExtractor(pid, outputDir, deadline);
+            stopped = true;
+          },
+        });
+        stopped = true;
+      } catch (error) {
+        if (error instanceof ExtractorCleanupUnconfirmedError) throw error;
+        if (launched && !stopped) {
+          if (!launchSettled && launchTask) {
+            // A timed-out launch can still create a process later. Keep its
+            // evidence, observe the late result, and only remove after its stop.
+            void launchTask
+              .then(async () => {
+                await stop();
+                await remove(outputDir);
+              })
+              .catch(logCleanupFailure);
+            throw new ExtractorCleanupUnconfirmedError(outputDir, error);
           }
-        } catch (cleanup) {
-          throw new ExtractorCleanupUnconfirmedError(outputDir, cleanup);
+          await stop();
         }
+        throw error;
       }
-      throw error;
-    }
-
-    const files = await listDirectoryFiles(outputDir);
-    const markdownPath = files.find((path) => path.endsWith(".md"));
-    const jsonPath = files.find((path) => path.endsWith(".json"));
-
-    if (!markdownPath || !jsonPath) {
-      throw new Error(
-        "OpenDataLoader PDF did not produce both Markdown and JSON outputs.",
+      options.onStatus?.("Reading the extracted PDF text…");
+      const files = await stage(
+        () => listDirectoryFiles(outputDir),
+        "Listing extracted PDF files",
       );
-    }
-
-    const markdownText = await readTextFile(markdownPath);
-    const jsonText = await readTextFile(jsonPath);
-
-    if (!markdownText.trim() || !jsonText.trim()) {
-      throw new Error(
-        "OpenDataLoader PDF produced empty Markdown or JSON output.",
+      const markdownPath = files.find((path) => path.endsWith(".md"));
+      const jsonPath = files.find((path) => path.endsWith(".json"));
+      if (!markdownPath || !jsonPath)
+        throw new Error(
+          "OpenDataLoader PDF did not produce both Markdown and JSON outputs.",
+        );
+      const markdownText = await stage(
+        () => readTextFile(markdownPath),
+        "Reading extracted PDF text",
       );
-    }
-
-    try {
-      return {
-        markdownText,
-        structuredContent: JSON.parse(jsonText),
-      };
-    } catch (error) {
-      throw new Error(
-        `OpenDataLoader PDF returned invalid JSON output. ${String(
-          error instanceof Error ? error.message : error,
-        )}`,
+      const jsonText = await stage(
+        () => readTextFile(jsonPath),
+        "Reading extracted PDF structure",
       );
-    }
-  });
+      if (!markdownText.trim() || !jsonText.trim())
+        throw new Error(
+          "OpenDataLoader PDF produced empty Markdown or JSON output.",
+        );
+      throwIfPDFReadAborted(signal);
+      try {
+        return { markdownText, structuredContent: JSON.parse(jsonText) };
+      } catch (error) {
+        throw new Error(
+          `OpenDataLoader PDF returned invalid JSON output. ${String(error instanceof Error ? error.message : error)}`,
+        );
+      }
+    },
+    remove,
+    budgets.cleanupMs,
+  );
 }
 
 export const paperWorkspaceContentCache = new PaperWorkspaceContentCache();
