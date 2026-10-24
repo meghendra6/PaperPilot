@@ -1564,7 +1564,7 @@ async function createDocument(name: string, template: TemplateChoice) {
       switching = false;
       // A DOCX path mounted a blank editor; never leave it ownerless.
       if (previousID) await openDocument(previousID).catch(showError);
-      else destroyEditor();
+      if (!active) destroyEditor();
     }
     // The file exists once create succeeds: report the failed open instead
     // of keeping the dialog open for a retry that would collide.

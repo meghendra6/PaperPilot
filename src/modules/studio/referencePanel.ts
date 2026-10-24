@@ -495,7 +495,15 @@ export function referencePanel(
       } catch (error) {
         fail(error);
       } finally {
-        if (!panel.hidden && !busy && !loading) primaryControl().focus();
+        const current = document.activeElement;
+        // Keep a user who moved elsewhere during loading where they are.
+        if (
+          !panel.hidden &&
+          !busy &&
+          !loading &&
+          (!current || current === document.body || panel.contains(current))
+        )
+          primaryControl().focus();
       }
     },
   };

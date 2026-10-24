@@ -141,6 +141,15 @@ export function aiPanel(
     status.textContent = text;
     delete status.dataset.error;
   };
+  /**
+   * Restores focus after an operation, unless the user moved focus out of
+   * the panel meanwhile (a run can take minutes).
+   */
+  const restoreFocus = (target: HTMLElement) => {
+    const current = document.activeElement;
+    if (!current || current === document.body || panel.contains(current))
+      target.focus();
+  };
   const updateSend = () => {
     send.disabled = busy || !question.value.trim();
   };
@@ -286,11 +295,11 @@ export function aiPanel(
         busyState(false);
         renderChoices();
         // Rendering replaced the focused button; return to the same card.
-        (
+        restoreFocus(
           transcript.querySelector<HTMLElement>(
             `[data-change-id="${CSS.escape(change.id)}"] > summary`,
-          ) ?? question
-        ).focus();
+          ) ?? question,
+        );
       }
     })();
 
@@ -362,11 +371,10 @@ export function aiPanel(
       busyState(false);
       renderChoices();
       // The history list held focus; keep it inside the panel.
-      if (historyOpen)
-        (
-          history.querySelector<HTMLButtonElement>("button") ?? question
-        ).focus();
-      else question.focus();
+      restoreFocus(
+        (historyOpen && history.querySelector<HTMLButtonElement>("button")) ||
+          question,
+      );
     }
   }
 
@@ -492,7 +500,7 @@ export function aiPanel(
           pending.stop();
           busyState(false);
           renderChoices();
-          question.focus();
+          restoreFocus(question);
         }
       })(),
   );
@@ -525,7 +533,7 @@ export function aiPanel(
         } finally {
           busyState(false);
           renderChoices();
-          question.focus();
+          restoreFocus(question);
         }
       })(),
   );
@@ -535,7 +543,8 @@ export function aiPanel(
   new ResizeObserver(() => {
     if (question.clientWidth === composerWidth) return;
     composerWidth = question.clientWidth;
-    autosize();
+    // Resizing the observed element inside its own callback can log a loop warning.
+    requestAnimationFrame(autosize);
   }).observe(question);
 
   return {
