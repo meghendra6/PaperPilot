@@ -7,6 +7,10 @@ import {
 } from "./persistence/contracts";
 import { ResearchWorkspaceProjectRepository } from "./persistence/projectRepository";
 import {
+  isResearchWorkspaceProjectDeleting,
+  runResearchWorkspaceProjectTask,
+} from "./projectRunAdmission";
+import {
   createResearchWorkspaceChangeInbox,
   reconcileResearchWorkspaceLivingReview,
   resolveResearchWorkspaceLivingReviewChange,
@@ -109,7 +113,10 @@ export class ResearchWorkspaceLivingReviewService {
   }
 
   load(projectID: string) {
-    return this.repository.getChangeInbox(projectID);
+    return runResearchWorkspaceProjectTask(
+      this.repository.getProjectRoot(projectID),
+      () => this.repository.getChangeInbox(projectID),
+    );
   }
 
   private async exclusiveScan<T>(action: () => Promise<T>) {
@@ -137,12 +144,18 @@ export class ResearchWorkspaceLivingReviewService {
       { includeArchived: true },
     );
     for (const projectID of projectIDs) {
-      await this.repository.markArtifactsStaleForSource({
-        projectID,
-        sourceID: params.sourceID,
-        contentFingerprint: params.comparisonFingerprint,
-        reason: params.reason,
-      });
+      const projectRoot = this.repository.getProjectRoot(projectID);
+      // A scan of another project can share this source. It must not start
+      // writing a project after that project's deletion barrier was acquired.
+      if (isResearchWorkspaceProjectDeleting(projectRoot)) continue;
+      await runResearchWorkspaceProjectTask(projectRoot, () =>
+        this.repository.markArtifactsStaleForSource({
+          projectID,
+          sourceID: params.sourceID,
+          contentFingerprint: params.comparisonFingerprint,
+          reason: params.reason,
+        }),
+      );
     }
   }
 
@@ -301,10 +314,22 @@ export class ResearchWorkspaceLivingReviewService {
   }
 
   checkProject(projectID: string) {
-    return this.exclusiveScan(() => this.checkProjectOnce(projectID));
+    return runResearchWorkspaceProjectTask(
+      this.repository.getProjectRoot(projectID),
+      () => this.exclusiveScan(() => this.checkProjectOnce(projectID)),
+    );
   }
 
   async resolveChange(params: ResolveResearchWorkspaceChangeParams) {
+    return runResearchWorkspaceProjectTask(
+      this.repository.getProjectRoot(params.projectID),
+      () => this.resolveChangeOnce(params),
+    );
+  }
+
+  private async resolveChangeOnce(
+    params: ResolveResearchWorkspaceChangeParams,
+  ) {
     const resolve = (inbox: ResearchWorkspaceChangeInboxFile) =>
       resolveResearchWorkspaceLivingReviewChange(inbox, {
         changeID: params.changeID,
@@ -334,11 +359,18 @@ export class ResearchWorkspaceLivingReviewService {
   }
 
   async refreshSource(projectID: string, sourceID: string) {
-    const bundle = await this.repository.getProject(projectID);
-    if (!bundle.members.some((member) => member.sourceID === sourceID)) {
-      throw new Error(`Source ${sourceID} is not a member of this project.`);
-    }
-    return this.checkProject(projectID);
+    return runResearchWorkspaceProjectTask(
+      this.repository.getProjectRoot(projectID),
+      async () => {
+        const bundle = await this.repository.getProject(projectID);
+        if (!bundle.members.some((member) => member.sourceID === sourceID)) {
+          throw new Error(
+            `Source ${sourceID} is not a member of this project.`,
+          );
+        }
+        return this.exclusiveScan(() => this.checkProjectOnce(projectID));
+      },
+    );
   }
 
   async checkAllActiveProjects() {

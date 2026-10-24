@@ -478,3 +478,51 @@ test("template cache copies only an owned build's templates and rejects foreign 
     /does not belong/,
   );
 });
+
+test("project quiescence waits for compiler diagnostics and retries a closed owner's cleanup", async () => {
+  const f = fixture();
+  const source = await f.repository.create(
+    "project",
+    "draft.typ",
+    encode("draft"),
+    "You",
+  );
+  let releaseLaunch!: () => void;
+  let launched!: () => void;
+  const started = new Promise<void>((resolve) => (launched = resolve));
+  f.ports.launch = async () => {
+    launched();
+    await new Promise<void>((resolve) => (releaseLaunch = resolve));
+  };
+  f.ports.stop = async () => {
+    throw new Error("old window cannot stop");
+  };
+  const build = f.service.build(source.id, 1);
+  await started;
+  const freshStops: string[] = [];
+  const quiesce = StudioCompilerService.quiesceScope(
+    f.ports.scope,
+    async (job) => {
+      assert.ok(
+        f.disk.has("/job/result.json"),
+        "Diagnostics must finish before cleanup releases ownership.",
+      );
+      freshStops.push(job.directory);
+      throw new Error("still unconfirmed");
+    },
+  );
+  assert.equal(
+    StudioCompilerService.quiesceScope(f.ports.scope, f.ports.stop),
+    quiesce,
+  );
+  releaseLaunch();
+  assert.equal((await build).status, "canceled");
+  await assert.rejects(quiesce, /still unconfirmed/);
+  await StudioCompilerService.quiesceScope(f.ports.scope, async (job) => {
+    freshStops.push(job.directory);
+  });
+  assert.deepEqual(freshStops, ["/job", "/job"]);
+  await StudioCompilerService.quiesceScope(f.ports.scope, async () =>
+    assert.fail("Confirmed ownership must be released."),
+  );
+});

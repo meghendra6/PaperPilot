@@ -21,6 +21,10 @@ import type {
   RequestContextSnapshot,
 } from "../context/requestContext";
 import type { EngineMode } from "../ai/types";
+import {
+  projectWorkspaceCleanup,
+  type ResearchWorkspaceProjectWorkspaceCleanup,
+} from "./persistence/projectWorkspaceCleanup";
 
 const RUN_TIMEOUT_MS = 4 * 60 * 1000;
 
@@ -36,7 +40,8 @@ export class WorkspaceAnalysisRunError extends Error {
   }
 }
 
-export async function runResearchWorkspaceAnalysis(params: {
+interface ResearchWorkspaceAnalysisParams {
+  projectID?: string;
   itemID: number;
   itemTitle: string;
   purpose: string;
@@ -51,7 +56,22 @@ export async function runResearchWorkspaceAnalysis(params: {
   onStatus?: (status: string) => void;
   /** Names the task in the busy message; defaults to Research Workspace. */
   taskLabel?: string;
-}) {
+}
+
+export function runResearchWorkspaceAnalysis(
+  params: ResearchWorkspaceAnalysisParams,
+) {
+  const cleanup = params.projectID ? projectWorkspaceCleanup() : undefined;
+  return cleanup && params.projectID
+    ? cleanup.run(params.projectID, () => runAnalysis(params, cleanup))
+    : runAnalysis(params);
+}
+
+async function runAnalysis(
+  params: ResearchWorkspaceAnalysisParams,
+  projectCleanup?: ResearchWorkspaceProjectWorkspaceCleanup,
+) {
+  const projectID = params.projectID;
   const settings =
     params.executionSettings ??
     captureExecutionSettings(getModeForItem(params.itemID));
@@ -91,8 +111,28 @@ export async function runResearchWorkspaceAnalysis(params: {
       imagePath: params.imagePath,
       signal: params.signal,
       deadline,
+      onWorkspaceAllocated:
+        projectID && projectCleanup
+          ? (path) => projectCleanup.register(projectID, path, mode)
+          : undefined,
+      onWorkspaceWillLaunch:
+        projectID && projectCleanup
+          ? (path) => projectCleanup.markLaunching(projectID, path)
+          : undefined,
+      onWorkspaceProcessStopped:
+        projectID && projectCleanup
+          ? (path) => projectCleanup.confirmStopped(projectID, path)
+          : undefined,
+      stopWorkspaceProcess:
+        projectID && projectCleanup
+          ? (result) =>
+              projectCleanup.stopProcess(projectID, result.workspacePath)
+          : undefined,
+      preserveWorkspaceOnPreparationFailure: Boolean(projectCleanup),
       onDeferredCleanup: (cleanup) => {
         releaseReservation = false;
+        if (params.projectID && projectCleanup)
+          projectCleanup.track(params.projectID, cleanup);
         releaseReservationAfterConfirmedCleanup(
           cleanup,
           () => releaseWorkspaceRunReservation(params.itemID, reservationToken),
@@ -105,7 +145,17 @@ export async function runResearchWorkspaceAnalysis(params: {
     });
 
     if (!started.ok) {
-      await cleanupWorkspaceIfEnabled(started.workspacePath);
+      if (projectCleanup && projectID) {
+        try {
+          await projectCleanup.stopProcess(projectID, started.workspacePath);
+          await projectCleanup.confirmStopped(projectID, started.workspacePath);
+        } catch {
+          releaseReservation = false;
+          params.onStatus?.(
+            `${engineLabel} launch cleanup is not confirmed; retry project deletion after the process stops.`,
+          );
+        }
+      } else await cleanupWorkspaceIfEnabled(started.workspacePath);
       throw new Error(started.error || `${engineLabel} run could not start.`);
     }
 
@@ -120,7 +170,10 @@ export async function runResearchWorkspaceAnalysis(params: {
       deadline,
       signal: params.signal,
     });
-    completed = true;
+    // A read error can end polling without proving that the CLI exited.
+    completed = /^\d+$/.test(
+      completion.progress.processExitCode ?? completion.progress.exitCode,
+    );
     if (completion.progress.exitCode !== "0") {
       throw new WorkspaceAnalysisRunError(
         completion.text || `${engineLabel} run failed.`,
@@ -133,9 +186,12 @@ export async function runResearchWorkspaceAnalysis(params: {
     if (started?.ok) {
       if (!completed) {
         try {
-          await stopDetachedRunProcess(started.processId, {
-            requireProcessId: true,
-          });
+          if (projectID && projectCleanup)
+            await projectCleanup.stopProcess(projectID, started.workspacePath);
+          else
+            await stopDetachedRunProcess(started.processId, {
+              requireProcessId: true,
+            });
         } catch {
           releaseReservation = false;
           params.onStatus?.(
@@ -144,6 +200,11 @@ export async function runResearchWorkspaceAnalysis(params: {
         }
       }
       if (completed || releaseReservation) {
+        if (params.projectID && projectCleanup)
+          await projectCleanup.confirmStopped(
+            params.projectID,
+            started.workspacePath,
+          );
         await cleanupWorkspaceIfEnabled(started.workspacePath);
       }
     }

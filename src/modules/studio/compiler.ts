@@ -112,7 +112,31 @@ export function compilerCommand(
 
 /** Runs only on an explicit Build action. Inputs are immutable saved revisions. */
 export class StudioCompilerService {
-  private running?: { canceled: boolean };
+  private static quiescing = new Map<string, Promise<void>>();
+  private running?: { canceled: boolean; done: Promise<void> };
+
+  /** The caller must block new project admissions before draining this scope. */
+  static quiesceScope(scope: string, stop: CompilerPorts["stop"]) {
+    const pending = this.quiescing.get(scope);
+    if (pending) return pending;
+    const owner = compilerStates.get(scope)?.owner;
+    owner?.cancel();
+    const done = owner?.running?.done;
+    const operation = Promise.resolve()
+      .then(async () => {
+        await done;
+        const state = compilerStates.get(scope);
+        if (state?.cleanupJob) {
+          await stop(state.cleanupJob);
+          state.cleanupJob = undefined;
+        }
+        if (state && !state.owner && compilerStates.get(scope) === state)
+          compilerStates.delete(scope);
+      })
+      .finally(() => this.quiescing.delete(scope));
+    this.quiescing.set(scope, operation);
+    return operation;
+  }
   constructor(
     private projectID: string,
     private repository: StudioRepository,
@@ -125,10 +149,15 @@ export class StudioCompilerService {
 
   async build(id: string, expectedRevision: number): Promise<CompileResult> {
     const state = compilerStates.get(this.ports.scope) ?? {};
-    if (state.owner) throw new Error("A project build is already running.");
+    if (state.owner || StudioCompilerService.quiescing.has(this.ports.scope))
+      throw new Error("A project build is already running or stopping.");
     state.owner = this;
     compilerStates.set(this.ports.scope, state);
-    const run = { canceled: false };
+    let finish!: () => void;
+    const run = {
+      canceled: false,
+      done: new Promise<void>((resolve) => (finish = resolve)),
+    };
     this.running = run;
     let job: CompileJob | undefined;
     let launched = false;
@@ -289,6 +318,7 @@ export class StudioCompilerService {
       state.owner = undefined;
       if (!state.cleanupJob && compilerStates.get(this.ports.scope) === state)
         compilerStates.delete(this.ports.scope);
+      finish();
     }
     return result!;
   }

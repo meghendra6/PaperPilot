@@ -7,6 +7,7 @@ import {
 } from "./facade";
 import type { ResearchWorkspacePaper } from "./paperSource";
 import type { ResearchWorkspaceProjectHome } from "./projectController";
+import { projectDeleteButton } from "./projectDeleteAction";
 import {
   addedPapersMessage,
   button,
@@ -481,7 +482,13 @@ function renderProjectCards(context: ProjectHomeContext) {
     studio.setAttribute("aria-label", `Open Studio for ${project.name}`);
     studio.title =
       "Write drafts, cite papers, and run notebooks for this project.";
-    actions.append(open, studio);
+    actions.append(
+      open,
+      studio,
+      projectDeleteButton(root, project, () =>
+        context.navigation.renderHome(root, { capturedPapers }),
+      ),
+    );
     card.append(actions);
     grid.append(card);
   }
@@ -584,6 +591,9 @@ function renderArchivedProjects(context: ProjectHomeContext) {
           "success",
         );
       }),
+      projectDeleteButton(root, project, () =>
+        context.navigation.renderHome(root, { capturedPapers }),
+      ),
     );
     list.append(item);
   }

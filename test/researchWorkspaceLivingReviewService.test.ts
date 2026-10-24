@@ -11,8 +11,13 @@ import type {
 import { ResearchWorkspaceProjectRepository } from "../src/modules/researchWorkspace/persistence/projectRepository";
 import {
   ResearchWorkspaceProjectController,
+  quickProjectID,
   researchWorkspaceSourceRecordFromPaper,
 } from "../src/modules/researchWorkspace/projectController";
+import {
+  quiesceResearchWorkspaceProject,
+  releaseResearchWorkspaceProjectDeletion,
+} from "../src/modules/researchWorkspace/projectRunAdmission";
 
 class MemoryFiles implements ResearchWorkspaceFileOps {
   readonly files = new Map<string, string>();
@@ -105,6 +110,217 @@ function setup() {
   });
   return { files, repository, projects, operations, observed, service };
 }
+
+function deferred() {
+  let resolve = () => {};
+  const promise = new Promise<void>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
+test("project deletion waits for the coordinator's final run persistence", async (t) => {
+  const { files, repository, projects, operations } = setup();
+  const source = paper("Z");
+  const projectID = "project-deletion-final-run";
+  await projects.createProject({ projectID, name: "Deletion" }, [source]);
+  const saving = deferred();
+  const finishSave = deferred();
+  const write = files.writeTextAtomic.bind(files);
+  t.mock.method(
+    files,
+    "writeTextAtomic",
+    async (path: string, contents: string) => {
+      if (JSON.parse(contents).run?.status === "completed") {
+        saving.resolve();
+        await finishSave.promise;
+      }
+      await write(path, contents);
+    },
+  );
+  const params = {
+    projectID,
+    papers: [source],
+    sourcesPrepared: true,
+    operation: "claims",
+    operationVersion: "claims-v1",
+    artifactType: "claim-ledger" as const,
+    artifactTitle: "Claims",
+    providerMode: "local" as const,
+    execute: async () => ({ claims: [] }),
+  };
+  const run = operations.run(params);
+  await saving.promise;
+  let drained = false;
+  const projectRoot = repository.getProjectRoot(projectID);
+  const deletion = quiesceResearchWorkspaceProject(projectRoot).then(() => {
+    drained = true;
+  });
+  await assert.rejects(
+    new ResearchWorkspaceOperationCoordinator(repository).run(params),
+    /being deleted/,
+  );
+  assert.equal(drained, false);
+  finishSave.resolve();
+  const [completed] = await Promise.all([run, deletion]);
+  assert.equal(completed.run.run.status, "completed");
+  assert.equal(drained, true);
+  releaseResearchWorkspaceProjectDeletion(projectRoot);
+});
+
+test("quick-project deletion blocks implicit creation before preparation", async () => {
+  const { files, repository, operations } = setup();
+  const source = paper("Q");
+  const projectRoot = repository.getProjectRoot(quickProjectID([source]));
+  await quiesceResearchWorkspaceProject(projectRoot);
+  const before = files.writes.length;
+  await assert.rejects(
+    operations.run({
+      papers: [source],
+      operation: "claims",
+      operationVersion: "claims-v1",
+      artifactType: "claim-ledger",
+      artifactTitle: "Claims",
+      providerMode: "local",
+      execute: async () => ({ claims: [] }),
+    }),
+    /being deleted/,
+  );
+  assert.equal(files.writes.length, before);
+  releaseResearchWorkspaceProjectDeletion(projectRoot);
+});
+
+test("deletion drains an admitted Living Review scan through inbox persistence", async () => {
+  const { repository, projects } = setup();
+  const projectID = "project-deletion-scan";
+  await projects.createProject({ projectID, name: "Scan" }, [paper("S")]);
+  const observing = deferred();
+  const finish = deferred();
+  const service = new ResearchWorkspaceLivingReviewService(repository, {
+    observer: async (source, observedAt) => {
+      observing.resolve();
+      await finish.promise;
+      return {
+        sourceID: source.sourceID,
+        observedAt,
+        availability: "ready",
+        contentFingerprint: source.contentFingerprint?.value,
+      };
+    },
+  });
+  const scan = service.checkProject(projectID);
+  await observing.promise;
+  const projectRoot = repository.getProjectRoot(projectID);
+  let drained = false;
+  const deletion = quiesceResearchWorkspaceProject(projectRoot).then(() => {
+    drained = true;
+  });
+  await assert.rejects(
+    service.resolveChange({
+      projectID,
+      changeID: "change",
+      action: "reviewed",
+      submissionID: "submission",
+      expectedRevision: 0,
+    }),
+    /being deleted/,
+  );
+  await assert.rejects(
+    new ResearchWorkspaceLivingReviewService(repository).checkProject(
+      projectID,
+    ),
+    /being deleted/,
+  );
+  assert.equal(drained, false);
+  finish.resolve();
+  const [inbox] = await Promise.all([scan, deletion]);
+  assert.equal(
+    (await repository.getChangeInbox(projectID)).revision,
+    inbox.revision,
+  );
+  assert.ok(inbox.lastCheckedAt);
+  releaseResearchWorkspaceProjectDeletion(projectRoot);
+});
+
+test("a different project's Living Review cannot invalidate a deleting shared-source project", async (t) => {
+  const { repository, projects, observed, service } = setup();
+  const source = paper("X");
+  const activeID = "project-deletion-sharing-active";
+  const deletingID = "project-deletion-sharing-target";
+  await projects.createProject({ projectID: activeID, name: "Active" }, [
+    source,
+  ]);
+  await projects.createProject({ projectID: deletingID, name: "Deleting" }, [
+    source,
+  ]);
+  observed.set(source.sourceID, {
+    sourceID: source.sourceID,
+    observedAt: "2026-10-24T00:00:00.000Z",
+    availability: "ready",
+    contentFingerprint: "pdf-X-v2",
+  });
+  const invalidated: string[] = [];
+  const invalidate = repository.markArtifactsStaleForSource.bind(repository);
+  t.mock.method(
+    repository,
+    "markArtifactsStaleForSource",
+    (params: Parameters<typeof invalidate>[0]) => {
+      invalidated.push(params.projectID);
+      return invalidate(params);
+    },
+  );
+  const projectRoot = repository.getProjectRoot(deletingID);
+  await quiesceResearchWorkspaceProject(projectRoot);
+  await service.checkProject(activeID);
+  assert.deepEqual(invalidated, [activeID]);
+  releaseResearchWorkspaceProjectDeletion(projectRoot);
+});
+
+test("deletion drains a shared-source invalidation already admitted by another project", async (t) => {
+  const { repository, projects, observed, service } = setup();
+  const source = paper("W");
+  const activeID = "project-deletion-shared-running";
+  const deletingID = "project-deletion-shared-saving";
+  await projects.createProject({ projectID: activeID, name: "Active" }, [
+    source,
+  ]);
+  await projects.createProject({ projectID: deletingID, name: "Deleting" }, [
+    source,
+  ]);
+  observed.set(source.sourceID, {
+    sourceID: source.sourceID,
+    observedAt: "2026-10-24T00:00:00.000Z",
+    availability: "ready",
+    contentFingerprint: "pdf-W-v2",
+  });
+  const saving = deferred();
+  const finish = deferred();
+  const invalidate = repository.markArtifactsStaleForSource.bind(repository);
+  t.mock.method(
+    repository,
+    "markArtifactsStaleForSource",
+    async (params: Parameters<typeof invalidate>[0]) => {
+      if (params.projectID === deletingID) {
+        saving.resolve();
+        await finish.promise;
+      }
+      return invalidate(params);
+    },
+  );
+  const scan = service.checkProject(activeID);
+  await saving.promise;
+  const projectRoot = repository.getProjectRoot(deletingID);
+  let drained = false;
+  const deletion = quiesceResearchWorkspaceProject(projectRoot).then(() => {
+    drained = true;
+  });
+  await Promise.resolve();
+  assert.equal(drained, false);
+  finish.resolve();
+  await Promise.all([scan, deletion]);
+  assert.equal(drained, true);
+  releaseResearchWorkspaceProjectDeletion(projectRoot);
+});
 
 test("Living Review baselines silently, ignores annotation-only staleness, and invalidates a changed PDF", async () => {
   const setupState = setup();

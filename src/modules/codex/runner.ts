@@ -96,7 +96,9 @@ export async function startCodexRunForQuestion(params: {
   prebuiltInput?: PrebuiltWorkspaceInput;
   paperTitle?: string;
   responseLength?: "short" | "default" | "detailed";
-  onWorkspaceAllocated?: (workspacePath: string) => void;
+  onWorkspaceAllocated?: (workspacePath: string) => void | Promise<void>;
+  onWorkspaceWillLaunch?: (workspacePath: string) => void | Promise<void>;
+  onWorkspaceLaunchAbandoned?: (workspacePath: string) => void | Promise<void>;
   shouldContinue?: () => boolean;
 }): Promise<StartedCodexRun | FailedCodexRun> {
   const assertContinue = () => {
@@ -138,7 +140,8 @@ export async function startCodexRunForQuestion(params: {
     profile,
     runID,
   });
-  params.onWorkspaceAllocated?.(workspacePath);
+  await params.onWorkspaceAllocated?.(workspacePath);
+  assertContinue();
   await Zotero.File.createDirectoryIfMissingAsync(workspacePath);
   const prepared = await prepareRunInput({
     ...params,
@@ -246,6 +249,13 @@ export async function startCodexRunForQuestion(params: {
   });
 
   assertContinue();
+  try {
+    await params.onWorkspaceWillLaunch?.(workspacePath);
+    assertContinue();
+  } catch (error) {
+    await params.onWorkspaceLaunchAbandoned?.(workspacePath);
+    throw error;
+  }
   const result = await launchCodexRunScript(script);
   timings.spawnedAt = Date.now();
   if (!result.ok) {

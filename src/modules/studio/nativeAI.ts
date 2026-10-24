@@ -3,7 +3,6 @@ import { buildCliCommandEnvironment } from "../ai/cliEnvironment";
 import { captureExecutionSettings } from "../ai/executionSettings";
 import { cliSupportsFlag } from "../ai/structuredOutput";
 import { launchDetachedShellScript } from "../ai/launchScript";
-import { stopDetachedRunProcess } from "../ai/runCompletion";
 import { resolveCodexExecutablePath } from "../codex/executable";
 import { buildBackgroundCodexShellScript, shellEscape } from "../codex/shell";
 import {
@@ -12,9 +11,14 @@ import {
 } from "../researchWorkspace/storage";
 import { StudioAIService } from "./aiService";
 import { documentText } from "./documentText";
-import { runStudioAI } from "./aiRunner";
+import { runStudioAI, cleanupStudioRunnerScope } from "./aiRunner";
+import { stopNativeStudioJob } from "./nativeProcess";
+import { researchProjectDirectory } from "../researchWorkspace/persistence/paths";
 import type { StudioRepository } from "./repository";
-import { extractStructuredPdf } from "../tools/paperWorkspaceContent";
+import {
+  extractStructuredPdf,
+  ExtractorCleanupUnconfirmedError,
+} from "../tools/paperWorkspaceContent";
 
 export function studioAIDefaults() {
   return {
@@ -53,14 +57,21 @@ export function nativeAI(
           ignoreExisting: true,
         });
         const path = `${directory}/document.pdf`;
+        let retain = false;
         try {
           await IOUtils.write(path, bytes);
-          return (await extractStructuredPdf(path, signal)).markdownText;
+          return (
+            await extractStructuredPdf(path, signal, { outputRoot: directory })
+          ).markdownText;
+        } catch (error) {
+          retain = error instanceof ExtractorCleanupUnconfirmedError;
+          throw error;
         } finally {
-          await IOUtils.remove(directory, {
-            recursive: true,
-            ignoreAbsent: true,
-          });
+          if (!retain)
+            await IOUtils.remove(directory, {
+              recursive: true,
+              ignoreAbsent: true,
+            });
         }
       }
       return documentText(name, bytes, (xml) =>
@@ -105,6 +116,10 @@ export function nativeAI(
               createAncestors: true,
               ignoreExisting: true,
             });
+            await files.writeTextAtomic(
+              `${directory}/paperpilot-job-v1`,
+              "prepared",
+            );
             return { executable, environment, directory };
           },
           launch: async (job, command) => {
@@ -117,6 +132,10 @@ export function nativeAI(
               command,
               environment: job.environment,
             });
+            await files.writeTextAtomic(
+              `${job.directory}/launch-intent`,
+              "studio-ai",
+            );
             const result = await launchDetachedShellScript(
               `cd ${shellEscape(job.directory)} && ${script}`,
               (executable, args) =>
@@ -124,22 +143,20 @@ export function nativeAI(
             );
             if (!result.ok) throw new Error(result.error);
           },
-          stop: async (job) => {
-            for (let i = 0; i < 10; i++) {
-              if (await files.exists(`${job.directory}/exit-code`)) return;
-              const pid = (await read(`${job.directory}/pid`))?.trim();
-              if (pid) {
-                await stopDetachedRunProcess(pid, { requireProcessId: true });
-                return;
-              }
-              await Zotero.Promise.delay(100);
-            }
-            throw new Error(
-              `Could not confirm the AI process stopped. Inspect ${job.directory}.`,
-            );
-          },
+          stop: stopNativeStudioJob,
         },
         signal,
       ),
   });
+}
+
+export async function quiesceNativeAI(projectID: string) {
+  const root = getResearchWorkspaceStorageRoot();
+  await StudioAIService.quiesceScope(
+    `${researchProjectDirectory(root, projectID)}/studio-conversation-v1.json`,
+  );
+  await cleanupStudioRunnerScope(
+    `${root}/runtime/${projectID}/ai`,
+    stopNativeStudioJob,
+  );
 }

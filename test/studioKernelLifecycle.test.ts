@@ -272,3 +272,102 @@ test("kernel ownership keeps notebooks and profiles independent and prevents liv
     ]);
   }
 });
+
+test("scope cleanup reaches closed owners, retries failed kills, and preserves other profiles", async () => {
+  const f = fixture();
+  const other = fixture(`${f.ports.scope}-other-profile`);
+  try {
+    await f.broker.execute("one", "python3", "1");
+    await f.broker.execute("two", "python3", "2");
+    await other.broker.execute("one", "python3", "3");
+    f.controls.kill = async () => {
+      throw new Error("closed window stop failed");
+    };
+    await assert.rejects(f.broker.close(), /stop failed/);
+    const attempts: string[] = [];
+    await assert.rejects(
+      KernelBroker.closeScope(f.ports.scope, async (directory) => {
+        attempts.push(directory);
+        if (directory.endsWith("job-0")) throw new Error("retry required");
+      }),
+      /retry required/,
+    );
+    assert.equal(
+      attempts.length,
+      2,
+      "One failed stop must not skip other notebooks.",
+    );
+    const retried: string[] = [];
+    await KernelBroker.closeScope(f.ports.scope, async (directory) => {
+      retried.push(directory);
+    });
+    assert.deepEqual(retried, ["/owned/job-0"]);
+    assert.equal(other.kills.length, 0);
+  } finally {
+    f.controls.kill = async () => {};
+    await Promise.all([f.broker.close(), other.broker.close()]);
+  }
+});
+
+test("scope cleanup waits pending startup and in-flight kernel writes before confirming stop", async () => {
+  const f = fixture();
+  let releaseWrite!: () => void;
+  let writing!: () => void;
+  const started = new Promise<void>((resolve) => (writing = resolve));
+  const write = f.ports.write;
+  f.ports.write = async (path, contents) => {
+    if (path.endsWith("/request.json")) {
+      writing();
+      await new Promise<void>((resolve) => (releaseWrite = resolve));
+    }
+    await write(path, contents);
+  };
+  const run = f.broker.execute("notebook", "python3", "1");
+  await started;
+  let killed = false;
+  const cleanup = KernelBroker.closeScope(f.ports.scope, async () => {
+    killed = true;
+  });
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.equal(
+    killed,
+    false,
+    "A pending write must not recreate files after termination.",
+  );
+  releaseWrite();
+  await Promise.all([run, cleanup]);
+  assert.equal(killed, true);
+});
+
+test("restart cannot release a closed owner's pending writes before deletion finds it", async () => {
+  const f = fixture();
+  let release!: () => void;
+  let entered!: () => void;
+  const writing = new Promise<void>((resolve) => (entered = resolve));
+  const write = f.ports.write;
+  f.ports.write = async (path, text) => {
+    if (path.endsWith("/request.json")) {
+      entered();
+      await new Promise<void>((resolve) => (release = resolve));
+    }
+    await write(path, text);
+  };
+  const run = f.broker.execute("notebook", "python3", "1");
+  await writing;
+  const restart = f.broker.restart("notebook");
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.equal(
+    f.kills.length,
+    0,
+    "Restart must retain ownership through pending writes.",
+  );
+  const cleanup = KernelBroker.closeScope(f.ports.scope, async () => {});
+  let cleaned = false;
+  void cleanup.then(() => {
+    cleaned = true;
+  });
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.equal(cleaned, false);
+  release();
+  await Promise.all([run, restart, cleanup]);
+});

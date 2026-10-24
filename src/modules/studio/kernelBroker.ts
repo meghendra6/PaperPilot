@@ -51,6 +51,29 @@ export class KernelBroker {
   private restarting = new Map<string, Promise<void>>();
   private executionEpochs = new Map<string, number>();
   private closed = false;
+  private writes = new Set<Promise<void>>();
+
+  /** Includes owners retained after an earlier window's cleanup failed. */
+  static async closeScope(scope: string, kill: KernelPorts["kill"]) {
+    const owners = [...new Set(kernelOwners.values())].filter(
+      (owner) => owner.ports.scope === scope,
+    );
+    const results = await Promise.allSettled(
+      owners.map((owner) => owner.closeWithKill(kill)),
+    );
+    const failure = results.find((result) => result.status === "rejected");
+    if (failure?.status === "rejected") throw failure.reason;
+  }
+
+  private write(path: string, contents: string) {
+    const operation = this.ports.write(path, contents);
+    this.writes.add(operation);
+    void operation.then(
+      () => this.writes.delete(operation),
+      () => this.writes.delete(operation),
+    );
+    return operation;
+  }
   constructor(private ports: KernelPorts) {}
 
   private ownershipKey(documentID: string) {
@@ -116,7 +139,8 @@ export class KernelBroker {
     kernelOwners.set(this.ownershipKey(documentID), this);
     const promise = (async () => {
       const directory = await this.ports.createJob(documentID, kernel);
-      await this.ports.write(`${directory}/heartbeat`, "alive");
+      if (this.closed) throw new Error("This project window is closed.");
+      await this.write(`${directory}/heartbeat`, "alive");
       const session: Session = {
         id: this.ports.id(),
         inputs: JSON.parse(
@@ -126,9 +150,9 @@ export class KernelBroker {
         kernel,
         busy: false,
         heartbeat: setInterval(() => {
-          void this.ports
-            .write(`${directory}/heartbeat`, "alive")
-            .catch(() => clearInterval(session.heartbeat));
+          void this.write(`${directory}/heartbeat`, "alive").catch(() =>
+            clearInterval(session.heartbeat),
+          );
         }, 5000),
       };
       try {
@@ -146,6 +170,7 @@ export class KernelBroker {
         return session;
       } catch (error) {
         clearInterval(session.heartbeat);
+        await Promise.allSettled([...this.writes]);
         try {
           await this.ports.kill(directory);
         } catch (cleanup) {
@@ -198,7 +223,7 @@ export class KernelBroker {
     assertStudioID(id);
     session.requestID = id;
     try {
-      await this.ports.write(
+      await this.write(
         `${session.directory}/request.json`,
         JSON.stringify({ id, code }),
       );
@@ -230,7 +255,11 @@ export class KernelBroker {
   }
 
   async interrupt(documentID: string) {
-    if (this.closed || kernelOwners.get(this.ownershipKey(documentID)) !== this)
+    if (
+      this.closed ||
+      this.restarting.has(documentID) ||
+      kernelOwners.get(this.ownershipKey(documentID)) !== this
+    )
       return;
     this.executionEpochs.set(
       documentID,
@@ -238,7 +267,7 @@ export class KernelBroker {
     );
     const session = this.sessions.get(documentID);
     if (session?.requestID)
-      await this.ports.write(
+      await this.write(
         `${session.directory}/interrupt`,
         JSON.stringify({ id: session.requestID }),
       );
@@ -285,6 +314,7 @@ export class KernelBroker {
         if (!session) return;
         session.failed = true;
         clearInterval(session.heartbeat);
+        await Promise.allSettled([...this.writes]);
         await kill(session.directory);
         if (this.sessions.get(documentID) === session)
           this.sessions.delete(documentID);
@@ -298,9 +328,25 @@ export class KernelBroker {
     return operation;
   }
 
-  async close() {
+  private async closeWithKill(kill: KernelPorts["kill"]) {
     this.closed = true;
+    for (const session of this.sessions.values())
+      clearInterval(session.heartbeat);
     await Promise.allSettled([...this.starting.values()]);
-    await Promise.all([...this.sessions.keys()].map((id) => this.restart(id)));
+    // An earlier close may still use a disposed window's capabilities. Wait
+    // for that attempt, then retry any retained session with the fresh port.
+    await Promise.allSettled([...this.restarting.values()]);
+    for (const session of this.sessions.values())
+      clearInterval(session.heartbeat);
+    await Promise.allSettled([...this.writes]);
+    const results = await Promise.allSettled(
+      [...this.sessions.keys()].map((id) => this.restartOwned(id, kill)),
+    );
+    const failure = results.find((result) => result.status === "rejected");
+    if (failure?.status === "rejected") throw failure.reason;
+  }
+
+  close() {
+    return this.closeWithKill((directory) => this.ports.kill(directory));
   }
 }

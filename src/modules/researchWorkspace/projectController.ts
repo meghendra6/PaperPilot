@@ -103,7 +103,7 @@ export function researchWorkspaceSourceRecordFromPaper(
   };
 }
 
-function quickProjectID(papers: readonly ResearchWorkspacePaper[]) {
+export function quickProjectID(papers: readonly ResearchWorkspacePaper[]) {
   const scope = [...new Set(papers.map((paper) => paper.sourceID))]
     .sort()
     .join("\n");

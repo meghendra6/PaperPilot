@@ -1,3 +1,8 @@
+import {
+  quiesceResearchWorkspaceProject,
+  releaseResearchWorkspaceProjectDeletion,
+  runResearchWorkspaceProjectTask,
+} from "./projectRunAdmission";
 import { isResearchWorkspaceMemberExcluded } from "./memberState";
 import { researchWorkspaceArtifactPayloadFingerprint } from "./artifactFingerprint";
 import {
@@ -74,7 +79,10 @@ import type {
   ResearchWorkspaceProjectMember,
 } from "./persistence/contracts";
 import { ResearchWorkspaceRevisionConflictError } from "./persistence/contracts";
-import { ResearchWorkspaceProjectController } from "./projectController";
+import {
+  quickProjectID,
+  ResearchWorkspaceProjectController,
+} from "./projectController";
 import {
   createResearchWorkspaceProjectTemplatePreview,
   listResearchWorkspaceProjectTemplates,
@@ -159,6 +167,7 @@ function createMemoryRepository(initialState: ResearchWorkspaceAnalysisState) {
 }
 
 async function createBoundService(params: {
+  projectID?: string;
   anchor: ResearchWorkspacePaper;
   papers: readonly ResearchWorkspacePaper[];
   signal?: AbortSignal;
@@ -223,6 +232,7 @@ async function createBoundService(params: {
         outputSchema?: Record<string, unknown>,
       ) =>
         runResearchWorkspaceAnalysis({
+          projectID: params.projectID,
           itemID: reservationPaper.itemID,
           executionSettings,
           itemTitle: reservationPaper.title,
@@ -472,6 +482,17 @@ async function admittedPapers(
   return admitted;
 }
 
+function runPreparedProjectTask<T>(
+  projectID: string | undefined,
+  papers: readonly ResearchWorkspacePaper[],
+  action: () => Promise<T>,
+) {
+  const root = getResearchWorkspaceProjectRepository().getProjectRoot(
+    projectID ?? quickProjectID(papers),
+  );
+  return runResearchWorkspaceProjectTask(root, action);
+}
+
 async function prepareProject(
   requestedProjectID: string | undefined,
   papers: readonly ResearchWorkspacePaper[],
@@ -543,7 +564,15 @@ function normalizeSingleOperation(
   return operation === "critical-read" ? "methodology-audit" : operation;
 }
 
-export async function runResearchWorkspaceSingleOperation(params: {
+export async function runResearchWorkspaceSingleOperation(
+  params: Parameters<typeof runResearchWorkspaceSingleOperationOnce>[0],
+) {
+  return runPreparedProjectTask(params.projectID, [params.paper], () =>
+    runResearchWorkspaceSingleOperationOnce(params),
+  );
+}
+
+async function runResearchWorkspaceSingleOperationOnce(params: {
   paper: ResearchWorkspacePaper;
   operation: ResearchWorkspaceSingleOperation | "critical-read";
   projectID?: string;
@@ -552,6 +581,7 @@ export async function runResearchWorkspaceSingleOperation(params: {
 }) {
   const projectID = await prepareProject(params.projectID, [params.paper]);
   const { service, executionSettings } = await createBoundService({
+    projectID,
     anchor: params.paper,
     papers: [params.paper],
     signal: params.signal,
@@ -591,7 +621,15 @@ export async function runResearchWorkspaceSingleOperation(params: {
   return coordinated.result;
 }
 
-export async function startOrResumeResearchWorkspaceMastery(params: {
+export async function startOrResumeResearchWorkspaceMastery(
+  params: Parameters<typeof startOrResumeResearchWorkspaceMasteryOnce>[0],
+) {
+  return runPreparedProjectTask(params.projectID, [params.paper], () =>
+    startOrResumeResearchWorkspaceMasteryOnce(params),
+  );
+}
+
+async function startOrResumeResearchWorkspaceMasteryOnce(params: {
   paper: ResearchWorkspacePaper;
   projectID?: string;
   signal?: AbortSignal;
@@ -609,6 +647,7 @@ export async function startOrResumeResearchWorkspaceMastery(params: {
     previous ? [previous] : [],
   );
   const { service, executionSettings } = await createBoundService({
+    projectID,
     anchor: params.paper,
     papers: [params.paper],
     signal: params.signal,
@@ -638,7 +677,15 @@ export async function startOrResumeResearchWorkspaceMastery(params: {
   return coordinated.result;
 }
 
-export async function submitResearchWorkspaceMastery(params: {
+export async function submitResearchWorkspaceMastery(
+  params: Parameters<typeof submitResearchWorkspaceMasteryOnce>[0],
+) {
+  return runPreparedProjectTask(params.projectID, [params.paper], () =>
+    submitResearchWorkspaceMasteryOnce(params),
+  );
+}
+
+async function submitResearchWorkspaceMasteryOnce(params: {
   paper: ResearchWorkspacePaper;
   answer: string;
   confidence?: number;
@@ -664,6 +711,7 @@ export async function submitResearchWorkspaceMastery(params: {
     previous ? [previous] : [],
   );
   const { service, executionSettings } = await createBoundService({
+    projectID,
     anchor: params.paper,
     papers: [params.paper],
     signal: params.signal,
@@ -709,7 +757,15 @@ function multiOperationPurpose(operation: ResearchWorkspaceMultiOperation) {
   return "cross-paper-question";
 }
 
-export async function runResearchWorkspaceMultiOperation(params: {
+export async function runResearchWorkspaceMultiOperation(
+  params: Parameters<typeof runResearchWorkspaceMultiOperationOnce>[0],
+) {
+  return runPreparedProjectTask(params.projectID, params.papers, () =>
+    runResearchWorkspaceMultiOperationOnce(params),
+  );
+}
+
+async function runResearchWorkspaceMultiOperationOnce(params: {
   papers: ResearchWorkspacePaper[];
   operation: ResearchWorkspaceMultiOperation;
   projectID?: string;
@@ -817,6 +873,7 @@ export async function runResearchWorkspaceMultiOperation(params: {
     consumedArtifacts: priorCrossArtifact ? [priorCrossArtifact] : [],
   });
   const { service, executionSettings, reserveFor } = await createBoundService({
+    projectID,
     anchor: projectedPapers[0],
     papers: projectedPapers,
     signal: params.signal,
@@ -952,7 +1009,15 @@ export async function runResearchWorkspaceMultiOperation(params: {
   return coordinated.result;
 }
 
-export async function runResearchWorkspaceProjectSynthesis(params: {
+export async function runResearchWorkspaceProjectSynthesis(
+  params: Parameters<typeof runResearchWorkspaceProjectSynthesisOnce>[0],
+) {
+  return runPreparedProjectTask(params.projectID, params.papers, () =>
+    runResearchWorkspaceProjectSynthesisOnce(params),
+  );
+}
+
+async function runResearchWorkspaceProjectSynthesisOnce(params: {
   papers: ResearchWorkspacePaper[];
   question: string;
   projectID?: string;
@@ -1066,6 +1131,7 @@ export async function runResearchWorkspaceProjectSynthesis(params: {
     outputSchema: researchWorkspaceOutputSchemaForPurpose("project-synthesis"),
   });
   const { service, executionSettings } = await createBoundService({
+    projectID,
     anchor: projectedPapers[0],
     papers: projectedPapers,
     signal: params.signal,
@@ -1109,7 +1175,15 @@ export async function runResearchWorkspaceProjectSynthesis(params: {
   return coordinated.result;
 }
 
-export async function submitResearchWorkspaceCrossPaperMastery(params: {
+export async function submitResearchWorkspaceCrossPaperMastery(
+  params: Parameters<typeof submitResearchWorkspaceCrossPaperMasteryOnce>[0],
+) {
+  return runPreparedProjectTask(params.projectID, params.papers, () =>
+    submitResearchWorkspaceCrossPaperMasteryOnce(params),
+  );
+}
+
+async function submitResearchWorkspaceCrossPaperMasteryOnce(params: {
   papers: ResearchWorkspacePaper[];
   sessionID: string;
   expectedRevision: number;
@@ -1209,6 +1283,7 @@ export async function submitResearchWorkspaceCrossPaperMastery(params: {
     consumedArtifacts: previous ? [previous] : [],
   });
   const { service, executionSettings } = await createBoundService({
+    projectID,
     anchor: projectedPapers[0],
     papers: projectedPapers,
     signal: params.signal,
@@ -1254,7 +1329,15 @@ export async function submitResearchWorkspaceCrossPaperMastery(params: {
   return coordinated.result;
 }
 
-export async function extractResearchWorkspaceCitationContexts(params: {
+export async function extractResearchWorkspaceCitationContexts(
+  params: Parameters<typeof extractResearchWorkspaceCitationContextsOnce>[0],
+) {
+  return runPreparedProjectTask(params.projectID, params.papers, () =>
+    extractResearchWorkspaceCitationContextsOnce(params),
+  );
+}
+
+async function extractResearchWorkspaceCitationContextsOnce(params: {
   papers: ResearchWorkspacePaper[];
   projectID?: string;
   signal?: AbortSignal;
@@ -1306,7 +1389,17 @@ export async function extractResearchWorkspaceCitationContexts(params: {
   return coordinated.result;
 }
 
-export async function classifyResearchWorkspaceCitations(params: {
+export async function classifyResearchWorkspaceCitations(
+  params: Parameters<typeof classifyResearchWorkspaceCitationsOnce>[0],
+) {
+  return runPreparedProjectTask(
+    params.projectID,
+    params.papers?.length ? params.papers : [params.anchor],
+    () => classifyResearchWorkspaceCitationsOnce(params),
+  );
+}
+
+async function classifyResearchWorkspaceCitationsOnce(params: {
   anchor: ResearchWorkspacePaper;
   contexts: unknown[];
   papers?: ResearchWorkspacePaper[];
@@ -1324,6 +1417,7 @@ export async function classifyResearchWorkspaceCitations(params: {
   const papers = params.papers?.length ? params.papers : [params.anchor];
   const projectID = await prepareProject(params.projectID, papers);
   const { service, executionSettings } = await createBoundService({
+    projectID,
     anchor: params.anchor,
     papers,
     signal: params.signal,
@@ -1354,7 +1448,15 @@ export async function classifyResearchWorkspaceCitations(params: {
   return coordinated.result;
 }
 
-export async function correctResearchWorkspaceCitationStance(params: {
+export async function correctResearchWorkspaceCitationStance(
+  params: Parameters<typeof correctResearchWorkspaceCitationStanceOnce>[0],
+) {
+  return runPreparedProjectTask(params.projectID, params.papers, () =>
+    correctResearchWorkspaceCitationStanceOnce(params),
+  );
+}
+
+async function correctResearchWorkspaceCitationStanceOnce(params: {
   papers: ResearchWorkspacePaper[];
   payload: Record<string, unknown>;
   contextID: string;
@@ -1490,7 +1592,17 @@ function projectMarkdown(
   return `${lines.filter((line, index) => line || lines[index - 1]).join("\n")}\n`;
 }
 
-export async function exportIntegratedResearchWorkspace(params: {
+export async function exportIntegratedResearchWorkspace(
+  params: Parameters<typeof exportIntegratedResearchWorkspaceOnce>[0],
+) {
+  return runPreparedProjectTask(
+    params.projectID,
+    params.anchor ? [params.anchor] : [],
+    () => exportIntegratedResearchWorkspaceOnce(params),
+  );
+}
+
+async function exportIntegratedResearchWorkspaceOnce(params: {
   anchor?: ResearchWorkspacePaper;
   projectID?: string;
   onStatus?: (status: string) => void;
@@ -1522,10 +1634,12 @@ export async function exportIntegratedResearchWorkspace(params: {
     exportResearchWorkspaceTextFile(
       `${baseName}-${stamp}.json`,
       `${JSON.stringify(publicExport, null, 2)}\n`,
+      projectID,
     ),
     exportResearchWorkspaceTextFile(
       `${baseName}-${stamp}.md`,
       projectMarkdown(publicExport),
+      projectID,
     ),
   ]);
   return { jsonPath, markdownPath, warnings: exported.warnings };
@@ -1744,23 +1858,30 @@ export function recordResearchWorkspaceScreeningDecision(
 }
 
 export async function exportResearchWorkspaceScreeningLog(projectID: string) {
-  const [details, log] = await Promise.all([
-    projectController().details(projectID),
-    projectController().screeningLog(projectID),
-  ]);
-  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const baseName = details.project.name.replace(/[^a-zA-Z0-9._-]+/g, "-");
-  const [jsonPath, csvPath] = await Promise.all([
-    exportResearchWorkspaceTextFile(
-      `${baseName}-screening-log-${stamp}.json`,
-      `${JSON.stringify(log, null, 2)}\n`,
-    ),
-    exportResearchWorkspaceTextFile(
-      `${baseName}-screening-log-${stamp}.csv`,
-      serializeResearchWorkspaceScreeningLogCsv(log),
-    ),
-  ]);
-  return { jsonPath, csvPath, log };
+  return runResearchWorkspaceProjectTask(
+    getResearchWorkspaceProjectRepository().getProjectRoot(projectID),
+    async () => {
+      const [details, log] = await Promise.all([
+        projectController().details(projectID),
+        projectController().screeningLog(projectID),
+      ]);
+      const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+      const baseName = details.project.name.replace(/[^a-zA-Z0-9._-]+/g, "-");
+      const [jsonPath, csvPath] = await Promise.all([
+        exportResearchWorkspaceTextFile(
+          `${baseName}-screening-log-${stamp}.json`,
+          `${JSON.stringify(log, null, 2)}\n`,
+          projectID,
+        ),
+        exportResearchWorkspaceTextFile(
+          `${baseName}-screening-log-${stamp}.csv`,
+          serializeResearchWorkspaceScreeningLogCsv(log),
+          projectID,
+        ),
+      ]);
+      return { jsonPath, csvPath, log };
+    },
+  );
 }
 
 export function createResearchWorkspaceProject(params: {
@@ -1848,8 +1969,36 @@ export function restoreResearchWorkspaceProject(projectID: string) {
   return projectController().restoreProject(projectID);
 }
 
-export function deleteResearchWorkspaceProject(projectID: string) {
-  return projectController().deleteProject(projectID);
+const projectDeletions = new Map<string, Promise<void>>();
+
+export function deleteResearchWorkspaceProject(
+  projectID: string,
+): Promise<void> {
+  const repository = getResearchWorkspaceProjectRepository();
+  const root = repository.getProjectRoot(projectID);
+  const pending = projectDeletions.get(root);
+  if (pending) return pending;
+  const operation = (async () => {
+    // Preflight before native process inspection, which reads files in these roots.
+    await repository.assertProjectDeletionSafe(projectID);
+    const studio = await import("../studio/window");
+    await studio.quiesceStudioProject(projectID);
+    await quiesceResearchWorkspaceProject(root);
+    const {
+      cleanupResearchWorkspaceProjectWorkspaces,
+      quiesceResearchWorkspaceProjectWorkspaces,
+      releaseResearchWorkspaceProjectWorkspaceDeletion,
+    } = await import("./persistence/projectWorkspaceCleanup");
+    await quiesceResearchWorkspaceProjectWorkspaces(projectID);
+    await repository.deleteProject(projectID, () =>
+      cleanupResearchWorkspaceProjectWorkspaces(projectID),
+    );
+    releaseResearchWorkspaceProjectDeletion(root);
+    releaseResearchWorkspaceProjectWorkspaceDeletion(projectID);
+    studio.releaseStudioProjectDeletion(projectID);
+  })().finally(() => projectDeletions.delete(root));
+  projectDeletions.set(root, operation);
+  return operation;
 }
 
 export function loadResearchWorkspaceChangeInbox(projectID: string) {

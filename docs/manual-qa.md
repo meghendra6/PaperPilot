@@ -1377,3 +1377,33 @@ the outstanding native Zotero installation or Word round-trip gates.
   succeeds. Late events from the old window must not stop the replacement.
 - Simulated-port regressions cover these failures and independent projects;
   actual compiler/kernel termination failures still need native runtime checks.
+
+## Project deletion and cleanup
+
+Use disposable projects and copied test documents; never use research originals
+for destructive QA. Automated filesystem and lifecycle tests do not prove native
+window prompts or process shutdown on the installed Zotero build.
+
+- [ ] Delete from an active project card, an archived project card, and Settings.
+      Cancel confirmation and confirm all data remains; check keyboard activation and
+      accessible project-specific button labels at narrow widths.
+- [ ] Create DOCX versions, conversations, notebook outputs, compiler jobs, PDF
+      extraction output, evidence analysis workspaces and both export types. Delete
+      the project and verify all six managed roots plus its recorded CLI allocations
+      are gone; a same-name project and shared Zotero attachments remain intact.
+- [ ] Delete with a dirty Studio document and decline discard; no files are
+      removed and Studio remains usable. Accept discard and verify deletion finishes
+      only after admitted bridge writes and all processes have stopped.
+- [ ] Delete during AI preparation, provider output, notebook startup/execution,
+      compile, Living Review scanning, and Zotero sync. Verify no late request
+      recreates files or performs unrecorded sync writes after deletion.
+- [ ] Simulate a failed stop, permission failure, and catalog write failure. The
+      project remains retryable from the list after restarting Zotero; retry removes
+      remaining owned files and only then reports success. Check a confirmed-dead
+      process and a reused PID separately; never kill a process with unknown ownership.
+- [ ] Place a symlink inside an owned directory pointing to a disposable external
+      fixture. Deletion must fail before removing any project data, and the target
+      remains intact. Remove the link and retry.
+- [ ] Verify original Zotero items, attachment files, sync additions, separately
+      saved files and unknown legacy temporary/export files are preserved. Start a
+      new quick project from the same papers after successful deletion.

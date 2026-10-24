@@ -3,6 +3,7 @@ import * as assert from "node:assert/strict";
 
 import {
   buildOpenDataLoaderScript,
+  ExtractorCleanupUnconfirmedError,
   classifyStructuredExtractionFailure,
   PaperWorkspaceContentCache,
   probeJavaRuntime,
@@ -313,4 +314,26 @@ test("profile JAR cache upgrades old versions, repairs corruption, and coalesces
   } finally {
     Object.assign(globals, previous);
   }
+});
+
+test("unconfirmed extractor shutdown preserves PID and output evidence for recovery", async () => {
+  const removed: string[] = [];
+  const failure = new ExtractorCleanupUnconfirmedError(
+    "/owned/context/job/run",
+    new Error("stop failed"),
+  );
+  await assert.rejects(
+    withOpenDataLoaderOutputCleanup(
+      failure.outputDirectory,
+      async () => {
+        throw failure;
+      },
+      async (path) => {
+        removed.push(path);
+      },
+    ),
+    (error) => error === failure,
+  );
+  assert.deepEqual(removed, []);
+  assert.match(failure.message, /cleanup is unconfirmed/);
 });

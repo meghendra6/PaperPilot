@@ -7,7 +7,6 @@ import { planResearchWorkspaceArtifactRerun } from "./artifactRerun";
 import {
   addPapersToResearchWorkspaceProject,
   archiveResearchWorkspaceProject,
-  deleteResearchWorkspaceProject,
   exportIntegratedResearchWorkspace,
   findResearchWorkspaceProjectsWithSources,
   listResearchWorkspaceZoteroSyncReceipts,
@@ -25,6 +24,7 @@ import {
   type ResearchWorkspaceChangeInboxFile,
 } from "./persistence/contracts";
 import type { ResearchWorkspaceProjectDetails } from "./projectController";
+import { projectDeleteButton } from "./projectDeleteAction";
 import { renderProjectHome } from "./projectHomeView";
 import {
   renderArtifactHistory,
@@ -282,16 +282,9 @@ function renderProjectSettings(
     );
   }
   settingsActions.append(
-    button(doc, "Delete", async () => {
-      const confirmed =
-        doc.defaultView?.confirm(
-          `Delete “${details.project.name}” and its Paper Pilot artifacts? Zotero items and PDFs will not be deleted.`,
-        ) ?? false;
-      if (!confirmed) return;
-      if (!releaseOperations(root, "Deleting this project")) return;
-      await deleteResearchWorkspaceProject(projectID);
-      await renderResearchWorkspaceProjectSurface(root, { capturedPapers });
-    }),
+    projectDeleteButton(root, details.project, () =>
+      renderResearchWorkspaceProjectSurface(root, { capturedPapers }),
+    ),
   );
   settings.append(
     labeledField(doc, "Project name", name),

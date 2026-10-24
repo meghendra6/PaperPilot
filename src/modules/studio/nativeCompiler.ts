@@ -1,6 +1,5 @@
 import { getPref } from "../../utils/prefs";
 import { launchDetachedShellScript } from "../ai/launchScript";
-import { stopDetachedRunProcess } from "../ai/runCompletion";
 import { buildBackgroundCodexShellScript, shellEscape } from "../codex/shell";
 import { buildCliCommandEnvironment } from "../ai/cliEnvironment";
 import {
@@ -8,6 +7,7 @@ import {
   getResearchWorkspaceStorageRoot,
 } from "../researchWorkspace/storage";
 import { StudioCompilerService } from "./compiler";
+import { stopNativeStudioJob } from "./nativeProcess";
 import { compilerTemplateCache } from "./compilerTemplateCache";
 import { MAX_DOCUMENT_BYTES } from "./contracts";
 import type { StudioRepository } from "./repository";
@@ -45,6 +45,7 @@ export function nativeCompiler(
       await IOUtils.makeDirectory(`${directory}/output`, {
         createAncestors: true,
       });
+      await files.writeTextAtomic(`${directory}/paperpilot-job-v1`, "prepared");
       const executable = String(
         getPref(
           compiler === "tectonic"
@@ -117,17 +118,19 @@ export function nativeCompiler(
           command,
           environment: job.environment,
         });
+      await files.writeTextAtomic(`${job.directory}/launch-intent`, "compiler");
       const launched = await launchDetachedShellScript(script, (exe, args) =>
         Zotero.Utilities.Internal.exec(exe, args),
       );
       if (!launched.ok) throw new Error(launched.error);
     },
-    stop: async (job) => {
-      if (await files.exists(`${job.directory}/exit-code`)) return;
-      await stopDetachedRunProcess(
-        (await read(`${job.directory}/pid`))?.trim(),
-        { requireProcessId: true },
-      );
-    },
+    stop: stopNativeStudioJob,
   });
+}
+
+export function quiesceNativeCompiler(projectID: string) {
+  return StudioCompilerService.quiesceScope(
+    `${getResearchWorkspaceStorageRoot()}/runtime/builds/${projectID}`,
+    stopNativeStudioJob,
+  );
 }

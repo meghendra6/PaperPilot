@@ -17,6 +17,10 @@ import {
 } from "../src/modules/researchWorkspace/zoteroSync";
 import type { ResearchWorkspaceZoteroSyncRuntime } from "../src/modules/researchWorkspace/zoteroSyncRuntime";
 import { ResearchWorkspaceZoteroSyncService } from "../src/modules/researchWorkspace/zoteroSyncService";
+import {
+  quiesceResearchWorkspaceProject,
+  releaseResearchWorkspaceProjectDeletion,
+} from "../src/modules/researchWorkspace/projectRunAdmission";
 
 class MemoryFiles implements ResearchWorkspaceFileOps {
   readonly files = new Map<string, string>();
@@ -233,6 +237,93 @@ async function preview(
       collectionKey: "COLLECTION-A",
       tagNames: ["reviewed"],
     },
+  });
+}
+
+for (const phase of ["apply", "undo"] as const) {
+  test(`deletion waits for Zotero sync ${phase} receipt finalization`, async (t) => {
+    const { files, repository, service } = setup();
+    const projectID = `project-delete-sync-${phase}`;
+    await createProject(repository, projectID);
+    const approved = await preview(service, projectID);
+    const committed =
+      phase === "undo"
+        ? await service.apply({
+            preview: approved,
+            approvalToken: approved.approvalToken,
+          })
+        : undefined;
+    let entered = () => {};
+    const saving = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    let finish = () => {};
+    const finishSave = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const write = files.writeTextAtomic.bind(files);
+    t.mock.method(
+      files,
+      "writeTextAtomic",
+      async (path: string, contents: string) => {
+        if (
+          JSON.parse(contents).receipt?.status ===
+          (phase === "apply" ? "committed" : "undone")
+        ) {
+          entered();
+          await finishSave;
+        }
+        await write(path, contents);
+      },
+    );
+    const operation = committed
+      ? service.undo({
+          projectID,
+          receiptID: committed.receipt.receiptID,
+          expectedRevision: committed.revision,
+        })
+      : service.apply({
+          preview: approved,
+          approvalToken: approved.approvalToken,
+        });
+    await saving;
+    const projectRoot = repository.getProjectRoot(projectID);
+    let drained = false;
+    const deletion = quiesceResearchWorkspaceProject(projectRoot).then(() => {
+      drained = true;
+    });
+    await assert.rejects(
+      service.apply({
+        preview: approved,
+        approvalToken: approved.approvalToken,
+      }),
+      /being deleted/,
+    );
+    await assert.rejects(
+      new ResearchWorkspaceZoteroSyncService(repository).undo({
+        projectID,
+        receiptID: "receipt",
+        expectedRevision: 0,
+      }),
+      /being deleted/,
+    );
+    assert.equal(drained, false);
+    finish();
+    const [result] = await Promise.all([operation, deletion]);
+    assert.equal(
+      result.receipt.status,
+      phase === "apply" ? "committed" : "undone",
+    );
+    assert.equal(
+      (
+        await repository.getZoteroSyncReceipt(
+          projectID,
+          result.receipt.receiptID,
+        )
+      )?.receipt.status,
+      result.receipt.status,
+    );
+    releaseResearchWorkspaceProjectDeletion(projectRoot);
   });
 }
 
