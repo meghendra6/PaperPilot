@@ -4,7 +4,7 @@ Thanks for contributing to Paper Pilot.
 
 ## Scope
 
-This repository contains a Zotero 7-10 plugin that adds an AI reader workbench with local CLI integrations: Codex CLI and Claude Code.
+This repository contains a Zotero 7-10 plugin with a reader workbench, a persistent Research Workspace and Research Studio. Reader analysis uses Codex CLI or Claude Code. Studio also supports explicit loopback model endpoints; local document editing needs no model account.
 
 ## Development environment
 
@@ -41,11 +41,13 @@ Important areas to understand before making changes:
 - `src/modules/context/` — paper context retrieval and workspace artifact generation
 - `src/modules/workspace/` — workspace paths, writability probe, cleanup, collection artifact bundles
 - `src/modules/researchWorkspace/` — project persistence, verified evidence, multi-paper capabilities, and project-window UI
+- `src/modules/studio/` — documents, project assistant, local compilers, notebooks, references, and project bundles
+- `packages/studio-editor/` — pinned DOCX editor and isolated PDF.js dependency
 - `src/modules/discovery/` — provider search, evidence verification, ranking, prompts, and parsing
 - `src/modules/criticalRead/` — reader-first Critical Read workflow
 - `src/modules/ui/` — reusable pane controls, transcript windowing, and popover behavior
 - `src/modules/components/`, `message/`, `note/` — reusable rendering and note/message output
-- `src/modules/tools/` — PDF extraction, paper workspace content, and paper actions
+- `src/modules/tools/` — paper workspace content, bounded PDF reads, and text splitting
 - `src/modules/translation/` — response-language and translation helpers
 - `src/modules/autoHighlight/` — highlight extraction workflow
 - `src/modules/researchBrief.ts` — structured brief generation
@@ -83,6 +85,12 @@ Use the lightest verification that still proves the change.
 
 - run `npm test`
 - add or update focused tests under `test/`
+- run `npm run typecheck` for source or test type changes
+
+### Notebook worker changes
+
+- install `jupyter-client`, `ipykernel`, and `matplotlib` in a disposable Python environment
+- run `python test/studio_kernel_worker_test.py`; the Node suite does not run this integration check
 
 ### Build or packaging changes
 
@@ -118,7 +126,12 @@ Keep the four `At a glance` lists aligned to the same number of product capabili
 If you add screenshots or demo assets, use these references:
 
 - [`docs/images/README.md`](./docs/images/README.md)
-- [`docs/images/CAPTURE-CHECKLIST.md`](./docs/images/CAPTURE-CHECKLIST.md)
+
+Current Studio contracts and manuscript instructions live in
+[`docs/research-studio-spec.md`](./docs/research-studio-spec.md) and
+[`docs/academic-drafting.md`](./docs/academic-drafting.md). Keep runtime observations
+in [`docs/manual-qa.md`](./docs/manual-qa.md), with the tested build and environment.
+Completed one-off plans and review reports can be recovered from Git history.
 
 ## Pull request checklist
 

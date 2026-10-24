@@ -2,6 +2,11 @@
 
 Use this checklist inside real Zotero 7, 8, 9, and 10 runtimes before claiming readiness.
 
+Dated records below describe the stated build and environment only. They do not
+mark a newer candidate or the full compatibility matrix as verified. Native
+Windows CLI execution is unsupported; Windows appearance checks apply to UI
+compatibility only. Linux CLI execution requires `/bin/zsh` and Unix process tools.
+
 ## 0. Environment prerequisites
 
 - [ ] The candidate `.xpi` installs successfully in Zotero
@@ -129,8 +134,8 @@ Use this checklist inside real Zotero 7, 8, 9, and 10 runtimes before claiming r
 - [ ] Select text in the PDF
 - [ ] Confirm selection popup shows five distinct bordered AI buttons with visible spacing, hover, and keyboard focus in light and dark reader themes
 - [ ] Click Explain once; confirm it auto-submits, clears the selection draft card, and shows preparation / waiting / finishing status with elapsed time
-- [ ] Confirm Send becomes Stop and the input stays disabled during preparation and model execution; Stop shows Stopping until cancellation/cleanup settles, then Send and the input return
-- [ ] Attempt Enter, repeated popup clicks, and a pane refresh during a run; confirm no duplicate request and no unlocked input while the original run is active
+- [ ] Confirm Send becomes Stop during preparation and model execution while the input remains editable for the next draft; Stop shows Stopping until cancellation/cleanup settles, then Send returns with the draft preserved
+- [ ] Attempt Enter, repeated popup clicks, and a pane refresh during a run; confirm no duplicate request, and that editing the next draft never submits a second request while the original run is active
 - [ ] Cancel during request preparation and again during model execution; confirm a late preparation result cannot start a replacement process or unlock another paper's input
 - [ ] Force session persistence to reject before model launch; confirm a visible error, stopped animation, and usable input instead of indefinite Thinking
 - [ ] In the installed add-on sandbox without `structuredClone`, confirm Explain persists its user turn, starts the CLI, displays an answer, and reopens the saved session
@@ -185,9 +190,7 @@ Driven over the remote debugger on the DistServe paper (area annotation on page 
 
 ### Review verification — 2026-09-21
 
-See [the product review](product-review-2026-09-21.md) for confirmed defects,
-automated verification and the separate native Zotero evidence. The earlier
-browser-only inline-card check did not establish native rendering correctness;
+The earlier browser-only inline-card check did not establish native rendering correctness;
 the replacement dictionary window has now displayed the live `cost` meanings
 and phonetics in native Zotero 10.0.3.
 
@@ -1077,7 +1080,7 @@ Record Zotero/OS/CLI versions and the installed XPI hash; a successful Node test
 - [ ] In a disposable chat workspace, place an unowned file at a planned input/runtime path, then prepare the next run. Confirm preparation fails before launch, the file survives, and Raw logs identifies the file and workspace. Move it or start a new conversation and confirm chat can continue. Repeat with an externally edited owned input.
 - [ ] In a disposable profile, raise a paper's history index `storageVersion` above the supported version, both before and after its index is cached. Attempt save, rename and deletion; confirm an actionable error and unchanged index/snapshot files. Do not alter real conversation history for this check.
 
-See [the evaluation report](./chat-context-evaluation.md) for the synthetic model sample and [the implementation record](./paperpilot-product-review-and-chat-spec.md) for executed checks and environment limits.
+See [the evaluation report](./chat-context-evaluation.md) for the dated synthetic model sample. Current source, persistence and project-intake contracts are in [architecture](./architecture.md#chat-request-identity-and-continuity).
 
 ### Native chat regression checks
 
@@ -1087,12 +1090,19 @@ See [the evaluation report](./chat-context-evaluation.md) for the synthetic mode
 - [ ] Save an older answer after version-only attachment drift with identical file size, mtime and dateModified. Changed or unavailable PDF metadata and rebound identities must still reject the snapshot.
 - [ ] Search wrapped Korean and long unbroken text in a narrow pane. Confirm result buttons grow, remain separated, scroll, and can be activated using the keyboard.
 
-See the [native repair specification](./chat-runtime-followup-spec.md) for the observed v0.1.5 failures, acceptance criteria and runtime coverage.
+Historical native repair checks used Zotero 10.0.1 on macOS 26.6.2 with Codex CLI
+and a local v0.1.5 repair candidate. A fresh answer matched PDF page 8 and its
+citation opened that page; an older answer's note saved after version-only drift;
+wrapped search results remained separate at about 420 px and supported keyboard
+navigation; a branch, summary and pin survived restart. Previously failed
+citations kept their historical status. Zotero 7–9, extraction with no reader or
+another PDF open, Claude GUI, and the full width/theme/IME and privacy matrices
+were not exercised in that check. These observations do not verify a newer XPI.
 
 ## Research Studio verification
 
-This surface is under implementation. Browser preview, native Zotero, actual Word,
-model providers and kernel languages are separate evidence layers.
+Research Studio is implemented in source. Browser preview, native Zotero, actual
+Word, model providers and kernel languages remain separate evidence layers.
 
 - Open an existing project → **Open Studio** twice; confirm a single window and
   project isolation. Close/reopen while an AI cancellation is finishing.
@@ -1317,7 +1327,8 @@ and `matplotlib`. Node unit tests alone do not exercise a real kernel process.
 
 ### Full feature audit follow-up — 2026-10-24
 
-See [the feature coverage and findings](./full-feature-audit-2026-10-24.md).
+The checks and dated evidence below cover the corrected data, process-ownership
+and editor-boundary failures. They are not a full feature/provider/OS matrix.
 
 - A single-column CSV/TSV ending in an empty row must retain that row after Save
   and reopen. An empty CSV explains that a column is needed first. Removing the
@@ -1336,7 +1347,7 @@ See [the feature coverage and findings](./full-feature-audit-2026-10-24.md).
   the review JSON Schema in `response_format`. An endpoint that rejects it must
   produce a visible error, without a hidden unconstrained retry.
 
-Current evidence: browser DOCX create/edit/save/reopen and export, Markdown
+Recorded evidence on 2026-10-24: browser DOCX create/edit/save/reopen and export, Markdown
 rename/history restoration, and CSV empty-row round-trip passed. Actual Codex
 created a paragraph replacement, and applying it advanced the DOCX version while
 preserving its second paragraph. Claude `sonnet` returned the selected first

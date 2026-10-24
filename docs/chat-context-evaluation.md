@@ -1,6 +1,6 @@
 # Chat context evaluation — 2026-09-07
 
-This evaluation implements R13 in the [product review specification](./paperpilot-product-review-and-chat-spec.md). It measures source containment and explores alternatives; it does not establish real-paper answer accuracy or a production speed guarantee.
+This dated experiment measures source containment and explores alternatives; it does not establish real-paper answer accuracy or a production speed guarantee. Its decision to retain full-paper context is reflected in the [current architecture](./architecture.md#chat-request-identity-and-continuity). Recorded model versions and timings describe this experiment, not current provider availability or performance.
 
 ## Reproduce
 

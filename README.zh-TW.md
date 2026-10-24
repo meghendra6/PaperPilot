@@ -8,7 +8,7 @@ Paper Pilot 是一個面向 Zotero 7-10 PDF 閱讀器的 AI 閱讀工作台。�
 
 ![Zotero 7-10](https://img.shields.io/badge/Zotero-7--10-cc2936) ![Node 22.18+](https://img.shields.io/badge/Node-22.18%2B-339933) ![Java 11+](https://img.shields.io/badge/Java-11%2B-007396) ![License](https://img.shields.io/badge/License-AGPL--3.0--or--later-blue) ![Engines](https://img.shields.io/badge/Engines-Codex%20CLI%20%7C%20Claude%20Code-6f42c1)
 
-## Research Studio（開發中）
+## Research Studio
 
 專案的 **Open Studio** 視窗（Research Studio）提供本機原格式文件、DOCX 編輯器、Markdown/原始碼、
 資料表與可執行筆記本。專案助手記錄所選檔案的版本，並逐項審核修改建議。
@@ -17,8 +17,8 @@ Paper Pilot 是一個面向 Zotero 7-10 PDF 閱讀器的 AI 閱讀工作台。�
 `jupyter-client` 和 `ipykernel` 的 Python 環境；R 另須 `IRkernel`。
 程式碼僅在點擊 Run 後以本機帳戶權限執行。
 
-此功能仍在開發，尚未完整涵蓋 Papers AI。瀏覽器、Codex 和 Python 驗證不能
-取代原生 Zotero 或 Word 驗證。參見[完整範圍與驗證約定](./docs/research-studio-spec.md)
+上述功能已在原始碼中實作。驗證範圍按建置、模型與格式區分；瀏覽器檢查不能
+取代原生 Zotero 或 Word 往返驗證。參見[完整範圍與驗證約定](./docs/research-studio-spec.md)
 及[執行階段檢查清單](./docs/manual-qa.md)。
 
 本機 PDF 建置使用已安裝的 Tectonic（`.tex`）、Typst（`.typ`）或 MyST 加 Typst（Markdown），可在設定中指定路徑。缺少的套件或範本可能需要下載。本機專案封裝包含文件版本、對話與歷史研究快照；還原至新專案後須明確重新連結 Zotero 來源。Zotero 附件原件與執行環境另行管理。DOCX 支援 Word 引用欄位及明確的 CSL 更新；在 Word 中更新時使用 Word 的格式引擎。雲端協作及同步暫緩實作。
@@ -26,6 +26,8 @@ Paper Pilot 是一個面向 Zotero 7-10 PDF 閱讀器的 AI 閱讀工作台。�
 Studio 也提供 Word 註腳、章節附註、目錄與標號欄位、套用前修改 AI 建議、筆記本輸出來源檢查及專案連結檢視。重新命名會原子更新支援的字面路徑，不推測程式動態產生的路徑。輸出檢查顯示來源儲存格、輸出或擷取輸入的變更。Zotero 參考文獻可透過 Research Workspace 開啟目前已驗證的支持段落。
 
 開啟 DOCX 或已儲存的期刊範本，選擇 **Assistant → Draft paper**，選取來源檔案並輸入主題、文章類型和期刊要求後傳送。連接的模型會提出可審閱的草稿；套用後以標題、章節和正文樣式附加段落並儲存新版本，保留原有內容。缺少證據與引用會保留明確的預留文字；透過 References 加入動態引用欄位。參閱[論文草稿指南](./docs/academic-drafting.md)。 論文預設使用學術英語，不受請求或來源語言影響；對話和說明使用使用者的語言。只有明確要求時才改用其他論文語言。
+
+**New document** 按用途分組格式，提供 Blank、內建與已儲存範本，並預覽檔名。助理始終顯示 provider 與模型選擇器，可從 History 恢復對話，並在輸入框上方增刪脈絡檔案標籤。
 
 ## 聊天工作流程
 
@@ -35,7 +37,7 @@ Studio 也提供 Word 註腳、章節附註、目錄與標號欄位、套用前�
 
 專案收件匣可儲存尚無 PDF 的探索候選。請明確連結既有項目與特定 PDF，再分別管理篩選、閱讀進度及理解程度。不必重新選取文獻庫項目，也可從專案已儲存成員繼續工作。
 
-草稿僅保留於記憶體。新增聊天資料遵循完整、僅提示詞及關閉歷史的政策；僅提示詞模式不會將助理摘要或固定回答加入後續上下文。PaperPilot 不會清除外部 CLI 自身的歷史。引擎可用性取決於已安裝 CLI 與帳戶，失敗時不會靜默切換引擎。參見[評審與規格](./docs/paperpilot-product-review-and-chat-spec.md)、[評估](./docs/chat-context-evaluation.md)及[執行時檢查表](./docs/manual-qa.md)。
+草稿僅保留於記憶體。新增聊天資料遵循完整、僅提示詞及關閉歷史的政策；僅提示詞模式不會將助理摘要或固定回答加入後續上下文。PaperPilot 不會清除外部 CLI 自身的歷史。引擎可用性取決於已安裝 CLI 與帳戶，失敗時不會靜默切換引擎。參見[架構](./docs/architecture.md#chat-request-identity-and-continuity)、[評估](./docs/chat-context-evaluation.md)及[執行時檢查表](./docs/manual-qa.md)。
 
 ## 快速總覽
 
@@ -65,17 +67,7 @@ Research Workspace 已內建於 Paper Pilot，並共用同一套本機引擎選�
 
 ## 截圖與示範
 
-[產品評審](./docs/paperpilot-product-review-and-chat-spec.md)保留了修改前的閱讀器截圖；它不代表新版聊天介面的驗證結果。
-
-下一步建議補充的視覺內容：
-
-- 顯示 AI 側邊欄的 Zotero 閱讀器畫面
-- 結構化的 **Research brief** 卡片
-- 三分區的**驗證型先行研究**結果
-- 七步 **Critical Read** 工作流程
-- **Compare** 工作流與儲存 artifact 的流程
-
-如果之後要補充 UI 視覺資料，建議使用 `docs/images/` 目錄，並在本節加入簡短說明連結。
+[Studio 截圖](./docs/research-studio-spec.md#studio-navigation)展示了 2026-10-24 在 Chrome 中使用合成專案檢查的助理與 New document 對話框。原生 Zotero 的視覺與鍵盤檢查仍須獨立進行。新增或更新截圖請遵循[截圖指南](./docs/images/README.md)。
 
 ## 目前狀態
 
@@ -160,7 +152,7 @@ Paper Pilot 仍在積極開發中。
 - 評分後，在準備下一個問題期間，你的回答、回饋以及未掌握主題的說明會保留在畫面上。準備好後點擊 **Next question** 繼續。
 - 會話結束時，系統會產生一份 Markdown 學習報告，包含強項、需加強之處、主要誤解以及建議重讀的內容。
 
-Mastery prompt 會強制問題／評估回應為嚴格 JSON（禁止前置推理或開場白），將使用者回答包覆在 `<user_answer>` 標籤內，並容許 JSON 周圍出現 markdown fence 作為容錯。解析器能辨識字串與跳脫字元，因此引號內的 `}` 不會截斷有效回應。
+Mastery prompt 要求問題與評估採用嚴格 JSON。使用者回答與歷史回合作為不可信的 JSON 來源資料傳入。解析器檢查欄位、長度與範圍，辨識字串與跳脫字元，並能復原帶程式碼圍欄的 JSON 回應。
 
 ### 7. 面向 CLI 引擎的本地工作區產物
 
@@ -210,7 +202,7 @@ Codex 模式更偏向工作區驅動。當前程式碼庫已包含：
 - 可執行檔發現與驗證
 - 登入／狀態檢查
 - 工作區可寫性檢查
-- 目前建議 Codex 模型選擇（預設 `gpt-6-astra`，另含 `gpt-6-sol`、`gpt-6-luna`、`gpt-5.6-sol`、`gpt-5.6-terra`、`gpt-5.6-luna`），模型選擇器旁的 reasoning effort 選擇器只列出所選模型支援的等級（支援時可達 `max`/`ultra`）
+- 內建 Codex 模型清單（預設 `gpt-6-astra`，另含 `gpt-6-sol`、`gpt-6-luna`、`gpt-5.6-sol`、`gpt-5.6-terra`、`gpt-5.6-luna`），模型選擇器旁的 reasoning effort 選擇器只列出所選模型支援的等級（支援時可達 `max`/`ultra`）
 - sandbox 與 approval 設定
 - 可選網頁搜尋切換
 - 與目前論文綁定的可恢復追問執行
@@ -220,7 +212,7 @@ Codex 模式更偏向工作區驅動。當前程式碼庫已包含：
 Claude Code 模式使用本地 `claude` CLI 的 print 模式，並基於閱讀器聊天和工作台流程使用的同一論文工作區產物來回答。當前程式碼庫已包含：
 
 - 可設定的可執行檔路徑
-- 可選擇 Claude Code CLI 的模型系列別名（預設 `sonnet`，另含 `opus`、`haiku`、`fable`），已安裝的 CLI 會將其解析為各系列的最新模型（目前為 Sonnet 5.5、Opus 5.5、Haiku 5.5、Fable 5.1）；另提供固定 ID `claude-opus-5-5`、`claude-sonnet-5-5`、`claude-haiku-5-5`、`claude-fable-5-1`、`claude-opus-5`、`claude-sonnet-5`
+- 可選擇 Claude Code CLI 的模型系列別名（預設 `sonnet`，另含 `opus`、`haiku`、`fable`），已安裝的 CLI 會將其解析為各別名可用的模型；另提供固定 ID `claude-opus-5-5`、`claude-sonnet-5-5`、`claude-haiku-5-5`、`claude-fable-5-1`、`claude-opus-5`、`claude-sonnet-5`
 - 在設定中手動輸入的其他模型 ID（例如 `claude-opus-5-5[1m]` 或 Bedrock/Vertex 模型 ID）會原樣傳給 CLI；`Opus 5.5`、`claude-opus-5.5` 等手動輸入的名稱會正規化為 `claude-opus-5-5`，並保留 `[1m]` 等脈絡後綴
 - 可選的 effort 等級（`low`、`medium`、`high`、`xhigh`、`max`；設定中的 **Claude Code default** 與模型選擇器旁的 **default effort** 沿用 Claude Code CLI 預設值），可在設定中或模型選擇器旁設定；在引擎彈出面板中儲存模型與 effort 後，彈出面板會關閉；僅當已安裝 CLI 的 `--help` 列出 `--effort` 時才會傳入
 - 可設定的 permission mode（僅用於聊天執行）
@@ -255,10 +247,12 @@ Claude Code 模式使用本地 `claude` CLI 的 print 模式，並基於閱讀�
 - **Zotero 7、8、9 或 10**
 - 開發用 **Node.js 22.18+**
 - 用於依賴與建置的 **npm**
-- 執行時 **Java 11+**（用於 OpenDataLoader 結構化 PDF 擷取）
-- 至少安裝一個本地 AI CLI：
+- **Java 11+** 用於 OpenDataLoader 結構化 PDF 擷取；使用附件文字回退時可選
+- 閱讀器與 Research Workspace AI 至少需要一個已驗證的本機 CLI：
   - **Codex CLI**
   - **Claude Code**
+
+閱讀器與 Research Workspace AI 需要已驗證的本機 CLI。Studio 編輯無需 CLI，Studio AI 也可使用相容的回環模型。Java 用於結構化擷取；無法使用時退回附件文字。
 
 ## 開發快速開始
 
@@ -346,13 +340,14 @@ Research Workspace 會記錄執行時固定的 CLI 模型、推理等級與回�
 - **Workspace**（兩種引擎共用的 workspace root 與 auto-clean）
 - **Retrieval**（chunk size、overlap 與 top-k 位於預設摺疊的 **Advanced retrieval** 群組）
 - **Privacy**（單一 **Session history** 選項：**Save prompts and responses**、**Save prompts only** 或 **Do not save session history**）
+- **Research Studio** (本機編譯器路徑與 Python 核心環境)
 
 目前需要注意：
 
-- 外掛介面目前僅提供英文；翻譯版 README 描述的是同一套英文介面。
+- 大多數控制項使用英文；Critical Read 的說明、步驟標題與報告標籤遵循回應語言設定。
 - 回應語言會被正規化為 **English**、**Korean** 或 **Chinese**
 - 韓語回答預設使用自然的韓語句子，同時保留論文或問題中的英語專業術語；需要術語的韓語譯法時，可以明確要求。
-- 回應語言只會變更模型產生的回答與 artifact，不會變更介面標籤
+- 回應語言適用於新的閱讀器回答、artifact 與 Critical Read 顯示文字；不會翻譯已儲存正文。Studio 學術稿件預設使用英語，除非明確指定其他語言。
 - 執行時程式碼已經讀取了許多與引擎、retrieval、workspace、privacy 相關的設定
 - 結構化 PDF 擷取使用內建的 OpenDataLoader JAR；Java 或執行時擷取不可用時會退回到 Zotero `attachmentText`
 - 所有設定路徑在真實執行環境中的 QA 仍是剩餘工作的一部分
@@ -384,6 +379,8 @@ build/      產生的外掛建置產物
 - `src/modules/codex/` — Codex CLI 執行、狀態、解析與命令建構
 - `src/modules/claude/` — Claude Code 執行流程
 - `src/modules/context/` — 論文脈絡收集與工作區產物生成
+- `src/modules/researchWorkspace/` — 專案來源、證據、多論文分析與持久化
+- `src/modules/studio/` — 專案文件、助理、筆記本、編譯器、參考文獻與專案套件
 - `src/modules/autoHighlight/` — 高亮擷取工作流
 - `src/modules/paperTools.ts` — 結構化 contribution/limitation/follow-up prompt
 - `src/modules/researchBrief.ts` — 面向單篇論文的精簡 brief 生成
@@ -441,9 +438,11 @@ npm run build
 
 ## 其他文件
 
-- [`docs/images/CAPTURE-CHECKLIST.md`](./docs/images/CAPTURE-CHECKLIST.md)
 - [`docs/images/README.md`](./docs/images/README.md)
 - [`CONTRIBUTING.md`](./CONTRIBUTING.md)
 - [`docs/manual-qa.md`](./docs/manual-qa.md)
 - [`docs/architecture.md`](./docs/architecture.md)
 - [`docs/prompt-contracts.md`](./docs/prompt-contracts.md)
+- [`docs/research-studio-spec.md`](./docs/research-studio-spec.md)
+- [`docs/academic-drafting.md`](./docs/academic-drafting.md)
+- [`docs/chat-context-evaluation.md`](./docs/chat-context-evaluation.md)

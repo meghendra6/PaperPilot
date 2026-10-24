@@ -183,7 +183,7 @@ language; existing Zotero notes and verbatim source material remain unchanged.
 - Purpose: run a multi-round Socratic comprehension check on the active paper and produce a learning report
 - Shapes:
   - `buildInitialMasteryPrompt` / `buildFollowUpQuestionPrompt` → strict JSON `{ "question", "topic", "difficulty" }` with `difficulty ∈ {foundational, intermediate, advanced}`
-  - `buildEvaluateAnswerPrompt` → strict JSON `{ "understood", "confidence", "evaluation", "misunderstandings", "explanation", "nextTopic", "nextDifficulty" }`
+  - `buildEvaluateAnswerPrompt` → strict JSON `{ "understood", "confidence", "criterionScores", "evaluation", "misunderstandings", "explanation", "nextTopic", "nextDifficulty" }`; the native schema requests four `criterionScores` entries with `criterionID` (`accuracy`, `completeness`, `evidence`, `reasoning`), `score` (`0..2`) and bounded `feedback`
   - `buildFinalReportPrompt` → Markdown report (not JSON) with `Strengths`, `Areas for Improvement`, `Key Misconceptions`, `Recommendations`, `Overall Assessment`
 - Guardrails:
   - use the full current-paper workspace content when generating questions, evaluating answers, and writing the final report
@@ -193,6 +193,7 @@ language; existing Zotero notes and verbatim source material remain unchanged.
   - reader answers, prior rounds, topics, and evaluations are serialized as bounded JSON source data; strings inside the block are never executable instructions
   - `parseMasteryQuestionResponse` requires a bounded non-empty question, bounds the topic, and rejects an invalid provided difficulty; a missing topic/difficulty uses `general`/`foundational`
   - `parseMasteryEvaluationResponse` requires boolean `understood`, clamps finite confidence to `0..1`, bounds prose/lists/next topic, and rejects an invalid provided next difficulty; missing optional values use safe defaults
+  - criterion parsing drops unknown/duplicate IDs and non-finite scores, clamps accepted scores to `0..2`, and bounds feedback; older responses without criterion scores retain an empty list rather than invented grades
   - both parsers tolerate markdown fences around the JSON and are string/escape-aware, so `}` inside quoted strings does not truncate the payload
   - the Markdown report is written in second person (`you`), stays encouraging but honest, and references specific rounds from the session
 

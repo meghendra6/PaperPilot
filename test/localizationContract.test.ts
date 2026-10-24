@@ -45,17 +45,22 @@ test("every statically referenced Fluent key exists in en-US", () => {
   );
 });
 
-test("all translated READMEs state the English-only interface boundary", () => {
-  for (const name of [
-    "README.md",
-    "README.ko.md",
-    "README.zh-CN.md",
-    "README.zh-TW.md",
-  ]) {
+test("READMEs distinguish English controls from localized Critical Read guidance", () => {
+  const expectations: Array<[string, RegExp]> = [
+    [
+      "README.md",
+      /most controls use English labels; Critical Read.*response-language/,
+    ],
+    ["README.ko.md", /대부분의 조작 항목은 영어이며, Critical Read.*응답 언어/],
+    ["README.zh-CN.md", /大多数控件使用英文；Critical Read.*响应语言/],
+    ["README.zh-TW.md", /大多數控制項使用英文；Critical Read.*回應語言/],
+  ];
+  for (const [name, pattern] of expectations) {
     const source = readFileSync(join(process.cwd(), name), "utf8");
-    assert.match(
+    assert.match(source, pattern, `${name} must document localized guidance`);
+    assert.doesNotMatch(
       source,
-      /interface.*English only|인터페이스.*영어 전용|界面.*英文|介面.*英文/i,
+      /interface.*English only|인터페이스.*영어 전용|界面.*仅提供英文|介面.*僅提供英文/i,
     );
   }
 });

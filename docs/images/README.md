@@ -1,29 +1,37 @@
-# README image and demo asset guide
+# Screenshot and demo guide
 
-This folder is reserved for screenshots, GIFs, and short demo assets used by the project README files.
+Keep current workflow screenshots readable and label the application, date and
+build used. The [Studio screenshots](../research-studio-spec.md#studio-navigation)
+show synthetic projects in Chrome on 2026-10-24; they do not establish native
+Zotero or Word rendering.
 
-## Recommended assets
+## Before capturing
 
-Suggested additions:
+- Use a clean or sanitized demo library.
+- Remove personal library names, local paths and private metadata.
+- Use a paper that makes the intended workflow clear.
+- Make the pane large enough to show the relevant controls and result.
+- Record the candidate XPI/build and the runtime separately from test results.
 
-- `reader-pane-overview.png` — Zotero reader with the Paper Pilot pane visible
-- `research-brief-card.png` — structured research brief example
-- `related-papers.png` — grouped related-paper recommendation UI
-- `compare-workflow.png` — compare flow or saved artifact result
-- `demo.gif` — short end-to-end interaction clip
+## Capture checklist
 
-## Guidelines
+| Workflow            | What to show                                               | Suggested filename         |
+| ------------------- | ---------------------------------------------------------- | -------------------------- |
+| Reader              | Engine/session controls, chat and composer                 | `reader-pane-overview.png` |
+| Research brief      | Completed summary and sections                             | `research-brief-card.png`  |
+| Verified prior work | Inferred scope, three evidence lanes and official evidence | `verified-prior-work.png`  |
+| Critical Read       | Reader-first gate, agent synthesis and step provenance     | `critical-read.png`        |
+| Compare             | Result and save-to-note or collection action               | `compare-workflow.png`     |
+| Research Workspace  | Project entry, selected papers, Analyze and Results        | `research-workspace.png`   |
+| Research Studio     | New document, editing, context and reviewed proposals      | `research-studio.png`      |
+| Short demo          | Open paper, ask a question, run a workbench action         | `demo.gif`                 |
 
-- Prefer cropped, readable screenshots over full-screen captures.
-- Avoid including sensitive local file paths or personal library data.
-- Use consistent naming so README links remain stable.
-- Keep images optimized for GitHub rendering.
-- If the UI changes significantly, refresh outdated screenshots.
+## Publication checks
 
-## Linking convention
-
-A typical Markdown reference in README files should look like this:
-
-```md
-![Paper Pilot reader pane](./docs/images/reader-pane-overview.png)
-```
+- Crop to the workflow and optimize image size for GitHub.
+- Confirm text remains readable at README width.
+- Keep source/evidence labels visible without exposing private queries or raw reviews.
+- Use a stable filename and a relative Markdown link from the consuming document.
+- Link only files that exist; the filenames above are capture suggestions.
+- Refresh a screenshot when the pictured workflow changes.
+- Distinguish browser previews from actual Zotero, Word and provider verification.

@@ -23,11 +23,12 @@ Read [`docs/architecture.md`](./docs/architecture.md) before changing engine, wo
   - `modules/context/`: retrieval, chunk indexing, and workspace artifact construction
   - `modules/workspace/`: workspace path building, writability probe, cleanup, and collection artifact bundles
   - `modules/researchWorkspace/`: project persistence, selection capture, verified evidence, project capabilities, and modeless-window UI
+  - `modules/studio/`: project documents, sandboxed editors, reviewed AI proposals, local compilers, kernels, references, and project bundles
   - `modules/discovery/`: provider search, live evidence verification, ranking, and discovery prompt/parsing contracts
   - `modules/criticalRead/`: the seven-step reader-first Critical Read workflow
   - `modules/ui/`: reusable pane controls, transcript windowing, disclosure state, and popover behavior
   - `modules/components/`, `message/`, `note/`: rendered messages, note output, and reusable view helpers
-  - `modules/tools/`: PDF extraction, paper workspace content, and built-in paper actions
+  - `modules/tools/`: paper workspace content, bounded PDF reads, and text splitting
   - `modules/translation/`: response-language selection and translation prompt helpers
   - `modules/autoHighlight/`: exact local PDF matching and owned Zotero highlight creation
   - `modules/figureExplain/`: area-annotation figure/table explanation: caption locator, prompt, parser, and run workflow
@@ -38,6 +39,7 @@ Read [`docs/architecture.md`](./docs/architecture.md) before changing engine, wo
   - `modules/paperArtifact*.ts`: persistence/reuse of paper artifacts
   - `utils/`: shared helpers, including `prefs.ts` (`getPref`/`setPref`)
 - `addon/`: Zotero addon bootstrap, `prefs.js` defaults, `preferences.xhtml` settings UI, locales, and the vendored OpenDataLoader JAR
+- `packages/studio-editor/`: pinned DOCX editor and isolated PDF.js workspace
 - `scripts/prepare-opendataloader.mjs`: vendors the OpenDataLoader runtime before start/build/release
 - `scripts/zotero-plugin-cli.mjs`: development/build/release entrypoint
 - `scripts/check-release-tag-version.mjs`: release guard that rejects a tag not matching `v${package.json.version}`
@@ -47,6 +49,8 @@ Read [`docs/architecture.md`](./docs/architecture.md) before changing engine, wo
 - `docs/architecture.md`: how the pieces fit together and how a run actually executes
 - `docs/manual-qa.md`: required real-Zotero runtime checklist
 - `docs/prompt-contracts.md`: expected structured output shapes and prompt guardrails
+- `docs/research-studio-spec.md`: Studio implementation contracts and format-specific verification limits
+- `docs/academic-drafting.md`: reviewed DOCX manuscript workflow
 - `README*.md`: user-facing product and setup docs in multiple languages
 
 Local-only, not tracked: `.github/` except `workflows/` and `FUNDING.yml`, `docs/superpowers/`, `.worktrees/`, `reference/`, `build/`. Do not stage them and do not link to them from committed docs.
@@ -116,9 +120,9 @@ Read prefs through `utils/prefs.ts` (`getPref` / `setPref`), never `Zotero.Prefs
 
 ### Test changes
 
-- Tests run on the Node test runner with `ts-node/register` and have no Zotero runtime. They cover pure logic only: prompt builders, parsers, command builders, path/artifact construction, state machines.
+- Tests run on the Node test runner with `ts-node/register/transpile-only` and have no native Zotero runtime. They cover pure logic and bounded local process integration. The separate Python worker test requires `jupyter-client`, `ipykernel`, and `matplotlib`.
 - To make new code testable, read Zotero globals lazily instead of importing them at module scope. Follow the `getGlobalZotero()` pattern in `modules/session/sessionHistoryRepository.ts`.
-- Anything needing a real pane, subprocess, or Zotero item belongs in `docs/manual-qa.md`, not in a mocked test that pretends to cover it.
+- Native panes, Zotero items, authenticated provider workloads and Word round trips belong in `docs/manual-qa.md`; mocked tests do not establish those runtime results.
 
 ### Docs changes
 

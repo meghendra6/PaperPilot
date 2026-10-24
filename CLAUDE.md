@@ -4,43 +4,6 @@
 Read it first. This file only adds Claude Code specifics; it does not restate or
 override anything there.
 
-## Orientation
-
-| Need                                                       | Read                                                     |
-| ---------------------------------------------------------- | -------------------------------------------------------- |
-| Working agreements, verification expectations, git hygiene | [`AGENTS.md`](./AGENTS.md)                               |
-| How the plugin actually works                              | [`docs/architecture.md`](./docs/architecture.md)         |
-| Required output shape for a prompt surface                 | [`docs/prompt-contracts.md`](./docs/prompt-contracts.md) |
-| What can only be checked inside real Zotero                | [`docs/manual-qa.md`](./docs/manual-qa.md)               |
-| Product behavior and setup                                 | [`README.md`](./README.md)                               |
-
-## Verification quick reference
-
-```bash
-npm test              # Node regression suite, no Zotero runtime required
-npm run typecheck     # typecheck source and tests (addon/ is excluded)
-npm run build         # packages the xpi and vendors the OpenDataLoader JAR
-npm run lint:check    # read-only repository lint and formatting gate
-```
-
-Run `npm run lint:fix` only when repository-wide formatting and lint edits are
-intentional. Use `npx prettier --check <paths>` and `npx eslint <paths>` for
-focused read-only checks while iterating.
-
-## Do not commit these paths
-
-Untracked or gitignored by design. Never stage them, and never reference them
-from committed docs:
-
-- `.github/` except `workflows/` and `FUNDING.yml` — local agent harness
-  (`copilot-instructions.md`, `agents/`, `prompts/`, `rules/`, `instructions/`)
-- `docs/superpowers/` — local brainstorm/spec/plan notes
-- `.worktrees/` — local git worktrees
-- `reference/` — local upstream Zotero checkout kept for source lookups
-- `build/`, `node_modules/`, `.scaffold`
-
-Check `git status --short` before every commit.
-
 ## Two different "Claude" things
 
 `src/modules/claude/` is the plugin's **Claude Code engine integration** — the

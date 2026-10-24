@@ -1,26 +1,25 @@
 # Research Studio implementation contract
 
-Status: implementation in progress. This is the local delivery target, not a
-shipped feature list. The baseline is the public [Papers AI features](https://papers.ai/#features)
-and the user's request for editable DOCX and the wider research workflow.
-On 2026-10-22 the user narrowed implementation to capabilities that run locally.
-Hosted collaboration, cloud sync, invitations/roles, presence, remote account
-connectors and OpenRouter integration are deferred. No server deployment is part
-of this implementation. Local CLI tools can still contact their configured model
-providers, and compilers may download missing packages; local editing has no
+Status: implemented in source; native, provider and Word verification remains
+capability-specific. The recorded evidence below is dated, and the outstanding
+checks are maintained in [manual QA](./manual-qa.md#research-studio-verification).
+
+Research Studio is local-first. Hosted collaboration, cloud sync, invitations,
+roles, presence, remote account connectors and OpenRouter integration are outside
+its current scope. Local CLI tools can contact their configured model providers,
+and compilers may download missing packages. Local document editing has no
 account or network dependency.
 
 ## Product boundary
 
 Research Workspace remains the project and evidence authority. A project's
-**Write & run** window contains its documents, data, notebooks, references and
+**Open Studio** window contains its documents, data, notebooks, references and
 project conversation. The PDF reader remains a compact reading surface. No
 document conversion is called lossless without a round-trip fixture proving it.
 
-Use an existing DOCX engine rather than building Word layout or flattening DOCX
-to Markdown. SuperDoc 1.47.2 (AGPL-3.0) is pinned and bundled locally, with
-telemetry disabled. Its v2 successor requires a separately proprietary engine;
-that dependency is excluded. The editor workspace isolates its PDF.js peer
+SuperDoc 1.47.2 (AGPL-3.0) is pinned and bundled locally, with telemetry
+disabled. Original DOCX bytes and editor exports are versioned without flattening
+the document to Markdown. The editor workspace isolates its PDF.js peer
 from Paper Pilot’s existing PDF extraction dependency. Its browser UI runs in a sandboxed document;
 privileged Zotero operations cross a bounded, project-bound message bridge.
 
@@ -42,38 +41,9 @@ privileged Zotero operations cross a bounded, project-bound message bridge.
 - Document navigation waits for a confirmed save or an explicit discard choice.
   Edits made during saving stay dirty. A failed save keeps the editor available.
 
-## Local delivery target
-
-| Area            | Required behavior                                                                                   |
-| --------------- | --------------------------------------------------------------------------------------------------- |
-| Projects        | Files/folders, import/export, duplicate/template, resume, source links                              |
-| DOCX            | Paginated editing, formatting, tables/images, comments, tracked changes, Word round trip            |
-| Other writing   | Markdown/MyST, LaTeX and Typst editing, preview and local compilation                               |
-| References      | Zotero, document/manual/BibTeX sources, styles/bibliography, local reference-file exchange          |
-| AI              | Project conversation, explicit context, file operations as reviewable proposals, cancellation       |
-| Providers       | Existing Codex/Claude CLIs and loopback OpenAI-compatible endpoints                                 |
-| Data            | CSV/TSV/JSONL viewing, sorting/filtering/editing, original-format export                            |
-| Computation     | IPYNB Python/R cells, outputs/packages, stop/restart, reproducible runs, figures/tables into drafts |
-| Planning        | Kanban, labels/filtering, links/graph, separate reading and screening states                        |
-| History         | Author attribution, document versions, restore, comments/review decisions                           |
-| Local operation | Local persistence, offline editing/compilation, explicit offline model capability                   |
-| Portability     | Project bundle exchange, local data management, explicit storage and execution locations            |
-
-## Integration gates
-
-1. Prove the DOCX engine's browser and native Zotero load/edit/export behavior.
-2. Deliver durable project documents and first-class DOCX/Markdown editing.
-3. Connect project AI, references, review and history without weakening paper
-   isolation, cancellation, or exact-evidence identity.
-4. Add the remaining writing/data/computation surfaces with format-specific
-   capability reporting. Local code and model inference are different runtimes.
-5. Complete local provider/reference connections, project bundle portability and
-   runtime validation. Server-dependent features remain outside this delivery.
-
-These gates order the local work. Bundled editing must not require a third-party
-account or silently upload documents. Cloud features require a future explicit
-scope change. Offline compilation depends on installed runtimes and cached
-packages/templates; offline AI requires an actual local model.
+Offline compilation depends on installed runtimes and cached packages/templates;
+offline AI requires an actual local model. Bundled editing does not require a
+third-party account or silently upload documents.
 
 ## Verification
 
@@ -84,24 +54,30 @@ separately with structural and rendered round trips. Native Zotero, actual Word,
 real model/runtime runs are separate evidence layers.
 Do not turn a UI control, library feature list, or mocked test into runtime proof.
 
-## Current evidence and remaining local work
+## Recorded evidence and remaining runtime checks
 
-| Capability      | Implemented                                                                                                                                                                        | Evidence / remaining work                                                                                                                                                                                  |
-| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Document store  | Original bytes, folders, duplicate, archive, immutable versions, conflicts, SHA-256, backups                                                                                       | Storage/failure tests; native save/reopen and table XML verified                                                                                                                                           |
-| Portability     | Local project bundles with document history, conversations and historical research snapshots; atomic empty-project restore                                                         | Automated round-trip/failure tests; browser export verified; file-chooser restore is blocked by the browser upload setting; imported Zotero sources require explicit rebinding                             |
-| DOCX            | Editing, formatting, comments/tracked-change surface, original-format export, reviewed AI replacements, figure/table insertion, notes and contents fields                          | Browser comments, footnote/endnote isolation, caption/list round trips and native table insertion verified; actual Word and native visual QA remain                                                        |
-| Writing         | CodeMirror, sanitized Markdown, local Tectonic/Typst/MyST builds, PDF page/text preview, starter/custom templates                                                                  | Three compiler runs; MyST template reuse passed with OS network denial; native visual painting remains unresolved                                                                                          |
-| References      | Manual/BibTeX/CSL JSON, Zotero snapshots/styles, Word citation fields and explicit document-wide CSL bibliography refresh                                                          | Browser APA/Vancouver field save/reopen and OOXML structure verified; actual Word and native Zotero style import remain                                                                                    |
-| AI              | Local CLIs/loopback, saved-file/PDF/selection context, editable proposals/original wording/receipts, cancellation, conversation archives/resume                                    | Native OpenDataLoader + Codex PDF answer and conversation resume; browser DOCX proposal/apply and Ollama qwen3:8b query plus edited-proposal application; Claude workload blocked by account session limit |
-| Data            | CSV/TSV/JSONL paging, filter/sort, typed edits, rows/columns                                                                                                                       | Round-trip tests and browser row/column add/remove, sort/filter, leading-zero and source-order checks                                                                                                      |
-| Notebooks       | Persistent Python/R protocol, outputs, interrupt/restart, PNG/HTML table export, draft insertion, Jupyter output updates, execution/input provenance and stale snapshot inspection | Native Python/table-to-DOCX and browser Matplotlib/PNG-to-DOCX; real Python clear/update integration; browser edit/run/undo and draft-to-execution stale inspection passed; R runtime remains unavailable  |
-| Planning        | Kanban columns/cards, labels/filter, archive, document/card/output links graph and atomic literal-link rename repair                                                               | Browser save/graph checked; general evidence graph remains separate                                                                                                                                        |
-| Server features | Deferred by user on 2026-10-22                                                                                                                                                     | No cloud sync, collaboration, hosted permissions or deployment                                                                                                                                             |
+These observations come from the dated 2026-10-22–24 checks in manual QA. They
+do not establish that every provider, format or Zotero version passes on the
+current build.
 
-Native Studio controls and file/runtime operations work in the isolated Zotero
-profile. Screen captures of the Studio window are currently white, so native
-visual rendering is unresolved; accessibility success is not a visual pass.
+| Capability      | Implemented                                                                                                                                                                        | Evidence / remaining work                                                                                                                                                                                                                                               |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Document store  | Original bytes, folders, duplicate, archive, immutable versions, conflicts, SHA-256, backups                                                                                       | Storage/failure tests; native save/reopen and table XML verified                                                                                                                                                                                                        |
+| Portability     | Local project bundles with document history, conversations and historical research snapshots; atomic empty-project restore                                                         | Automated round-trip/failure tests; browser export verified; file-chooser restore is blocked by the browser upload setting; imported Zotero sources require explicit rebinding                                                                                          |
+| DOCX            | Editing, formatting, comments/tracked-change surface, original-format export, reviewed AI replacements, figure/table insertion, notes and contents fields                          | Browser comments, footnote/endnote isolation, caption/list round trips and native table insertion verified; Word displayed exported text on 2026-10-24; Word save/refresh/reimport and the full native visual matrix remain                                             |
+| Writing         | CodeMirror, sanitized Markdown, local Tectonic/Typst/MyST builds, PDF page/text preview, starter/custom templates                                                                  | Dated compiler runs and MyST template reuse with OS network denial passed; the 2026-10-24 environment had no compiler on PATH                                                                                                                                           |
+| References      | Manual/BibTeX/CSL JSON, Zotero snapshots/styles, Word citation fields and explicit document-wide CSL bibliography refresh                                                          | Browser APA/Vancouver field save/reopen and OOXML structure verified; Word field refresh and native Zotero style import remain                                                                                                                                          |
+| AI              | Local CLIs/loopback, saved-file/PDF/selection context, editable proposals/original wording/receipts, cancellation, conversation archives/resume                                    | Native OpenDataLoader + Codex PDF answer and conversation resume; browser DOCX proposal/apply and Ollama qwen3:8b query plus edited-proposal application; a later 2026-10-24 Claude sonnet workload returned selected text; new picker provider runs remain separate QA |
+| Data            | CSV/TSV/JSONL paging, filter/sort, typed edits, rows/columns                                                                                                                       | Round-trip tests and browser row/column add/remove, sort/filter, leading-zero and source-order checks                                                                                                                                                                   |
+| Notebooks       | Persistent Python/R protocol, outputs, interrupt/restart, PNG/HTML table export, draft insertion, Jupyter output updates, execution/input provenance and stale snapshot inspection | Native Python/table-to-DOCX and browser Matplotlib/PNG-to-DOCX; real Python clear/update integration; browser edit/run/undo and draft-to-execution stale inspection passed; R runtime remains unavailable                                                               |
+| Planning        | Kanban columns/cards, labels/filter, archive, document/card/output links graph and atomic literal-link rename repair                                                               | Browser save/graph checked; general evidence graph remains separate                                                                                                                                                                                                     |
+| Server features | Outside the current local scope                                                                                                                                                    | No cloud sync, collaboration, hosted permissions or deployment                                                                                                                                                                                                          |
+
+Native Workspace and Studio painted successfully in the 2026-10-24 audit,
+superseding the earlier white captures on that machine. The subsequent assistant
+and New document changes have browser evidence only; their final native visual
+and keyboard checks remain open. Word displayed an exported synthetic DOCX, but
+a license restriction prevented Word-side editing, saving and field refresh.
 Word-field formatting is stored as CSL-rendered results with supported OOXML
 source metadata. Word's own refresh uses its own style engine. Full reference
 metadata remains in the original BibTeX/CSL file. Imported research snapshots are
@@ -179,23 +155,11 @@ opener. Cmd/Ctrl+Enter sends, Cmd/Ctrl+S saves, and Cmd/Ctrl+P focuses file sear
 These are window-local UI choices; storage formats and source-evidence contracts
 are unchanged.
 
-Browser UI review with synthetic project fixtures (2026-10-23):
+Browser screenshots of synthetic projects (2026-10-24):
 
-![Studio before the navigation review](./assets/product-review/studio-before-20261023.jpg)
+![Studio assistant](./assets/product-review/studio-assistant-after-20261024.jpg)
 
-![Studio after the navigation review](./assets/product-review/studio-after-20261023.jpg)
+![New document dialog](./assets/product-review/studio-new-document-after-20261024.jpg)
 
-These screenshots establish the browser layout, not native Zotero or Word
-rendering. Native visual and keyboard checks remain in the runtime checklist.
-
-Browser UI review of the assistant and New document dialog (2026-10-24):
-
-![Assistant before the review](./assets/product-review/studio-assistant-before-20261024.jpg)
-
-![Assistant after the review](./assets/product-review/studio-assistant-after-20261024.jpg)
-
-![New document dialog before the review](./assets/product-review/studio-new-document-before-20261024.jpg)
-
-![New document dialog after the review](./assets/product-review/studio-new-document-after-20261024.jpg)
-
-The same limits apply: Chrome renders these, and Zotero runs Firefox.
+These captures show Chrome rendering. Native Zotero uses Firefox; its visual and
+keyboard checks remain in the [runtime checklist](./manual-qa.md#research-studio-verification).

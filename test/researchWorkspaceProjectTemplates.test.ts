@@ -370,11 +370,10 @@ test("template UI exposes selector, editable preview, settings, and recommendati
   );
 });
 
-test("template documentation covers architecture, QA, spec, and every README locale", () => {
+test("template documentation covers architecture, QA, and every README locale", () => {
   for (const path of [
     "docs/architecture.md",
     "docs/manual-qa.md",
-    "docs/research-workspace-redesign-spec.md",
     "README.md",
     "README.ko.md",
     "README.zh-CN.md",

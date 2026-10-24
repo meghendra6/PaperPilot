@@ -8,7 +8,7 @@ Paper Pilot는 Zotero 7-10 PDF 리더를 위한 AI 읽기 워크벤치입니다.
 
 ![Zotero 7-10](https://img.shields.io/badge/Zotero-7--10-cc2936) ![Node 22.18+](https://img.shields.io/badge/Node-22.18%2B-339933) ![Java 11+](https://img.shields.io/badge/Java-11%2B-007396) ![License](https://img.shields.io/badge/License-AGPL--3.0--or--later-blue) ![Engines](https://img.shields.io/badge/Engines-Codex%20CLI%20%7C%20Claude%20Code-6f42c1)
 
-## Research Studio (개발 중)
+## Research Studio
 
 프로젝트의 **Open Studio** 창(Research Studio)에서 원본 형식 문서, DOCX 편집기, Markdown·소스
 편집, 데이터 표와 실행 가능한 노트북을 다룹니다. 프로젝트 AI는 선택한 파일의
@@ -18,8 +18,8 @@ Paper Pilot는 Zotero 7-10 PDF 리더를 위한 AI 읽기 워크벤치입니다.
 `ipykernel`이 설치된 Python 환경을 설정해야 하며 R은 `IRkernel`도 필요합니다.
 코드는 Run을 선택했을 때 로컬 계정 권한으로 실행됩니다.
 
-아직 개발 중이며 Papers AI의 모든 기능을 구현한 상태가 아닙니다. 브라우저·
-Codex·Python 검증과 실제 Zotero·Word 검증은 구분합니다.
+위 기능은 소스에 구현되어 있습니다. 검증 범위는 빌드·모델·문서 형식별로
+구분하며, 브라우저 검사와 실제 Zotero·Word 왕복 검증은 별도입니다.
 [전체 범위와 검증 계약](./docs/research-studio-spec.md),
 [런타임 점검표](./docs/manual-qa.md)를 참고하세요.
 
@@ -29,6 +29,8 @@ Studio는 Word 각주·미주·목차·캡션 필드, 적용 전 AI 제안 수�
 
 DOCX 또는 저장한 학술지 템플릿을 열고 **Assistant → Draft paper**를 선택하세요. 근거 파일을 선택하고 주제·논문 유형·학술지 요구사항을 입력한 뒤 전송합니다. 연결된 모델의 초안을 검토·수정하여 적용하면 제목·절·본문 스타일을 갖춘 문단이 문서 끝에 추가되고 새 버전으로 저장됩니다. 기존 내용은 보존되며 부족한 근거와 인용은 자리표시자로 남습니다. 실제 인용 필드는 References에서 추가하세요. [논문 초안 작성 안내](./docs/academic-drafting.md)를 참고하세요. 논문은 요청·자료의 언어와 무관하게 학술 영어를 기본으로 작성하고, 대화와 설명은 사용자의 언어를 따릅니다. 다른 논문 언어는 명시적으로 요청할 때 적용합니다.
 
+**New document**는 용도별 문서 형식과 Blank·기본·저장 템플릿을 제공하고 생성할 파일 이름을 미리 보여 줍니다. Assistant에는 provider·모델 선택기가 항상 표시되며, History에서 대화를 재개하고 입력창 위의 문맥 파일 칩을 추가·제거할 수 있습니다.
+
 ## Chat 사용 흐름
 
 **Focus chat**으로 보조 패널을 잠시 숨길 수 있습니다. 답변 생성 중에도 다음 질문을 작성하고, 붙은 선택 문맥을 확인·제거하며, 짧게/기본/자세히 답변 길이를 선택하세요. **/ Actions**에는 설명·요약·번역·비판 네 가지 동작이 있습니다. 현재 논문의 현재·저장 대화를 검색하면 화면에 아직 표시되지 않은 과거 메시지로도 이동할 수 있습니다.
@@ -37,7 +39,7 @@ DOCX 또는 저장한 학술지 템플릿을 열고 **Assistant → Draft paper*
 
 프로젝트 inbox에는 PDF 없는 발견 후보도 저장할 수 있습니다. 기존 item과 정확한 PDF를 직접 연결한 뒤 screening, 읽기 진행, 이해도를 따로 관리하세요. 라이브러리에서 다시 선택하지 않아도 저장된 프로젝트 자료로 작업을 재개할 수 있습니다.
 
-초안은 메모리에만 유지됩니다. 새 chat metadata에도 full/prompts-only/off 저장 정책이 적용되며, prompts-only의 후속 문맥에는 assistant 요약·pin이 들어가지 않습니다. PaperPilot 설정이 외부 CLI 기록까지 삭제하지는 않습니다. 엔진 사용 가능 여부는 설치된 CLI와 계정에 달려 있고, 실패 시 다른 엔진으로 몰래 전환하지 않습니다. [리뷰·스펙](./docs/paperpilot-product-review-and-chat-spec.md), [평가 결과](./docs/chat-context-evaluation.md), [실제 환경 검증 목록](./docs/manual-qa.md)을 참고하세요.
+초안은 메모리에만 유지됩니다. 새 chat metadata에도 full/prompts-only/off 저장 정책이 적용되며, prompts-only의 후속 문맥에는 assistant 요약·pin이 들어가지 않습니다. PaperPilot 설정이 외부 CLI 기록까지 삭제하지는 않습니다. 엔진 사용 가능 여부는 설치된 CLI와 계정에 달려 있고, 실패 시 다른 엔진으로 몰래 전환하지 않습니다. [아키텍처](./docs/architecture.md#chat-request-identity-and-continuity), [평가 결과](./docs/chat-context-evaluation.md), [실제 환경 검증 목록](./docs/manual-qa.md)을 참고하세요.
 
 ## 한눈에 보기
 
@@ -67,17 +69,7 @@ Research Workspace는 Paper Pilot 본체에 포함되며 동일한 로컬 엔진
 
 ## 스크린샷과 데모
 
-[제품 리뷰](./docs/paperpilot-product-review-and-chat-spec.md)에 개선 전 리더 화면을 기록했습니다. 새 chat UI의 검증 화면과는 구분합니다.
-
-다음과 같은 시각 자료를 추가하면 좋습니다.
-
-- AI 사이드바가 보이는 Zotero 리더 패널 화면
-- 구조화된 **Research brief** 카드
-- 세 레인으로 나뉜 **검증형 선행연구** 결과
-- 7단계 **Critical Read** 워크플로우
-- **Compare** 워크플로우와 저장 아티팩트 흐름
-
-향후 UI 시각 자료를 문서화할 때는 `docs/images/` 경로와 짧은 캡션 링크를 사용하는 방식을 권장합니다.
+[Studio 스크린샷](./docs/research-studio-spec.md#studio-navigation)은 2026-10-24 합성 프로젝트로 Chrome에서 확인한 assistant와 New document 화면입니다. 실제 Zotero 화면·키보드 검증은 별도입니다. 화면을 추가하거나 갱신할 때는 [캡처 안내](./docs/images/README.md)를 따르세요.
 
 ## 상태
 
@@ -162,7 +154,7 @@ PDF에서 단어나 짧은 구절을 선택하고 **네이버 사전**을 누르
 - 채점 후에는 다음 질문을 준비하는 동안 내 답변, 피드백, 놓친 주제의 설명이 화면에 남습니다. 준비가 되면 **Next question**을 눌러 계속합니다.
 - 세션을 종료하면 강점, 개선이 필요한 부분, 주요 오개념, 재독 추천을 담은 Markdown 학습 리포트가 생성됩니다.
 
-Mastery 프롬프트는 질문/평가 응답을 엄격한 JSON으로 강제하며(추론/서문 금지), 사용자 답변을 `<user_answer>` 태그로 감싸고, JSON 응답에 markdown 펜스가 오더라도 복구할 수 있도록 파서가 문자열/이스케이프를 인식합니다. 따옴표 안의 `}`가 유효한 JSON을 잘라내지 않도록 처리됩니다.
+Mastery 프롬프트는 질문·평가에 엄격한 JSON을 요청합니다. 사용자 답변과 이전 라운드는 신뢰하지 않는 JSON 원본 데이터로 전달합니다. 파서는 필드·길이·범위를 검사하고 문자열·이스케이프를 구분하며, JSON 주변의 코드 펜스도 복구할 수 있습니다.
 
 ### 7. CLI 엔진용 로컬 워크스페이스 아티팩트
 
@@ -214,7 +206,7 @@ Codex 모드는 더 워크스페이스 지향적인 경로입니다. 현재 코�
 - 실행 파일 탐색 및 검증
 - 로그인/상태 확인
 - 워크스페이스 쓰기 가능 여부 확인
-- 현재 권장 Codex 모델 선택(`gpt-6-astra` 기본, `gpt-6-sol`, `gpt-6-luna`, `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`) 및 모델 선택기 옆의 reasoning effort 선택기(선택한 모델이 지원하는 수준만 표시, 지원 시 `max`/`ultra`까지)
+- 번들된 Codex 모델 목록 선택(`gpt-6-astra` 기본, `gpt-6-sol`, `gpt-6-luna`, `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`) 및 모델 선택기 옆의 reasoning effort 선택기(선택한 모델이 지원하는 수준만 표시, 지원 시 `max`/`ultra`까지)
 - sandbox 및 approval 설정
 - 선택적 웹 검색 토글
 - 현재 논문에 연결된 후속 실행 재개
@@ -224,7 +216,7 @@ Codex 모드는 더 워크스페이스 지향적인 경로입니다. 현재 코�
 Claude Code 모드는 로컬 `claude` CLI의 print 모드를 사용하며, 리더 채팅과 워크벤치 흐름에서 쓰는 동일한 논문 워크스페이스 아티팩트에 근거해 답변합니다. 현재 코드베이스에는 다음이 포함되어 있습니다.
 
 - 설정 가능한 실행 파일 경로
-- Claude Code CLI 계열 별칭 모델 선택(`sonnet` 기본, `opus`, `haiku`, `fable`). 설치된 CLI가 각 계열의 최신 모델(현재 Sonnet 5.5, Opus 5.5, Haiku 5.5, Fable 5.1)로 해석하며, 고정 ID `claude-opus-5-5`, `claude-sonnet-5-5`, `claude-haiku-5-5`, `claude-fable-5-1`, `claude-opus-5`, `claude-sonnet-5`도 제공
+- Claude Code CLI 계열 별칭 모델 선택(`sonnet` 기본, `opus`, `haiku`, `fable`). 설치된 CLI가 각 별칭에서 사용 가능한 모델로 해석하며, 고정 ID `claude-opus-5-5`, `claude-sonnet-5-5`, `claude-haiku-5-5`, `claude-fable-5-1`, `claude-opus-5`, `claude-sonnet-5`도 제공
 - 설정에 직접 입력한 그 밖의 모델 ID(예: `claude-opus-5-5[1m]`, Bedrock/Vertex 모델 ID)는 그대로 CLI에 전달. `Opus 5.5`, `claude-opus-5.5`처럼 직접 입력한 이름은 `claude-opus-5-5`로 정규화되며 `[1m]` 같은 컨텍스트 접미사는 유지
 - 선택적 effort 수준(`low`, `medium`, `high`, `xhigh`, `max`, 설정의 **Claude Code default**와 모델 선택기 옆의 **default effort**는 Claude Code CLI 기본값 사용)을 설정과 모델 선택기 옆에서 지정. 엔진 팝오버에서 모델과 effort를 저장하면 팝오버가 닫힘. 설치된 CLI의 `--help`에 `--effort`가 있을 때만 전달
 - chat 실행에 적용되는 permission mode 설정
@@ -261,10 +253,12 @@ Claude Code 모드는 로컬 `claude` CLI의 print 모드를 사용하며, 리�
 - **Zotero 7, 8, 9, 10**
 - 개발용 **Node.js 22.18+**
 - 의존성/빌드용 **npm**
-- OpenDataLoader PDF 추출을 위한 런타임 **Java 11+**
-- 다음 중 하나 이상의 로컬 AI CLI:
+- OpenDataLoader 구조화 PDF 추출을 위한 **Java 11+**; 첨부파일 텍스트 폴백을 사용하면 선택 사항
+- 리더와 Research Workspace AI에는 다음 중 하나 이상의 인증된 로컬 CLI:
   - **Codex CLI**
   - **Claude Code**
+
+리더와 Research Workspace AI에는 인증된 로컬 CLI가 필요합니다. Studio 문서 편집은 CLI 없이 가능하며, Studio AI는 호환 루프백 모델을 대신 사용할 수 있습니다. Java는 구조화 추출에 사용하고, 없으면 첨부파일 텍스트로 폴백합니다.
 
 ## 개발 빠른 시작
 
@@ -354,13 +348,14 @@ Codex 허용 모델 설정은 선택 목록과 실제 사용 모델에 적용됩
 - **Workspace** (두 엔진이 함께 쓰는 workspace root와 auto-clean)
 - **Retrieval** (chunk size, overlap, top-k는 접힌 **Advanced retrieval** 그룹에 있음)
 - **Privacy** (**Session history** 하나로 선택: **Save prompts and responses**, **Save prompts only**, **Do not save session history**)
+- **Research Studio** (로컬 컴파일러 경로와 Python 커널 환경)
 
 중요한 현재 사항:
 
-- 플러그인 인터페이스는 현재 영어 전용이며, 번역된 README는 동일한 영어 UI를 설명합니다.
+- 대부분의 조작 항목은 영어이며, Critical Read의 안내·단계 제목·리포트 라벨은 응답 언어 설정을 따릅니다.
 - 응답 언어는 **English**, **Korean**, **Chinese**로 정규화됩니다.
 - 한국어 답변은 자연스러운 한국어 문장으로 설명하되, 논문이나 질문에 나온 전문 용어는 영어 그대로 유지합니다. 용어의 한국어 표현이 필요하면 명시적으로 요청할 수 있습니다.
-- 응답 언어 설정은 모델이 생성하는 답변과 아티팩트만 바꾸며 인터페이스 라벨은 바꾸지 않습니다.
+- 응답 언어는 새 리더 답변·아티팩트와 Critical Read 표시 문구에 적용됩니다. 저장된 본문은 번역하지 않으며, Studio 학술 원고는 다른 언어를 명시하지 않으면 영어로 작성합니다.
 - 런타임 코드는 엔진, retrieval, workspace, privacy 관련 여러 설정을 이미 읽습니다.
 - 구조화 PDF 추출은 번들된 OpenDataLoader JAR를 사용하며, Java 또는 런타임 추출이 불가능하면 Zotero `attachmentText`로 폴백합니다.
 - 모든 설정 경로에 대한 실제 런타임 QA는 아직 남아 있습니다.
@@ -392,6 +387,8 @@ build/      생성된 애드온 아티팩트
 - `src/modules/codex/` — Codex CLI 실행, 상태, 파싱, 명령 빌드
 - `src/modules/claude/` — Claude Code 실행 흐름
 - `src/modules/context/` — 논문 컨텍스트 수집 및 워크스페이스 아티팩트 생성
+- `src/modules/researchWorkspace/` — 프로젝트 자료 추가, 근거, 다중 논문 분석과 저장
+- `src/modules/studio/` — 프로젝트 문서, assistant, 노트북, 컴파일러, 참고문헌과 묶음 내보내기
 - `src/modules/autoHighlight/` — 하이라이트 추출 워크플로우
 - `src/modules/paperTools.ts` — 구조화된 contribution/limitation/follow-up 프롬프트
 - `src/modules/researchBrief.ts` — 논문별 compact brief 생성
@@ -449,9 +446,11 @@ npm run build
 
 ## 추가 문서
 
-- [`docs/images/CAPTURE-CHECKLIST.md`](./docs/images/CAPTURE-CHECKLIST.md)
 - [`docs/images/README.md`](./docs/images/README.md)
 - [`CONTRIBUTING.md`](./CONTRIBUTING.md)
 - [`docs/manual-qa.md`](./docs/manual-qa.md)
 - [`docs/architecture.md`](./docs/architecture.md)
 - [`docs/prompt-contracts.md`](./docs/prompt-contracts.md)
+- [`docs/research-studio-spec.md`](./docs/research-studio-spec.md)
+- [`docs/academic-drafting.md`](./docs/academic-drafting.md)
+- [`docs/chat-context-evaluation.md`](./docs/chat-context-evaluation.md)
