@@ -148,18 +148,36 @@ to combine file bytes with context collected after an intervening file mutation.
 ## Studio navigation
 
 The file sidebar has filename/path search, a separately scrolling list and fixed
-project actions. New document opens a format/name dialog; templates are available
-there. The empty workspace shows entry actions. The document header retains its
-name and save state alongside Save, Export and format-appropriate primary actions.
-More contains history, rename/move, duplication, archive and structured source view.
-Insert & review reveals output insertion and DOCX review/structure tools. DOCX
-formatting adapts to the editor container width.
+project actions. New document opens a dialog with three choices: a format grouped
+by purpose (Write, Analyze, Plan and notes), a starting point for that format, and
+a file name. Starting points are Blank, the built-in templates of that format and
+the project's own `templates/` files with the same extension. Built-in DOCX
+templates are outlines that become Title, Heading and Normal paragraphs. Typing a
+known extension selects that format, and a preview line shows the exact file that
+Create makes. More → Save as template copies the saved version of an open document
+into `templates/`. The empty workspace shows entry actions. The document header
+retains its name and save state alongside Save, Export and format-appropriate
+primary actions. More contains history, rename/move, duplication, template saving,
+archive and structured source view. Insert & review reveals output insertion and
+DOCX review/structure tools. DOCX formatting adapts to the editor container width,
+and the page is centered on the canvas.
 
-Assistant and References share one side-panel position. Model/history settings
-are collapsible; the assistant composer remains visible and closing the panel
-preserves pending text and review edits. Escape restores focus to the opener.
-Cmd/Ctrl+S saves, and Cmd/Ctrl+P focuses file search. These are window-local UI
-choices; storage formats and source-evidence contracts are unchanged.
+Assistant and References share one side-panel position. The assistant's provider
+switch (Codex CLI, Claude Code, Local model) and model list stay visible above the
+conversation. The first choice is the provider and model of the conversation's
+latest question; otherwise the project's default engine, then the reader's default
+mode. Model lists come from the reader's allowed-model preferences, with an
+"Other model" entry for any identifier. History lists the open conversation and
+archives by last activity; choosing an archive resumes it and archives the open
+one. Context files appear as removable chips above the composer, with the open
+document offered as a one-click addition. While a provider runs, the transcript
+shows the question with an elapsed time and Stop. Pending proposals open as cards
+with current and proposed text; applied and rejected ones stay collapsed. Closing
+the panel preserves pending text and review edits. Escape closes the innermost
+open part (context picker, then history, then the panel) and restores focus to the
+opener. Cmd/Ctrl+Enter sends, Cmd/Ctrl+S saves, and Cmd/Ctrl+P focuses file search.
+These are window-local UI choices; storage formats and source-evidence contracts
+are unchanged.
 
 Browser UI review with synthetic project fixtures (2026-10-23):
 
@@ -169,3 +187,15 @@ Browser UI review with synthetic project fixtures (2026-10-23):
 
 These screenshots establish the browser layout, not native Zotero or Word
 rendering. Native visual and keyboard checks remain in the runtime checklist.
+
+Browser UI review of the assistant and New document dialog (2026-10-24):
+
+![Assistant before the review](./assets/product-review/studio-assistant-before-20261024.jpg)
+
+![Assistant after the review](./assets/product-review/studio-assistant-after-20261024.jpg)
+
+![New document dialog before the review](./assets/product-review/studio-new-document-before-20261024.jpg)
+
+![New document dialog after the review](./assets/product-review/studio-new-document-after-20261024.jpg)
+
+The same limits apply: Chrome renders these, and Zotero runs Firefox.

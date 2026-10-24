@@ -57,10 +57,11 @@ export function referencePanel(
     item.onclick = () => void Promise.resolve().then(action).catch(fail);
     return item;
   };
-  heading.append(
-    node("h2", "Project references"),
-    button("Close references", () => close()),
-  );
+  const closeButton = button("×", () => close());
+  closeButton.className = "icon-button";
+  closeButton.setAttribute("aria-label", "Close references");
+  closeButton.title = "Close references";
+  heading.append(node("h2", "References"), closeButton);
   const file = node("select");
   file.setAttribute("aria-label", "Reference file");
   const style = node("select");
@@ -287,19 +288,43 @@ export function referencePanel(
   const styleLabel = node("label", "Citation style");
   styleLabel.append(style);
   let targetIsWord: boolean | undefined;
+  let hasFiles = false;
   const refreshTarget = () => {
     const name = actions.activeName();
     const word = !!name && /\.docx$/i.test(name);
-    wordToolbar.hidden = !word;
+    wordToolbar.hidden = !word || !hasFiles;
+    otherFormats.hidden = !hasFiles;
     targetNotice.textContent = name
       ? `Insert into ${name}`
       : "Open a draft to insert a citation.";
     if (targetIsWord !== word) otherFormats.open = !word;
     targetIsWord = word;
   };
+  // Without a reference file, the first step is adding sources.
+  const empty = node("div", undefined, "reference-empty");
+  empty.hidden = true;
+  const addManual = button("Add one manually", () => {
+    sources.open = true;
+    manual.open = true;
+    fields.key.focus();
+  });
+  const importFirst = button("Import project Zotero references", () =>
+    importZotero.click(),
+  );
+  importFirst.className = "primary";
+  empty.append(
+    node("strong", "No reference files yet"),
+    node(
+      "p",
+      "Import this project's Zotero papers as a BibTeX snapshot, or add a reference by hand. Citations then insert into the open draft.",
+    ),
+    importFirst,
+    addManual,
+  );
   panel.append(
     heading,
     targetNotice,
+    empty,
     fileLabel,
     styleLabel,
     filter,
@@ -408,6 +433,11 @@ export function referencePanel(
       .documents()
       .filter((doc) => !doc.archived && /\.(bib|csl\.json)$/i.test(doc.name));
     file.replaceChildren();
+    hasFiles = candidates.length > 0;
+    empty.hidden = hasFiles;
+    for (const element of [fileLabel, styleLabel, filter, list])
+      element.hidden = !hasFiles;
+    refreshTarget();
     for (const doc of candidates) {
       const option = node("option", doc.name);
       option.value = doc.id;

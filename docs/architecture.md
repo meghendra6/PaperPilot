@@ -89,7 +89,9 @@ CSV/TSV/JSONL grids, and nbformat-preserving notebook cells. Unknown files retai
 their original bytes for export. Markdown previews are sanitized and do not
 automatically load external media. DOCX AI replacements must match one paragraph;
 the host verifies the resulting document text before committing exported bytes.
-Starter and user-saved templates create original-format copies. Saved notebook
+Starter and user-saved templates create original-format copies; built-in DOCX
+templates are outlines that the editor inserts as styled paragraphs before the first
+save. Saved notebook
 figures/tables can be embedded in DOCX or inserted into source documents. HTML
 table previews are sanitized; merged or irregular tables require explicit repair
 before CSV extraction. CSV/TSV grids require a column before adding rows, and
@@ -101,7 +103,11 @@ The pinned editor build patch preserves both endnote export and the link button'
 accessible name across normal and headless selection updates.
 
 `StudioAIService` owns project conversation records, captured context revisions,
-review decisions and cancellation. Its operation reservation survives window
+review decisions and cancellation. Archive summaries carry first and last turn
+times, so the assistant lists conversations by last activity. The `ai.defaults`
+request returns the project's default engine (else the reader's default mode) and
+the reader's allowed model lists; the panel prefers the provider and model of the
+conversation's latest turn. Its operation reservation survives window
 replacement until the old operation finishes. Codex/Claude use separate owned
 file jobs and the existing command/parser/launch infrastructure, with 800 ms
 completion polling and a four-minute deadline. Codex uses read-only mode with

@@ -424,6 +424,8 @@ test("archived conversations resume without losing the current conversation or c
   const archives = await f.service.conversations();
   assert.equal(archives.length, 1);
   assert.equal(archives[0].title, "First conversation");
+  assert.equal(archives[0].turns, 1);
+  assert.ok(archives[0].updatedAt >= archives[0].createdAt);
   await f.service.ask(config, "Second conversation", []);
   const restored = await f.service.resumeConversation(archives[0].id);
   assert.equal(restored.turns[0].question, "First conversation");

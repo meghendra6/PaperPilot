@@ -7,6 +7,32 @@ export interface StudioAIConfig {
   endpoint?: string;
   apiKey?: string;
 }
+
+export const STUDIO_PROVIDERS: ReadonlyArray<{
+  id: StudioAIConfig["provider"];
+  label: string;
+}> = [
+  { id: "codex", label: "Codex CLI" },
+  { id: "claude", label: "Claude Code" },
+  { id: "local", label: "Local model" },
+];
+
+export function providerLabel(id: string) {
+  return STUDIO_PROVIDERS.find((provider) => provider.id === id)?.label ?? id;
+}
+
+export interface StudioModelChoice {
+  value: string;
+  label: string;
+}
+
+/** Host defaults for the assistant's provider and model pickers. */
+export interface StudioAIDefaults {
+  provider: "codex" | "claude";
+  codex: string;
+  claude: string;
+  models?: { codex: StudioModelChoice[]; claude: StudioModelChoice[] };
+}
 export interface ContextDocument {
   id: string;
   name: string;

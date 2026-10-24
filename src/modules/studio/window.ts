@@ -221,7 +221,7 @@ async function openStudioWindow(projectID: string) {
                   result = await studioCitationStyleXML(payload.id);
                   break;
                 case "ai.defaults":
-                  result = studioAIDefaults();
+                  result = studioAIDefaults(current.project.defaultEngineMode);
                   break;
                 case "ai.history":
                   result = await assistant.history();

@@ -36,6 +36,7 @@ const {
 const { runStudioAI } = require("../src/modules/studio/aiRunner.ts");
 const { documentText } = require("../src/modules/studio/documentText.ts");
 const { CODEX_DEFAULT_MODEL } = require("../src/modules/codex/modelOptions.ts");
+const { studioModelDefaults } = require("../src/modules/studio/aiModels.ts");
 const fixtureName = process.env.PAPERPILOT_STUDIO_FIXTURE || "data";
 if (!/^[a-z0-9-]{1,40}$/.test(fixtureName))
   throw new Error("Invalid preview fixture name.");
@@ -494,10 +495,15 @@ const server = createServer(async (request, response) => {
             "Zotero library access requires the native Paper Pilot window. Manual and BibTeX references work in this preview.",
           );
         case "ai.defaults":
-          result = {
-            codex: process.env.PAPERPILOT_STUDIO_MODEL || CODEX_DEFAULT_MODEL,
-            claude: "sonnet",
-          };
+          // Mirrors the add-on's preference defaults for the picker lists.
+          result = studioModelDefaults({
+            engineMode: process.env.PAPERPILOT_STUDIO_ENGINE || "codex_cli",
+            codexModel:
+              process.env.PAPERPILOT_STUDIO_MODEL || CODEX_DEFAULT_MODEL,
+            claudeModel: "sonnet",
+            codexAllowed: "",
+            claudeAllowed: "sonnet, opus, haiku, fable",
+          });
           break;
         case "ai.history":
           result = await assistant.history();
