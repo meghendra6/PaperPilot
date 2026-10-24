@@ -10,7 +10,7 @@ Paper Pilot is an AI reading workbench for the Zotero 7-10 PDF reader. It adds a
 
 ## Research Studio (in development)
 
-A project's **Write & run** window adds local original-format documents, a DOCX
+A project's **Open Studio** window (Research Studio) adds local original-format documents, a DOCX
 editor, Markdown/source editing, data tables and executable notebooks. The project
 assistant captures selected file revisions and presents changes for individual
 review. It offers Codex/Claude CLIs and a loopback model endpoint;
@@ -53,6 +53,14 @@ Drafts are memory-only. Full/prompts-only/off history rules also apply to new ch
 ## Integrated Research Workspace
 
 Research Workspace is built into Paper Pilot and uses the same selected local engine, paper extraction, and run lifecycle. A persistent modeless project window stays available with zero, one, or multiple selected items and provides screening, claim–evidence ledgers, comparisons, audits, mastery, citation workflows, citation/reference health, contradiction/gap review, scoped export, a local Living Review change inbox, and five editable Research project templates. Template presets only highlight recommended capabilities; they never start analysis or hide other capabilities, and exports retain the immutable template snapshot plus current assumptions. Citation & Reference Health derives a local checklist from current saved citation, methodology, and reproducibility artifacts, local Zotero correction/retraction metadata signals, and an optional bounded draft excerpt; it never produces an aggregate truth score. Living Review checks Zotero attachment and annotation metadata without reading their text or calling a model or network service. Safe Zotero collection/tag sync offers a complete preview and preview-bound approval token for one-way additions to existing collections and existing tags, writes a separate revisioned receipt before the transaction, fails closed without Zotero transaction support, and can undo only receipt-owned additions. It never creates or deletes Zotero items, collections, or tags and never writes bibliographic fields, PDFs, notes, attachments, or annotations. Open it from **Tools → Open Research Workspace…**, the library item context menu, or the **Research Workspace** button in the Workbench. Leaving a project or closing the window while an analysis runs asks before cancelling it. A partial run reports its failed papers and offers **Resume**, and archived projects can be opened and restored. Install only the Paper Pilot XPI; there is no companion add-on or Research Monitor.
+
+### Getting started
+
+1. In the Zotero library, select up to 12 papers that have PDFs. Right-click them and choose **Open Research Workspace…**.
+2. Under **Selected in Zotero**, choose **Create project with N papers**, or add the papers to an existing project. Paper Pilot reads the PDFs on your computer at this step; no model runs yet.
+3. The project opens on its **Analyze** tab with the analysis tools ready. Compare the papers, build an Evidence Matrix, synthesize an answer, or audit one paper. Each result is saved under **Results**.
+4. **Papers** holds reading progress and screening, **Checks** holds contradiction, citation-health, and Living Review checks, and **Settings** holds the project details, export, and Zotero sync.
+5. Choose **Open Studio** to write up the project in Research Studio: drafts, citations from the project's Zotero papers, notebooks, and the project assistant.
 
 ## Screenshots and demo
 

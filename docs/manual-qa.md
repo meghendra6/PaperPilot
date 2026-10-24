@@ -939,6 +939,59 @@ These need real Zotero. Run them in Zotero 7 and 10 where the item says so.
 - [ ] Sync with a subcollection target; confirm it is listed as "Parent / Child"
 - [ ] Rename a project to `analysis.tmp`, export it, restart Zotero; confirm the export files remain
 
+## 16. Research Workspace entry and Studio start (2026-10-24)
+
+Run in Zotero 7 and 10, light and dark, at the default window size and at a
+narrow width.
+
+- Select three papers with PDFs and one item without a PDF. Right-click →
+  **Open Research Workspace…**. Confirm **Selected in Zotero** lists the three
+  titles and a collapsed "1 selected item was skipped" with a plain reason.
+  No PDF extraction runs before a button is chosen.
+- Choose **Create project with 3 papers**. Confirm the progress line, then the
+  project opening on **Analyze** with the analysis tools for three papers and
+  **Compare and synthesize papers** open first.
+- Repeat with **Add to a project**. Confirm the chosen project opens with the
+  added papers in the tools, and a PDF that fails to load is reported as left out.
+- From the Tools menu with nothing selected, confirm the first-run guide when no
+  project exists, and **Your projects** first otherwise. **Use Zotero selection**
+  with nothing selected shows an error banner.
+- With the window open on a project, select a different paper in Zotero and
+  launch again. The window moves to that selection, lists any project that
+  already holds it with **Open**, and preselects the previous project under
+  **Add to a project**. Launch with a paper the open project already holds; the
+  project stays and says so. Repeat while an analysis runs and after typing a
+  screening reason; both keep the view and show the offer banner.
+- Shrink the window below the home's height. Scroll with the mouse wheel and the
+  trackpad to **Your projects**, **Open Studio**, and the guide. Repeat on a
+  project's **Analyze** tab with tools loaded. The header stays in place, and
+  the body scrolls without Tab focus.
+- Install a new build from the Add-ons window without restarting Zotero. Open
+  the workspace again; it uses the new build's styles, so the body scrolls.
+- Check the window design in light and dark with no network. Titles, project
+  names, and paper titles use the bundled serif. The highlighter marks only the
+  papers selected in Zotero and the open tab, and switching tabs draws it. With
+  Reduce motion on, the mark appears without motion. In Windows high contrast,
+  the open tab and selected titles are underlined instead.
+- Open Studio on a project without documents. The title uses the same serif,
+  and the six ways to start form a two-column list.
+- Choose **Open** under "already in" and, while the PDF is read, choose
+  **Open Studio** on a card. The status line says which action is still
+  running, and the pointer shows progress over the other buttons.
+- Switch tabs with the mouse and with ←/→/Home/End. Run Evidence Matrix, then
+  switch to **Results** and back; the run, its status, and its output remain.
+  A refresh after the run keeps the open tab and typed screening reasons.
+- Rerun a stale contradiction dashboard from **Results**; the **Checks** tab
+  opens and the matching button runs.
+- In a multi-paper analysis, change **Paper for single-paper tools**; the
+  single-paper section and search name the chosen paper. The chooser is
+  disabled while a tool runs.
+- Choose **Open Studio** on a home project card and in a project header.
+  Confirm one window per project and the six start cards. **Write a draft**,
+  **Analyze data**, and **Plan the work** open the new-document dialog with
+  DOCX, notebook, and board selected. **Cite your papers** and **Ask the
+  assistant** open their panels.
+
 ## Session history and silent-turn QA (2026-04-16)
 
 After running mastery and one or more workbench tools (research brief, contributions, limitations, follow-ups, paper compare) on a paper, then opening "Past sessions":
@@ -1041,7 +1094,7 @@ See the [native repair specification](./chat-runtime-followup-spec.md) for the o
 This surface is under implementation. Browser preview, native Zotero, actual Word,
 model providers and kernel languages are separate evidence layers.
 
-- Open an existing project → **Write & run** twice; confirm a single window and
+- Open an existing project → **Open Studio** twice; confirm a single window and
   project isolation. Close/reopen while an AI cancellation is finishing.
 - Import DOCX with tables, images, comments, tracked changes, headers/footers and
   citations. Edit, save, reopen and export; compare in Word, including formatting

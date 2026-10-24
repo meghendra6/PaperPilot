@@ -1059,3 +1059,34 @@ test("archived projects can be restored to the active list without losing member
   const again = await projects.restoreProject("project-archive");
   assert.equal(again.project.archivedAt, undefined);
 });
+
+test("projectsWithSources finds active projects that hold every source", async () => {
+  const { projects } = setup();
+  await projects.createProject({ projectID: "project-ab", name: "AB" }, [
+    paper("A"),
+    paper("B"),
+  ]);
+  await projects.createProject({ projectID: "project-a", name: "A" }, [
+    paper("A"),
+  ]);
+  await projects.createProject(
+    { projectID: "project-archived", name: "Archived" },
+    [paper("A"), paper("B")],
+  );
+  await projects.archiveProject("project-archived");
+
+  const both = await projects.projectsWithSources([
+    paper("A").sourceID,
+    paper("B").sourceID,
+  ]);
+  assert.deepEqual(
+    both.map((entry) => entry.projectID),
+    ["project-ab"],
+  );
+  const onlyA = await projects.projectsWithSources([paper("A").sourceID]);
+  assert.deepEqual(onlyA.map((entry) => entry.projectID).sort(), [
+    "project-a",
+    "project-ab",
+  ]);
+  assert.deepEqual(await projects.projectsWithSources([]), []);
+});

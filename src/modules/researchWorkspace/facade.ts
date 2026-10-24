@@ -1535,6 +1535,13 @@ export function loadResearchWorkspaceHome() {
   return projectController().home();
 }
 
+/** Active projects that already contain every one of these sources. */
+export function findResearchWorkspaceProjectsWithSources(
+  sourceIDs: readonly string[],
+) {
+  return projectController().projectsWithSources(sourceIDs);
+}
+
 export function loadResearchWorkspaceProject(projectID: string) {
   return projectController().details(projectID);
 }

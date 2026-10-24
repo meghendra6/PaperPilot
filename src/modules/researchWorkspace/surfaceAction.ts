@@ -7,18 +7,38 @@ export interface ResearchWorkspaceActionTrigger {
   disabled: boolean;
 }
 
-const activeSurfaces = new WeakSet<object>();
+/** The running action on each surface, by label. */
+const activeSurfaces = new WeakMap<object, string | undefined>();
+
+/**
+ * The action running on surface, if any. `label` is undefined when the
+ * action was started without one.
+ */
+export function researchWorkspaceSurfaceActivity(
+  surface: object,
+): { label: string | undefined } | undefined {
+  return activeSurfaces.has(surface)
+    ? { label: activeSurfaces.get(surface) }
+    : undefined;
+}
 
 export async function runResearchWorkspaceSurfaceAction(params: {
   surface: ResearchWorkspaceBusySurface;
   trigger: ResearchWorkspaceActionTrigger;
   action: () => void | Promise<void>;
   onError: (error: unknown) => void;
+  /** Names this action when a later click has to wait for it. */
+  label?: string;
+  /** Receives the running action's label when this click cannot run. */
+  onBusy?: (activeLabel: string | undefined) => void;
 }): Promise<boolean> {
   const surfaceKey = params.surface as object;
-  if (activeSurfaces.has(surfaceKey)) return false;
+  if (activeSurfaces.has(surfaceKey)) {
+    params.onBusy?.(activeSurfaces.get(surfaceKey));
+    return false;
+  }
 
-  activeSurfaces.add(surfaceKey);
+  activeSurfaces.set(surfaceKey, params.label);
   const initiallyDisabled = params.trigger.disabled;
   params.trigger.disabled = true;
   params.surface.setAttribute("aria-busy", "true");
@@ -33,12 +53,4 @@ export async function runResearchWorkspaceSurfaceAction(params: {
     params.surface.removeAttribute("aria-busy");
     params.trigger.disabled = initiallyDisabled;
   }
-}
-
-export async function replaceResearchWorkspaceDialogAfterCreate<
-  T extends { window?: { close(): void } },
->(current: T | undefined, create: () => Promise<T>): Promise<T> {
-  const replacement = await create();
-  if (current && current !== replacement) current.window?.close();
-  return replacement;
 }

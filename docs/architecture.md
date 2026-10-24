@@ -44,7 +44,8 @@ is the most common regression in this codebase.
 
 ### Research Studio project documents
 
-`studio/window.ts` opens one modeless **Write & run** window per existing project.
+`studio/window.ts` opens one modeless Research Studio window per existing project.
+The project page and every home project card open it through **Open Studio**.
 Its packaged browser surface runs in an opaque-origin sandbox with a local CSP.
 The host transfers a project-bound MessagePort only after the exact packaged
 iframe URL finishes loading. Requests validate the channel nonce and live project
@@ -266,12 +267,36 @@ are not written to session history, notes, or Research Workspace artifacts.
 
 `src/modules/researchWorkspace/` owns the paper- and project-level research
 features. `view.ts` renders the full single-paper operation surface and is also
-embedded in the project window. `projectWindowView.ts` renders project UI,
-`window.ts` owns the modeless-window singleton and captured state, and `menu.ts`
-registers its launchers. Library selection is captured once by
-`selectionSnapshot.ts` and handed to the project controller; project actions
-never depend on a later live-selection read. This keeps the workflow reachable
-when Zotero replaces the ordinary item pane for a multi-selection.
+embedded in the project window. `projectHomeView.ts` renders the window home,
+`projectWindowView.ts` renders the tabbed project page (`projectTabs.ts`:
+Analyze, Papers, Results, Checks, Settings), `window.ts` owns the
+modeless-window singleton and captured state, and `menu.ts` registers its
+launchers. Library selection is captured once by `selectionSnapshot.ts`.
+`surfaceSelection.ts` wraps that snapshot for the home: titles show at once,
+and the PDFs are read once, only when the reader creates or extends a project
+with them. That project then opens on Analyze with the read papers already
+loaded into the analysis tools. Project actions never depend on a later
+live-selection read. A launcher, or **Use Zotero selection**, captures a new
+snapshot and moves the open window to it. The window stays put only when an
+analysis is running or typed text would be lost; a banner then offers the
+selection (spec §12.1). A project that already holds the selected papers
+stays in view, and the home lists projects that already hold the selection
+before offering a new one.
+This keeps the workflow reachable when Zotero replaces the ordinary item pane
+for a multi-selection. `projectSurfaceState.ts` keeps unsaved panel choices,
+focus, and the open tab across a project rebuild, and the analysis panel stays
+in its tab panel while a tool runs.
+
+The window loads `researchWorkspaceWindow.css` after `zoteroPane.css`. Every
+rule in it is scoped to `.pprw-window`. The item pane renders the same analysis
+view with the shared `zoteroPane.css` rules only, including the tool
+descriptions. It re-points the `--pp-*` tokens to the window palette and sets
+titles in a bundled subset of STIX Two Text. The fonts live in `studio/fonts`
+because the sandboxed Studio frame may read fonts only from its own chrome
+package; the window loads the same files from there. Stylesheet URLs carry a
+token made once per add-on startup (`utils/stylesheet.ts`). Gecko caches chrome
+stylesheets by URL, so without the token an install without a restart keeps the
+previous build's CSS.
 
 The feature service reuses `ai/workspaceRun.ts` with the `analysis` profile.
 It therefore follows the active Paper Pilot engine choice, never resumes or

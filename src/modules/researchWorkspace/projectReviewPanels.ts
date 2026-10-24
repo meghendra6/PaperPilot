@@ -34,6 +34,7 @@ import type {
   ResearchWorkspaceChangeInboxFile,
 } from "./persistence/contracts";
 import type { ResearchWorkspaceProjectDetails } from "./projectController";
+import { formatResearchWorkspaceDay } from "./surfaceSelection";
 import {
   button,
   markTemplateRecommendation,
@@ -275,7 +276,7 @@ export function renderLivingReviewPanel(
   }
   const pending = inbox.changes.filter((change) => !change.resolution).length;
   section.append(
-    element(doc, "h3", "", `Living review · ${pending} pending`),
+    element(doc, "h3", "", `Living review (${pending} pending)`),
     element(
       doc,
       "p",
@@ -1056,6 +1057,44 @@ export function renderScreeningLog(
   return section;
 }
 
+const READING_LABELS = {
+  unreviewed: "Reading: not started",
+  "up-next": "Reading: up next",
+  skimmed: "Reading: skimmed",
+  read: "Reading: read",
+} as const;
+
+const UNDERSTANDING_LABELS = {
+  unknown: "Understanding: not rated",
+  "needs-review": "Understanding: needs review",
+  understood: "Understanding: understood",
+} as const;
+
+const AVAILABILITY_LABELS: Record<string, string> = {
+  ready: "PDF ready",
+  "missing-file": "PDF file missing",
+  unreadable: "PDF unreadable",
+  detached: "no longer linked to Zotero",
+};
+
+/** Authors, year, and PDF state, without internal Zotero keys. */
+function projectPaperDetails(
+  source: ResearchWorkspaceProjectDetails["sources"][number] | undefined,
+) {
+  if (!source) return "Source record missing";
+  const creators = source.creators ?? [];
+  const authors = creators.length
+    ? `${creators[0]}${creators.length > 1 ? " et al." : ""}`
+    : "";
+  return [
+    authors,
+    source.year ? String(source.year) : "",
+    AVAILABILITY_LABELS[source.availability] ?? source.availability,
+  ]
+    .filter(Boolean)
+    .join(", ");
+}
+
 export function renderProjectPapers(
   doc: Document,
   root: HTMLElement,
@@ -1065,10 +1104,15 @@ export function renderProjectPapers(
   navigation: ProjectNavigation,
 ) {
   const section = element(doc, "section", "pprw-project-panel");
-  section.append(element(doc, "h3", "", `Papers · ${details.members.length}`));
+  section.append(element(doc, "h3", "", `Papers (${details.members.length})`));
   if (!details.members.length) {
     section.append(
-      element(doc, "p", "pprw-muted", "This project has no papers yet."),
+      element(
+        doc,
+        "p",
+        "pprw-muted",
+        "This project has no papers yet. Add papers from Zotero above.",
+      ),
     );
     return section;
   }
@@ -1082,12 +1126,7 @@ export function renderProjectPapers(
     const label = element(doc, "div", "pprw-project-paper-label");
     label.append(
       element(doc, "strong", "", source?.title ?? member.sourceID),
-      element(
-        doc,
-        "span",
-        "pprw-muted",
-        `${source?.availability ?? "missing"} · ${source?.identity.attachmentKey ?? "detached"}`,
-      ),
+      element(doc, "span", "pprw-muted", projectPaperDetails(source)),
     );
     const select = element(doc, "select", "pprw-select");
     const progressStatuses = [
@@ -1097,7 +1136,7 @@ export function renderProjectPapers(
       "read",
     ] as const;
     for (const status of progressStatuses) {
-      const option = element(doc, "option", "", status);
+      const option = element(doc, "option", "", READING_LABELS[status]);
       option.value = status;
       option.selected = memberReadingProgress(member) === status;
       select.append(option);
@@ -1112,7 +1151,7 @@ export function renderProjectPapers(
       `Understanding for ${source?.title ?? member.sourceID}`,
     );
     for (const status of ["unknown", "needs-review", "understood"] as const) {
-      const option = element(doc, "option", "", status);
+      const option = element(doc, "option", "", UNDERSTANDING_LABELS[status]);
       option.value = status;
       option.selected = memberUnderstanding(member) === status;
       understanding.append(option);
@@ -1175,7 +1214,7 @@ export function renderArtifactHistory(
 ) {
   const section = element(doc, "section", "pprw-project-panel");
   section.append(
-    element(doc, "h3", "", `Artifacts · ${details.artifacts.length}`),
+    element(doc, "h3", "", `Saved results (${details.artifacts.length})`),
   );
   if (!details.artifacts.length) {
     section.append(
@@ -1183,7 +1222,7 @@ export function renderArtifactHistory(
         doc,
         "p",
         "pprw-muted",
-        "No artifacts yet. Running an explicit operation creates a versioned artifact and run record.",
+        "No saved results yet. Each analysis you run in the Analyze tab is saved here with its sources and version history.",
       ),
     );
     return section;
@@ -1197,20 +1236,20 @@ export function renderArtifactHistory(
     summary.append(
       element(doc, "strong", "", artifact.title),
       ...(readable.legacy
-        ? [element(doc, "span", "pprw-artifact-status", "legacy · read only")]
+        ? [element(doc, "span", "pprw-artifact-status", "legacy, read only")]
         : []),
       element(
         doc,
         "span",
         `pprw-artifact-status pprw-artifact-status--${artifact.status}`,
-        `v${artifact.version} · ${artifact.status}`,
+        `v${artifact.version}, ${artifact.status}`,
       ),
     );
     const meta = element(
       doc,
       "p",
       "pprw-muted",
-      `${artifact.sourceIDs.length} source${artifact.sourceIDs.length === 1 ? "" : "s"} · ${new Date(artifact.updatedAt).toLocaleString()}`,
+      `${artifact.sourceIDs.length} source${artifact.sourceIDs.length === 1 ? "" : "s"}, ${formatResearchWorkspaceDay(artifact.updatedAt)}`,
     );
     item.append(summary, meta);
     if (artifact.staleReasons?.length) {

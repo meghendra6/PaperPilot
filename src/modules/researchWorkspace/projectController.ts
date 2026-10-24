@@ -157,6 +157,33 @@ export class ResearchWorkspaceProjectController {
     };
   }
 
+  /**
+   * Active projects that already hold every given source, in catalog order.
+   * The home uses this so a selection is not turned into a duplicate project.
+   */
+  async projectsWithSources(
+    sourceIDs: readonly string[],
+  ): Promise<ResearchWorkspaceCatalogEntry[]> {
+    if (!sourceIDs.length) return [];
+    const entries = await this.repository.listProjects({
+      includeArchived: false,
+    });
+    const matches: ResearchWorkspaceCatalogEntry[] = [];
+    for (const entry of entries) {
+      try {
+        const bundle = await this.repository.getProject(entry.projectID);
+        const members = new Set(
+          bundle.members.map((member) => member.sourceID),
+        );
+        if (sourceIDs.every((sourceID) => members.has(sourceID)))
+          matches.push(entry);
+      } catch {
+        // A damaged project is reported when it is opened, not here.
+      }
+    }
+    return matches;
+  }
+
   async createProject(
     input: CreateResearchWorkspaceProjectInput,
     papers: readonly ResearchWorkspacePaper[] = [],
