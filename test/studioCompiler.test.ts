@@ -11,6 +11,7 @@ import type { ResearchWorkspaceFileOps } from "../src/modules/researchWorkspace/
 import { compilerTemplateCache } from "../src/modules/studio/compilerTemplateCache";
 
 const encode = (text: string) => Buffer.from(text).toString("base64");
+let fixtureCount = 0;
 function fixture() {
   const disk = new Map<string, string>();
   let count = 0;
@@ -28,6 +29,7 @@ function fixture() {
   };
   const repository = new StudioRepository("/owned", files, id);
   const ports: CompilerPorts = {
+    scope: `/owned/builds/project-${++fixtureCount}`,
     id,
     prepare: async () => ({ directory: "/job", executable: "/bin/typst" }),
     writeBase64: files.writeTextAtomic,
@@ -212,7 +214,7 @@ test("a failed launch acknowledgment still stops a potentially started compiler"
   assert.equal((await f.repository.list("project")).documents.length, 1);
 });
 
-test("an unconfirmed compiler cleanup is retried before another build can launch", async () => {
+test("unconfirmed compiler cleanup survives a replacement service and retries before launch", async () => {
   const f = fixture();
   const source = await f.repository.create(
     "project",
@@ -233,10 +235,124 @@ test("an unconfirmed compiler cleanup is retried before another build can launch
   const failed = await f.service.build(source.id, 1);
   assert.match(failed.log, /termination unconfirmed/);
   await assert.rejects(f.service.build(source.id, 1), /cleanup.*unconfirmed/i);
+  const replacement = new StudioCompilerService("project", f.repository, {
+    ...f.ports,
+  });
+  await assert.rejects(
+    replacement.build(source.id, 1),
+    /cleanup.*unconfirmed/i,
+  );
   assert.equal(launches, 1);
   cleanupFails = false;
-  f.ports.launch = launch;
-  assert.equal((await f.service.build(source.id, 1)).status, "complete");
+  const recovered = new StudioCompilerService("project", f.repository, {
+    ...f.ports,
+    launch,
+  });
+  assert.equal((await recovered.build(source.id, 1)).status, "complete");
+});
+
+test("a replacement compiler waits for cancellation cleanup and ignores the old service cancel", async () => {
+  const f = fixture();
+  const source = await f.repository.create(
+    "project",
+    "draft.typ",
+    encode("hello"),
+    "You",
+  );
+  let releaseStop!: () => void;
+  let stopping!: () => void;
+  const stopStarted = new Promise<void>((resolve) => (stopping = resolve));
+  const stopped = new Promise<void>((resolve) => (releaseStop = resolve));
+  const successfulLaunch = f.ports.launch;
+  f.ports.launch = async () => f.service.cancel();
+  f.ports.stop = async () => {
+    stopping();
+    await stopped;
+  };
+  const first = f.service.build(source.id, 1);
+  await stopStarted;
+  const replacementPorts = { ...f.ports, launch: successfulLaunch };
+  const replacement = new StudioCompilerService(
+    "project",
+    f.repository,
+    replacementPorts,
+  );
+  try {
+    await assert.rejects(replacement.build(source.id, 1), /already running/);
+  } finally {
+    releaseStop();
+    assert.equal((await first).status, "canceled");
+  }
+  let releaseLaunch!: () => void;
+  let launching!: () => void;
+  const launchStarted = new Promise<void>((resolve) => (launching = resolve));
+  const launched = new Promise<void>((resolve) => (releaseLaunch = resolve));
+  replacementPorts.launch = async (job, command) => {
+    launching();
+    await launched;
+    await successfulLaunch(job, command);
+  };
+  const next = replacement.build(source.id, 1);
+  await launchStarted;
+  f.service.cancel();
+  releaseLaunch();
+  assert.equal((await next).status, "complete");
+});
+
+test("pending compiler cleanup admits one replacement and keeps profiles isolated", async () => {
+  const f = fixture();
+  const source = await f.repository.create(
+    "project",
+    "draft.typ",
+    encode("hello"),
+    "You",
+  );
+  const successfulLaunch = f.ports.launch;
+  f.ports.launch = async () => {
+    throw new Error("launch acknowledgement failed");
+  };
+  f.ports.stop = async () => {
+    throw new Error("termination unconfirmed");
+  };
+  assert.equal((await f.service.build(source.id, 1)).status, "failed");
+  let releaseStop!: () => void;
+  let stopping!: () => void;
+  const stopStarted = new Promise<void>((resolve) => (stopping = resolve));
+  const stopped = new Promise<void>((resolve) => (releaseStop = resolve));
+  let cleanupCalls = 0;
+  const ports = {
+    ...f.ports,
+    launch: successfulLaunch,
+    stop: async () => {
+      cleanupCalls++;
+      stopping();
+      await stopped;
+    },
+  };
+  const replacement = new StudioCompilerService("project", f.repository, ports);
+  const pending = replacement.build(source.id, 1);
+  await stopStarted;
+  try {
+    const concurrent = new StudioCompilerService("project", f.repository, {
+      ...ports,
+    });
+    await assert.rejects(concurrent.build(source.id, 1), /already running/);
+    assert.equal(cleanupCalls, 1);
+    const other = fixture();
+    const separateSource = await other.repository.create(
+      "project",
+      "draft.typ",
+      encode("independent"),
+      "You",
+    );
+    assert.equal(
+      (await other.service.build(separateSource.id, 1)).status,
+      "complete",
+    );
+  } finally {
+    releaseStop();
+    assert.equal((await pending).status, "complete");
+  }
 });
 
 test("snapshot path collisions reject before preparing or launching a compiler", async () => {

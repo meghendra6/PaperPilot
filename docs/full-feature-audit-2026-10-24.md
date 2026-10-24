@@ -72,7 +72,7 @@ PDF annotation, Zotero transaction, or scholarly judgment.
 - Node 24 satisfies the repository's Node 22.18+ baseline. The shell's default
   Node 20 is not used for these checks.
 - `npm ci` completed in an isolated worktree.
-- `npm test`: 1,396 passed, zero failures/skips after the regression additions.
+- `npm test`: 1,403 passed, zero failures/skips after the regression additions.
 - `npm run build`: typechecks source/tests and packages the add-on with the
   OpenDataLoader runtime and guarded editor patches.
 - `npm run lint:check`: zero errors; 157 pre-existing warnings remain.
@@ -110,5 +110,34 @@ measurement of general scientific accuracy or journal compliance.
 Native app control became unavailable during final verification. The final XPI
 includes all fixes and academic drafting, but the earlier installed audit build
 is the last one actually launched in Zotero. Final reinstall/restart and the new
-protocol's Word round-trip remain unverified. No hosted CI or remote publication
-is claimed for this local change set.
+protocol's Word round-trip remain unverified. The initial audit ended before remote publication;
+[PR #90](https://github.com/meghendra6/PaperPilot/pull/90) tracks the subsequent
+independent review and hosted verification.
+
+## Independent PR review follow-up
+
+Three reviewers separately examined academic DOCX contracts/persistence, process
+lifecycle, and table data/build packaging, then cross-reviewed the fixes. Their
+concrete findings were addressed:
+
+- Compiler cleanup ownership was only retained inside one service instance.
+  Closing and reopening Studio could admit another build while the old process
+  remained unconfirmed. Ownership and pending cleanup now use the stable project
+  build path across service instances. Regression cases cover reopening,
+  concurrent cleanup, stale cancellation and profile isolation.
+- Kernel ownership also failed to survive window replacement after an
+  unconfirmed stop. A profile/project/notebook owner registry now blocks the new
+  window until Restart confirms termination through the replacement window’s
+  ports. Tests cover pending startup, cleanup failure, concurrent cleanup, stale
+  old-window operations and independent notebooks/profiles; live sessions are
+  never adopted.
+- An inherited CSV/TSV parser bug treated a CRLF inside a quoted cell as the row
+  separator of an LF-delimited file, rejecting a valid table as ragged. The grid
+  now uses the parser's detected row separator. Tests cover both newline
+  combinations, editing, serialization and reopening; 20,000 adversarial
+  round trips also passed during review.
+- Uppercase or mixed-case HTML in an academic draft escaped the unsupported-markup
+  check and appeared as literal tag text. The check now ignores tag case and has
+  regression cases. This was a format-contract issue, not executable HTML.
+
+These checks do not replace the outstanding native/Word runtime gates above.

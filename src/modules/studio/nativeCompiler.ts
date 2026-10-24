@@ -22,6 +22,7 @@ export function nativeCompiler(
   const read = async (path: string) =>
     (await files.exists(path)) ? files.readText(path) : undefined;
   return new StudioCompilerService(projectID, repository, {
+    scope: builds,
     id: () => win.crypto.randomUUID(),
     read,
     write: (path, text) => files.writeTextAtomic(path, text),

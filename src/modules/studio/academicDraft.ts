@@ -25,7 +25,7 @@ export function academicDraft(source: string) {
         (char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127,
       ) ||
       /^(?:#{4,}\s|```|~~~|>|[-+*]\s|\d+[.)]\s|\|)/.test(line) ||
-      /<\/?[a-z][^>]*>|!?\[[^\]]*\]\([^)]*\)|`|\*\*|__/.test(line)
+      /<\/?[a-z][^>]*>|!?\[[^\]]*\]\([^)]*\)|`|\*\*|__/i.test(line)
     )
       throw new Error(
         "Paper drafts support plain paragraphs and # title, ## section, ### subsection headings. Add tables, figures, equations and citation fields with the document tools.",

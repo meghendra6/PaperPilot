@@ -74,7 +74,9 @@ figures/tables can be embedded in DOCX or inserted into source documents. HTML
 table previews are sanitized; merged or irregular tables require explicit repair
 before CSV extraction. CSV/TSV grids require a column before adding rows, and
 retain the last column until its rows are removed. Empty fields are quoted on
-serialization so a final empty row survives reopening. JSONL retains empty objects.
+serialization so a final empty row survives reopening. CSV/TSV row separators
+come from the parser rather than line breaks inside quoted cells. JSONL retains
+empty objects.
 The pinned editor build patch preserves both endnote export and the link button's
 accessible name across normal and headless selection updates.
 
@@ -99,8 +101,10 @@ AI proposals. Selected passages are explicitly added to the next question.
 or MyST (Typst output) in an owned build directory, polls completion every 800 ms,
 and adds a distinct PDF only after a successful exit and PDF signature check.
 Builds have a four-minute deadline and cancellation; diagnostics and input
-revisions are retained. A service retains an unconfirmed process cleanup and
-retries it before admitting another build. MyST does not receive `--execute`. Project plugins and
+revisions are retained. Active ownership and unconfirmed process cleanup are
+retained by the stable project build path across replacement services/windows. A
+replacement retries cleanup before admitting another build; the closed service
+cannot cancel the replacement, and different profile paths remain independent. MyST does not receive `--execute`. Project plugins and
 notebook code run with local account permissions; runtime directories are not an
 OS security sandbox. Tectonic uses untrusted mode. Compilers can download missing
 packages/templates. A separate, bundled PDF.js worker renders local PDFs without
@@ -146,6 +150,15 @@ Output rendering reuses cell editors so running a cell retains its undo history.
 Concurrent restarts share one termination promise and block new executions until
 it settles. A failed launch whose cleanup is unconfirmed retains its session
 ownership; restart or close can retry termination before another worker starts.
+
+Kernel process ownership is keyed by the stable profile/project runtime path and
+notebook ID across window replacement. A new broker cannot adopt a live session
+or start another worker while the old broker owns it. If a closed window could
+not confirm termination, Restart retries through the new window's termination
+port, coalesces concurrent cleanup and releases ownership only after success.
+Startup and pending termination retain ownership; stale close/restart/interrupt
+calls from the old broker cannot affect its successor. Different notebooks and
+profile roots remain independent.
 
 The local preview script uses the packaged browser assets and the same repository,
 AI service/runner and kernel broker with Node I/O. Preview proof does not establish

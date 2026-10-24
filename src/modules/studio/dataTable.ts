@@ -28,9 +28,9 @@ function parseGridJSON(text: string): unknown {
 export function parseDataTable(name: string, source: string): DataTable {
   const bom = source.startsWith("\uFEFF");
   const text = bom ? source.slice(1) : source;
-  const newline = text.includes("\r\n") ? "\r\n" : "\n";
-  const trailingNewline = text.endsWith(newline);
   if (/\.jsonl$/i.test(name)) {
+    const newline = text.includes("\r\n") ? "\r\n" : "\n";
+    const trailingNewline = text.endsWith(newline);
     const jsonRows = text
       .split(/\r?\n/)
       .filter((line) => line.trim())
@@ -66,6 +66,10 @@ export function parseDataTable(name: string, source: string): DataTable {
   });
   if (parsed.errors.length)
     throw new Error(parsed.errors.map((error) => error.message).join("; "));
+  // The CSV parser detects separators outside quoted cells. A cell's CRLF
+  // must not turn an LF-delimited table's final terminator into an extra row.
+  const newline = parsed.meta.linebreak;
+  const trailingNewline = text.endsWith(newline);
   const rows = parsed.data;
   if (trailingNewline && rows.at(-1)?.length === 1 && rows.at(-1)?.[0] === "")
     rows.pop();

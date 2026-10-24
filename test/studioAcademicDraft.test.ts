@@ -26,6 +26,8 @@ test("academic drafts retain Unicode and citation placeholders with semantic doc
     "",
     "x".repeat(100001),
     "<img src=x>",
+    "<H1>Methods</H1>",
+    "<dIv>Mixed-case HTML</dIv>",
     "![figure](x)",
     "| a | b |",
     "```js\ncode\n```",

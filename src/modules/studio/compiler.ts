@@ -21,6 +21,8 @@ export interface CompileResult {
   output?: StudioDocument;
 }
 export interface CompilerPorts {
+  /** Stable project build path, including across replacement Studio windows. */
+  scope: string;
   id(): string;
   prepare(compiler: StudioCompiler): Promise<CompileJob>;
   writeBase64(path: string, base64: string): Promise<void>;
@@ -36,6 +38,13 @@ export interface CompilerPorts {
     retain(job: CompileJob): Promise<void>;
   };
 }
+
+// A closed window can leave a build awaiting cancellation or failed cleanup.
+// Keep admission and process ownership until another service confirms the stop.
+const compilerStates = new Map<
+  string,
+  { owner?: StudioCompilerService; cleanupJob?: CompileJob }
+>();
 
 export function compilerFor(name: string): StudioCompiler {
   if (/\.tex$/i.test(name)) return "tectonic";
@@ -104,7 +113,6 @@ export function compilerCommand(
 /** Runs only on an explicit Build action. Inputs are immutable saved revisions. */
 export class StudioCompilerService {
   private running?: { canceled: boolean };
-  private cleanupJob?: CompileJob;
   constructor(
     private projectID: string,
     private repository: StudioRepository,
@@ -116,7 +124,10 @@ export class StudioCompilerService {
   }
 
   async build(id: string, expectedRevision: number): Promise<CompileResult> {
-    if (this.running) throw new Error("A project build is already running.");
+    const state = compilerStates.get(this.ports.scope) ?? {};
+    if (state.owner) throw new Error("A project build is already running.");
+    state.owner = this;
+    compilerStates.set(this.ports.scope, state);
     const run = { canceled: false };
     this.running = run;
     let job: CompileJob | undefined;
@@ -127,10 +138,10 @@ export class StudioCompilerService {
       if (run.canceled) throw new Error("Build canceled.");
     };
     try {
-      if (this.cleanupJob) {
+      if (state.cleanupJob) {
         try {
-          await this.ports.stop(this.cleanupJob);
-          this.cleanupJob = undefined;
+          await this.ports.stop(state.cleanupJob);
+          state.cleanupJob = undefined;
         } catch (error) {
           throw new Error(
             `Previous compiler cleanup is unconfirmed. Retry after resolving the process error: ${String(error)}`,
@@ -260,7 +271,7 @@ export class StudioCompilerService {
       try {
         if (job && launched && !exited) await this.ports.stop(job);
       } catch (error) {
-        this.cleanupJob = job;
+        state.cleanupJob = job;
         if (result) result.log += `\nProcess cleanup: ${String(error)}`;
       }
       if (job && result) {
@@ -275,6 +286,9 @@ export class StudioCompilerService {
         }
       }
       this.running = undefined;
+      state.owner = undefined;
+      if (!state.cleanupJob && compilerStates.get(this.ports.scope) === state)
+        compilerStates.delete(this.ports.scope);
     }
     return result!;
   }

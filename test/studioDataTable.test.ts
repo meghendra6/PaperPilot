@@ -23,6 +23,30 @@ test("single-column empty CSV and TSV rows survive saving and reopening", () => 
   }
 });
 
+test("quoted cell line breaks do not determine CSV or TSV row separators", () => {
+  for (const [name, delimiter] of [
+    ["data.csv", ","],
+    ["data.tsv", "\t"],
+  ]) {
+    for (const newline of ["\n", "\r\n"]) {
+      const cell = newline === "\n" ? "a\r\nb" : "a\nb";
+      const source = `id${delimiter}note${newline}001${delimiter}"${cell}"${newline}`;
+      const table = parseDataTable(name, source);
+      assert.equal(table.newline, newline);
+      assert.equal(table.trailingNewline, true);
+      assert.deepEqual(table.rows, [["001", cell]]);
+      setDataCell(table, 0, 0, "002");
+      assert.equal(
+        serializeDataTable(table),
+        `id${delimiter}note${newline}002${delimiter}"${cell}"${newline}`,
+      );
+      assert.deepEqual(parseDataTable(name, serializeDataTable(table)).rows, [
+        ["002", cell],
+      ]);
+    }
+  }
+});
+
 test("empty tables require a CSV column but preserve empty JSONL objects", () => {
   const csv = parseDataTable("data.csv", "");
   assert.throws(() => addDataRow(csv), /Add a column/);

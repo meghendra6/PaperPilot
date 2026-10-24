@@ -18,6 +18,8 @@ export interface KernelResult {
 }
 
 export interface KernelPorts {
+  /** Stable profile/project runtime path, shared by replacement windows. */
+  scope: string;
   createJob(documentID: string, kernel: "python3" | "ir"): Promise<string>;
   read(path: string): Promise<string | undefined>;
   write(path: string, contents: string): Promise<void>;
@@ -38,6 +40,10 @@ interface Session {
   heartbeat: ReturnType<typeof setInterval>;
 }
 
+// A window can close before startup or termination settles. Retain the owner
+// until cleanup is confirmed; a replacement never adopts a live session.
+const kernelOwners = new Map<string, KernelBroker>();
+
 /** Kernels belong to documents, independently of paper/CLI run reservations. */
 export class KernelBroker {
   private sessions = new Map<string, Session>();
@@ -46,6 +52,21 @@ export class KernelBroker {
   private executionEpochs = new Map<string, number>();
   private closed = false;
   constructor(private ports: KernelPorts) {}
+
+  private ownershipKey(documentID: string) {
+    return `${this.ports.scope}/${documentID}`;
+  }
+
+  private releaseOwnership(documentID: string) {
+    const key = this.ownershipKey(documentID);
+    if (
+      !this.sessions.has(documentID) &&
+      !this.starting.has(documentID) &&
+      !this.restarting.has(documentID) &&
+      kernelOwners.get(key) === this
+    )
+      kernelOwners.delete(key);
+  }
 
   private async poll(directory: string, name: string, timeout: number) {
     const deadline = Date.now() + timeout;
@@ -75,6 +96,11 @@ export class KernelBroker {
   ): Promise<Session> {
     assertStudioID(documentID);
     if (this.closed) throw new Error("This project window is closed.");
+    const owner = kernelOwners.get(this.ownershipKey(documentID));
+    if (owner && owner !== this)
+      throw new Error(
+        "The previous window still owns this kernel. Restart the kernel before running a cell.",
+      );
     if (this.restarting.has(documentID))
       throw new Error("This kernel is restarting. Wait before running a cell.");
     if (kernel !== "python3" && kernel !== "ir")
@@ -87,6 +113,7 @@ export class KernelBroker {
     }
     const pending = this.starting.get(documentID);
     if (pending) return pending;
+    kernelOwners.set(this.ownershipKey(documentID), this);
     const promise = (async () => {
       const directory = await this.ports.createJob(documentID, kernel);
       await this.ports.write(`${directory}/heartbeat`, "alive");
@@ -133,7 +160,10 @@ export class KernelBroker {
         }
         throw error;
       }
-    })().finally(() => this.starting.delete(documentID));
+    })().finally(() => {
+      this.starting.delete(documentID);
+      this.releaseOwnership(documentID);
+    });
     this.starting.set(documentID, promise);
     return promise;
   }
@@ -200,6 +230,8 @@ export class KernelBroker {
   }
 
   async interrupt(documentID: string) {
+    if (this.closed || kernelOwners.get(this.ownershipKey(documentID)) !== this)
+      return;
     this.executionEpochs.set(
       documentID,
       (this.executionEpochs.get(documentID) ?? 0) + 1,
@@ -214,6 +246,31 @@ export class KernelBroker {
 
   restart(documentID: string): Promise<void> {
     assertStudioID(documentID);
+    const owner = kernelOwners.get(this.ownershipKey(documentID));
+    if (owner && owner !== this) {
+      // A late close/restart from a disposed window must not stop its successor.
+      if (this.closed) return Promise.resolve();
+      if (!owner.closed)
+        return Promise.reject(
+          new Error(
+            "This kernel is still owned by another open project window.",
+          ),
+        );
+      // The old window's native capabilities may no longer be usable. The new
+      // broker supplies termination only; no session or kernel state is adopted.
+      return owner.restartOwned(documentID, (directory) =>
+        this.ports.kill(directory),
+      );
+    }
+    return this.restartOwned(documentID, (directory) =>
+      this.ports.kill(directory),
+    );
+  }
+
+  private restartOwned(
+    documentID: string,
+    kill: KernelPorts["kill"],
+  ): Promise<void> {
     const pending = this.restarting.get(documentID);
     if (pending) return pending;
     this.executionEpochs.set(
@@ -228,13 +285,14 @@ export class KernelBroker {
         if (!session) return;
         session.failed = true;
         clearInterval(session.heartbeat);
-        await this.ports.kill(session.directory);
+        await kill(session.directory);
         if (this.sessions.get(documentID) === session)
           this.sessions.delete(documentID);
       })
       .finally(() => {
         if (this.restarting.get(documentID) === operation)
           this.restarting.delete(documentID);
+        this.releaseOwnership(documentID);
       });
     this.restarting.set(documentID, operation);
     return operation;

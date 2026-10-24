@@ -1366,3 +1366,14 @@ title and abstract plus Korean reply/change reason. No experiment was claimed
 and missing evidence remained marked. All 1,397 Node tests, focused ESLint,
 typecheck and XPI build passed. This is a prompt/provider check; it does not close
 the outstanding native Zotero installation or Word round-trip gates.
+
+### Window replacement after process failure
+
+- During a compiler build or kernel startup, close and reopen Studio. The new
+  window must not admit an overlapping build/worker while the old operation is
+  still stopping.
+- After an unconfirmed kernel stop, use Restart in the new window. It must retain
+  ownership on another failure and allow a fresh kernel only after termination
+  succeeds. Late events from the old window must not stop the replacement.
+- Simulated-port regressions cover these failures and independent projects;
+  actual compiler/kernel termination failures still need native runtime checks.

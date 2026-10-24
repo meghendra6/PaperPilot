@@ -23,6 +23,7 @@ export function nativeKernel(
   const read = async (path: string) =>
     (await files.exists(path)) ? files.readText(path) : undefined;
   return new KernelBroker({
+    scope: `${getResearchWorkspaceStorageRoot()}/runtime/${projectID}`,
     id: () => win.crypto.randomUUID(),
     read,
     write: (path, contents) => files.writeTextAtomic(path, contents),

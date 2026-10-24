@@ -108,6 +108,7 @@ test("persistent kernel receipts retain the initial input snapshot and distingui
   const disk = new Map<string, string>();
   let id = 0;
   const broker = new KernelBroker({
+    scope: "/owned/provenance/receipts",
     id: () => `run-${++id}`,
     delay: async () => {},
     createJob: async () => {
@@ -154,6 +155,7 @@ test("Stop during kernel startup cancels the pending cell without poisoning the 
     finishStartup = resolve;
   });
   const broker = new KernelBroker({
+    scope: "/owned/provenance/startup-stop",
     id: () => `run-${++id}`,
     delay: async () => {},
     createJob: async () => {
@@ -197,6 +199,7 @@ test("Stop targets the admitted request ID even while its request file is being 
   const disk = new Map([["/owned/ready.json", '{"ok":true}']]);
   let id = 0;
   const broker = new KernelBroker({
+    scope: "/owned/provenance/request-stop",
     id: () => `run-${++id}`,
     delay: async () => {},
     createJob: async () => "/owned",
