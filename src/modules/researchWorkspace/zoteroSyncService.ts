@@ -20,6 +20,7 @@ import {
 } from "./zoteroSyncRuntime";
 import { ResearchWorkspaceProjectRepository } from "./persistence/projectRepository";
 import { ResearchWorkspaceRevisionConflictError } from "./persistence/contracts";
+import { runResearchWorkspaceProjectTask } from "./projectRunAdmission";
 
 export interface ResearchWorkspaceZoteroSyncServiceOptions {
   runtime?: ResearchWorkspaceZoteroSyncRuntime;
@@ -187,6 +188,13 @@ export class ResearchWorkspaceZoteroSyncService {
   }
 
   async listTargets(projectID: string) {
+    return runResearchWorkspaceProjectTask(
+      this.repository.getProjectRoot(projectID),
+      () => this.listTargetsOnce(projectID),
+    );
+  }
+
+  private async listTargetsOnce(projectID: string) {
     const { sources } = await this.projectSources(projectID);
     const libraryIDs = [
       ...new Set(sources.map((source) => source.identity.libraryID)),
@@ -195,6 +203,16 @@ export class ResearchWorkspaceZoteroSyncService {
   }
 
   async preview(params: {
+    projectID: string;
+    selection: ResearchWorkspaceZoteroSyncSelection;
+  }) {
+    return runResearchWorkspaceProjectTask(
+      this.repository.getProjectRoot(params.projectID),
+      () => this.previewOnce(params),
+    );
+  }
+
+  private async previewOnce(params: {
     projectID: string;
     selection: ResearchWorkspaceZoteroSyncSelection;
   }) {
@@ -478,8 +496,10 @@ export class ResearchWorkspaceZoteroSyncService {
     preview: ResearchWorkspaceZoteroSyncPreview;
     approvalToken: string;
   }) {
-    return this.exclusive(params.preview.projectID, () =>
-      this.applyOnce(params),
+    return runResearchWorkspaceProjectTask(
+      this.repository.getProjectRoot(params.preview.projectID),
+      () =>
+        this.exclusive(params.preview.projectID, () => this.applyOnce(params)),
     );
   }
 
@@ -544,10 +564,16 @@ export class ResearchWorkspaceZoteroSyncService {
     receiptID: string;
     expectedRevision: number;
   }) {
-    return this.exclusive(params.projectID, () => this.undoOnce(params));
+    return runResearchWorkspaceProjectTask(
+      this.repository.getProjectRoot(params.projectID),
+      () => this.exclusive(params.projectID, () => this.undoOnce(params)),
+    );
   }
 
   listReceipts(projectID: string) {
-    return this.repository.listZoteroSyncReceipts(projectID);
+    return runResearchWorkspaceProjectTask(
+      this.repository.getProjectRoot(projectID),
+      () => this.repository.listZoteroSyncReceipts(projectID),
+    );
   }
 }

@@ -3,6 +3,8 @@ import { ResearchWorkspaceProjectRepository } from "./persistence/projectReposit
 import { LegacyResearchWorkspaceImporter } from "./persistence/legacyMigration";
 import { ResearchWorkspaceLivingReviewService } from "./livingReviewService";
 import { ResearchWorkspaceZoteroSyncService } from "./zoteroSyncService";
+import { getResearchWorkspaceProjectExportDirectory } from "./persistence/projectDeletionPaths";
+import { assertSafeProjectRemoval } from "./persistence/removalSafety";
 
 const STORAGE_DIRECTORY = "paperpilot-research-workspace";
 const STORAGE_FILE = "workspace-v3.json";
@@ -48,6 +50,41 @@ export function getResearchWorkspaceStorageRoot() {
 
 export function createResearchWorkspaceStorage() {
   return {
+    async assertSafeRemoval(path: string, rootDir: string) {
+      await assertSafeProjectRemoval(path, rootDir, {
+        async inspect(entry) {
+          const file = getGlobalZotero()?.File?.pathToFile(entry);
+          if (!file)
+            throw new Error(
+              "Native file inspection is unavailable; project cleanup was stopped.",
+            );
+          try {
+            if (file.isSymlink()) return "symlink";
+          } catch (error) {
+            // nsIFile uses lstat here: an absent path throws, while a dangling
+            // symlink still returns true and must not be treated as missing.
+            const name = (error as { name?: string } | undefined)?.name;
+            if (
+              name === "NS_ERROR_FILE_NOT_FOUND" ||
+              name === "NS_ERROR_FILE_TARGET_DOES_NOT_EXIST"
+            ) {
+              return "missing";
+            }
+            throw error;
+          }
+          if (!file.exists()) return "missing";
+          return file.isDirectory() ? "directory" : "file";
+        },
+        async children(directory) {
+          const io = getGlobalIOUtils();
+          if (!io?.getChildren)
+            throw new Error(
+              "Native directory inspection is unavailable; project cleanup was stopped.",
+            );
+          return io.getChildren(directory);
+        },
+      });
+    },
     async ensureDirectory(path: string) {
       const zotero = getGlobalZotero();
       if (!zotero?.File?.createDirectoryIfMissingAsync) {
@@ -132,6 +169,9 @@ export function createResearchWorkspaceStorage() {
         return;
       }
       const zotero = getGlobalZotero();
+      if (options?.recursive) {
+        throw new Error("Recursive project cleanup requires IOUtils.remove.");
+      }
       if (!zotero?.File?.removeIfExists) {
         throw new Error(
           "Zotero file APIs are unavailable for Research Workspace storage.",
@@ -191,13 +231,18 @@ export function createResearchWorkspaceStorage() {
 export async function exportResearchWorkspaceTextFile(
   fileName: string,
   contents: string,
+  projectID?: string,
 ) {
   const profilePath = getZoteroProfilePath();
   if (!profilePath) {
     throw new Error("Could not resolve the Zotero profile directory.");
   }
   const safeName = fileName.replace(/[^a-zA-Z0-9._-]+/g, "-");
-  const directory = joinPath(profilePath, STORAGE_DIRECTORY, "exports");
+  const root = joinPath(profilePath, STORAGE_DIRECTORY);
+  const directory =
+    projectID === undefined
+      ? joinPath(root, "exports")
+      : getResearchWorkspaceProjectExportDirectory(root, projectID);
   const path = joinPath(directory, safeName);
   const zotero = getGlobalZotero();
   if (

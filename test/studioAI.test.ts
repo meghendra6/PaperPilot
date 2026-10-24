@@ -17,6 +17,7 @@ import { nativeStructuredOutputSchemaIssue } from "../src/modules/ai/structuredO
 import { documentText } from "../src/modules/studio/documentText";
 import {
   runStudioAI,
+  cleanupStudioRunnerScope,
   studioCLICommand,
   type StudioRunnerPorts,
 } from "../src/modules/studio/aiRunner";
@@ -538,5 +539,65 @@ test("reviewed DOCX drafts preserve original text and reject altered or incomple
   assert.equal(
     (await service.history()).turns[0].changes[0].proposedAfter,
     "# Paper\n\n## Results\n\n[Evidence needed: data]",
+  );
+});
+
+test("project quiescence cancels the current AI owner and waits for persisted cancellation", async () => {
+  let entered!: () => void;
+  const started = new Promise<void>((resolve) => (entered = resolve));
+  const f = fixture(async (_config, _prompt, signal) => {
+    entered();
+    return new Promise<string>((_resolve, reject) => {
+      signal.addEventListener("abort", () => reject(new Error("canceled")), {
+        once: true,
+      });
+    });
+  });
+  const run = f.service.ask(config, "Draft an introduction", []);
+  const rejected = assert.rejects(run, /canceled/);
+  await started;
+  await StudioAIService.quiesceScope(
+    "/owned/projects/project-project/studio-conversation-v1.json",
+  );
+  await rejected;
+  assert.equal((await f.service.history()).turns[0].status, "canceled");
+});
+
+test("scope cleanup retries a runner retained after its window has closed", async () => {
+  const job = { directory: "/owned/deletion-ai/job", executable: "codex" };
+  const ports: StudioRunnerPorts = {
+    scope: "/owned/deletion-ai",
+    prepare: async () => job,
+    write: async () => {},
+    read: async () => undefined,
+    launch: async () => {
+      throw new Error("launch acknowledgment failed");
+    },
+    stop: async () => {
+      throw new Error("stop unconfirmed");
+    },
+    delay: async () => {},
+    fetch,
+  };
+  await assert.rejects(
+    runStudioAI(
+      { provider: "codex", model: "fixture" },
+      "prompt",
+      ports,
+      new AbortController().signal,
+    ),
+    /unconfirmed/,
+  );
+  await assert.rejects(
+    cleanupStudioRunnerScope(ports.scope, ports.stop),
+    /unconfirmed/,
+  );
+  const stopped: string[] = [];
+  await cleanupStudioRunnerScope(ports.scope, async (owned) => {
+    stopped.push(owned.directory);
+  });
+  assert.deepEqual(stopped, [job.directory]);
+  await cleanupStudioRunnerScope(ports.scope, async () =>
+    assert.fail("Confirmed job ownership must be released."),
   );
 });

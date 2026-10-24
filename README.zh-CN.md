@@ -53,6 +53,8 @@ Studio 还提供 Word 脚注、尾注、目录和题注字段、应用前修改 
 
 Research Workspace 已内置于 Paper Pilot，并复用同一套本地引擎选择、论文提取和运行生命周期。无论选择零篇、一篇还是多篇条目，持久的非模态项目窗口都可继续使用，并提供筛选、claim–evidence ledger、比较、审计、mastery、引用工作流、引用/参考文献健康检查、矛盾/缺口审阅、项目级导出、本地 Living Review 变更收件箱以及五种可编辑的项目模板。项目模板 preset 只突出推荐 capability，不会自动运行分析或隐藏其他 capability；导出会保留不可变的模板快照和当前 assumptions。Citation & Reference Health 根据当前保存的引用、方法学和可复现性 artifact、本地 Zotero 更正/撤稿元数据信号以及可选的有界草稿摘录生成本地检查清单，并且不会生成汇总 truth score。Living Review 只检查 Zotero 附件与批注元数据，不读取正文，也不调用模型或网络服务。安全的 Zotero collection/tag 同步只会在完整 preview 和与该 preview 绑定的 approval token 之后，向现有 collection 和现有 tag 执行单向添加；它会在 transaction 前写入独立的 revisioned receipt，并在 Zotero transaction 不可用时 fail closed。Undo 只移除 receipt 所拥有的添加，不会创建或删除 Zotero item、collection 或 tag，也不会写入 bibliographic field、PDF、note、attachment 或 annotation。可从 **Tools → Open Research Workspace…**、库条目右键菜单或 Workbench 中的 **Research Workspace** 按钮打开。分析运行期间离开项目或关闭窗口时，会在取消前先确认。部分失败的运行会列出失败的论文并提供 **Resume**，已归档的项目可以打开和恢复。只需安装一个 Paper Pilot XPI；不再提供 companion 插件或 Research Monitor。
 
+在活动或已归档项目卡片或 **Settings** 中选择 **Delete project…**，可永久删除项目及其 Studio 文档、版本、对话、分析结果、项目管理的导出文件和确认归属的运行及临时文件。删除会等待进行中的操作和进程停止；取消关闭有未保存更改的 Studio 窗口也会中止删除。清理失败后可从项目列表重试。Zotero 原始条目和附件、单独保存的文件及共享缓存会保留。旧版本未记录项目归属的平铺导出文件和临时工作目录无法安全识别，因此会保留。
+
 ### 快速开始
 
 1. 在 Zotero 库中选择最多 12 篇带 PDF 的论文，右键选择 **Open Research Workspace…**。

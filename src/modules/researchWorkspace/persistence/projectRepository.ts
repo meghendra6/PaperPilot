@@ -1,4 +1,5 @@
 import { joinPath, researchProjectDirectory } from "./paths";
+import { getResearchWorkspaceProjectOwnedDirectories } from "./projectDeletionPaths";
 import { parseResearchWorkspaceCandidates } from "./candidates";
 import { projectScopeFingerprint } from "../operationInputs";
 import { stableHash } from "../identity";
@@ -92,6 +93,35 @@ function emptyCatalog(now: string): ResearchWorkspaceCatalog {
   };
 }
 
+interface ProjectDeletionIntent {
+  schemaVersion: 1;
+  revision: number;
+  entry: ResearchWorkspaceCatalogEntry;
+}
+
+function parseProjectDeletionIntent(value: unknown): ProjectDeletionIntent {
+  const input = value as Partial<ProjectDeletionIntent> | undefined;
+  if (
+    !input ||
+    input.schemaVersion !== 1 ||
+    typeof input.revision !== "number" ||
+    !Number.isInteger(input.revision) ||
+    !input.entry
+  ) {
+    throw new Error("Invalid project deletion record.");
+  }
+  const catalog = parseResearchWorkspaceCatalog({
+    ...emptyCatalog("2000-01-01T00:00:00.000Z"),
+    revision: input.revision,
+    projects: [input.entry],
+  });
+  return {
+    schemaVersion: 1,
+    revision: input.revision,
+    entry: catalog.projects[0],
+  };
+}
+
 function defaultPreferences(now: string) {
   return {
     schemaVersion: RESEARCH_WORKSPACE_PREFERENCES_SCHEMA_VERSION,
@@ -173,6 +203,7 @@ function artifactPropagationSignature(
 }
 
 export class ResearchWorkspaceProjectRepository {
+  private readonly deletions = new Map<string, Promise<void>>();
   private readonly files: SerializedResearchWorkspaceFiles;
   private readonly rootDir: string;
   private readonly now: () => Date;
@@ -217,6 +248,35 @@ export class ResearchWorkspaceProjectRepository {
 
   getProjectPath(projectID: string) {
     return joinPath(this.getProjectRoot(projectID), "project.json");
+  }
+
+  private getDeletionPath(projectID: string) {
+    return joinPath(
+      this.rootDir,
+      "deletions",
+      `project-${assertResearchWorkspaceID(projectID, "projectID")}.json`,
+    );
+  }
+
+  async assertProjectDeletionSafe(projectID: string) {
+    const directories = getResearchWorkspaceProjectOwnedDirectories(
+      this.rootDir,
+      projectID,
+    );
+    for (const path of [...directories, this.getDeletionPath(projectID)]) {
+      await this.files.assertSafeRemoval(path, this.rootDir);
+    }
+  }
+
+  private async assertProjectNotDeleting(projectID: string) {
+    if (
+      this.deletions.has(projectID) ||
+      (await this.files.exists(this.getDeletionPath(projectID)))
+    ) {
+      throw new Error(
+        "Project deletion is incomplete. Use Delete project again to finish cleanup.",
+      );
+    }
   }
 
   getMembersPath(projectID: string) {
@@ -480,13 +540,19 @@ export class ResearchWorkspaceProjectRepository {
 
   private async syncCatalogEntry(projectID: string) {
     const entry = await this.catalogEntry(projectID);
-    await this.updateCatalog((catalog) => ({
-      ...catalog,
-      projects: [
-        ...catalog.projects.filter((item) => item.projectID !== projectID),
-        entry,
-      ],
-    }));
+    await this.updateCatalog((catalog) =>
+      this.files.isFrozen(this.getProjectRoot(projectID))
+        ? catalog
+        : {
+            ...catalog,
+            projects: [
+              ...catalog.projects.filter(
+                (item) => item.projectID !== projectID,
+              ),
+              entry,
+            ],
+          },
+    );
   }
 
   async createProject(input: CreateResearchWorkspaceProjectInput) {
@@ -495,6 +561,12 @@ export class ResearchWorkspaceProjectRepository {
     const projectID = assertResearchWorkspaceID(
       input.projectID ?? this.idFactory("project"),
       "projectID",
+    );
+    await this.assertProjectNotDeleting(projectID);
+    // A successful deletion keeps stale writes blocked until an explicit new
+    // creation (including a deterministic quick project) starts.
+    this.files.thawDirectories(
+      getResearchWorkspaceProjectOwnedDirectories(this.rootDir, projectID),
     );
     const timestamp = this.timestamp();
     await this.ensureProjectDirectories(projectID);
@@ -563,6 +635,7 @@ export class ResearchWorkspaceProjectRepository {
 
   async getProject(projectID: string): Promise<ResearchWorkspaceProjectBundle> {
     assertResearchWorkspaceID(projectID, "projectID");
+    await this.assertProjectNotDeleting(projectID);
     const [projectFile, membersFile] = await Promise.all([
       this.files.read(
         this.getProjectPath(projectID),
@@ -835,17 +908,68 @@ export class ResearchWorkspaceProjectRepository {
     });
   }
 
-  async deleteProject(projectID: string) {
-    await this.getProject(projectID);
-    await this.files.remove(this.getProjectRoot(projectID), {
-      recursive: true,
-    });
+  deleteProject(
+    projectID: string,
+    beforeRemove?: () => Promise<unknown>,
+  ): Promise<void> {
+    const pending = this.deletions.get(projectID);
+    if (pending) return pending;
+    const operation = this.deleteProjectOnce(projectID, beforeRemove).finally(
+      () => {
+        this.deletions.delete(projectID);
+      },
+    );
+    this.deletions.set(projectID, operation);
+    return operation;
+  }
+
+  private async deleteProjectOnce(
+    projectID: string,
+    beforeRemove?: () => Promise<unknown>,
+  ) {
+    const directories = getResearchWorkspaceProjectOwnedDirectories(
+      this.rootDir,
+      projectID,
+    );
+    await this.assertProjectDeletionSafe(projectID);
+    const intentPath = this.getDeletionPath(projectID);
+    let intent = await this.files.read(intentPath, parseProjectDeletionIntent);
+    if (!intent) {
+      const catalog = await this.getCatalog();
+      const entry = catalog.projects.find(
+        (project) => project.projectID === projectID,
+      );
+      if (!entry) {
+        // Retrying a completed delete is harmless; unknown IDs confer no
+        // authority to remove similarly named runtime directories.
+        if (!(await this.files.exists(this.getProjectPath(projectID)))) return;
+        throw new Error(
+          "Repair the project catalog before deleting this project.",
+        );
+      }
+      intent = await this.files.writeNew(intentPath, {
+        schemaVersion: 1 as const,
+        revision: 0,
+        entry,
+      });
+    }
+    if (intent.entry.projectID !== projectID)
+      throw new Error("Project deletion record belongs to another project.");
+    await this.files.freezeDirectories(directories);
+    // CLI allocation receipts must survive until all external cleanup succeeds.
+    await beforeRemove?.();
+    await this.assertProjectDeletionSafe(projectID);
+    // Keep project metadata until the auxiliary directories have been removed.
+    for (const path of [...directories.slice(1), directories[0]]) {
+      await this.files.removeFrozenDirectory(path);
+    }
     await this.updateCatalog((catalog) => ({
       ...catalog,
       projects: catalog.projects.filter(
         (entry) => entry.projectID !== projectID,
       ),
     }));
+    await this.files.remove(intentPath);
   }
 
   async updateMembers(
@@ -1943,6 +2067,32 @@ export class ResearchWorkspaceProjectRepository {
     );
     const projects: ResearchWorkspaceCatalogEntry[] = [];
     const warnings: string[] = [];
+    // A failed deletion can leave only this record. Keep its catalog action
+    // available after restart instead of silently hiding the remaining files.
+    for (const path of await this.files.listDirectory(
+      joinPath(this.rootDir, "deletions"),
+    )) {
+      if (!/[\\/]project-[^\\/]+\.json$/.test(path)) continue;
+      try {
+        const intent = await this.files.read(path, parseProjectDeletionIntent);
+        if (!intent || path !== this.getDeletionPath(intent.entry.projectID))
+          continue;
+        await this.files.freezeDirectories(
+          getResearchWorkspaceProjectOwnedDirectories(
+            this.rootDir,
+            intent.entry.projectID,
+          ),
+        );
+        projects.push(intent.entry);
+        warnings.push(
+          `Project ${intent.entry.name} has unfinished cleanup. Use Delete project again to retry.`,
+        );
+      } catch (error) {
+        warnings.push(
+          `Project deletion record ${path} could not be recovered: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
     let repairedProjectReferences = false;
     for (const path of projectPaths) {
       try {

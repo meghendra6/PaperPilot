@@ -537,6 +537,8 @@ export interface ResearchWorkspaceCandidatesFile {
 }
 
 export interface ResearchWorkspaceFileOps {
+  /** Native stores must reject linked/out-of-root deletion targets. */
+  assertSafeRemoval?(path: string, rootDir: string): Promise<void>;
   ensureDirectory(path: string): Promise<void>;
   exists(path: string): Promise<boolean>;
   readText(path: string): Promise<string | undefined>;

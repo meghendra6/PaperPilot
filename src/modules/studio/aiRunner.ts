@@ -27,6 +27,26 @@ export interface StudioRunnerPorts {
 
 // Keep ownership after a failed stop, even if the window creates new ports.
 const pendingCleanup = new Map<string, StudioCLIJob>();
+const cleanupTasks = new Map<string, Promise<void>>();
+
+/** Call after the service has drained; failed stops retain their owned job. */
+export function cleanupStudioRunnerScope(
+  scope: string,
+  stop: StudioRunnerPorts["stop"],
+) {
+  const pending = cleanupTasks.get(scope);
+  if (pending) return pending;
+  const operation = Promise.resolve()
+    .then(async () => {
+      const job = pendingCleanup.get(scope);
+      if (!job) return;
+      await stop(job);
+      if (pendingCleanup.get(scope) === job) pendingCleanup.delete(scope);
+    })
+    .finally(() => cleanupTasks.delete(scope));
+  cleanupTasks.set(scope, operation);
+  return operation;
+}
 
 export function studioCLICommand(config: StudioAIConfig, job: StudioCLIJob) {
   if (config.provider === "codex") {
@@ -171,18 +191,14 @@ export async function runStudioAI(
   let complete = false;
   try {
     if (timeout.signal.aborted) throw new Error("AI run canceled.");
-    const previous = pendingCleanup.get(ports.scope);
-    if (previous) {
-      try {
-        await ports.stop(previous);
-      } catch {
-        throw new Error(
-          "Previous AI process cleanup is unconfirmed. Retry after the process can be stopped.",
-        );
-      }
-      pendingCleanup.delete(ports.scope);
-      if (timeout.signal.aborted) throw new Error("AI run canceled.");
+    try {
+      await cleanupStudioRunnerScope(ports.scope, ports.stop);
+    } catch {
+      throw new Error(
+        "Previous AI process cleanup is unconfirmed. Retry after the process can be stopped.",
+      );
     }
+    if (timeout.signal.aborted) throw new Error("AI run canceled.");
     if (config.provider === "local")
       return await networkRun(config, prompt, timeout.signal, ports.fetch);
     job = await ports.prepare(config.provider);

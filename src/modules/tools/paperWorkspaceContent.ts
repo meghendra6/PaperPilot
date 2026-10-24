@@ -513,16 +513,32 @@ export function resetJavaRuntimeProbeForTests() {
   javaFailureLogged = false;
 }
 
+export class ExtractorCleanupUnconfirmedError extends Error {
+  constructor(
+    readonly outputDirectory: string,
+    failure: unknown,
+  ) {
+    super(
+      `PDF extractor cleanup is unconfirmed. Preserved ${outputDirectory}: ${String(failure)}`,
+    );
+    this.name = "ExtractorCleanupUnconfirmedError";
+  }
+}
+
 export async function withOpenDataLoaderOutputCleanup<T>(
   outputDir: string,
   action: () => Promise<T>,
   remove: (path: string) => Promise<unknown> = (path) =>
     IOUtils.remove(path, { recursive: true, ignoreAbsent: true }),
 ): Promise<T> {
+  let retain = false;
   try {
     return await action();
+  } catch (error) {
+    retain = error instanceof ExtractorCleanupUnconfirmedError;
+    throw error;
   } finally {
-    await remove(outputDir);
+    if (!retain) await remove(outputDir);
   }
 }
 
@@ -580,12 +596,14 @@ export async function waitForExtractorCompletion(params: {
 export async function extractStructuredPdf(
   filePath: string,
   signal?: AbortSignal,
+  options: { outputRoot?: string } = {},
 ): Promise<StructuredExtractionResult> {
   if (signal?.aborted) throw new Error("PDF extraction canceled.");
   if (!(await probeJavaRuntime())) throw new Error("java-missing");
   const jarPath = await resolveOpenDataLoaderJarPath();
   const outputDir = await IOUtils.createUniqueDirectory(
-    `${Zotero.getTempDirectory().path}/paper-pilot-opendataloader`,
+    options.outputRoot ??
+      `${Zotero.getTempDirectory().path}/paper-pilot-opendataloader`,
     "run",
   );
   const exitCodePath = `${outputDir}/extractor-exit.txt`;
@@ -593,7 +611,13 @@ export async function extractStructuredPdf(
   const stderrPath = `${outputDir}/extractor-stderr.log`;
 
   return withOpenDataLoaderOutputCleanup(outputDir, async () => {
+    let stopped = false;
+    let launched = false;
     try {
+      // Durable launch intent distinguishes an unconfirmed launch from an
+      // unused context directory when recovering after Zotero restarts.
+      await IOUtils.writeUTF8(`${outputDir}/launch-intent`, "opendataloader");
+      launched = true;
       const launch = await launchDetachedShellScript(
         buildOpenDataLoaderScript({
           jarPath,
@@ -613,9 +637,27 @@ export async function extractStructuredPdf(
         pidPath,
         stderrPath,
         signal,
+        stop: async (pid, stopOptions) => {
+          await stopDetachedRunProcess(pid, stopOptions);
+          stopped = true;
+        },
       });
+      stopped = true;
     } catch (error) {
-      throw new Error(String(error));
+      if (launched && !stopped) {
+        try {
+          const exit = await readTextFile(exitCodePath).catch(() => "");
+          if (!/^-?\d+$/.test(exit.trim())) {
+            const pid = await readTextFile(pidPath).catch(() => "");
+            await stopDetachedRunProcess(pid.trim(), {
+              requireProcessId: true,
+            });
+          }
+        } catch (cleanup) {
+          throw new ExtractorCleanupUnconfirmedError(outputDir, cleanup);
+        }
+      }
+      throw error;
     }
 
     const files = await listDirectoryFiles(outputDir);

@@ -53,6 +53,8 @@ Studio 也提供 Word 註腳、章節附註、目錄與標號欄位、套用前�
 
 Research Workspace 已內建於 Paper Pilot，並共用同一套本機引擎選擇、論文擷取與執行生命週期。無論選取零篇、一篇或多篇項目，持久的非模態專案視窗都可繼續使用，並提供篩選、claim–evidence ledger、比較、稽核、mastery、引用工作流程、引用/參考文獻健康檢查、矛盾/缺口審閱、專案級匯出、本機 Living Review 變更收件匣，以及五種可編輯的專案範本。專案範本 preset 只會強調建議的 capability，不會自動執行分析或隱藏其他 capability；匯出會保留不可變的範本快照與目前 assumptions。Citation & Reference Health 會根據目前儲存的引用、方法學與可重現性 artifact、本機 Zotero 更正/撤稿中繼資料訊號，以及可選的有界草稿摘錄建立本機檢查清單，且不會產生彙總 truth score。Living Review 僅檢查 Zotero 附件與註解中繼資料，不讀取正文，也不呼叫模型或網路服務。安全的 Zotero collection/tag 同步只會在完整 preview 與綁定該 preview 的 approval token 之後，向既有 collection 和既有 tag 執行單向新增；它會在 transaction 前寫入獨立的 revisioned receipt，並在 Zotero transaction 不可用時 fail closed。Undo 只移除 receipt 所擁有的新增，不會建立或刪除 Zotero item、collection 或 tag，也不會寫入 bibliographic field、PDF、note、attachment 或 annotation。可從 **Tools → Open Research Workspace…**、資料庫項目右鍵選單或 Workbench 中的 **Research Workspace** 按鈕開啟。分析執行期間離開專案或關閉視窗時，會在取消前先確認。部分失敗的執行會列出失敗的論文並提供 **Resume**，已封存的專案可以開啟與還原。只需安裝一個 Paper Pilot XPI；不再提供 companion 外掛或 Research Monitor。
 
+在使用中或已封存的專案卡片或 **Settings** 中選擇 **Delete project…**，可永久刪除專案及其 Studio 文件、版本、對話、分析結果、專案管理的匯出檔案，以及確認歸屬的執行與暫存檔案。刪除會等待進行中的操作和程序停止；取消關閉尚未儲存變更的 Studio 視窗也會中止刪除。清理失敗後可從專案清單重試。Zotero 原始項目和附件、另存的檔案及共用快取會保留。舊版本未記錄專案歸屬的平面匯出檔案和暫存工作目錄無法安全識別，因此會保留。
+
 ### 快速開始
 
 1. 在 Zotero 資料庫中選取最多 12 篇附有 PDF 的論文，按右鍵選擇 **Open Research Workspace…**。

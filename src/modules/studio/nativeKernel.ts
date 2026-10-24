@@ -1,7 +1,7 @@
 import { config } from "../../../package.json";
 import { getPref } from "../../utils/prefs";
 import { launchDetachedShellScript } from "../ai/launchScript";
-import { stopDetachedRunProcess } from "../ai/runCompletion";
+import { stopNativeStudioJob } from "./nativeProcess";
 import { buildBackgroundCodexShellScript } from "../codex/shell";
 import {
   createResearchWorkspaceStorage,
@@ -83,6 +83,7 @@ export function nativeKernel(
         `${directory}/kernel_worker.py`,
         String(source),
       );
+      await files.writeTextAtomic(`${directory}/paperpilot-job-v1`, "prepared");
       return directory;
     },
     launch: async (directory, kernel) => {
@@ -100,24 +101,34 @@ export function nativeKernel(
           kernel,
         ],
       });
+      await files.writeTextAtomic(`${directory}/launch-intent`, "kernel");
       const launched = await launchDetachedShellScript(
         script,
         (executable, args) => Zotero.Utilities.Internal.exec(executable, args),
       );
       if (!launched.ok) throw new Error(launched.error);
     },
-    kill: async (directory) => {
-      await files.writeTextAtomic(`${directory}/shutdown`, "shutdown");
-      for (let attempt = 0; attempt < 20; attempt++) {
-        if (
-          (await files.exists(`${directory}/stopped.json`)) ||
-          (await files.exists(`${directory}/exit-code`))
-        )
-          return;
-        await Zotero.Promise.delay(100);
-      }
-      const pid = (await read(`${directory}/pid`))?.trim();
-      await stopDetachedRunProcess(pid, { requireProcessId: true });
-    },
+    kill: stopNativeKernel,
   });
+}
+
+async function stopNativeKernel(directory: string) {
+  const files = createResearchWorkspaceStorage();
+  await files.writeTextAtomic(`${directory}/shutdown`, "shutdown");
+  for (let attempt = 0; attempt < 20; attempt++) {
+    if (
+      (await files.exists(`${directory}/stopped.json`)) ||
+      (await files.exists(`${directory}/exit-code`))
+    )
+      return stopNativeStudioJob({ directory });
+    await Zotero.Promise.delay(100);
+  }
+  await stopNativeStudioJob({ directory });
+}
+
+export function quiesceNativeKernels(projectID: string) {
+  return KernelBroker.closeScope(
+    `${getResearchWorkspaceStorageRoot()}/runtime/${projectID}`,
+    stopNativeKernel,
+  );
 }

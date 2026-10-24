@@ -39,6 +39,15 @@ export class StudioAIService {
   private static owners = new Map<string, StudioAIService>();
   private running?: AbortController;
   private activeTurnID?: string;
+  private settled?: Promise<void>;
+  private finish?: () => void;
+
+  /** Wait through cancellation diagnostics and non-cancellable document edits. */
+  static async quiesceScope(path: string) {
+    const owner = this.owners.get(path);
+    owner?.cancel();
+    await owner?.settled;
+  }
   constructor(
     private projectID: string,
     private repository: StudioRepository,
@@ -225,11 +234,15 @@ export class StudioAIService {
   private reserve() {
     if (StudioAIService.owners.has(this.path()))
       throw new Error("Wait for the current project AI operation to finish.");
+    this.settled = new Promise<void>((resolve) => (this.finish = resolve));
     StudioAIService.owners.set(this.path(), this);
   }
   private release() {
     if (StudioAIService.owners.get(this.path()) === this)
       StudioAIService.owners.delete(this.path());
+    this.finish?.();
+    this.finish = undefined;
+    this.settled = undefined;
   }
   async ask(config: StudioAIConfig, question: string, documentIDs: string[]) {
     validateAIConfig(config);

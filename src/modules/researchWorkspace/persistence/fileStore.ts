@@ -13,10 +13,12 @@ function clone<T>(value: T): T {
 
 export class SerializedResearchWorkspaceFiles {
   private readonly queues = new Map<string, Promise<void>>();
+  private readonly frozenDirectories = new Set<string>();
 
   constructor(private readonly fileOps: ResearchWorkspaceFileOps) {}
 
   private async exclusive<T>(path: string, action: () => Promise<T>) {
+    this.assertWritable(path);
     const previous = this.queues.get(path) ?? Promise.resolve();
     let release: () => void = () => undefined;
     const current = new Promise<void>((resolve) => {
@@ -26,11 +28,55 @@ export class SerializedResearchWorkspaceFiles {
     this.queues.set(path, queued);
     await previous;
     try {
+      this.assertWritable(path);
       return await action();
     } finally {
       release();
       if (this.queues.get(path) === queued) this.queues.delete(path);
     }
+  }
+
+  isFrozen(path: string) {
+    const normalized = path.replace(/\\/g, "/");
+    return [...this.frozenDirectories].some((directory) => {
+      const root = directory.replace(/\\/g, "/");
+      return normalized === root || normalized.startsWith(`${root}/`);
+    });
+  }
+
+  private assertWritable(path: string) {
+    if (this.isFrozen(path)) {
+      throw new Error(
+        "Project deletion is in progress. Retry deleting the project before editing it.",
+      );
+    }
+  }
+
+  /** Block admission synchronously, then drain writes already inside the store. */
+  async freezeDirectories(directories: readonly string[]) {
+    for (const directory of directories) this.frozenDirectories.add(directory);
+    await Promise.all(
+      [...this.queues]
+        .filter(([path]) => this.isFrozen(path))
+        .map(([, pending]) => pending),
+    );
+  }
+
+  thawDirectories(directories: readonly string[]) {
+    for (const directory of directories)
+      this.frozenDirectories.delete(directory);
+  }
+
+  async assertSafeRemoval(path: string, rootDir: string) {
+    await this.fileOps.assertSafeRemoval?.(path, rootDir);
+  }
+
+  async removeFrozenDirectory(path: string) {
+    if (!this.frozenDirectories.has(path))
+      throw new Error("Deletion requires a frozen directory.");
+    await this.fileOps.remove(path, { recursive: true });
+    if (await this.fileOps.exists(path))
+      throw new Error(`Project directory could not be removed: ${path}`);
   }
 
   async read<T>(path: string, parser: (value: unknown) => T) {
@@ -122,6 +168,7 @@ export class SerializedResearchWorkspaceFiles {
 
   async quarantine(path: string, quarantinePath: string) {
     return this.exclusive(path, async () => {
+      this.assertWritable(quarantinePath);
       const contents = await this.fileOps.readText(path);
       if (contents === undefined) return false;
       await this.fileOps.writeTextAtomic(quarantinePath, contents);
@@ -142,7 +189,7 @@ export class SerializedResearchWorkspaceFiles {
   }
 
   ensureDirectory(path: string) {
-    return this.fileOps.ensureDirectory(path);
+    return this.exclusive(path, () => this.fileOps.ensureDirectory(path));
   }
 
   listDirectory(path: string) {

@@ -159,6 +159,16 @@ export async function startWorkspaceTextRun(params: {
    * reservation because process termination was not confirmed.
    */
   onDeferredCleanup?: (cleanup: Promise<void>) => void;
+  /** Persist project ownership before a runner creates or stages any files. */
+  onWorkspaceAllocated?: (workspacePath: string) => void | Promise<void>;
+  /** Persist possible process ownership before the detached launch attempt. */
+  onWorkspaceWillLaunch?: (workspacePath: string) => void | Promise<void>;
+  onWorkspaceProcessStopped?: (workspacePath: string) => void | Promise<void>;
+  stopWorkspaceProcess?: (
+    result: Pick<WorkspaceRunResult, "workspacePath" | "processId">,
+  ) => Promise<void>;
+  /** Project ledgers retain failed-launch diagnostics until stop is confirmed. */
+  preserveWorkspaceOnPreparationFailure?: boolean;
   prepareRun?: () => Promise<WorkspaceRunResult | FailedWorkspaceRun>;
 }): Promise<WorkspaceRunResult | FailedWorkspaceRun> {
   // Runners stage an image only into a paper workspace; never drop it silently.
@@ -200,11 +210,12 @@ export async function startWorkspaceTextRun(params: {
     !params.signal?.aborted &&
     (params.deadline === undefined || Date.now() < params.deadline);
   let allocatedPath: string | undefined;
-  const onWorkspaceAllocated = (path: string) => {
+  const onWorkspaceAllocated = async (path: string) => {
+    await params.onWorkspaceAllocated?.(path);
     allocatedPath = path;
   };
   const cleanupAllocated = () =>
-    allocatedPath
+    allocatedPath && !params.preserveWorkspaceOnPreparationFailure
       ? cleanupWorkspaceIfEnabled(allocatedPath)
       : Promise.resolve(false);
   const prepare = async () => {
@@ -223,6 +234,8 @@ export async function startWorkspaceTextRun(params: {
         prebuiltInput: params.prebuiltInput,
         requestContext: params.requestContext,
         onWorkspaceAllocated,
+        onWorkspaceWillLaunch: params.onWorkspaceWillLaunch,
+        onWorkspaceLaunchAbandoned: params.onWorkspaceProcessStopped,
         shouldContinue,
         executionSettings: params.executionSettings,
       });
@@ -252,6 +265,8 @@ export async function startWorkspaceTextRun(params: {
         prebuiltInput: params.prebuiltInput,
         requestContext: params.requestContext,
         onWorkspaceAllocated,
+        onWorkspaceWillLaunch: params.onWorkspaceWillLaunch,
+        onWorkspaceLaunchAbandoned: params.onWorkspaceProcessStopped,
         shouldContinue,
         executionSettings: params.executionSettings,
       });
@@ -261,7 +276,9 @@ export async function startWorkspaceTextRun(params: {
   };
   const preparation = (params.prepareRun || prepare)().then((result) => {
     allocatedPath = result.workspacePath;
-    if (result.ok) owner.registerProcess(params.mode, result.processId);
+    if (result.ok) {
+      owner.registerProcess(params.mode, result.processId);
+    }
     return result;
   });
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -296,9 +313,18 @@ export async function startWorkspaceTextRun(params: {
       const deferredCleanup = preparation.then(
         async (result) => {
           if (result.ok) {
-            await stopDetachedRunProcess(result.processId, {
-              requireProcessId: true,
+            if (params.stopWorkspaceProcess)
+              await params.stopWorkspaceProcess(result);
+            else
+              await stopDetachedRunProcess(result.processId, {
+                requireProcessId: true,
+              });
+            await params.onWorkspaceProcessStopped?.(result.workspacePath);
+          } else if (params.stopWorkspaceProcess) {
+            await params.stopWorkspaceProcess({
+              workspacePath: result.workspacePath,
             });
+            await params.onWorkspaceProcessStopped?.(result.workspacePath);
           }
           await cleanupAllocated();
         },

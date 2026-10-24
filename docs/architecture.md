@@ -64,6 +64,26 @@ during a save and lets navigation wait for the same confirmed operation.
 The shared `researchProjectDirectory` helper keeps Studio data under the existing
 Research Workspace directory naming contract.
 
+Project deletion is coordinated by the Research Workspace facade. It preflights
+all owned roots for symbolic links, closes Studio with its unsaved-change veto,
+blocks new bridge/analysis/service operations, drains admitted writes, and confirms
+AI, compiler, kernel, and extractor cleanup. Scope ownership survives window
+replacement; stopped processes and finished writes are separate requirements.
+The repository records a retryable intent under `deletions/project-<id>.json`,
+freezes descendant writes, removes auxiliary directories before project metadata,
+then commits the catalog removal. Startup retains unfinished intents as visible
+projects so cleanup can be retried even after `project.json` was removed.
+
+Managed roots are `projects/project-<id>`, `runtime/<id>`,
+`runtime/builds/<id>`, `runtime/context/<id>`, `exports/documents/<id>`, and
+`exports/projects/<id>`. New evidence CLI allocations also have a host-owned
+project ledger that records their exact paths before staging or launch and tracks
+confirmed cleanup; unresolved process ownership blocks deletion. IDs conflicting
+with shared runtime namespaces fail closed. Shared sources, Zotero originals and
+sync additions, separately saved files, and unattributable legacy flat exports or
+CLI/extractor temporary directories are preserved. Project names never authorize
+filesystem removal.
+
 The browser mounts SuperDoc for DOCX, CodeMirror for source documents, typed
 CSV/TSV/JSONL grids, and nbformat-preserving notebook cells. Unknown files retain
 their original bytes for export. Markdown previews are sanitized and do not

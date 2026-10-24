@@ -19,7 +19,10 @@ import type {
   ResearchWorkspaceSourceRecord,
 } from "./persistence/contracts";
 import type { ResearchWorkspaceProjectRepository } from "./persistence/projectRepository";
-import { ResearchWorkspaceProjectController } from "./projectController";
+import {
+  quickProjectID,
+  ResearchWorkspaceProjectController,
+} from "./projectController";
 import {
   buildRunOutcome,
   formatIncrementalProgress,
@@ -29,6 +32,7 @@ import {
   claimResearchWorkspaceOwner,
   isResearchWorkspaceOwnerClaimCurrent,
   releaseResearchWorkspaceOwner,
+  runResearchWorkspaceProjectTask,
 } from "./projectRunAdmission";
 
 /**
@@ -328,6 +332,17 @@ export class ResearchWorkspaceOperationCoordinator {
   async run<T>(
     params: RunResearchWorkspaceProjectOperation<T>,
   ): Promise<ResearchWorkspaceOperationResult<T>> {
+    return runResearchWorkspaceProjectTask(
+      this.repository.getProjectRoot(
+        params.projectID ?? quickProjectID(params.papers),
+      ),
+      () => this.runOnce(params),
+    );
+  }
+
+  private async runOnce<T>(
+    params: RunResearchWorkspaceProjectOperation<T>,
+  ): Promise<ResearchWorkspaceOperationResult<T>> {
     if (!params.papers.length)
       throw new Error("At least one paper is required.");
     const projectID =
@@ -507,6 +522,15 @@ export class ResearchWorkspaceOperationCoordinator {
   }
 
   async runDerived<T>(
+    params: RunResearchWorkspaceDerivedOperation<T>,
+  ): Promise<ResearchWorkspaceOperationResult<T>> {
+    return runResearchWorkspaceProjectTask(
+      this.repository.getProjectRoot(params.projectID),
+      () => this.runDerivedOnce(params),
+    );
+  }
+
+  private async runDerivedOnce<T>(
     params: RunResearchWorkspaceDerivedOperation<T>,
   ): Promise<ResearchWorkspaceOperationResult<T>> {
     const sources = [
@@ -714,6 +738,23 @@ export class ResearchWorkspaceOperationCoordinator {
   }
 
   async runIncremental<
+    TPayload,
+    TUnit extends ResearchWorkspaceIncrementalUnit,
+    TUnitResult,
+  >(
+    params: RunResearchWorkspaceIncrementalOperation<
+      TPayload,
+      TUnit,
+      TUnitResult
+    >,
+  ): Promise<ResearchWorkspaceOperationResult<TPayload>> {
+    return runResearchWorkspaceProjectTask(
+      this.repository.getProjectRoot(params.projectID),
+      () => this.runIncrementalOnce(params),
+    );
+  }
+
+  private async runIncrementalOnce<
     TPayload,
     TUnit extends ResearchWorkspaceIncrementalUnit,
     TUnitResult,
