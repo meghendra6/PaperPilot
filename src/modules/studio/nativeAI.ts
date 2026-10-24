@@ -72,6 +72,7 @@ export function nativeAI(
         config,
         prompt,
         {
+          scope: `${root}/runtime/${projectID}/ai`,
           createAbortController: () => new win.AbortController(),
           read,
           write: (path, text) => files.writeTextAtomic(path, text),

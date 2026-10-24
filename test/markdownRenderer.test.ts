@@ -294,3 +294,22 @@ test("a bare URL followed by thousands of brackets renders in linear time", () =
     /href="https:\/\/example\.org\/a_\(b\)"/,
   );
 });
+
+test("math never inherits a trusted-link option from Object.prototype", () => {
+  const previous = Object.getOwnPropertyDescriptor(Object.prototype, "trust");
+  try {
+    Object.defineProperty(Object.prototype, "trust", {
+      configurable: true,
+      writable: true,
+      value: true,
+    });
+    const rendered = renderInlineMarkdown(
+      "$\\href{https://example.org/untrusted}{link}$ and $x^2$",
+    );
+    assert.doesNotMatch(rendered, /href\s*=/i);
+    assert.match(rendered, /<math/);
+  } finally {
+    if (previous) Object.defineProperty(Object.prototype, "trust", previous);
+    else Reflect.deleteProperty(Object.prototype, "trust");
+  }
+});

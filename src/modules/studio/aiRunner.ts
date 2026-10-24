@@ -13,6 +13,8 @@ export interface StudioCLIJob {
   environment?: Record<string, string | undefined>;
 }
 export interface StudioRunnerPorts {
+  /** Stable project runtime path, including across replacement Studio windows. */
+  scope: string;
   createAbortController?(): AbortController;
   prepare(provider: "codex" | "claude"): Promise<StudioCLIJob>;
   write(path: string, text: string): Promise<void>;
@@ -22,6 +24,9 @@ export interface StudioRunnerPorts {
   delay(ms: number): Promise<void>;
   fetch: typeof fetch;
 }
+
+// Keep ownership after a failed stop, even if the window creates new ports.
+const pendingCleanup = new Map<string, StudioCLIJob>();
 
 export function studioCLICommand(config: StudioAIConfig, job: StudioCLIJob) {
   if (config.provider === "codex") {
@@ -98,12 +103,20 @@ async function networkRun(
     body: JSON.stringify({
       model: config.model,
       stream: false,
+      response_format: {
+        type: "json_schema",
+        json_schema: {
+          name: "paperpilot_studio_response",
+          strict: true,
+          schema: STUDIO_AI_SCHEMA,
+        },
+      },
       messages: [{ role: "user", content: prompt }],
     }),
   });
   if (!response.ok)
     throw new Error(
-      `Model endpoint returned HTTP ${response.status}. Check the provider, model, and credentials.`,
+      `Model endpoint returned HTTP ${response.status}. Check the provider, model, credentials, and JSON Schema response_format support.`,
     );
   if (!response.body)
     throw new Error("Model endpoint returned no response body.");
@@ -158,6 +171,18 @@ export async function runStudioAI(
   let complete = false;
   try {
     if (timeout.signal.aborted) throw new Error("AI run canceled.");
+    const previous = pendingCleanup.get(ports.scope);
+    if (previous) {
+      try {
+        await ports.stop(previous);
+      } catch {
+        throw new Error(
+          "Previous AI process cleanup is unconfirmed. Retry after the process can be stopped.",
+        );
+      }
+      pendingCleanup.delete(ports.scope);
+      if (timeout.signal.aborted) throw new Error("AI run canceled.");
+    }
     if (config.provider === "local")
       return await networkRun(config, prompt, timeout.signal, ports.fetch);
     job = await ports.prepare(config.provider);
@@ -196,6 +221,12 @@ export async function runStudioAI(
   } finally {
     clearTimeout(deadline);
     signal.removeEventListener("abort", cancel);
-    if (job && launched && !complete) await ports.stop(job);
+    if (job && launched && !complete) {
+      const ownedJob = job;
+      await ports.stop(ownedJob).catch((error) => {
+        pendingCleanup.set(ports.scope, ownedJob);
+        throw error;
+      });
+    }
   }
 }

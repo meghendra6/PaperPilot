@@ -28,9 +28,9 @@ function parseGridJSON(text: string): unknown {
 export function parseDataTable(name: string, source: string): DataTable {
   const bom = source.startsWith("\uFEFF");
   const text = bom ? source.slice(1) : source;
-  const newline = text.includes("\r\n") ? "\r\n" : "\n";
-  const trailingNewline = text.endsWith(newline);
   if (/\.jsonl$/i.test(name)) {
+    const newline = text.includes("\r\n") ? "\r\n" : "\n";
+    const trailingNewline = text.endsWith(newline);
     const jsonRows = text
       .split(/\r?\n/)
       .filter((line) => line.trim())
@@ -66,6 +66,10 @@ export function parseDataTable(name: string, source: string): DataTable {
   });
   if (parsed.errors.length)
     throw new Error(parsed.errors.map((error) => error.message).join("; "));
+  // The CSV parser detects separators outside quoted cells. A cell's CRLF
+  // must not turn an LF-delimited table's final terminator into an extra row.
+  const newline = parsed.meta.linebreak;
+  const trailingNewline = text.endsWith(newline);
   const rows = parsed.data;
   if (trailingNewline && rows.at(-1)?.length === 1 && rows.at(-1)?.[0] === "")
     rows.pop();
@@ -120,6 +124,13 @@ export function addDataColumn(table: DataTable, name: string) {
   for (const row of table.rows) row.push("");
 }
 
+export function addDataRow(table: DataTable) {
+  if (!table.headers.length && !table.jsonRows)
+    throw new Error("Add a column before adding CSV or TSV rows.");
+  table.rows.push(table.headers.map(() => ""));
+  table.jsonRows?.push({});
+}
+
 export function removeDataRow(table: DataTable, index: number) {
   if (!Number.isSafeInteger(index) || index < 0 || index >= table.rows.length)
     throw new Error("Data row is outside this table.");
@@ -134,6 +145,8 @@ export function removeDataColumn(table: DataTable, index: number) {
     index >= table.headers.length
   )
     throw new Error("Data column is outside this table.");
+  if (!table.jsonRows && table.headers.length === 1 && table.rows.length)
+    throw new Error("Remove all rows before removing the last column.");
   const [name] = table.headers.splice(index, 1);
   for (const row of table.rows) row.splice(index, 1);
   // Existing duplicate CSV headers are positional. JSONL keys are unique.
@@ -146,6 +159,9 @@ export function serializeDataTable(table: DataTable) {
     : Papa.unparse([table.headers, ...table.rows], {
         delimiter: table.delimiter,
         newline: table.newline,
+        // An unquoted final empty cell is indistinguishable from a trailing
+        // newline in a one-column file. Quote empties to preserve row count.
+        quotes: (value) => value === "",
       });
   return (
     (table.bom ? "\uFEFF" : "") +

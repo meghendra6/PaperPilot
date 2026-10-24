@@ -1,7 +1,10 @@
 import { defineConfig } from "zotero-plugin-scaffold";
 import pkg from "./package.json";
 import { writeStudioLicenseNotices } from "./scripts/studio-license-notices.mjs";
-import { patchStudioEditor } from "./scripts/studio-editor-compat.mjs";
+import {
+  patchStudioEditor,
+  patchStudioToolbar,
+} from "./scripts/studio-editor-compat.mjs";
 import { readFile } from "node:fs/promises";
 
 export default defineConfig({
@@ -49,11 +52,13 @@ export default defineConfig({
         legalComments: "linked",
         plugins: [
           {
-            name: "studio-editor-endnote-export",
+            name: "studio-editor-compatibility",
             setup(build) {
               let patched = 0;
+              let toolbarPatched = 0;
               build.onStart(() => {
                 patched = 0;
+                toolbarPatched = 0;
               });
               build.onLoad(
                 {
@@ -61,20 +66,36 @@ export default defineConfig({
                     /superdoc[\\/]dist[\\/](?:superdoc\.min|chunks[\\/]SuperConverter-[^/\\]+\.es)\.js$/,
                 },
                 async ({ path }) => {
-                  const contents = patchStudioEditor(
+                  let contents = patchStudioEditor(
                     await readFile(path, "utf8"),
                   );
                   patched++;
+                  if (/superdoc\.min\.js$/.test(path)) {
+                    contents = patchStudioToolbar(contents);
+                    toolbarPatched++;
+                  }
                   return { contents, loader: "js" };
                 },
               );
+              build.onLoad(
+                {
+                  filter:
+                    /superdoc[\\/]dist[\\/]chunks[\\/]src-[^/\\]+\.es\.js$/,
+                },
+                async ({ path }) => {
+                  const source = await readFile(path, "utf8");
+                  if (!source.includes('ariaLabel: "Link dropdown"')) return;
+                  toolbarPatched++;
+                  return { contents: patchStudioToolbar(source), loader: "js" };
+                },
+              );
               build.onEnd(() =>
-                patched === 1
+                patched === 1 && toolbarPatched === 1
                   ? undefined
                   : {
                       errors: [
                         {
-                          text: "The Studio endnote export patch was not applied exactly once.",
+                          text: "The Studio editor compatibility patches were not applied exactly once.",
                         },
                       ],
                     },

@@ -1,3 +1,4 @@
+import { academicDraft } from "./academicDraft";
 import { SuperDoc, DOCX } from "@paperpilot/studio-editor";
 import { isCommentMutation } from "./docxEvents";
 import { docxStructure } from "./docxStructure";
@@ -1780,7 +1781,8 @@ async function applyAIChange(
   assertCanNavigate();
   const target = manifest.documents.find((doc) => doc.id === change.documentID);
   const isDocx =
-    change.kind === "replace" && /\.docx$/i.test(target?.name ?? "");
+    ["replace", "draft"].includes(change.kind) &&
+    /\.docx$/i.test(target?.name ?? "");
   if (isDocx && active?.id !== change.documentID)
     await openDocument(change.documentID);
   let result: StudioConversation | undefined;
@@ -1823,7 +1825,7 @@ async function applyAIChange(
         }
         return false;
       });
-      if (ranges.length !== 1)
+      if (change.kind === "replace" && ranges.length !== 1)
         throw new Error(
           "The proposed text must match exactly one editable paragraph.",
         );
@@ -1837,17 +1839,24 @@ async function applyAIChange(
           engine as unknown as {
             commands: {
               insertContentAt(
-                range: { from: number; to: number },
-                value: string,
-                options: { asText: boolean },
+                range: number | { from: number; to: number },
+                value: string | ReturnType<typeof academicDraft>["content"],
+                options?: { asText: boolean },
               ): boolean;
             };
           }
         ).commands;
         if (
-          !commands.insertContentAt(ranges[0], change.after, { asText: true })
+          !(change.kind === "draft"
+            ? commands.insertContentAt(
+                engine.state.doc.content.size,
+                academicDraft(change.after).content,
+              )
+            : commands.insertContentAt(ranges[0], change.after, {
+                asText: true,
+              }))
         )
-          throw new Error("The DOCX editor rejected this replacement.");
+          throw new Error("The DOCX editor rejected this proposal.");
         docxBase64 = await currentBytes();
       } catch (error) {
         destroyEditor();

@@ -138,6 +138,7 @@ const assistant = new StudioAIService(projectID, repository, {
       config,
       prompt,
       {
+        scope: resolve(root, "runtime", projectID, "ai"),
         fetch: globalThis.fetch,
         read: fileOps.readText,
         write: fileOps.writeTextAtomic,
@@ -198,6 +199,7 @@ const assistant = new StudioAIService(projectID, repository, {
 });
 const buildChildren = new Map();
 const compiler = new StudioCompilerService(projectID, repository, {
+  scope: resolve(root, "runtime", "builds", projectID),
   id: randomUUID,
   templates: compilerTemplateCache(
     resolve(root, "runtime", "builds"),
@@ -296,6 +298,7 @@ const compiler = new StudioCompilerService(projectID, repository, {
 });
 const children = new Map();
 const kernels = new KernelBroker({
+  scope: resolve(root, "runtime", projectID),
   id: randomUUID,
   read: (path) =>
     readFile(path, "utf8").catch((error) => {

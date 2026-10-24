@@ -1278,3 +1278,102 @@ PR review regression checks:
 The Python worker integration suite is a separate CI step:
 `python test/studio_kernel_worker_test.py`, using `jupyter-client`, `ipykernel`
 and `matplotlib`. Node unit tests alone do not exercise a real kernel process.
+
+### Full feature audit follow-up — 2026-10-24
+
+See [the feature coverage and findings](./full-feature-audit-2026-10-24.md).
+
+- A single-column CSV/TSV ending in an empty row must retain that row after Save
+  and reopen. An empty CSV explains that a column is needed first. Removing the
+  final column while rows exist is disabled; JSONL empty objects remain visible.
+- Press Restart twice during termination. Only one termination owner should run;
+  a subsequent explicit Run must use the surviving new session. Simulate lost
+  launch acknowledgement plus failed cleanup: no second kernel may start until
+  termination is confirmed.
+- After failed compiler/AI stop confirmation, another request must retry cleanup
+  before preparing a new job. Replace AI service ports for the same project and
+  verify that this does not discard the pending process ownership.
+- Move the DOCX cursor into and out of a hyperlink and reopen the file. The link
+  toolbar control retains the accessible name `Link dropdown` in both editor
+  selection paths.
+- With a local OpenAI-compatible endpoint, verify the Studio request includes
+  the review JSON Schema in `response_format`. An endpoint that rejects it must
+  produce a visible error, without a hidden unconstrained retry.
+
+Current evidence: browser DOCX create/edit/save/reopen and export, Markdown
+rename/history restoration, and CSV empty-row round-trip passed. Actual Codex
+created a paragraph replacement, and applying it advanced the DOCX version while
+preserving its second paragraph. Claude `sonnet` returned the selected first
+paragraph. Ollama `qwen3:8b` initially produced malformed JSON; the same request
+completed after structured response format was added. A real Python kernel
+shared state across two cells (42, then 43) and rendered a Matplotlib figure.
+The three Python worker integration tests passed separately.
+
+The repaired XPI was installed after backing up the previous XPI and archiving
+the startup cache. In Zotero 10.0.6, the reader loaded, a Codex question about
+DeepSeek-V2 completed with two locally matched citation buttons, and clicking the
+MLA citation moved from page 9 to page 1. This 52-page paper took 120.7 seconds of
+preparation and 145.2 seconds overall; this record does not establish successful
+structured extraction rather than its supported attachment-text fallback.
+
+The exported synthetic DOCX opened and painted correctly in Microsoft Word
+16.89.1. Word disabled editing/saving with a license notice, so a Word-side save,
+field refresh and reimport were not verified. Native Workspace and Studio painted
+successfully in this audit, superseding the earlier capture failure for this
+machine only. R/IRkernel and Typst/Tectonic/MyST are absent from the current PATH;
+prior dated successes are not a current-runtime pass. Full cross-version and
+cross-platform feature matrices, live scholarly-provider coverage, Zotero sync
+transactions and research efficacy remain separate gates.
+
+### Academic DOCX drafting — 2026-10-24
+
+- Open a DOCX and choose Assistant → Draft paper. Confirm that this prepares an
+  editable request without calling a model. Select evidence files and specify
+  article type, language, journal and length before Send.
+- Generate a protocol with no data or bibliography supplied. It must distinguish
+  planned work and leave missing-evidence/citation placeholders. Verify claims
+  against sources; the prompt is not an automatic factual verifier.
+- Apply a reviewed draft to both a blank DOCX and a document with existing text,
+  citations, notes and figures. Verify the original parts, new paragraph styles,
+  saved version and reopening. Reject a stale proposal after another save.
+- Edit the proposal before applying, export/restore a project bundle, then verify
+  the reviewed text and original AI wording. Inspect custom journal styles in
+  Word; refresh fields, save and reimport in a licensed Word installation.
+
+Observed: actual Codex generated a Korean protocol in the packaged browser client
+with the Node preview host. Applying it preserved two existing paragraphs and
+advanced the DOCX from v3 to v4; the editor reopened the saved document. Exported
+OOXML contains Title, Heading1 and Normal paragraphs and the original text.
+Unsupported-markup, revision, altered-editor-text and portable-history tests pass.
+The final academic feature was not reinstalled in Zotero: native app control
+became unavailable after earlier native reader and Word smoke checks. The new
+protocol was therefore not reopened in Word. Existing complex fields and a blank
+DOCX draft still need the native/Word round-trip above. Earlier Word editing was
+also blocked by the installed Word license restriction.
+
+### Academic manuscript language follow-up — 2026-10-24
+
+The manuscript default is now formal academic English, independent of the
+request/source language; conversational explanations follow the user's language.
+Other manuscript languages require an explicit request. Exact quotations, names
+and original bibliographic metadata are preserved. The earlier Korean protocol
+observation above remains historical evidence of that explicitly Korean request.
+
+A direct CLI smoke used the product's Studio prompt, schema, command builder and
+response parsers with actual Codex (`gpt-6-astra`). A Korean request and Korean
+research notes, without an explicit language instruction, produced an English
+title and abstract plus Korean reply/change reason. No experiment was claimed
+and missing evidence remained marked. All 1,397 Node tests, focused ESLint,
+typecheck and XPI build passed. This is a prompt/provider check; it does not close
+the outstanding native Zotero installation or Word round-trip gates.
+
+### Window replacement after process failure
+
+- During a compiler build or kernel startup, close and reopen Studio. The new
+  window must not admit an overlapping build/worker while the old operation is
+  still stopping.
+- After an unconfirmed kernel stop, use Restart in the new window. It must retain
+  ownership on another failure and allow a fresh kernel only after termination
+  succeeds. Late events from the old window must not stop the replacement.
+- Simulated-port regressions cover these failures and independent projects;
+  actual compiler/kernel termination failures still need native runtime checks.

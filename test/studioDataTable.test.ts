@@ -5,9 +5,67 @@ import {
   serializeDataTable,
   setDataCell,
   addDataColumn,
+  addDataRow,
   removeDataRow,
   removeDataColumn,
 } from "../src/modules/studio/dataTable";
+
+test("single-column empty CSV and TSV rows survive saving and reopening", () => {
+  for (const name of ["data.csv", "data.tsv"]) {
+    for (const suffix of ["", "\n", "\r\n"]) {
+      const newline = suffix === "\r\n" ? suffix : "\n";
+      const table = parseDataTable(name, `name${newline}""${suffix}`);
+      assert.equal(table.rows.length, 1);
+      assert.deepEqual(parseDataTable(name, serializeDataTable(table)).rows, [
+        [""],
+      ]);
+    }
+  }
+});
+
+test("quoted cell line breaks do not determine CSV or TSV row separators", () => {
+  for (const [name, delimiter] of [
+    ["data.csv", ","],
+    ["data.tsv", "\t"],
+  ]) {
+    for (const newline of ["\n", "\r\n"]) {
+      const cell = newline === "\n" ? "a\r\nb" : "a\nb";
+      const source = `id${delimiter}note${newline}001${delimiter}"${cell}"${newline}`;
+      const table = parseDataTable(name, source);
+      assert.equal(table.newline, newline);
+      assert.equal(table.trailingNewline, true);
+      assert.deepEqual(table.rows, [["001", cell]]);
+      setDataCell(table, 0, 0, "002");
+      assert.equal(
+        serializeDataTable(table),
+        `id${delimiter}note${newline}002${delimiter}"${cell}"${newline}`,
+      );
+      assert.deepEqual(parseDataTable(name, serializeDataTable(table)).rows, [
+        ["002", cell],
+      ]);
+    }
+  }
+});
+
+test("empty tables require a CSV column but preserve empty JSONL objects", () => {
+  const csv = parseDataTable("data.csv", "");
+  assert.throws(() => addDataRow(csv), /Add a column/);
+  addDataColumn(csv, "name");
+  addDataRow(csv);
+  assert.deepEqual(parseDataTable("data.csv", serializeDataTable(csv)).rows, [
+    [""],
+  ]);
+  const jsonl = parseDataTable("data.jsonl", "{}\n");
+  addDataRow(jsonl);
+  assert.equal(serializeDataTable(jsonl), "{}\n{}\n");
+});
+
+test("removing the final CSV column cannot silently discard rows", () => {
+  const table = parseDataTable("data.csv", "name\n001\n");
+  assert.throws(() => removeDataColumn(table, 0), /last column/);
+  assert.deepEqual(table.headers, ["name"]);
+  assert.deepEqual(table.rows, [["001"]]);
+});
 
 test("CSV preserves multiline quoted cells, Unicode, leading zeros, BOM and CRLF", () => {
   const source = '\uFEFFid,note\r\n001,"첫째, 둘째\r\n""quoted"""\r\n';

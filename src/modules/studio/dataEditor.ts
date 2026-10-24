@@ -4,6 +4,7 @@ import {
   serializeDataTable,
   setDataCell,
   addDataColumn,
+  addDataRow,
   removeDataRow,
   removeDataColumn,
 } from "./dataTable";
@@ -28,6 +29,7 @@ export function dataEditor(
   filter.placeholder = "Filter rows";
   filter.setAttribute("aria-label", "Filter data rows");
   const info = node("output");
+  const guidance = node("p", undefined, "surface-notice");
   const table = node("table");
   const viewport = node("div", undefined, "data-viewport");
   const action = (label: string, handler: () => void) => {
@@ -44,8 +46,7 @@ export function dataEditor(
     render();
   });
   const add = action("Add row", () => {
-    data.rows.push(data.headers.map(() => ""));
-    data.jsonRows?.push({});
+    addDataRow(data);
     modified = true;
     filter.value = "";
     sortColumn = -1;
@@ -74,19 +75,28 @@ export function dataEditor(
   addColumn.disabled = readOnly;
   controls.append(filter, previous, next, add, columnName, addColumn, info);
   viewport.append(table);
-  shell.append(controls, viewport);
+  shell.append(controls, guidance, viewport);
   host.append(shell);
   filter.addEventListener("input", () => {
     page = 0;
     render();
   });
   function render() {
+    add.disabled = readOnly || (!data.headers.length && !data.jsonRows);
+    guidance.hidden = data.headers.length > 0;
+    guidance.textContent = data.jsonRows
+      ? "Add a column to edit object fields. Empty objects remain visible as rows."
+      : "Add a column first, then add rows to enter data.";
     let indices = data.rows
       .map((_, index) => index)
-      .filter((index) =>
-        data.rows[index].some((value) =>
-          value.toLocaleLowerCase().includes(filter.value.toLocaleLowerCase()),
-        ),
+      .filter(
+        (index) =>
+          !filter.value ||
+          data.rows[index].some((value) =>
+            value
+              .toLocaleLowerCase()
+              .includes(filter.value.toLocaleLowerCase()),
+          ),
       );
     if (sortColumn >= 0)
       indices = indices.sort(
@@ -123,7 +133,11 @@ export function dataEditor(
         changed();
         render();
       });
-      remove.disabled = readOnly;
+      const lastColumnWithRows =
+        !data.jsonRows && data.headers.length === 1 && data.rows.length > 0;
+      remove.disabled = readOnly || lastColumnWithRows;
+      if (lastColumnWithRows)
+        remove.title = "Remove all rows before removing the last column.";
       th.append(remove);
       headings.append(th);
     }

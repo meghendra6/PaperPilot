@@ -1,3 +1,4 @@
+import { academicDraftRequest } from "./academicDraft";
 import { node } from "./dom";
 import { renderMarkdown } from "./sourceEditor";
 import {
@@ -137,12 +138,34 @@ export function aiPanel(
     send.disabled = busy || !question.value.trim();
     question.focus();
   };
+  const draft = node("button", "Draft paper");
+  draft.title = "Prepare an academic draft in the open DOCX";
+  draft.onclick = () => {
+    const target = actions
+      .documents()
+      .find((doc) => doc.id === actions.activeID());
+    if (!target || !/\.docx$/i.test(target.name)) {
+      error(
+        new Error(
+          "Create or open a DOCX first, then select sources in Context files.",
+        ),
+      );
+      return;
+    }
+    selected.add(target.id);
+    question.value = academicDraftRequest(target.name) + question.value;
+    renderChoices();
+    send.disabled = busy;
+    status.textContent =
+      "Add your topic and journal instructions, select source files, then Send. The draft will be reviewed before it is appended.";
+    question.focus();
+  };
   const stop = node("button", "Stop");
   stop.disabled = true;
   const status = node("output");
   status.setAttribute("aria-live", "polite");
   const controls = node("div", undefined, "surface-controls");
-  controls.append(quote, send, stop);
+  controls.append(draft, quote, send, stop);
   send.className = "primary";
   stop.hidden = true;
   const settings = node("details", undefined, "ai-settings");
@@ -182,6 +205,7 @@ export function aiPanel(
       resume,
       question,
       quote,
+      draft,
     ])
       control.disabled = value;
     send.disabled ||= !question.value.trim();
@@ -257,6 +281,13 @@ export function aiPanel(
         review.append(node("p", change.reason));
         if (change.before)
           review.append(node("strong", "Before"), node("pre", change.before));
+        if (change.kind === "draft")
+          review.append(
+            node(
+              "p",
+              "Appends a paper draft with document heading styles. Existing content is preserved. Verify evidence and references before submission.",
+            ),
+          );
         if (change.after)
           review.append(node("strong", "After"), node("pre", change.after));
         if (change.proposedAfter !== undefined) {
@@ -268,7 +299,7 @@ export function aiPanel(
           review.append(original);
         }
         if (change.decision === "pending") {
-          const editable = ["replace", "append", "create"].includes(
+          const editable = ["replace", "append", "draft", "create"].includes(
             change.kind,
           );
           const revised = node("textarea");
@@ -278,7 +309,12 @@ export function aiPanel(
           revised.rows = 5;
           if (editable)
             review.append(
-              node("p", "Edit the replacement before applying it."),
+              node(
+                "p",
+                change.kind === "draft"
+                  ? "Review the draft. Use # title, ## section, ### subsection and plain paragraphs."
+                  : "Edit the replacement before applying it.",
+              ),
               revised,
             );
           const apply = node("button", "Apply change");
