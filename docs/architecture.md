@@ -7,8 +7,8 @@ Related notes:
 
 - [`prompt-contracts.md`](./prompt-contracts.md) — required output shapes per prompt surface
 - [`manual-qa.md`](./manual-qa.md) — real-Zotero runtime checklist
-- [`research-workspace-redesign-spec.md`](./research-workspace-redesign-spec.md) — delivered Research Workspace phases plus remaining rollout and runtime-verification proposals
-- [`agent-led-research-discovery-and-critical-read-spec.md`](./agent-led-research-discovery-and-critical-read-spec.md) — implemented verified-discovery and seven-step critical-reading specification
+- [`research-studio-spec.md`](./research-studio-spec.md) — Research Studio contracts and format-specific verification boundaries
+- [`academic-drafting.md`](./academic-drafting.md) — reviewed DOCX manuscript workflow
 - [`../AGENTS.md`](../AGENTS.md) — working agreements and verification expectations
 
 ## Runtime shape
@@ -17,7 +17,7 @@ Paper Pilot is a Zotero 7-10 bootstrapped add-on. Reader and evidence-workspace
 AI runs use an authenticated **local CLI**. The separate Research Studio window
 also offers explicit loopback OpenAI-compatible requests; these
 do not change the reader's engine registry. No hosted service is required for
-local document editing. Studio is under implementation; its full target and
+local document editing. Studio is implemented in source; its capability-specific
 verification boundaries are in [research-studio-spec.md](./research-studio-spec.md).
 
 ```text
@@ -379,9 +379,13 @@ In Zotero, local quote extraction imports the native PDF.js resource through a
 chrome Window and creates a dedicated worker and document from the exact file
 bytes. It does not borrow the open Reader's cached document or shared worker.
 All owned PDF resources are released after extraction, including failures. The
-Node fixture path remains separate. See the
-[runtime repair specification](./chat-runtime-followup-spec.md) for exercised
-versions and the distinction between metadata freshness and byte identity.
+Node fixture path remains separate. Request validation accepts version-only drift
+only when both v1 fingerprints have valid numeric version, size and mtime fields,
+a known SQL dateModified, and identical size, mtime and dateModified. This does
+not change provider-binding or project-reuse comparisons. Metadata equality is
+not byte equality: replacement bytes preserving those fields cannot be detected
+by this fingerprint. Previously failed citations are not automatically promoted.
+See [manual QA](./manual-qa.md#native-chat-regression-checks) for runtime coverage.
 
 Research Workspace durable state remains separate from transient run
 workspaces under `<Zotero profile>/paperpilot-research-workspace/`. The current
@@ -471,7 +475,7 @@ collectionKey)` target, lists existing collections and tags, and produces a
 complete additive-only preview. The approval token is derived from the exact
 preview, including project member revision and observed Zotero state; any
 project or library drift rejects the preview. Before the first Zotero mutation,
-Paper Pilot writes a revisioned receipt under the project `sync-receipts/`
+Paper Pilot writes a revisioned write-ahead receipt under the project `sync-receipts/`
 directory. Apply and undo both require `Zotero.DB.executeTransaction`; missing
 transaction support fails closed. The runtime never creates or deletes items,
 collections, tags, attachments, notes, or annotations and never writes
@@ -934,8 +938,10 @@ Preferences are declared in three places that must stay in sync:
 3. `addon/chrome/content/preferences.xhtml` — the settings UI
 
 Read them through `utils/prefs.ts` (`getPref` / `setPref`), never
-`Zotero.Prefs` directly. Groups: General, Claude Code, Codex CLI, Retrieval,
-Privacy. `defaultMode` accepts `codex_cli` or `claude_code`.
+`Zotero.Prefs` directly. Groups: General, Workspace, Claude Code, Codex CLI, Retrieval,
+Privacy and Research Studio. `defaultMode` accepts `codex_cli` or
+`claude_code`. Studio settings configure local compiler executables and the
+Python kernel environment; its loopback provider settings stay in the Studio window.
 
 ## Build and release
 
@@ -956,17 +962,21 @@ publishing if the release already exists.
 
 ## Testing
 
-`test/*.test.ts` runs on the Node test runner through `ts-node/register`. There
-is no Zotero runtime in tests, so the suite covers **pure logic only**: prompt
-builders, parsers, command builders, path/artifact construction, state machines.
+`npm test` runs `test/*.test.*` on the Node test runner through
+`ts-node/register/transpile-only`. It covers prompt builders, parsers, command
+builders, path/artifact construction, state machines and bounded local process
+integration. It includes the editor compatibility `.test.mjs` checks. There is
+no native Zotero runtime in this suite.
 
 Modules that touch Zotero read their globals lazily (see the
 `getGlobalZotero()` pattern in `session/sessionHistoryRepository.ts`) so they can
 be imported and exercised with injected fakes. Follow that pattern when you want
 new code to be testable.
 
-Anything requiring a real reader pane, real subprocess, or real Zotero item is
-covered by [`manual-qa.md`](./manual-qa.md) instead.
+`python test/studio_kernel_worker_test.py` separately exercises a real Python
+worker with `jupyter-client`, `ipykernel` and `matplotlib`; CI runs it after the
+Node tests. Native reader panes, Zotero items, authenticated provider workloads
+and actual Word round trips remain in [`manual-qa.md`](./manual-qa.md).
 
 ## Known rough edges
 
@@ -977,7 +987,8 @@ covered by [`manual-qa.md`](./manual-qa.md) instead.
   Shared behavior belongs in `ai/workspaceRun.ts`, not in cross-engine imports.
 - `addon/` is excluded from `tsconfig.json`, so `bootstrap.js`,
   `preferences.xhtml`, and `prefs.js` get no typecheck. Validate them in Zotero.
-- `scripts/*.mjs` is outside the ESLint config. Use `node --check <file>`.
+- `scripts/*.mjs` participates in the repository ESLint gate. Use
+  `node --check <file>` for an additional focused syntax check.
 
 ## Analysis consistency and maintenance boundaries
 

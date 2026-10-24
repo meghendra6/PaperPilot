@@ -91,11 +91,11 @@ test("safe Zotero sync facade and storage expose only project-scoped operations"
   assert.match(storage, /getResearchWorkspaceProjectRepository\(\)/);
 });
 
-test("safe Zotero sync documentation covers architecture, QA, spec, and every README locale", () => {
+test("safe Zotero sync documentation covers architecture, QA, and every README locale", () => {
   const expectations: Array<[string, RegExp]> = [
     ["docs/architecture.md", /Safe Zotero collection and tag sync/],
     ["docs/manual-qa.md", /Safe Zotero collection and tag sync/],
-    ["docs/research-workspace-redesign-spec.md", /write-ahead receipt/],
+    ["docs/architecture.md", /write-ahead receipt/],
     ["README.md", /safe Zotero collection\/tag sync/i],
     ["README.ko.md", /안전한 Zotero collection\/tag 동기화/],
     ["README.zh-CN.md", /安全的 Zotero collection\/tag 同步/],

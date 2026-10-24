@@ -2,8 +2,8 @@
 
 1. Create a DOCX, import a journal template, or create a document from a saved
    custom template. Open it in Research Studio.
-2. Open **Assistant → Draft paper**. Select relevant PDF/text sources in
-   **Context files**, together with the target DOCX. Include source metadata and
+2. Open **Assistant → Draft paper**. Use **Context → Add files** to select
+   relevant PDF/text sources together with the target DOCX. Include source metadata and
    your actual methods/results in the selected files. The project assistant uses
    these captured files; it does not independently search the literature.
 3. Add the topic, article type, length and journal requirements. Manuscript text

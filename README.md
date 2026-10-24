@@ -8,7 +8,7 @@ Paper Pilot is an AI reading workbench for the Zotero 7-10 PDF reader. It adds a
 
 ![Zotero 7-10](https://img.shields.io/badge/Zotero-7--10-cc2936) ![Node 22.18+](https://img.shields.io/badge/Node-22.18%2B-339933) ![Java 11+](https://img.shields.io/badge/Java-11%2B-007396) ![License](https://img.shields.io/badge/License-AGPL--3.0--or--later-blue) ![Engines](https://img.shields.io/badge/Engines-Codex%20CLI%20%7C%20Claude%20Code-6f42c1)
 
-## Research Studio (in development)
+## Research Studio
 
 A project's **Open Studio** window (Research Studio) adds local original-format documents, a DOCX
 editor, Markdown/source editing, data tables and executable notebooks. The project
@@ -19,8 +19,9 @@ execution requires a Python environment with `jupyter-client` and `ipykernel`
 (and `IRkernel` for R), configured in Paper Pilot settings. Code runs with your
 local account permissions only when you choose Run.
 
-This is an implementation in progress, not complete Papers AI feature parity.
-Browser/Codex/Python checks do not replace native Zotero or Word validation. See
+These capabilities are implemented in source. Verification remains specific to
+the build, provider and format; browser checks do not replace native Zotero or
+Word round trips. See
 the [full scope and verification contract](./docs/research-studio-spec.md) and
 [runtime checklist](./docs/manual-qa.md).
 
@@ -30,6 +31,8 @@ Studio also provides Word footnotes/endnotes, contents/caption fields, editable 
 
 Open a DOCX (or a saved journal template), choose **Assistant → Draft paper**, select source files, and enter the topic, article type and journal requirements before sending. The connected provider proposes a manuscript for review; applying it appends styled title/section/body paragraphs and saves a new version. Existing content is preserved. Missing evidence and citations remain explicit placeholders; use References for live citation fields. See [academic drafting](./docs/academic-drafting.md). Manuscripts default to academic English, independently of the request/source language; assistant explanations follow your language. Explicit requests can select another manuscript language.
 
+**New document** groups formats by purpose and offers Blank, built-in or saved templates with a filename preview. The assistant keeps provider/model controls visible, resumes conversations from History, and shows removable context-file chips above the composer.
+
 ## Chat workflow
 
 Use **Focus chat** to temporarily hide supporting panels. Draft the next question while a response runs, inspect/remove attached selection context, choose short/default/detailed answers, and open **/ Actions** for Explain, Summarize, Translate and Critique. Search current or saved conversations for the current paper; jumping to a result can reveal messages outside the visible history window.
@@ -38,7 +41,7 @@ A submitted question keeps its exact PDF source and execution settings. Retry ad
 
 Project inboxes can retain discovery candidates before a PDF is available. Link the intended existing item/PDF explicitly, then manage screening, reading progress and understanding separately. Saved project members can be used without repeating the library selection.
 
-Drafts are memory-only. Full/prompts-only/off history rules also apply to new chat metadata; assistant-derived summaries and pins are excluded from prompts-only continuity. PaperPilot's history setting does not erase external CLI history. Provider availability depends on the installed CLI and account; failures are reported instead of silently using another provider. See the [review/spec](./docs/paperpilot-product-review-and-chat-spec.md), [evaluation](./docs/chat-context-evaluation.md), and [runtime checklist](./docs/manual-qa.md).
+Drafts are memory-only. Full/prompts-only/off history rules also apply to new chat metadata; assistant-derived summaries and pins are excluded from prompts-only continuity. PaperPilot's history setting does not erase external CLI history. Provider availability depends on the installed CLI and account; failures are reported instead of silently using another provider. See the [architecture](./docs/architecture.md#chat-request-identity-and-continuity), [evaluation](./docs/chat-context-evaluation.md), and [runtime checklist](./docs/manual-qa.md).
 
 ## At a glance
 
@@ -68,17 +71,7 @@ Use **Delete project…** on an active or archived project card, or in **Setting
 
 ## Screenshots and demo
 
-A pre-change reader screenshot is included in the [product review](./docs/paperpilot-product-review-and-chat-spec.md). It is baseline evidence, not a screenshot of the new chat UI.
-
-Recommended visuals to add next:
-
-- the Zotero reader pane with the AI sidebar visible
-- a structured **Research brief** card
-- three-lane **Verified prior work** results
-- the seven-step **Critical Read** workflow
-- the **Compare** workflow and saved artifact flow
-
-If you want to document the UI visually, a good future convention is `docs/images/` plus short linked captions in this section.
+[Studio screenshots](./docs/research-studio-spec.md#studio-navigation) show the assistant and New document dialog in Chrome with synthetic project data (2026-10-24). Native Zotero visual and keyboard checks remain separate. Use the [capture guide](./docs/images/README.md) when adding or refreshing screenshots.
 
 ## Status
 
@@ -163,7 +156,7 @@ The reader pane includes a **Paper Mastery** workflow that drives a multi-round 
 - After grading, your answer, the feedback, and an explanation for a missed topic stay on screen while the next question is prepared. Click **Next question** when you are ready to continue.
 - When the session ends, a Markdown learning report summarizes strengths, areas for improvement, key misconceptions, and recommended re-reading.
 
-Mastery prompts enforce strict JSON responses for questions and evaluations (no reasoning prose), wrap reader answers in `<user_answer>` tags, and instruct the model not to emit markdown fences around the JSON — while the parser still recovers if a fence slips through. Parsing is string/escape-aware so that a `}` inside a quoted string never truncates a valid response.
+Mastery prompts request strict JSON for questions and evaluations. Reader answers and prior rounds are serialized as untrusted JSON source data. The parser validates fields and bounds, handles strings/escapes, and can recover a fenced JSON response.
 
 ### 7. Local workspace artifacts for CLI engines
 
@@ -214,7 +207,7 @@ Codex mode is the more workspace-oriented path. The current codebase includes su
 - executable discovery and validation
 - login/status checks
 - workspace writability checks
-- model selection across the current recommended Codex models (`gpt-6-astra` default, plus `gpt-6-sol`, `gpt-6-luna`, `gpt-5.6-sol`, `gpt-5.6-terra`, and `gpt-5.6-luna`), with a reasoning effort picker next to the model picker that lists only the levels the chosen model supports (up to `max`/`ultra` where supported)
+- model selection across the bundled Codex model catalog (`gpt-6-astra` default, plus `gpt-6-sol`, `gpt-6-luna`, `gpt-5.6-sol`, `gpt-5.6-terra`, and `gpt-5.6-luna`), with a reasoning effort picker next to the model picker that lists only the levels the chosen model supports (up to `max`/`ultra` where supported)
 - sandbox and approval settings
 - optional web-search toggle
 - resumable follow-up runs tied to the current paper
@@ -224,7 +217,7 @@ Codex mode is the more workspace-oriented path. The current codebase includes su
 Claude Code mode uses the local `claude` CLI in print mode with the same paper workspace artifacts used by the reader chat and workbench flows. The current codebase includes support for:
 
 - configurable executable path
-- model selection across the Claude Code CLI family aliases (`sonnet` default, plus `opus`, `haiku`, and `fable`), which the installed CLI resolves to the newest model in each family (currently Sonnet 5.5, Opus 5.5, Haiku 5.5, and Fable 5.1), plus pinned ids `claude-opus-5-5`, `claude-sonnet-5-5`, `claude-haiku-5-5`, `claude-fable-5-1`, `claude-opus-5`, and `claude-sonnet-5`
+- model selection across the Claude Code CLI family aliases (`sonnet` default, plus `opus`, `haiku`, and `fable`), which the installed CLI resolves to the model available for each alias, plus pinned ids `claude-opus-5-5`, `claude-sonnet-5-5`, `claude-haiku-5-5`, `claude-fable-5-1`, `claude-opus-5`, and `claude-sonnet-5`
 - any other model id typed in settings (for example `claude-opus-5-5[1m]` or a Bedrock/Vertex model id) is passed to the CLI unchanged; hand-typed names such as `Opus 5.5` or `claude-opus-5.5` are normalized to `claude-opus-5-5`, keeping a context suffix such as `[1m]`
 - optional effort level (`low`, `medium`, `high`, `xhigh`, or `max`), set in settings or next to the model picker. Saving the model and effort in the engine popover closes the popover. The empty choice keeps the CLI default: settings call it **Claude Code default**, and the picker calls it **default effort**. The level is passed as `--effort` only when the installed CLI's `--help` lists that flag
 - configurable permission mode for chat runs
@@ -261,10 +254,12 @@ See [`docs/prompt-contracts.md`](./docs/prompt-contracts.md) for the exact outpu
 - **Zotero 7, 8, 9, or 10**
 - **Node.js 22.18+** for development
 - **npm** for dependency and build workflows
-- **Java 11+** at runtime for OpenDataLoader PDF extraction
-- At least one local AI CLI:
+- **Java 11+** for OpenDataLoader structured PDF extraction; optional when using the attachment-text fallback
+- For reader and Research Workspace AI, at least one authenticated local CLI:
   - **Codex CLI**, or
   - **Claude Code**
+
+Reader and Research Workspace AI require an authenticated local CLI. Studio editing works without one; Studio AI can instead use a compatible loopback model. Java enables structured extraction; attachment text remains the fallback.
 
 ## Development quick start
 
@@ -356,13 +351,14 @@ The preferences UI currently exposes settings across these areas:
 - **Workspace** (workspace root and auto-clean, shared by both engines)
 - **Retrieval** (chunk size, overlap, and top-k sit in a collapsed **Advanced retrieval** group)
 - **Privacy** (one **Session history** choice: **Save prompts and responses**, **Save prompts only**, or **Do not save session history**)
+- **Research Studio** (local compiler paths and Python kernel environment)
 
 Important current details:
 
-- the plugin interface is currently English only; translated README files document the same English UI
+- most controls use English labels; Critical Read guidance, step titles and report labels follow the response-language preference
 - response language is normalized to **English**, **Korean**, or **Chinese**
 - Korean answers use natural Korean sentences while retaining English technical terms from the paper or question by default; request a Korean term explicitly when needed
-- response language changes model-generated answers and artifacts, not interface labels
+- response language applies to new reader answers and artifacts plus Critical Read presentation copy; saved prose is not translated, and Studio academic manuscripts default to English unless explicitly requested otherwise
 - runtime code already reads many engine, retrieval, workspace, and privacy preferences
 - structured PDF extraction uses a bundled OpenDataLoader JAR and falls back to Zotero `attachmentText` if Java/runtime extraction is unavailable
 - full real-runtime QA of every preference path is still part of the remaining manual verification work
@@ -394,6 +390,8 @@ Key source areas:
 - `src/modules/codex/` — Codex CLI execution, status, parsing, and command building
 - `src/modules/claude/` — Claude Code execution flow
 - `src/modules/context/` — paper context retrieval and workspace artifact generation
+- `src/modules/researchWorkspace/` — project intake, evidence, multi-paper analysis and persistence
+- `src/modules/studio/` — project documents, assistant, notebooks, compilers, references and bundles
 - `src/modules/autoHighlight/` — highlight extraction workflow
 - `src/modules/paperTools.ts` — structured contribution/limitation/follow-up prompts
 - `src/modules/researchBrief.ts` — compact per-paper brief generation
@@ -451,9 +449,11 @@ This project is licensed under **AGPL-3.0-or-later**.
 
 ## Additional docs
 
-- [`docs/images/CAPTURE-CHECKLIST.md`](./docs/images/CAPTURE-CHECKLIST.md)
 - [`docs/images/README.md`](./docs/images/README.md)
 - [`CONTRIBUTING.md`](./CONTRIBUTING.md)
 - [`docs/manual-qa.md`](./docs/manual-qa.md)
 - [`docs/architecture.md`](./docs/architecture.md)
 - [`docs/prompt-contracts.md`](./docs/prompt-contracts.md)
+- [`docs/research-studio-spec.md`](./docs/research-studio-spec.md)
+- [`docs/academic-drafting.md`](./docs/academic-drafting.md)
+- [`docs/chat-context-evaluation.md`](./docs/chat-context-evaluation.md)
