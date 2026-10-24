@@ -57,10 +57,11 @@ export function referencePanel(
     item.onclick = () => void Promise.resolve().then(action).catch(fail);
     return item;
   };
-  heading.append(
-    node("h2", "Project references"),
-    button("Close references", () => close()),
-  );
+  const closeButton = button("×", () => close());
+  closeButton.className = "icon-button";
+  closeButton.setAttribute("aria-label", "Close references");
+  closeButton.title = "Close references";
+  heading.append(node("h2", "References"), closeButton);
   const file = node("select");
   file.setAttribute("aria-label", "Reference file");
   const style = node("select");
@@ -88,6 +89,7 @@ export function referencePanel(
     if (busy) return;
     if (loading)
       throw new Error("Wait for the reference file to finish loading.");
+    const focused = document.activeElement as HTMLElement | null;
     busy = true;
     panel.inert = true;
     panel.setAttribute("aria-busy", "true");
@@ -97,6 +99,13 @@ export function referencePanel(
       busy = false;
       panel.inert = false;
       panel.removeAttribute("aria-busy");
+      // Inert moved focus to the body; return it to the control that ran the
+      // action, or to the panel's first step when that control is now hidden.
+      if (!panel.hidden && document.activeElement === document.body)
+        (focused?.isConnected && focused.getClientRects().length
+          ? focused
+          : primaryControl()
+        ).focus();
     }
   };
   const format = async (kind: "citation" | "bibliography") => {
@@ -287,19 +296,48 @@ export function referencePanel(
   const styleLabel = node("label", "Citation style");
   styleLabel.append(style);
   let targetIsWord: boolean | undefined;
+  let hasFiles = false;
+  /** The search field, the empty state's import action, or Close. */
+  const primaryControl = (): HTMLElement =>
+    [filter, importFirst, closeButton].find(
+      (control) => control.getClientRects().length > 0,
+    ) ?? closeButton;
   const refreshTarget = () => {
     const name = actions.activeName();
     const word = !!name && /\.docx$/i.test(name);
-    wordToolbar.hidden = !word;
+    wordToolbar.hidden = !word || !hasFiles;
+    otherFormats.hidden = !hasFiles;
     targetNotice.textContent = name
       ? `Insert into ${name}`
       : "Open a draft to insert a citation.";
     if (targetIsWord !== word) otherFormats.open = !word;
     targetIsWord = word;
   };
+  // Without a reference file, the first step is adding sources.
+  const empty = node("div", undefined, "reference-empty");
+  empty.hidden = true;
+  const addManual = button("Add one manually", () => {
+    sources.open = true;
+    manual.open = true;
+    fields.key.focus();
+  });
+  const importFirst = button("Import project Zotero references", () =>
+    importZotero.click(),
+  );
+  importFirst.className = "primary";
+  empty.append(
+    node("strong", "No reference files yet"),
+    node(
+      "p",
+      "Import this project's Zotero papers as a BibTeX snapshot, or add a reference by hand. Citations then insert into the open draft.",
+    ),
+    importFirst,
+    addManual,
+  );
   panel.append(
     heading,
     targetNotice,
+    empty,
     fileLabel,
     styleLabel,
     filter,
@@ -408,6 +446,11 @@ export function referencePanel(
       .documents()
       .filter((doc) => !doc.archived && /\.(bib|csl\.json)$/i.test(doc.name));
     file.replaceChildren();
+    hasFiles = candidates.length > 0;
+    empty.hidden = hasFiles;
+    for (const element of [fileLabel, styleLabel, filter, list])
+      element.hidden = !hasFiles;
+    refreshTarget();
     for (const doc of candidates) {
       const option = node("option", doc.name);
       option.value = doc.id;
@@ -430,7 +473,7 @@ export function referencePanel(
       panel.hidden = false;
       host.classList.add("with-references");
       refreshTarget();
-      filter.focus();
+      primaryControl().focus();
       if (loading) return;
       try {
         await guarded(async () => {
@@ -452,7 +495,15 @@ export function referencePanel(
       } catch (error) {
         fail(error);
       } finally {
-        if (!panel.hidden && !busy && !loading) filter.focus();
+        const current = document.activeElement;
+        // Keep a user who moved elsewhere during loading where they are.
+        if (
+          !panel.hidden &&
+          !busy &&
+          !loading &&
+          (!current || current === document.body || panel.contains(current))
+        )
+          primaryControl().focus();
       }
     },
   };

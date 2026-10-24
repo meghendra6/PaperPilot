@@ -7,7 +7,6 @@ import {
   docxTable,
   relativeAssetPath,
 } from "../src/modules/studio/draftAssets";
-import { templateDestination } from "../src/modules/studio/documentTemplates";
 
 test("draft assets resolve relative paths without turning filenames into markup", () => {
   assert.equal(
@@ -41,20 +40,5 @@ test("tables retain data strings and use literal DOCX text nodes", () => {
         Array.from({ length: 21 }, (_, i) => `c${i}`).join(","),
       ),
     /20 columns/,
-  );
-});
-
-test("template copies keep the original format and allow project-relative destinations", () => {
-  assert.equal(
-    templateDestination("", "templates/manuscript.docx"),
-    "manuscript.docx",
-  );
-  assert.equal(
-    templateDestination("drafts/submission.DOCX", "templates/manuscript.docx"),
-    "drafts/submission.DOCX",
-  );
-  assert.throws(
-    () => templateDestination("draft.md", "manuscript.docx"),
-    /does not convert/,
   );
 });

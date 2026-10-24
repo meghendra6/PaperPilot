@@ -35,7 +35,15 @@ import { insertWordCitation, refreshWordReferences } from "./docxReferences";
 import type { CompileResult } from "./compiler";
 import { pdfPreview } from "./pdfPreview";
 import { MAX_BACKUP_TEXT } from "./backup";
-import { DOCUMENT_TEMPLATES, templateDestination } from "./documentTemplates";
+import {
+  NEW_DOCUMENT_EXTENSION,
+  baseName,
+  documentFormat,
+  extensionOf,
+  newDocumentName,
+  type TemplateChoice,
+} from "./documentTemplates";
+import { newDocumentDialog } from "./newDocumentDialog";
 import {
   figureMarkup,
   draftTable,
@@ -180,9 +188,6 @@ const sidebar = node("aside", undefined, "files");
 sidebar.setAttribute("aria-label", "Project files");
 sidebar.id = "studio-files";
 sidebar.inert = true;
-const newName = node("input");
-newName.placeholder = "draft.docx";
-newName.setAttribute("aria-label", "New file name");
 const importInput = node("input");
 importInput.type = "file";
 importInput.multiple = true;
@@ -256,141 +261,20 @@ fileSearch.placeholder = "Find a file…";
 fileSearch.setAttribute("aria-label", "Find project files");
 fileSearch.addEventListener("input", renderFiles);
 const fileCount = node("span", "Files", "file-count");
-const newDialog = node("dialog", undefined, "file-dialog");
-newDialog.setAttribute("aria-label", "Create a document");
-const newError = node("p", undefined, "dialog-error");
-newError.setAttribute("role", "alert");
-const newType = node("select");
-newType.setAttribute("aria-label", "New document format");
-for (const [extension, label] of [
-  ["docx", "Word document (.docx)"],
-  ["md", "Markdown (.md)"],
-  ["myst", "MyST (.myst)"],
-  ["tex", "LaTeX (.tex)"],
-  ["typ", "Typst (.typ)"],
-  ["ipynb", "Notebook (.ipynb)"],
-  ["csv", "Data table (.csv)"],
-  ["kanban", "Planning board (.kanban)"],
-  ["txt", "Plain text (.txt)"],
-]) {
-  const option = node("option", label);
-  option.value = extension;
-  newType.append(option);
-}
-newType.onchange = () => {
-  newName.placeholder = `draft.${newType.value}`;
-  if (newName.value.trim())
-    newName.value = newName.value.replace(/(\.[^./]+)?$/, `.${newType.value}`);
-};
+const newDocument = newDocumentDialog({
+  documents: () => manifest?.documents ?? [],
+  create: ({ name, template }) => createDocument(name, template),
+});
 /** Opens the new-document dialog, optionally with a format chosen. */
 function showNewDocument(extension?: string) {
-  newError.textContent = "";
-  if (extension && newType.value !== extension) {
-    newType.value = extension;
-    newType.onchange?.(new Event("change"));
-  }
-  newDialog.showModal();
-  newName.focus();
+  newDocument.open(extension);
 }
-
-const templates = node("details");
-const templateChoice = node("select");
-templateChoice.setAttribute("aria-label", "Document template");
-templates.append(
-  node("summary", "Templates"),
-  node(
-    "p",
-    "Use a starter or keep your own documents under templates/. A new copy preserves the original.",
-    "surface-notice",
-  ),
-  templateChoice,
-  button("Create from document template", async () => {
-    assertCanNavigate();
-    let created: StudioDocument | undefined;
-    await documentOperation(async () => {
-      const builtin = DOCUMENT_TEMPLATES.find(
-        (entry) => entry.id === templateChoice.value,
-      );
-      const source = builtin
-        ? undefined
-        : await request<{ document: StudioDocument; base64: string }>("read", {
-            id: templateChoice.value,
-          });
-      const sourceName = builtin?.name ?? source!.document.name;
-      const name = templateDestination(newName.value, sourceName);
-      const base64 = builtin
-        ? toBase64(new TextEncoder().encode(builtin.text))
-        : source!.base64;
-      created = await request<StudioDocument>("create", { name, base64 });
-      newName.value = "";
-      await refresh();
-    });
-    if (created) {
-      newDialog.close();
-      await openDocument(created.id);
-    }
-  }),
-  button("Save current document as template", () =>
-    documentOperation(async () => {
-      assertCanNavigate();
-      if (!active)
-        throw new Error("Open a document to save a reusable template.");
-      const saved = await request<{ base64: string }>("read", {
-        id: active.id,
-      });
-      const chosen = templateDestination(
-        newName.value,
-        active.name.split("/").at(-1)!,
-      );
-      const name = `templates/${chosen.replace(/^templates\//, "")}`;
-      await request("create", { name, base64: saved.base64 });
-      newName.value = "";
-      await refresh();
-      status.textContent = `Reusable template saved: ${name}`;
-    }),
-  ),
-);
 fileList.setAttribute("aria-label", "Documents");
 const archivedToggle = node("input");
 archivedToggle.type = "checkbox";
 const archivedLabel = node("label", " Show archived");
 archivedLabel.prepend(archivedToggle);
 archivedToggle.addEventListener("change", () => renderFiles());
-const createButton = button("Create document", async () => {
-  if (switching) return;
-  newError.textContent = "";
-  delete status.dataset.error;
-  status.textContent = "Creating document…";
-  createButton.disabled = true;
-  createButton.textContent = "Creating…";
-  try {
-    await createDocument();
-    newDialog.close();
-  } finally {
-    createButton.disabled = false;
-    createButton.textContent = "Create document";
-  }
-});
-newDialog.append(
-  node("h2", "Create a document"),
-  node(
-    "p",
-    "Choose a format, then name your file. Use / to place it in a folder.",
-    "dialog-hint",
-  ),
-  newType,
-  newName,
-  newError,
-  createButton,
-  button("Cancel", () => newDialog.close()),
-  templates,
-);
-newName.addEventListener("keydown", (event) => {
-  if (event.key === "Enter") {
-    event.preventDefault();
-    createButton.click();
-  }
-});
 const fileHeading = node("div", undefined, "file-heading");
 fileHeading.append(fileCount, archivedLabel);
 const fileCommands = node("div", undefined, "file-commands");
@@ -579,6 +463,85 @@ const renameButton = button("Rename / move…", () => {
   dialog.showModal();
   input.select();
 });
+const templateButton = button("Save as template…", () => {
+  if (!active) return;
+  const source = active;
+  const extension = extensionOf(source.name);
+  const dialog = node("dialog", undefined, "file-dialog");
+  dialog.setAttribute("aria-label", "Save as template");
+  const input = node("input");
+  input.value = baseName(source.name);
+  input.setAttribute("aria-label", "Template name");
+  const error = node("p", undefined, "dialog-error");
+  error.setAttribute("role", "alert");
+  const confirm = button("Save template", async () => {
+    assertCanNavigate();
+    const entered = input.value.trim().replace(/^templates\//, "");
+    if (!entered) throw new Error("Enter a template name.");
+    const name = newDocumentName(
+      `templates/${entered}`,
+      extension,
+      baseName(source.name),
+      manifest.documents.map((doc) => doc.name),
+    );
+    if (extensionOf(name) !== extension)
+      throw new Error(
+        "Keep the document's file extension; changing it does not convert the document.",
+      );
+    let saved = false;
+    await documentOperation(async () => {
+      if (active?.id !== source.id)
+        throw new Error("The open document changed.");
+      const current = await request<{ base64: string }>("read", {
+        id: source.id,
+      });
+      await request("create", { name, base64: current.base64 });
+      await refresh();
+      saved = true;
+    });
+    if (!saved)
+      throw new Error(
+        "Another document operation is running. Try again when it finishes.",
+      );
+    delete status.dataset.error;
+    status.textContent = `Template saved: ${name}. New ${extension.toUpperCase()} documents can start from it.`;
+    dialog.close();
+  });
+  confirm.className = "primary";
+  const actionsRow = node("div", undefined, "dialog-actions");
+  actionsRow.append(
+    button("Cancel", () => dialog.close()),
+    confirm,
+  );
+  dialog.append(
+    node("h2", "Save as template"),
+    node(
+      "p",
+      `The saved version of ${source.name} is copied to templates/. The New document dialog offers it for ${extension.toUpperCase()} files.`,
+      "dialog-hint",
+    ),
+    input,
+    error,
+    actionsRow,
+  );
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      confirm.click();
+    }
+  });
+  dialog.addEventListener(
+    "close",
+    () => {
+      dialog.remove();
+      moreSummary.focus();
+    },
+    { once: true },
+  );
+  document.body.append(dialog);
+  dialog.showModal();
+  input.select();
+});
 const archiveButton = button("Archive", () =>
   documentOperation(async () => {
     assertCanNavigate();
@@ -604,6 +567,7 @@ moreList.append(
   historyButton,
   renameButton,
   duplicateButton,
+  templateButton,
   sourceButton,
   provenanceButton,
   archiveButton,
@@ -695,7 +659,7 @@ const welcomeCards = node("div", undefined, "welcome-cards");
 welcomeCards.append(
   welcomeCard(
     "Write a draft",
-    "Word, Markdown, LaTeX, or Typst, with citations from your papers.",
+    "Word, Markdown, LaTeX, Typst or MyST. Start blank or from an article template.",
     () => showNewDocument("docx"),
   ),
   welcomeCard(
@@ -749,7 +713,12 @@ content.append(
   statusBar,
 );
 shell.append(header, sidebar, content);
-document.body.replaceChildren(shell, newDialog, backupDialog, history);
+document.body.replaceChildren(
+  shell,
+  newDocument.element,
+  backupDialog,
+  history,
+);
 
 let manifest: StudioManifest;
 let active: StudioDocument | undefined;
@@ -927,26 +896,6 @@ async function refresh() {
     )
   )
     assetChoice.value = selectedAsset;
-  const selectedTemplate = templateChoice.value;
-  templateChoice.replaceChildren();
-  for (const entry of DOCUMENT_TEMPLATES) {
-    const option = node("option", entry.label);
-    option.value = entry.id;
-    templateChoice.append(option);
-  }
-  for (const entry of manifest.documents.filter(
-    (doc) => !doc.archived && doc.name.startsWith("templates/"),
-  )) {
-    const option = node("option", entry.name);
-    option.value = entry.id;
-    templateChoice.append(option);
-  }
-  if (
-    [...templateChoice.options].some(
-      (option) => option.getAttribute("value") === selectedTemplate,
-    )
-  )
-    templateChoice.value = selectedTemplate;
   renderFiles();
   assistant.refresh();
   updateActions();
@@ -1047,6 +996,8 @@ function updateActions() {
     !active || !/\.(tex|typ|md|markdown|myst)$/i.test(active.name);
   provenanceButton.hidden = !active?.versions.at(-1)?.origin;
   archiveButton.hidden = active?.archived === true;
+  templateButton.hidden =
+    !active || active.archived || !documentFormat(extensionOf(active.name));
   structure.element.hidden = !active || !/\.docx$/i.test(active.name);
   structure.element.inert = switching || !ready || active?.archived === true;
   commentButton.hidden = !active || !/\.docx$/i.test(active.name);
@@ -1066,6 +1017,7 @@ function updateActions() {
     renameButton,
     archiveButton,
     duplicateButton,
+    templateButton,
   ])
     item.disabled = switching || !active;
   saveButton.disabled ||=
@@ -1449,6 +1401,8 @@ async function openDocument(id: string, asSource = false) {
     delete status.dataset.error;
     status.textContent = `${active.archived ? "Archived" : "Saved locally"} · revision ${active.revision}`;
     renderFiles();
+    // The assistant offers the open document as context.
+    assistant.refresh();
     fileList.querySelector(".selected")?.scrollIntoView({ block: "nearest" });
   } finally {
     switching = false;
@@ -1534,57 +1488,93 @@ function assertCanNavigate() {
     );
 }
 
-async function createDocument() {
+/** Fills a blank DOCX with a template outline as styled paragraphs. */
+function fillDocxOutline(outline: string) {
+  const engine = editor?.activeEditor;
+  if (!engine) throw new Error("The DOCX editor is not ready.");
+  // The template is the new file's first version, not an edit to save.
+  ready = false;
+  clearTimeout(timer);
+  const commands = (
+    engine as unknown as {
+      commands: {
+        insertContentAt(
+          range: { from: number; to: number },
+          value: ReturnType<typeof academicDraft>["content"],
+        ): boolean;
+      };
+    }
+  ).commands;
+  if (
+    !commands.insertContentAt(
+      { from: 0, to: engine.state.doc.content.size },
+      academicDraft(outline).content,
+    )
+  )
+    throw new Error("The DOCX editor rejected this template.");
+}
+
+/** Creates and opens a document. Resolves false when another operation runs. */
+async function createDocument(name: string, template: TemplateChoice) {
   assertCanNavigate();
-  const entered = newName.value.trim();
-  const name = entered
-    ? /\.[^./]+$/.test(entered)
-      ? entered
-      : `${entered}.${newType.value}`
-    : `draft.${newType.value}`;
-  if (manifest.documents.some((doc) => doc.name === name && !doc.archived))
+  if (!NEW_DOCUMENT_EXTENSION.test(name))
+    throw new Error("Choose a DOCX or text document extension.");
+  if (manifest.documents.some((doc) => doc.name === name))
     throw new Error(
       "A file with this name already exists. Choose another name.",
     );
-  if (
-    !/\.(docx|md|markdown|myst|txt|tex|typ|bib|csv|tsv|jsonl|json|ipynb|kanban|py|r|yaml|yml)$/i.test(
-      name,
-    )
-  )
-    throw new Error("Choose a DOCX or text document extension.");
-  if (switching) return;
+  if (switching) return false;
   switching = true;
   updateActions();
   const previousID = active?.id;
+  let created: StudioDocument | undefined;
   try {
     await save();
-    let base64 = /\.ipynb$/i.test(name)
-      ? toBase64(
-          new TextEncoder().encode(
-            JSON.stringify(newNotebook(), null, 2) + "\n",
-          ),
-        )
-      : "";
-    if (/\.kanban$/i.test(name))
-      base64 = toBase64(
-        new TextEncoder().encode(JSON.stringify(newBoard(), null, 2) + "\n"),
-      );
-    if (/\.docx$/i.test(name)) {
+    let base64 = "";
+    if (template.kind === "document") {
+      base64 = (
+        await request<{ base64: string }>("read", { id: template.documentID })
+      ).base64;
+    } else if (/\.docx$/i.test(name)) {
       destroyEditor();
       active = undefined;
       await mountDocx();
+      if (template.kind === "builtin") fillDocxOutline(template.template.text);
       base64 = await currentBytes();
+    } else if (template.kind === "builtin") {
+      base64 = toBase64(new TextEncoder().encode(template.template.text));
+    } else if (/\.ipynb$/i.test(name)) {
+      base64 = toBase64(
+        new TextEncoder().encode(JSON.stringify(newNotebook(), null, 2) + "\n"),
+      );
+    } else if (/\.kanban$/i.test(name)) {
+      base64 = toBase64(
+        new TextEncoder().encode(JSON.stringify(newBoard(), null, 2) + "\n"),
+      );
     }
-    const created = await request<StudioDocument>("create", { name, base64 });
+    created = await request<StudioDocument>("create", { name, base64 });
     await refresh();
-    newName.value = "";
     fileSearch.value = "";
     switching = false;
     await openDocument(created.id);
+    status.textContent = `Created ${created.name}`;
+    return true;
   } catch (error) {
-    if (!active && previousID) {
+    if (!active) {
       switching = false;
-      await openDocument(previousID);
+      // A DOCX path mounted a blank editor; never leave it ownerless.
+      if (previousID) await openDocument(previousID).catch(showError);
+      if (!active) destroyEditor();
+    }
+    // The file exists once create succeeds: report the failed open instead
+    // of keeping the dialog open for a retry that would collide.
+    if (created) {
+      showError(
+        new Error(
+          `Created ${created.name}, but it could not be opened: ${error instanceof Error ? error.message : String(error)}`,
+        ),
+      );
+      return true;
     }
     throw error;
   } finally {
@@ -1895,7 +1885,7 @@ window.addEventListener(
       if (focused?.closest(".ai-panel")) {
         event.preventDefault();
         event.stopPropagation();
-        assistant.close();
+        assistant.dismiss();
         return;
       }
       if (focused?.closest(".reference-panel")) {

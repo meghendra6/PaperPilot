@@ -1256,6 +1256,42 @@ automation did not deliver keydown events into the sandboxed frame, and the nati
 browser was in active use. Do not treat an autosave after attempted Cmd+S as proof
 of the shortcut. Native final-build Studio painting remains a separate gate.
 
+Studio assistant and New document checks (2026-10-24):
+
+- [ ] Open the assistant in a project whose default engine is Claude Code, then in
+      one without a default. Confirm the provider switch follows the project, then
+      the reader's default mode. After a question, reopen Studio and confirm the
+      latest question's provider and model are preselected.
+- [ ] Pick a listed model, then "Other model…" with a typed identifier. Switch
+      providers and back; each provider keeps its own choice. Local model shows the
+      endpoint and key fields only while selected.
+- [ ] Remove and add context chips, use the open-document suggestion, and open the
+      file picker. Escape closes the picker, then History, then the panel, and focus
+      returns to the header button.
+- [ ] Send with Cmd/Ctrl+Enter. While it runs, confirm the pending question, the
+      elapsed time, a disabled engine bar and Stop. Stop a run and confirm the turn
+      shows Stopped.
+- [ ] Start a new conversation, open History, resume an archive and return to the
+      open conversation through its History entry. Confirm the archive order follows
+      last activity and nothing is deleted.
+- [ ] New document → each format shows Blank plus only that format's templates.
+      Create a DOCX from Research article and confirm Title/Heading styles survive
+      save, reopen and export to Word. Type `notes.md` with Word selected and confirm
+      the format switches to Markdown. Save a document as a template through More and
+      create a copy from it. A duplicate name shows an error before Create.
+- [ ] At 900px and 720px, confirm the assistant overlay, the stacked New document
+      columns and the centered DOCX page.
+
+Browser evidence on 2026-10-24 (Chrome, `scripts/studio-preview.mjs`, synthetic
+fixtures): provider/model preselection from the latest turn, the history list and
+resume, context chips and picker, Escape layering with focus return, a complete
+Local model run against a fake loopback server (pending state, elapsed time,
+Stop, proposal card), DOCX creation from the Research article outline with Title
+and Heading styles, Markdown template creation, typed-extension format switching,
+the References empty state, and 900px/700px layouts. Native Zotero (Firefox)
+rendering, actual Codex/Claude runs from the new picker and Word export of the
+DOCX template remain unverified.
+
 PR review regression checks:
 
 - Move a Markdown draft with relative image links into a folder. Verify the editor

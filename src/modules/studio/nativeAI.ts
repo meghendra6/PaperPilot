@@ -10,6 +10,7 @@ import {
   getResearchWorkspaceStorageRoot,
 } from "../researchWorkspace/storage";
 import { StudioAIService } from "./aiService";
+import { studioModelDefaults } from "./aiModels";
 import { documentText } from "./documentText";
 import { runStudioAI, cleanupStudioRunnerScope } from "./aiRunner";
 import { stopNativeStudioJob } from "./nativeProcess";
@@ -20,11 +21,15 @@ import {
   ExtractorCleanupUnconfirmedError,
 } from "../tools/paperWorkspaceContent";
 
-export function studioAIDefaults() {
-  return {
-    codex: captureExecutionSettings("codex_cli").model,
-    claude: captureExecutionSettings("claude_code").model,
-  };
+/** The project's default engine wins over the reader's default mode. */
+export function studioAIDefaults(projectEngineMode?: string) {
+  return studioModelDefaults({
+    engineMode: projectEngineMode ?? String(getPref("defaultMode") || ""),
+    codexModel: captureExecutionSettings("codex_cli").model,
+    claudeModel: captureExecutionSettings("claude_code").model,
+    codexAllowed: String(getPref("codexAllowedModels") || ""),
+    claudeAllowed: String(getPref("claudeAllowedModels") || ""),
+  });
 }
 
 export function nativeAI(

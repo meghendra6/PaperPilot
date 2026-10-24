@@ -127,6 +127,7 @@ export class StudioAIService {
         archive.conversation.turns[0]?.question.slice(0, 100) ||
         "Empty conversation",
       createdAt: archive.conversation.turns[0]?.createdAt || "",
+      updatedAt: archive.conversation.turns.at(-1)?.createdAt || "",
       turns: archive.conversation.turns.length,
     }));
     for (const path of (await this.ports.files.exists(directory))
@@ -139,10 +140,16 @@ export class StudioAIService {
         id: filename.slice(0, -5),
         title: data.turns[0]?.question.slice(0, 100) || "Empty conversation",
         createdAt: data.turns[0]?.createdAt || "",
+        updatedAt: data.turns.at(-1)?.createdAt || "",
         turns: data.turns.length,
       });
     }
-    return summaries.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    // Most recently active first; createdAt keeps the previous order on ties.
+    return summaries.sort(
+      (a, b) =>
+        b.updatedAt.localeCompare(a.updatedAt) ||
+        b.createdAt.localeCompare(a.createdAt),
+    );
   }
 
   async resumeConversation(id: string) {

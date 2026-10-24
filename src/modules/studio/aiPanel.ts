@@ -1,13 +1,34 @@
 import { academicDraftRequest } from "./academicDraft";
 import { node } from "./dom";
-import { renderMarkdown } from "./sourceEditor";
 import {
   TEXT_DOCUMENT,
-  type StudioAIConfig,
+  type StudioAIDefaults,
   type StudioConversation,
   type StudioChange,
 } from "./aiContracts";
 import type { StudioDocument } from "./contracts";
+import { engineBar } from "./aiEngine";
+import { renderHistory, type ConversationSummary } from "./aiHistory";
+import { pendingTurn, renderTranscript } from "./aiTranscript";
+
+/** The composer grows with its text up to this height, then scrolls. */
+const COMPOSER_MAX_HEIGHT = 220;
+
+function iconButton(label: string, glyph: string, className = "icon-button") {
+  const item = node("button", undefined, className);
+  item.type = "button";
+  item.setAttribute("aria-label", label);
+  item.title = label;
+  item.append(node("span", glyph));
+  item.firstElementChild?.setAttribute("aria-hidden", "true");
+  return item;
+}
+
+function conversationTitle(conversation?: StudioConversation) {
+  const first = conversation?.turns[0]?.question.split("\n")[0]?.trim();
+  if (!first) return "New conversation";
+  return first.length > 80 ? `${first.slice(0, 79)}…` : first;
+}
 
 export function aiPanel(
   host: HTMLElement,
@@ -29,100 +50,377 @@ export function aiPanel(
   panel.id = "studio-assistant";
   let opener: HTMLElement | undefined;
   let loaded = false;
+  let busy = false;
+  let historyOpen = false;
+  let conversation: StudioConversation | undefined;
+  let archives: ConversationSummary[] = [];
+  let refreshContext = () => {};
+  const selected = new Set<string>();
+
+  // Header: title, the open conversation, and conversation commands.
+  const heading = node("div", undefined, "panel-heading ai-heading");
+  const titles = node("div", undefined, "panel-titles");
+  const subtitle = node("p", "New conversation", "panel-subtitle");
+  titles.append(node("h2", "Assistant"), subtitle);
+  const historyButton = node("button", "History", "quiet-button");
+  historyButton.type = "button";
+  historyButton.setAttribute("aria-pressed", "false");
+  historyButton.title = "Earlier conversations in this project";
+  const fresh = node("button", "New", "quiet-button");
+  fresh.type = "button";
+  fresh.title = "Start a new conversation. The open one is archived.";
+  const close = iconButton("Close assistant", "×");
+  const commands = node("div", undefined, "panel-actions");
+  commands.append(historyButton, fresh, close);
+  heading.append(titles, commands);
+
+  const disclosure = node("p", undefined, "ai-disclosure");
+  const engine = engineBar(() => {
+    disclosure.textContent = engine.disclosure();
+  });
+  disclosure.textContent = engine.disclosure();
+
+  const body = node("div", undefined, "ai-body");
+  const transcript = node("div", undefined, "ai-transcript");
+  const history = node("div", undefined, "ai-history");
+  history.hidden = true;
+  body.append(transcript, history);
+
+  // Composer: context files, the request, and run controls.
+  const composer = node("div", undefined, "ai-composer");
+  const contextRow = node("div", undefined, "context-row");
+  const contextLabel = node("span", "Context", "context-label");
+  const chips = node("ul", undefined, "context-chips");
+  chips.setAttribute("aria-label", "Selected context files");
+  const addContext = node("button", "Add files", "chip-button");
+  addContext.type = "button";
+  addContext.setAttribute("aria-expanded", "false");
+  addContext.setAttribute("aria-controls", "studio-context-picker");
+  contextRow.append(contextLabel, chips, addContext);
+  const picker = node("div", undefined, "context-picker");
+  picker.id = "studio-context-picker";
+  picker.hidden = true;
+  const pickerHint = node(
+    "p",
+    "Text, DOCX and PDF files can be context. PDFs stay read-only.",
+    "context-hint",
+  );
+  const choices = node("div", undefined, "ai-context");
+  picker.append(pickerHint, choices);
+  const question = node("textarea");
+  question.rows = 3;
+  question.placeholder =
+    "Ask about the context files, or describe an edit to propose…";
+  question.setAttribute("aria-label", "Project question");
+  const quote = node("button", "Quote selection", "quiet-button");
+  quote.type = "button";
+  quote.title = "Add the passage selected in the open document";
+  const draft = node("button", "Draft paper", "quiet-button");
+  draft.type = "button";
+  draft.title = "Prepare an academic draft in the open DOCX";
+  const stop = node("button", "Stop");
+  stop.type = "button";
+  stop.hidden = true;
+  const send = node("button", "Send", "primary");
+  send.type = "button";
+  send.title = "Send (Ctrl or ⌘ + Enter)";
+  send.disabled = true;
+  const controls = node("div", undefined, "composer-actions");
+  controls.append(quote, draft, node("span", undefined, "spacer"), stop, send);
+  const status = node("output", undefined, "composer-status");
+  status.setAttribute("aria-live", "polite");
+  composer.append(contextRow, picker, question, controls, status, disclosure);
+  panel.append(heading, engine.element, body, composer);
+  host.append(panel);
+
+  const error = (value: unknown) => {
+    status.textContent = value instanceof Error ? value.message : String(value);
+    status.dataset.error = "true";
+  };
+  const note = (text: string) => {
+    status.textContent = text;
+    delete status.dataset.error;
+  };
+  /**
+   * Restores focus after an operation, unless the user moved focus out of
+   * the panel meanwhile (a run can take minutes).
+   */
+  const restoreFocus = (target: HTMLElement) => {
+    const current = document.activeElement;
+    if (!current || current === document.body || panel.contains(current))
+      target.focus();
+  };
+  const updateSend = () => {
+    send.disabled = busy || !question.value.trim();
+  };
+  const autosize = () => {
+    question.style.height = "auto";
+    question.style.height = `${Math.min(question.scrollHeight + 2, COMPOSER_MAX_HEIGHT)}px`;
+  };
+  const busyState = (value: boolean) => {
+    busy = value;
+    for (const control of [question, quote, draft, historyButton, fresh])
+      control.disabled = value;
+    engine.setDisabled(value);
+    updateSend();
+    send.hidden = value;
+    stop.hidden = !value;
+    stop.disabled = !value;
+    contextRow.inert = value;
+    picker.inert = value;
+    transcript.inert = value;
+    history.inert = value;
+    panel.setAttribute("aria-busy", String(value));
+  };
+
+  const togglePicker = (open = picker.hidden) => {
+    picker.hidden = !open;
+    addContext.setAttribute("aria-expanded", String(open));
+    addContext.textContent = open ? "Done" : "Add files";
+  };
+  addContext.addEventListener("click", () => togglePicker());
+
+  const renderChoices = () => {
+    if (busy) return;
+    const documents = actions.documents();
+    const available = documents
+      .filter(
+        (doc) =>
+          !doc.archived &&
+          (TEXT_DOCUMENT.test(doc.name) || /\.(docx|pdf)$/i.test(doc.name)),
+      )
+      .sort((a, b) => a.name.localeCompare(b.name));
+    for (const id of selected)
+      if (!available.some((doc) => doc.id === id)) selected.delete(id);
+    choices.replaceChildren();
+    for (const doc of available) {
+      const input = node("input");
+      input.type = "checkbox";
+      input.checked = selected.has(doc.id);
+      input.onchange = () => {
+        if (input.checked) selected.add(doc.id);
+        else selected.delete(doc.id);
+        renderChips();
+      };
+      const label = node("label");
+      label.append(
+        input,
+        node("span", doc.name, "context-name"),
+        node("span", `v${doc.revision}`, "context-revision"),
+      );
+      choices.append(label);
+    }
+    if (!available.length)
+      choices.append(
+        node("p", "No text, DOCX or PDF files yet.", "context-hint"),
+      );
+    renderChips();
+  };
+  const renderChips = () => {
+    chips.replaceChildren();
+    const documents = actions.documents();
+    for (const id of selected) {
+      const doc = documents.find((entry) => entry.id === id);
+      if (!doc) continue;
+      const chip = node("li", undefined, "context-chip");
+      const label = doc.name.split("/").at(-1) ?? doc.name;
+      chip.title = doc.name;
+      const remove = node("button", "×");
+      remove.type = "button";
+      remove.setAttribute("aria-label", `Remove ${doc.name} from context`);
+      remove.addEventListener("click", () => {
+        selected.delete(id);
+        renderChoices();
+        question.focus();
+      });
+      chip.append(node("span", label), remove);
+      chips.append(chip);
+    }
+    // Offer the open document when it is not context yet.
+    const activeID = actions.activeID();
+    const active = documents.find((doc) => doc.id === activeID);
+    if (
+      active &&
+      !selected.has(active.id) &&
+      !active.archived &&
+      (TEXT_DOCUMENT.test(active.name) || /\.(docx|pdf)$/i.test(active.name))
+    ) {
+      const item = node("li");
+      const suggest = node(
+        "button",
+        `+ ${active.name.split("/").at(-1)}`,
+        "chip-button is-suggestion",
+      );
+      suggest.type = "button";
+      suggest.title = `Add the open document ${active.name}`;
+      suggest.addEventListener("click", () => {
+        selected.add(active.id);
+        renderChoices();
+      });
+      item.append(suggest);
+      chips.append(item);
+    }
+    if (!chips.childElementCount)
+      chips.append(
+        node("li", "No files · general questions only", "context-none"),
+      );
+  };
+
+  const decide = (
+    change: StudioChange,
+    action: "apply" | "reject",
+    editedAfter?: string,
+  ) =>
+    void (async () => {
+      if (busy) return;
+      busyState(true);
+      note("Saving review decision…");
+      try {
+        render(
+          action === "apply"
+            ? await actions.apply(change, editedAfter)
+            : await actions.request<StudioConversation>("ai.decide", {
+                changeID: change.id,
+                decision: "reject",
+              }),
+        );
+        note(
+          action === "apply"
+            ? "Change applied and version saved."
+            : "Proposal rejected.",
+        );
+      } catch (cause) {
+        error(cause);
+      } finally {
+        busyState(false);
+        renderChoices();
+        // Rendering replaced the focused button; return to the same card.
+        restoreFocus(
+          transcript.querySelector<HTMLElement>(
+            `[data-change-id="${CSS.escape(change.id)}"] > summary`,
+          ) ?? question,
+        );
+      }
+    })();
+
+  const render = (next: StudioConversation) => {
+    conversation = next;
+    subtitle.textContent = conversationTitle(next);
+    subtitle.title = next.turns[0]?.question.slice(0, 500) ?? "";
+    refreshContext = renderTranscript(transcript, next, {
+      documents: actions.documents,
+      decide,
+    });
+  };
+
+  const showTranscript = (restoreFocus = true) => {
+    historyOpen = false;
+    history.hidden = true;
+    transcript.hidden = false;
+    // A conversation rendered while hidden keeps its scroll at the top.
+    transcript.scrollTop = transcript.scrollHeight;
+    historyButton.setAttribute("aria-pressed", "false");
+    historyButton.classList.remove("is-active");
+    if (restoreFocus) historyButton.focus();
+  };
+  const showHistory = () => {
+    historyOpen = true;
+    transcript.hidden = true;
+    history.hidden = false;
+    historyButton.setAttribute("aria-pressed", "true");
+    historyButton.classList.add("is-active");
+    renderHistory(
+      history,
+      {
+        title: conversationTitle(conversation),
+        turns: conversation?.turns.length ?? 0,
+        updatedAt: conversation?.turns.at(-1)?.createdAt ?? "",
+      },
+      archives,
+      (id) => void resume(id),
+      () => {
+        showTranscript(false);
+        question.focus();
+      },
+    );
+  };
+  historyButton.addEventListener("click", () =>
+    historyOpen ? showTranscript() : showHistory(),
+  );
+
+  async function loadArchives() {
+    archives = await actions.request<ConversationSummary[]>("ai.conversations");
+    historyButton.textContent = archives.length
+      ? `History (${archives.length})`
+      : "History";
+  }
+
+  async function resume(id: string) {
+    if (busy) return;
+    busyState(true);
+    try {
+      render(await actions.request<StudioConversation>("ai.resume", { id }));
+      await loadArchives();
+      showTranscript(false);
+      note(
+        "Conversation resumed. The previous one is in History; document revisions still guard every proposal.",
+      );
+    } catch (cause) {
+      error(cause);
+    } finally {
+      busyState(false);
+      renderChoices();
+      // The history list held focus; keep it inside the panel.
+      restoreFocus(
+        (historyOpen && history.querySelector<HTMLButtonElement>("button")) ||
+          question,
+      );
+    }
+  }
+
   const closePanel = (restoreFocus = true) => {
     panel.hidden = true;
     host.classList.remove("with-assistant");
     opener?.setAttribute("aria-expanded", "false");
     if (restoreFocus) opener?.focus();
   };
+  /** Escape closes the innermost open part first. */
+  const dismiss = () => {
+    if (!picker.hidden) {
+      togglePicker(false);
+      addContext.focus();
+    } else if (historyOpen) showTranscript();
+    else closePanel();
+  };
   panel.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && !event.defaultPrevented) {
       event.preventDefault();
-      closePanel();
+      dismiss();
     }
   });
-  const heading = node("div", undefined, "panel-heading");
-  const close = node("button", "Close assistant");
-  close.onclick = () => closePanel();
-  const fresh = node("button", "New conversation");
-  heading.append(node("h2", "Assistant"), close);
-  const archives = node("select");
-  archives.setAttribute("aria-label", "Archived conversations");
-  const resume = node("button", "Resume conversation");
-  const historyControls = node("details");
-  historyControls.append(
-    node("summary", "Conversation history"),
-    fresh,
-    archives,
-    resume,
-  );
-  const provider = node("select");
-  provider.setAttribute("aria-label", "AI provider");
-  for (const [value, label] of [
-    ["codex", "Codex CLI"],
-    ["claude", "Claude Code"],
-    ["local", "Local model"],
-  ]) {
-    const option = node("option", label);
-    option.value = value;
-    provider.append(option);
-  }
-  const model = node("input");
-  model.placeholder = "Model identifier";
-  model.setAttribute("aria-label", "AI model");
-  const endpoint = node("input");
-  endpoint.value = "http://127.0.0.1:11434/v1";
-  endpoint.setAttribute("aria-label", "Local model API base URL");
-  endpoint.hidden = true;
-  const key = node("input");
-  key.type = "password";
-  key.autocomplete = "off";
-  key.placeholder = "API key · this window only";
-  key.setAttribute("aria-label", "Provider API key");
-  key.hidden = true;
-  const disclosure = node(
-    "p",
-    "Selected files go through your CLI to its model provider.",
-    "surface-notice",
-  );
-  const context = node("details");
-  const contextSummary = node("summary", "Choose context files");
-  const choices = node("div", undefined, "ai-context");
-  context.append(contextSummary, choices);
-  const transcript = node("div", undefined, "ai-transcript");
-  const contextLabels: Array<{
-    element: HTMLElement;
-    captured: StudioConversation["turns"][number]["context"];
-  }> = [];
-  const refreshContextLabels = () => {
-    for (const { element, captured } of contextLabels)
-      element.textContent = `Context: ${captured
-        .map((doc) => {
-          const current = actions
-            .documents()
-            .find((entry) => entry.id === doc.id);
-          const state = !current
-            ? " · unavailable now"
-            : current.archived
-              ? " · archived now"
-              : current.revision !== doc.revision
-                ? ` · now v${current.revision}`
-                : "";
-          return `${doc.name} v${doc.revision}${state}`;
-        })
-        .join(", ")}`;
-  };
-  const question = node("textarea");
-  question.rows = 3;
-  question.placeholder = "Ask about the selected files or propose an edit…";
-  question.setAttribute("aria-label", "Project question");
-  const send = node("button", "Send");
-  send.disabled = true;
+  close.addEventListener("click", () => closePanel());
+
   question.addEventListener("input", () => {
-    send.disabled = busy || !question.value.trim();
+    updateSend();
+    autosize();
   });
-  const quote = node("button", "Use selected passage");
-  quote.onclick = () => {
+  question.addEventListener("keydown", (event) => {
+    if (
+      event.key === "Enter" &&
+      (event.metaKey || event.ctrlKey) &&
+      !send.disabled
+    ) {
+      event.preventDefault();
+      send.click();
+    }
+  });
+  const appendToQuestion = (text: string) => {
+    question.value = text;
+    autosize();
+    updateSend();
+    question.focus();
+  };
+  quote.addEventListener("click", () => {
     const passage = actions.selection();
     if (!passage?.text.trim()) {
       error(new Error("Select a passage in the open document first."));
@@ -133,341 +431,129 @@ export function aiPanel(
       return;
     }
     selected.add(passage.id);
-    question.value = `${question.value}${question.value ? "\n\n" : ""}Selected passage from ${JSON.stringify(passage.name)}:\n${JSON.stringify(passage.text)}\n`;
     renderChoices();
-    send.disabled = busy || !question.value.trim();
-    question.focus();
-  };
-  const draft = node("button", "Draft paper");
-  draft.title = "Prepare an academic draft in the open DOCX";
-  draft.onclick = () => {
+    appendToQuestion(
+      `${question.value}${question.value ? "\n\n" : ""}Selected passage from ${JSON.stringify(passage.name)}:\n${JSON.stringify(passage.text)}\n`,
+    );
+  });
+  draft.addEventListener("click", () => {
     const target = actions
       .documents()
       .find((doc) => doc.id === actions.activeID());
     if (!target || !/\.docx$/i.test(target.name)) {
       error(
         new Error(
-          "Create or open a DOCX first, then select sources in Context files.",
+          "Create or open a DOCX first, then add source files as context.",
         ),
       );
       return;
     }
     selected.add(target.id);
-    question.value = academicDraftRequest(target.name) + question.value;
     renderChoices();
-    send.disabled = busy;
-    status.textContent =
-      "Add your topic and journal instructions, select source files, then Send. The draft will be reviewed before it is appended.";
-    question.focus();
-  };
-  const stop = node("button", "Stop");
-  stop.disabled = true;
-  const status = node("output");
-  status.setAttribute("aria-live", "polite");
-  const controls = node("div", undefined, "surface-controls");
-  controls.append(draft, quote, send, stop);
-  send.className = "primary";
-  stop.hidden = true;
-  const settings = node("details", undefined, "ai-settings");
-  const settingsSummary = node("summary", "Model settings");
-  const providerLabel = node("label", "Provider");
-  providerLabel.append(provider);
-  const modelLabel = node("label", "Model");
-  modelLabel.append(model);
-  settings.append(settingsSummary, providerLabel, modelLabel, endpoint, key);
-  const updateSettingsLabel = () => {
-    settingsSummary.textContent = `${provider.options[provider.selectedIndex]?.text || "Model"} · ${model.value || "choose model"}`;
-  };
-  model.addEventListener("input", updateSettingsLabel);
-  const setup = node("div", undefined, "ai-setup");
-  setup.append(settings, historyControls, context, disclosure);
-  const composer = node("div", undefined, "ai-composer");
-  composer.append(question, controls, status);
-  panel.append(heading, setup, transcript, composer);
-  host.append(panel);
-  let defaults = { codex: "", claude: "" };
-  let busy = false;
-  const selected = new Set<string>();
-  const error = (value: unknown) => {
-    status.textContent = value instanceof Error ? value.message : String(value);
-    status.dataset.error = "true";
-  };
-  const busyState = (value: boolean) => {
-    busy = value;
-    for (const control of [
-      send,
-      fresh,
-      provider,
-      model,
-      endpoint,
-      key,
-      archives,
-      resume,
-      question,
-      quote,
-      draft,
-    ])
-      control.disabled = value;
-    send.disabled ||= !question.value.trim();
-    stop.disabled = !value;
-    stop.hidden = !value;
-    resume.disabled ||= !archives.options.length;
-    choices.inert = value;
-    transcript.inert = value;
-  };
-  const renderChoices = () => {
-    if (busy) return;
-    choices.replaceChildren();
-    const available = actions
-      .documents()
-      .filter(
-        (doc) =>
-          !doc.archived &&
-          (TEXT_DOCUMENT.test(doc.name) || /\.(docx|pdf)$/i.test(doc.name)),
-      );
-    for (const id of selected)
-      if (!available.some((doc) => doc.id === id)) selected.delete(id);
-    for (const doc of available) {
-      const input = node("input");
-      input.type = "checkbox";
-      input.checked = selected.has(doc.id);
-      input.onchange = () => {
-        if (input.checked) selected.add(doc.id);
-        else selected.delete(doc.id);
-        contextSummary.textContent = `Context files (${selected.size})`;
-      };
-      const label = node("label", ` ${doc.name} · v${doc.revision}`);
-      label.prepend(input);
-      choices.append(label);
-    }
-    contextSummary.textContent = `Context files (${selected.size})`;
-  };
-  const render = (conversation: StudioConversation) => {
-    transcript.replaceChildren();
-    contextLabels.length = 0;
-    if (!conversation.turns.length)
-      transcript.append(
-        node(
-          "p",
-          "Ask a question about your files, or describe a change. You review edits before they are applied.",
-          "assistant-empty",
-        ),
-      );
-    for (const turn of conversation.turns) {
-      const article = node("article", undefined, "ai-turn");
-      article.append(
-        node("p", turn.question, "ai-question"),
-        node("small", `${turn.provider} · ${turn.model} · ${turn.status}`),
-      );
-      if (turn.context.length) {
-        const element = node("small");
-        contextLabels.push({ element, captured: turn.context });
-        article.append(element);
-      }
-      if (turn.reply) {
-        const reply = node("div");
-        renderMarkdown(reply, turn.reply);
-        article.append(reply);
-      }
-      if (turn.error) article.append(node("p", turn.error, "ai-error"));
-      for (const change of turn.changes) {
-        const review = node("details", undefined, "ai-change");
-        review.append(
-          node(
-            "summary",
-            `${change.kind} · ${change.name || turn.context.find((doc) => doc.id === change.documentID)?.name || "document"} · ${change.decision}`,
-          ),
-        );
-        review.append(node("p", change.reason));
-        if (change.before)
-          review.append(node("strong", "Before"), node("pre", change.before));
-        if (change.kind === "draft")
-          review.append(
-            node(
-              "p",
-              "Appends a paper draft with document heading styles. Existing content is preserved. Verify evidence and references before submission.",
-            ),
-          );
-        if (change.after)
-          review.append(node("strong", "After"), node("pre", change.after));
-        if (change.proposedAfter !== undefined) {
-          const original = node("details");
-          original.append(
-            node("summary", "Original AI wording"),
-            node("pre", change.proposedAfter),
-          );
-          review.append(original);
-        }
-        if (change.decision === "pending") {
-          const editable = ["replace", "append", "draft", "create"].includes(
-            change.kind,
-          );
-          const revised = node("textarea");
-          revised.setAttribute("aria-label", "Reviewed replacement text");
-          revised.value = change.after;
-          revised.maxLength = 1_000_000;
-          revised.rows = 5;
-          if (editable)
-            review.append(
-              node(
-                "p",
-                change.kind === "draft"
-                  ? "Review the draft. Use # title, ## section, ### subsection and plain paragraphs."
-                  : "Edit the replacement before applying it.",
-              ),
-              revised,
-            );
-          const apply = node("button", "Apply change");
-          const reject = node("button", "Reject");
-          const decide = async (action: "apply" | "reject") => {
-            busyState(true);
-            status.textContent = "Saving review decision…";
-            try {
-              render(
-                action === "apply"
-                  ? await actions.apply(
-                      change,
-                      editable ? revised.value : undefined,
-                    )
-                  : await actions.request<StudioConversation>("ai.decide", {
-                      changeID: change.id,
-                      decision: "reject",
-                    }),
-              );
-              status.textContent =
-                action === "apply"
-                  ? "Change applied and version saved."
-                  : "Proposal rejected.";
-            } catch (cause) {
-              error(cause);
-            } finally {
-              busyState(false);
-              renderChoices();
-            }
-          };
-          apply.onclick = () => void decide("apply");
-          reject.onclick = () => void decide("reject");
-          review.append(apply, reject);
-        }
-        article.append(review);
-      }
-      transcript.append(article);
-    }
-    transcript.scrollTop = transcript.scrollHeight;
-    refreshContextLabels();
-  };
-  provider.onchange = () => {
-    model.value =
-      provider.value === "codex"
-        ? defaults.codex
-        : provider.value === "claude"
-          ? defaults.claude
-          : "";
-    endpoint.hidden = provider.value !== "local";
-    key.hidden = provider.value !== "local";
-    key.value = "";
-    disclosure.textContent =
-      provider.value === "local"
-        ? "Selected files are sent to the loopback endpoint. The endpoint controls where inference runs."
-        : "Selected files go through your CLI to its model provider.";
-    updateSettingsLabel();
-  };
-  send.onclick = () =>
-    void (async () => {
-      busyState(true);
-      status.textContent = "Saving context and running…";
-      delete status.dataset.error;
-      try {
-        await actions.save();
-        const config: StudioAIConfig = {
-          provider: provider.value as StudioAIConfig["provider"],
-          model: model.value.trim(),
-          endpoint: endpoint.value.trim(),
-          apiKey: key.value.trim(),
-        };
-        render(
-          await actions.request<StudioConversation>("ai.ask", {
-            config,
-            question: question.value,
-            documentIDs: [...selected],
-          }),
-        );
-        question.value = "";
-        status.textContent =
-          "Reply saved. Review each proposal before applying.";
-      } catch (cause) {
-        error(cause);
+    appendToQuestion(academicDraftRequest(target.name) + question.value);
+    question.setSelectionRange(question.value.length, question.value.length);
+    note(
+      "Add your topic and journal instructions at the end, add source files as context, then Send. You review the draft before it is appended.",
+    );
+  });
+
+  send.addEventListener(
+    "click",
+    () =>
+      void (async () => {
+        if (busy || !question.value.trim()) return;
+        if (historyOpen) showTranscript(false);
+        const asked = question.value;
+        busyState(true);
+        // Send is hidden while running; Stop is the way out of a long run.
+        stop.focus();
+        note("Saving context and running…");
+        const pending = pendingTurn(asked, engine.summary());
+        transcript.querySelector(".assistant-empty")?.remove();
+        transcript.append(pending.element);
+        transcript.scrollTop = transcript.scrollHeight;
         try {
-          render(await actions.request<StudioConversation>("ai.history"));
-        } catch {
-          /* Preserve the visible transcript on storage failure. */
+          await actions.save();
+          render(
+            await actions.request<StudioConversation>("ai.ask", {
+              config: engine.config(),
+              question: asked,
+              documentIDs: [...selected],
+            }),
+          );
+          question.value = "";
+          autosize();
+          note(
+            conversation?.turns.at(-1)?.changes.length
+              ? "Reply saved. Review each proposal before applying it."
+              : "Reply saved.",
+          );
+        } catch (cause) {
+          error(cause);
+          try {
+            render(await actions.request<StudioConversation>("ai.history"));
+          } catch {
+            /* Preserve the visible transcript on storage failure. */
+            pending.element.remove();
+          }
+        } finally {
+          pending.stop();
+          busyState(false);
+          renderChoices();
+          restoreFocus(question);
         }
-      } finally {
-        busyState(false);
-        renderChoices();
-      }
-    })();
-  stop.onclick = () =>
-    void actions
-      .request("ai.cancel")
-      .then(() => {
-        status.textContent = "Stopping…";
-      })
-      .catch(error);
-  fresh.onclick = () =>
-    void (async () => {
-      busyState(true);
-      try {
-        render(await actions.request<StudioConversation>("ai.new"));
-        await loadArchives();
-        status.textContent = "Previous conversation archived locally.";
-      } catch (cause) {
-        error(cause);
-      } finally {
-        busyState(false);
-      }
-    })();
-  async function loadArchives() {
-    const list =
-      await actions.request<
-        Array<{ id: string; title: string; createdAt: string; turns: number }>
-      >("ai.conversations");
-    archives.replaceChildren();
-    for (const item of list) {
-      const option = node(
-        "option",
-        `${item.createdAt.slice(0, 10)} · ${item.title} (${item.turns} turns)`,
-      );
-      option.value = item.id;
-      archives.append(option);
-    }
-    resume.disabled = busy || !list.length;
-  }
-  resume.onclick = () =>
-    void (async () => {
-      if (!archives.value || busy) return;
-      busyState(true);
-      try {
-        render(
-          await actions.request<StudioConversation>("ai.resume", {
-            id: archives.value,
-          }),
-        );
-        await loadArchives();
-        status.textContent =
-          "Conversation resumed. The previous conversation was archived; document revisions still guard every proposal.";
-      } catch (cause) {
-        error(cause);
-      } finally {
-        busyState(false);
-      }
-    })();
+      })(),
+  );
+  stop.addEventListener(
+    "click",
+    () =>
+      void actions
+        .request("ai.cancel")
+        .then(() => note("Stopping…"))
+        .catch(error),
+  );
+  fresh.addEventListener(
+    "click",
+    () =>
+      void (async () => {
+        if (busy) return;
+        const hadTurns = !!conversation?.turns.length;
+        busyState(true);
+        try {
+          render(await actions.request<StudioConversation>("ai.new"));
+          await loadArchives();
+          if (historyOpen) showTranscript(false);
+          note(
+            hadTurns
+              ? "Previous conversation archived. Find it in History."
+              : "New conversation started.",
+          );
+        } catch (cause) {
+          error(cause);
+        } finally {
+          busyState(false);
+          renderChoices();
+          restoreFocus(question);
+        }
+      })(),
+  );
+
+  // Wrapping changes with the panel width, so the composer height follows it.
+  let composerWidth = 0;
+  new ResizeObserver(() => {
+    if (question.clientWidth === composerWidth) return;
+    composerWidth = question.clientWidth;
+    // Resizing the observed element inside its own callback can log a loop warning.
+    requestAnimationFrame(autosize);
+  }).observe(question);
+
   return {
     refresh() {
       renderChoices();
-      refreshContextLabels();
+      refreshContext();
     },
     close: closePanel,
+    dismiss,
     async open(trigger?: HTMLElement) {
       opener = trigger ?? opener;
       opener?.setAttribute("aria-controls", panel.id);
@@ -477,23 +563,19 @@ export function aiPanel(
       question.focus();
       if (busy) return;
       const activeID = actions.activeID();
-      if (!selected.size && activeID) {
-        selected.add(activeID);
-        renderChoices();
-      }
+      if (!selected.size && activeID) selected.add(activeID);
+      renderChoices();
       if (loaded) return;
       try {
-        defaults = await actions.request("ai.defaults");
-        if (!model.value)
-          model.value =
-            provider.value === "codex"
-              ? defaults.codex
-              : provider.value === "claude"
-                ? defaults.claude
-                : "";
-        updateSettingsLabel();
-        renderChoices();
-        render(await actions.request<StudioConversation>("ai.history"));
+        const defaults = await actions.request<StudioAIDefaults>("ai.defaults");
+        const current = await actions.request<StudioConversation>("ai.history");
+        // Continue with the provider and model of the latest question.
+        const last = current.turns.at(-1);
+        engine.setDefaults(
+          defaults,
+          last ? { provider: last.provider, model: last.model } : undefined,
+        );
+        render(current);
         await loadArchives();
         loaded = true;
       } catch (cause) {
