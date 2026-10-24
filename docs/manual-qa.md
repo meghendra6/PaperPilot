@@ -1407,3 +1407,20 @@ window prompts or process shutdown on the installed Zotero build.
 - [ ] Verify original Zotero items, attachment files, sync additions, separately
       saved files and unknown legacy temporary/export files are preserved. Start a
       new quick project from the same papers after successful deletion.
+
+## Project creation PDF reading
+
+- [ ] Create a project with one selected PDF. Confirm the status advances through
+      attachment resolution, local extractor preparation, extraction, and project
+      creation, with no model invocation. Repeat with several PDFs and verify the
+      current PDF number is shown.
+- [ ] With disposable delayed adapters, leave Java detection, a native file read,
+      launch acknowledgment, and Zotero attachment-text retrieval unresolved in turn.
+      Confirm a bounded fallback or a visible stage-specific error; the Create button
+      must become usable again. No project may be created after a failed attempt.
+- [ ] Retry after a timeout, then finish the old deferred read. The new result and
+      status must remain current. If one PDF fails in a multiple-PDF selection, report
+      it while retaining the successfully read papers.
+- [ ] Let a detached extractor appear after launch acknowledgment times out.
+      Confirm termination precedes output removal; if stop cannot be confirmed,
+      retain its launch/PID evidence and report that cleanup remains unresolved.

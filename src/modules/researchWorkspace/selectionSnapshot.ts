@@ -4,6 +4,14 @@ import {
   resolveResearchWorkspaceSource,
   type ResearchWorkspacePaper,
 } from "./paperSource";
+import {
+  waitForPDFRead,
+  throwIfPDFReadAborted,
+} from "../tools/pdfReadDeadline";
+import {
+  SELECTED_PDF_READ_TIMEOUT_MS,
+  createSelectionReadController,
+} from "./surfaceSelection";
 
 declare const Zotero: any;
 
@@ -185,17 +193,47 @@ export async function captureResearchWorkspaceSelection(
 export async function loadResearchWorkspaceSnapshotPapers(
   snapshot: ResearchWorkspaceSelectionSnapshot,
   maxCharacters = 1_500_000,
+  options: {
+    signal?: AbortSignal;
+    onStatus?: (message: string) => void;
+    timeoutMs?: number;
+  } = {},
 ): Promise<ResearchWorkspaceSnapshotLoadResult> {
   const papers: ResearchWorkspacePaper[] = [];
   const skipped = [...snapshot.skipped];
 
-  for (const candidate of snapshot.candidates) {
+  for (const [index, candidate] of snapshot.candidates.entries()) {
+    throwIfPDFReadAborted(options.signal);
+    const controller = createSelectionReadController();
+    const abort = () => controller.abort();
+    options.signal?.addEventListener("abort", abort, { once: true });
+    const label = `Reading PDF ${index + 1} of ${snapshot.candidates.length}`;
     try {
-      const attachment = await getResearchWorkspaceItem(candidate.attachmentID);
-      if (!attachment) {
-        throw new Error("The captured PDF attachment is no longer available.");
-      }
-      const paper = await loadResearchWorkspacePaper(attachment, maxCharacters);
+      options.onStatus?.(`${label}: locating the attachment…`);
+      const paper = await waitForPDFRead(
+        async () => {
+          const attachment = await getResearchWorkspaceItem(
+            candidate.attachmentID,
+          );
+          throwIfPDFReadAborted(controller.signal);
+          if (!attachment)
+            throw new Error(
+              "The captured PDF attachment is no longer available.",
+            );
+          return loadResearchWorkspacePaper(attachment, maxCharacters, {
+            signal: controller.signal,
+            onStatus: (message) => {
+              if (!controller.signal.aborted)
+                options.onStatus?.(`${label}: ${message}`);
+            },
+          });
+        },
+        {
+          signal: controller.signal,
+          timeoutMs: options.timeoutMs ?? SELECTED_PDF_READ_TIMEOUT_MS,
+          stage: label,
+        },
+      );
       if (paper.sourceID !== candidate.sourceID) {
         skipped.push({
           selectedIndex: candidate.selectedIndex,
@@ -209,6 +247,7 @@ export async function loadResearchWorkspaceSnapshotPapers(
       }
       papers.push(paper);
     } catch (error) {
+      throwIfPDFReadAborted(options.signal);
       skipped.push({
         selectedIndex: candidate.selectedIndex,
         selectedItemID: candidate.selectedItemID,
@@ -216,6 +255,9 @@ export async function loadResearchWorkspaceSnapshotPapers(
         code: "load-failed",
         reason: error instanceof Error ? error.message : String(error),
       });
+    } finally {
+      controller.abort();
+      options.signal?.removeEventListener("abort", abort);
     }
   }
 

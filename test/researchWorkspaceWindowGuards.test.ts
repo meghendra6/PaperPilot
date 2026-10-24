@@ -31,7 +31,7 @@ test("a selection is not added to a project while its analysis runs", () => {
   );
   assert.ok(
     add.indexOf("hasRunningOperation(body)") <
-      add.indexOf("await selection.load()"),
+      add.indexOf("await loadSelectionPapers(selection,"),
   );
 });
 
@@ -155,7 +155,7 @@ test("selection actions read the current selection, never earlier papers", () =>
   const window = source("window.ts");
   assert.match(
     window,
-    /const selection = adoptSelection\(body, snapshot\);\s*const loaded = await selection\.load\(\);/,
+    /const selection = adoptSelection\(body, snapshot\);\s*const loaded = await loadSelectionPapers\(selection,/,
   );
 });
 

@@ -573,6 +573,15 @@ that document boundary.
      subprocess records its pid and exit code and is terminated after a
      two-minute extraction limit, with the fallback reason kept in
      `extractionNotes`
+     - PDF loading also bounds Java detection, extractor preparation, individual
+       file reads, launch acknowledgment, shutdown, and Zotero attachment-text
+       fallback. A missing worker reply cannot leave project creation busy
+       indefinitely. Unconfirmed launch/shutdown retains its temporary files;
+       an abandoned launch is observed and cleaned up when it eventually settles.
+       Selection reads report the current stage, impose a three-minute limit per
+       PDF, and clear failed cached attempts so retry starts a fresh read. Aborted
+       or late results cannot publish paper-cache content or overwrite a newer
+       selection result.
    - chunks and retrieves top-K passages (`context/indexStore.ts`,
      `context/retriever.ts`)
    - writes the workspace artifacts (see below)
