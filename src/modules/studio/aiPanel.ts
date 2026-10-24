@@ -285,6 +285,12 @@ export function aiPanel(
       } finally {
         busyState(false);
         renderChoices();
+        // Rendering replaced the focused button; return to the same card.
+        (
+          transcript.querySelector<HTMLElement>(
+            `[data-change-id="${CSS.escape(change.id)}"] > summary`,
+          ) ?? question
+        ).focus();
       }
     })();
 
@@ -347,7 +353,6 @@ export function aiPanel(
       render(await actions.request<StudioConversation>("ai.resume", { id }));
       await loadArchives();
       showTranscript(false);
-      question.focus();
       note(
         "Conversation resumed. The previous one is in History; document revisions still guard every proposal.",
       );
@@ -355,6 +360,13 @@ export function aiPanel(
       error(cause);
     } finally {
       busyState(false);
+      renderChoices();
+      // The history list held focus; keep it inside the panel.
+      if (historyOpen)
+        (
+          history.querySelector<HTMLButtonElement>("button") ?? question
+        ).focus();
+      else question.focus();
     }
   }
 
@@ -445,6 +457,8 @@ export function aiPanel(
         if (historyOpen) showTranscript(false);
         const asked = question.value;
         busyState(true);
+        // Send is hidden while running; Stop is the way out of a long run.
+        stop.focus();
         note("Saving context and running…");
         const pending = pendingTurn(asked, engine.summary());
         transcript.querySelector(".assistant-empty")?.remove();
@@ -510,10 +524,19 @@ export function aiPanel(
           error(cause);
         } finally {
           busyState(false);
+          renderChoices();
           question.focus();
         }
       })(),
   );
+
+  // Wrapping changes with the panel width, so the composer height follows it.
+  let composerWidth = 0;
+  new ResizeObserver(() => {
+    if (question.clientWidth === composerWidth) return;
+    composerWidth = question.clientWidth;
+    autosize();
+  }).observe(question);
 
   return {
     refresh() {

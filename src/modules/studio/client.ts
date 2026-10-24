@@ -499,7 +499,10 @@ const templateButton = button("Save as template…", () => {
       await refresh();
       saved = true;
     });
-    if (!saved) return;
+    if (!saved)
+      throw new Error(
+        "Another document operation is running. Try again when it finishes.",
+      );
     delete status.dataset.error;
     status.textContent = `Template saved: ${name}. New ${extension.toUpperCase()} documents can start from it.`;
     dialog.close();
@@ -1398,6 +1401,8 @@ async function openDocument(id: string, asSource = false) {
     delete status.dataset.error;
     status.textContent = `${active.archived ? "Archived" : "Saved locally"} · revision ${active.revision}`;
     renderFiles();
+    // The assistant offers the open document as context.
+    assistant.refresh();
     fileList.querySelector(".selected")?.scrollIntoView({ block: "nearest" });
   } finally {
     switching = false;
@@ -1522,6 +1527,7 @@ async function createDocument(name: string, template: TemplateChoice) {
   switching = true;
   updateActions();
   const previousID = active?.id;
+  let created: StudioDocument | undefined;
   try {
     await save();
     let base64 = "";
@@ -1546,7 +1552,7 @@ async function createDocument(name: string, template: TemplateChoice) {
         new TextEncoder().encode(JSON.stringify(newBoard(), null, 2) + "\n"),
       );
     }
-    const created = await request<StudioDocument>("create", { name, base64 });
+    created = await request<StudioDocument>("create", { name, base64 });
     await refresh();
     fileSearch.value = "";
     switching = false;
@@ -1554,9 +1560,21 @@ async function createDocument(name: string, template: TemplateChoice) {
     status.textContent = `Created ${created.name}`;
     return true;
   } catch (error) {
-    if (!active && previousID) {
+    if (!active) {
       switching = false;
-      await openDocument(previousID);
+      // A DOCX path mounted a blank editor; never leave it ownerless.
+      if (previousID) await openDocument(previousID).catch(showError);
+      else destroyEditor();
+    }
+    // The file exists once create succeeds: report the failed open instead
+    // of keeping the dialog open for a retry that would collide.
+    if (created) {
+      showError(
+        new Error(
+          `Created ${created.name}, but it could not be opened: ${error instanceof Error ? error.message : String(error)}`,
+        ),
+      );
+      return true;
     }
     throw error;
   } finally {

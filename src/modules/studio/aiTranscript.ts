@@ -92,6 +92,7 @@ function changeCard(
 ) {
   const card = node("details", undefined, "ai-change");
   card.dataset.decision = change.decision;
+  card.dataset.changeId = change.id;
   card.open = change.decision === "pending";
   const summary = node("summary");
   const target =

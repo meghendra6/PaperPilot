@@ -89,6 +89,7 @@ export function referencePanel(
     if (busy) return;
     if (loading)
       throw new Error("Wait for the reference file to finish loading.");
+    const focused = document.activeElement as HTMLElement | null;
     busy = true;
     panel.inert = true;
     panel.setAttribute("aria-busy", "true");
@@ -98,6 +99,13 @@ export function referencePanel(
       busy = false;
       panel.inert = false;
       panel.removeAttribute("aria-busy");
+      // Inert moved focus to the body; return it to the control that ran the
+      // action, or to the panel's first step when that control is now hidden.
+      if (!panel.hidden && document.activeElement === document.body)
+        (focused?.isConnected && focused.getClientRects().length
+          ? focused
+          : primaryControl()
+        ).focus();
     }
   };
   const format = async (kind: "citation" | "bibliography") => {
@@ -289,6 +297,11 @@ export function referencePanel(
   styleLabel.append(style);
   let targetIsWord: boolean | undefined;
   let hasFiles = false;
+  /** The search field, the empty state's import action, or Close. */
+  const primaryControl = (): HTMLElement =>
+    [filter, importFirst, closeButton].find(
+      (control) => control.getClientRects().length > 0,
+    ) ?? closeButton;
   const refreshTarget = () => {
     const name = actions.activeName();
     const word = !!name && /\.docx$/i.test(name);
@@ -460,7 +473,7 @@ export function referencePanel(
       panel.hidden = false;
       host.classList.add("with-references");
       refreshTarget();
-      filter.focus();
+      primaryControl().focus();
       if (loading) return;
       try {
         await guarded(async () => {
@@ -482,7 +495,7 @@ export function referencePanel(
       } catch (error) {
         fail(error);
       } finally {
-        if (!panel.hidden && !busy && !loading) filter.focus();
+        if (!panel.hidden && !busy && !loading) primaryControl().focus();
       }
     },
   };

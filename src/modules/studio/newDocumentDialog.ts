@@ -95,8 +95,10 @@ export function newDocumentDialog(actions: {
   name.autocomplete = "off";
   name.spellcheck = false;
   nameLabel.append(node("span", "File name"), name);
+  // Described by, not live: a live region would speak on every keystroke.
   const preview = node("p", undefined, "name-preview");
-  preview.setAttribute("aria-live", "polite");
+  preview.id = "new-document-name-preview";
+  name.setAttribute("aria-describedby", preview.id);
   const error = node("p", undefined, "dialog-error");
   error.setAttribute("role", "alert");
 
@@ -200,9 +202,10 @@ export function newDocumentDialog(actions: {
     updatePreview();
   });
 
-  form.addEventListener("keydown", (event) => {
-    const target = event.target as HTMLElement;
-    if (event.key === "Enter" && target.tagName === "INPUT") {
+  // Only the name field submits: Enter on a focused format must not create
+  // an unnamed file.
+  name.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
       event.preventDefault();
       submit();
     }
@@ -232,6 +235,9 @@ export function newDocumentDialog(actions: {
       try {
         if (await actions.create({ name: resolved, template: chosen }))
           dialog.close();
+        else
+          error.textContent =
+            "Another document operation is running. Try again when it finishes.";
       } catch (cause) {
         error.textContent =
           cause instanceof Error ? cause.message : String(cause);

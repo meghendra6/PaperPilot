@@ -28,7 +28,7 @@
   --border: #d9dfdf;
   --border-strong: #c3cbcd;
   /* Text fields need a 3:1 boundary against the surface. */
-  --control-border: #8d989c;
+  --control-border: #808b91;
   --danger: #a02222;
   --danger-soft: #fbefef;
   --success: #2a6a3e;
@@ -279,10 +279,11 @@ dialog textarea {
   max-height: min(720px, 90vh);
   padding: 0;
 }
+/* The dialog's 1px borders sit inside its max-height. */
 .new-document .dialog-body {
   display: flex;
   flex-direction: column;
-  max-height: inherit;
+  max-height: calc(min(720px, 90vh) - 2px);
 }
 .new-document .dialog-body > h2 {
   padding: 22px 24px 0;
