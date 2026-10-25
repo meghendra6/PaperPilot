@@ -735,6 +735,7 @@ type ExtractorStop = (
   processId: string | undefined,
   options: { requireProcessId?: boolean },
   deadline: number,
+  signal: AbortSignal,
 ) => Promise<void>;
 
 async function confirmExtractorStopped(params: {
@@ -746,9 +747,11 @@ async function confirmExtractorStopped(params: {
 }) {
   const directory = params.pidPath.replace(/[\\/][^\\/]+$/, "");
   const deadline = Date.now() + params.cleanupTimeoutMs;
+  const controller = createPDFReadController();
   const cleanup = <T>(action: () => T | PromiseLike<T>, stage: string) =>
     waitForPDFRead(action, {
       timeoutMs: Math.max(0, deadline - Date.now()),
+      signal: controller.signal,
       stage,
     });
   const read = async (path: string) => {
@@ -766,11 +769,21 @@ async function confirmExtractorStopped(params: {
     if (confirmedExitStatus(await read(params.exitCodePath))) return;
     const pid = (await read(params.pidPath)).trim();
     await cleanup(
-      () => params.stop(pid, { requireProcessId: true }, deadline),
+      () =>
+        params.stop(
+          pid,
+          { requireProcessId: true },
+          deadline,
+          controller.signal,
+        ),
       "Stopping the PDF extractor",
     );
   } catch (error) {
     throw new ExtractorCleanupUnconfirmedError(directory, error);
+  } finally {
+    // Revoke nested ownership checks even if their own deadline timer has not
+    // fired yet. A failed cleanup must never authorize a later PID signal.
+    controller.abort();
   }
 }
 
@@ -865,6 +878,7 @@ async function stopOwnedExtractor(
   pid: string | undefined,
   directory: string,
   deadline: number,
+  signal: AbortSignal,
 ) {
   if (
     !pid ||
@@ -882,6 +896,7 @@ async function stopOwnedExtractor(
         ]),
       {
         timeoutMs: Math.max(0, deadline - Date.now()),
+        signal,
         stage: "Checking PDF extractor process ownership",
       },
     ),
@@ -900,6 +915,7 @@ async function stopOwnedExtractor(
     () => stopDetachedRunProcess(pid, { requireProcessId: true }),
     {
       timeoutMs: Math.max(0, deadline - Date.now()),
+      signal,
       stage: "Stopping the PDF extractor",
     },
   );
@@ -968,8 +984,8 @@ export async function extractStructuredPdf(
       exitCodePath,
       pidPath,
       read: readTextFile,
-      stop: (pid, _options, deadline) =>
-        stopOwnedExtractor(pid, outputDir, deadline),
+      stop: (pid, _options, deadline, cleanupSignal) =>
+        stopOwnedExtractor(pid, outputDir, deadline, cleanupSignal),
       cleanupTimeoutMs: budgets.cleanupMs,
     });
   return withOpenDataLoaderOutputCleanup(
@@ -1013,8 +1029,8 @@ export async function extractStructuredPdf(
           timeoutMs: budgets.runMs,
           stageTimeoutMs: budgets.stageMs,
           cleanupTimeoutMs: budgets.cleanupMs,
-          stop: async (pid, _options, deadline) => {
-            await stopOwnedExtractor(pid, outputDir, deadline);
+          stop: async (pid, _options, deadline, cleanupSignal) => {
+            await stopOwnedExtractor(pid, outputDir, deadline, cleanupSignal);
             stopped = true;
           },
         });

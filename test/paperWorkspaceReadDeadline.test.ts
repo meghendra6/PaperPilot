@@ -481,19 +481,40 @@ test("a stalled extracted-text read is bounded even after the process has exited
   assert.equal(f.stops(), 0);
 });
 
-test("an expired process ownership lookup cannot signal a PID after cleanup has failed", async (t) => {
+test("an expired cleanup cannot authorize a late PID signal while the ownership timer is still pending", async (t) => {
   const f = fixture(t);
+  const timers = new Set<{ fire: () => void }>();
+  t.mock.method(Date, "now", () => 1_000);
+  t.mock.method(globalThis, "setTimeout", (callback: () => void) => {
+    const timer = { fire: callback };
+    timers.add(timer);
+    return timer as unknown as ReturnType<typeof setTimeout>;
+  });
+  t.mock.method(globalThis, "clearTimeout", (timer: unknown) => {
+    timers.delete(timer as { fire: () => void });
+  });
   const process = deferred<string>();
-  f.controls.process = () => process.promise;
+  const ownershipEntered = deferred<void>();
+  f.controls.process = () => {
+    ownershipEntered.resolve();
+    return process.promise;
+  };
   f.controls.launch = async () => {
     f.disk.set(`${f.directory}/extractor-pid.txt`, "4242");
   };
-  await assert.rejects(
+  const failed = assert.rejects(
     extractStructuredPdf("/synthetic/input.pdf", undefined, {
-      timeouts: { ...f.timeouts, runMs: 2, cleanupMs: 5 },
+      timeouts: { ...f.timeouts, runMs: 0, cleanupMs: 100 },
     }),
     ExtractorCleanupUnconfirmedError,
   );
+  await ownershipEntered.promise;
+  // The enclosing cleanup timer can fire before the nested ownership timer.
+  // Keep the wall clock within budget to ensure revocation is authoritative.
+  const [cleanupTimer] = [...timers];
+  assert.equal(timers.size, 2);
+  cleanupTimer.fire();
+  await failed;
   assert.equal(f.stops(), 0);
   process.resolve(
     `/bin/zsh -lc java ${f.directory}/extractor\n__PAPERPILOT_EXIT__=0\n`,

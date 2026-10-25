@@ -1478,3 +1478,6 @@ window prompts or process shutdown on the installed Zotero build.
 - [ ] Let a detached extractor appear after launch acknowledgment times out.
       Confirm termination precedes output removal; if stop cannot be confirmed,
       retain its launch/PID evidence and report that cleanup remains unresolved.
+- [ ] Delay the extractor process-ownership lookup until its cleanup timeout has
+      failed, then return a matching command line. Confirm no late stop is issued
+      and the launch/PID evidence remains available for recovery.
