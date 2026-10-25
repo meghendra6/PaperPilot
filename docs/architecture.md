@@ -596,6 +596,8 @@ that document boundary.
        fallback. A missing worker reply cannot leave project creation busy
        indefinitely. Unconfirmed launch/shutdown retains its temporary files;
        an abandoned launch is observed and cleaned up when it eventually settles.
+       A failed shutdown attempt cancels its pending ownership lookup, so a late
+       process-description result cannot authorize a stop after cleanup failed.
        Selection reads report the current stage, impose a three-minute limit per
        PDF, and clear failed cached attempts so retry starts a fresh read. Aborted
        or late results cannot publish paper-cache content or overwrite a newer
