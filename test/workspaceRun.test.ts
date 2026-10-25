@@ -6,6 +6,7 @@ import {
   extractWorkspaceRunText,
   getWorkspaceEngineActiveMessage,
   getWorkspaceEngineLabel,
+  hasConfirmedWorkspaceProcessExit,
   isWorkspaceRunReservedForItem,
   releaseWorkspaceRunReservation,
   startWorkspaceTextRun,
@@ -24,6 +25,36 @@ import {
   canResumeProviderSession,
   getRunWorkspaceTitle,
 } from "../src/modules/ai/runProfile";
+
+test("only numeric process exit markers confirm workspace completion", () => {
+  for (const exitCode of ["0", "1", "137"])
+    assert.equal(
+      hasConfirmedWorkspaceProcessExit({ completed: true, exitCode }),
+      true,
+    );
+  for (const exitCode of [
+    "",
+    "file-read-error",
+    "provider-failed",
+    "empty-output",
+  ])
+    assert.equal(
+      hasConfirmedWorkspaceProcessExit({ completed: true, exitCode }),
+      false,
+    );
+  assert.equal(
+    hasConfirmedWorkspaceProcessExit({ completed: false, exitCode: "0" }),
+    false,
+  );
+  assert.equal(
+    hasConfirmedWorkspaceProcessExit({
+      completed: true,
+      exitCode: "provider-failed",
+      processExitCode: "0",
+    }),
+    true,
+  );
+});
 
 test("run profiles isolate hidden workflows from the visible chat session", () => {
   assert.equal(getRunWorkspaceTitle("Paper", "chat"), "Paper");

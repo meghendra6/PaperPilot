@@ -50,6 +50,7 @@ import {
 import { startClaudeRunForQuestion, readClaudeRunProgress } from "./runner";
 import { stopClaudeRunSilently } from "./stopRun";
 import {
+  confirmReaderRunProcessExit,
   isWorkspaceRunReservedForItem,
   resolveRunAnswer,
 } from "../ai/workspaceRun";
@@ -461,6 +462,17 @@ export async function handleClaudeQuestion(params: {
         clearClaudePollerIfOwned(params.itemID, poller);
       return;
     }
+
+    if (
+      !(await confirmReaderRunProcessExit({
+        itemID: params.itemID,
+        mode: "claude_code",
+        token: runToken,
+        progress,
+        processId: result.processId,
+      }))
+    )
+      return;
 
     setClaudeRunStateForItem(params.itemID, {});
     clearClaudePollerForItem(params.itemID);

@@ -188,6 +188,37 @@ test("addPapers retries a concurrent source revision", async () => {
   );
 });
 
+test("addPapers preserves reading state when a concurrent intake adds its member", async () => {
+  const { projects, repository } = setup();
+  const selectedPaper = paper("A");
+  const { project } = await projects.createProject({
+    projectID: "project-member-retry",
+    name: "Member retry",
+  });
+  const addMembers = repository.addMembers.bind(repository);
+  let injected = false;
+  repository.addMembers = async (...args) => {
+    if (!injected) {
+      injected = true;
+      await addMembers(...args);
+      await projects.updateReadingState({
+        projectID: project.projectID,
+        sourceID: selectedPaper.sourceID,
+        readingProgress: "read",
+        understanding: "understood",
+      });
+    }
+    return addMembers(...args);
+  };
+
+  const result = await projects.addPapers(project.projectID, [selectedPaper]);
+
+  assert.equal(injected, true);
+  assert.equal(result.members.length, 1);
+  assert.equal(result.members[0].readingProgress, "read");
+  assert.equal(result.members[0].understanding, "understood");
+});
+
 test("updating a shared source stales artifacts in every project that uses it", async () => {
   const { projects, operations, repository } = setup();
   const original = paper("A", "fingerprint-shared-v1");

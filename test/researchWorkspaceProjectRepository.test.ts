@@ -15,6 +15,7 @@ import { parseResearchWorkspaceMembersFile } from "../src/modules/researchWorksp
 class MemoryWorkspaceFiles implements ResearchWorkspaceFileOps {
   readonly files = new Map<string, string>();
   readonly directories = new Set<string>();
+  readonly reads: string[] = [];
   readonly writes: string[] = [];
   failWrite: ((path: string) => boolean) | undefined;
 
@@ -29,6 +30,7 @@ class MemoryWorkspaceFiles implements ResearchWorkspaceFileOps {
   }
 
   async readText(path: string) {
+    this.reads.push(path);
     return this.files.get(path);
   }
 
@@ -60,7 +62,7 @@ class MemoryWorkspaceFiles implements ResearchWorkspaceFileOps {
   }
 }
 
-function repository(files = new MemoryWorkspaceFiles()) {
+function repository(files = new MemoryWorkspaceFiles(), now?: () => Date) {
   let clock = Date.parse("2026-08-29T00:00:00.000Z");
   const ids = new Map<string, number>();
   const warnings: string[] = [];
@@ -70,7 +72,7 @@ function repository(files = new MemoryWorkspaceFiles()) {
     repository: new ResearchWorkspaceProjectRepository({
       rootDir: "/profile/paperpilot-research-workspace",
       fileOps: files,
-      now: () => new Date(clock++),
+      now: now ?? (() => new Date(clock++)),
       idFactory: (prefix) => {
         const value = (ids.get(prefix) ?? 0) + 1;
         ids.set(prefix, value);
@@ -340,6 +342,129 @@ test("screening histories round-trip and reject broken provenance", () => {
   assert.throws(
     () => parseResearchWorkspaceMembersFile(duplicateSubmission),
     /Duplicate submission/,
+  );
+});
+
+test("project list counts v2 mastery reviews when their due time passes without writes", async () => {
+  let now = Date.parse("2026-08-29T00:00:00.000Z");
+  const setup = repository(new MemoryWorkspaceFiles(), () => new Date(now));
+  const created = await setup.repository.createProject({
+    projectID: "project-mastery-due",
+    name: "Mastery review",
+  });
+  const sourceA = source("A");
+  await setup.repository.putSource(sourceA);
+  await setup.repository.addMembers(
+    created.project.projectID,
+    created.membersRevision,
+    [{ sourceID: sourceA.sourceID }],
+  );
+  await setup.repository.createArtifact(created.project.projectID, {
+    type: "paper-mastery",
+    title: "Paper Mastery",
+    status: "complete",
+    sourceIDs: [sourceA.sourceID],
+    lineage: { ...lineage([sourceA]), operation: "paper-mastery-grade" },
+    payload: {
+      session: {
+        schemaVersion: 2,
+        phase: "active",
+        conceptStates: {
+          methods: { nextReviewAt: "2026-08-30T00:00:00.000Z" },
+          results: { nextReviewAt: "2026-08-30T01:00:00.000Z" },
+        },
+      },
+      dashboard: { nextReviewAt: "2026-08-30T00:00:00.000Z" },
+    },
+  });
+  const writtenFiles = [...setup.files.files];
+
+  assert.equal(
+    (await setup.repository.listProjects({ includeDueMasteryReviews: true }))[0]
+      .dueMasteryReviewCount,
+    0,
+  );
+  now = Date.parse("2026-08-30T02:00:00.000Z");
+  assert.equal(
+    (await setup.repository.listProjects({ includeDueMasteryReviews: true }))[0]
+      .dueMasteryReviewCount,
+    1,
+  );
+  assert.deepEqual([...setup.files.files], writtenFiles);
+});
+
+test("mastery review counts use the latest complete session for each source scope", async () => {
+  const setup = repository();
+  const created = await setup.repository.createProject({
+    projectID: "project-mastery-history",
+    name: "Mastery history",
+  });
+  const sourceA = source("A");
+  const saveSession = (phase: string, operation: string) =>
+    setup.repository.createArtifact(created.project.projectID, {
+      type: "paper-mastery",
+      title: "Paper Mastery",
+      status: "complete",
+      supersedeLatest: false,
+      sourceIDs: [sourceA.sourceID],
+      lineage: { ...lineage([sourceA]), operation },
+      payload: {
+        session: {
+          schemaVersion: 2,
+          phase,
+          conceptStates: {
+            methods: { nextReviewAt: "2026-08-28T00:00:00.000Z" },
+          },
+        },
+      },
+    });
+  await saveSession("active", "paper-mastery");
+  await saveSession("active", "paper-mastery-grade");
+  assert.equal(
+    (await setup.repository.listProjects({ includeDueMasteryReviews: true }))[0]
+      .dueMasteryReviewCount,
+    1,
+  );
+  await saveSession("complete", "paper-mastery-grade");
+  assert.equal(
+    (await setup.repository.listProjects({ includeDueMasteryReviews: true }))[0]
+      .dueMasteryReviewCount,
+    0,
+  );
+});
+
+test("default project listing and source lookup do not read artifact payloads", async () => {
+  const setup = repository();
+  const created = await setup.repository.createProject({
+    projectID: "project-lightweight-list",
+    name: "Lightweight listing",
+  });
+  const projectID = created.project.projectID;
+  const sourceA = source("A");
+  await setup.repository.putSource(sourceA);
+  await setup.repository.addMembers(projectID, created.membersRevision, [
+    { sourceID: sourceA.sourceID },
+  ]);
+  await setup.repository.createArtifact(projectID, {
+    type: "paper-mastery",
+    title: "Paper Mastery",
+    status: "complete",
+    sourceIDs: [sourceA.sourceID],
+    lineage: { ...lineage([sourceA]), operation: "paper-mastery" },
+    payload: { session: { phase: "active", conceptStates: {} } },
+  });
+  setup.files.reads.length = 0;
+
+  const entries = await setup.repository.listProjects();
+  assert.equal(entries[0].projectID, projectID);
+  assert.deepEqual(setup.files.reads, [setup.repository.catalogPath]);
+  assert.deepEqual(
+    await setup.repository.listProjectIDsForSource(sourceA.sourceID),
+    [projectID],
+  );
+  assert.equal(
+    setup.files.reads.some((path) => path.includes("/artifacts/")),
+    false,
   );
 });
 

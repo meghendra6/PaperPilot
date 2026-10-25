@@ -51,6 +51,8 @@ export function aiPanel(
   let opener: HTMLElement | undefined;
   let loaded = false;
   let busy = false;
+  let canceled = false;
+  let asking = false;
   let historyOpen = false;
   let conversation: StudioConversation | undefined;
   let archives: ConversationSummary[] = [];
@@ -464,6 +466,7 @@ export function aiPanel(
         if (busy || !question.value.trim()) return;
         if (historyOpen) showTranscript(false);
         const asked = question.value;
+        canceled = false;
         busyState(true);
         // Send is hidden while running; Stop is the way out of a long run.
         stop.focus();
@@ -474,6 +477,14 @@ export function aiPanel(
         transcript.scrollTop = transcript.scrollHeight;
         try {
           await actions.save();
+          // The host has no AI operation to cancel until ai.ask starts.
+          // Remember Stop through the save instead of launching afterward.
+          if (canceled) {
+            pending.element.remove();
+            note("Stopped before starting AI.");
+            return;
+          }
+          asking = true;
           render(
             await actions.request<StudioConversation>("ai.ask", {
               config: engine.config(),
@@ -497,6 +508,7 @@ export function aiPanel(
             pending.element.remove();
           }
         } finally {
+          asking = false;
           pending.stop();
           busyState(false);
           renderChoices();
@@ -504,14 +516,11 @@ export function aiPanel(
         }
       })(),
   );
-  stop.addEventListener(
-    "click",
-    () =>
-      void actions
-        .request("ai.cancel")
-        .then(() => note("Stopping…"))
-        .catch(error),
-  );
+  stop.addEventListener("click", () => {
+    canceled = true;
+    note("Stopping…");
+    if (asking) void actions.request("ai.cancel").catch(error);
+  });
   fresh.addEventListener(
     "click",
     () =>
