@@ -6,6 +6,7 @@ import {
   getWorkspaceEngineActiveMessage,
   getWorkspaceEngineLabel,
   readWorkspaceRunProgress,
+  hasConfirmedWorkspaceProcessExit,
   releaseReservationAfterConfirmedCleanup,
   releaseWorkspaceRunReservation,
   startWorkspaceTextRun,
@@ -830,7 +831,7 @@ export async function generateRelatedPaperGroups(params: {
           exitCodePath: result.exitCodePath,
         });
         if (progress.completed) {
-          completed = true;
+          completed = hasConfirmedWorkspaceProcessExit(progress);
           const responseText = extractWorkspaceRunText(mode, progress);
           if (progress.exitCode !== "0") {
             throw new Error(responseText || "Related paper generation failed.");
@@ -1004,7 +1005,7 @@ export async function generatePublicReviewInsight(params: {
           exitCodePath: result.exitCodePath,
         });
         if (progress.completed) {
-          completed = true;
+          completed = hasConfirmedWorkspaceProcessExit(progress);
           const responseText = extractWorkspaceRunText(mode, progress);
           if (progress.exitCode !== "0") {
             throw new Error(responseText || "Public-review analysis failed.");

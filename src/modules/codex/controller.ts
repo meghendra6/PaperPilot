@@ -52,6 +52,7 @@ import { readCodexRunProgress, startCodexRunForQuestion } from "./runner";
 import { stopCodexRunSilently } from "./stopRun";
 import { classifyCodexLoginFailure } from "./statusClassification";
 import {
+  confirmReaderRunProcessExit,
   isWorkspaceRunReservedForItem,
   resolveRunAnswer,
 } from "../ai/workspaceRun";
@@ -501,6 +502,17 @@ export async function handleCodexQuestion(params: {
         clearCodexPollerIfOwned(params.itemID, poller);
       return;
     }
+
+    if (
+      !(await confirmReaderRunProcessExit({
+        itemID: params.itemID,
+        mode: "codex_cli",
+        token: runToken,
+        progress,
+        processId: result.processId,
+      }))
+    )
+      return;
 
     clearCodexPollerForItem(params.itemID);
     clearCodexRunStateForItem(params.itemID);

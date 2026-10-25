@@ -1,7 +1,5 @@
 import { test } from "node:test";
 import * as assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { setImmediate } from "node:timers/promises";
 
 import { parseHighlightCandidatesWithRepair } from "../src/modules/autoHighlight/response";
@@ -14,6 +12,7 @@ import {
 import * as workspaceRun from "../src/modules/ai/workspaceRun";
 import * as runCompletion from "../src/modules/ai/runCompletion";
 import * as cleanup from "../src/modules/workspace/cleanup";
+import * as pdfMatch from "../src/modules/autoHighlight/pdfMatch";
 
 test("parseHighlightCandidatesWithRepair repairs prose-only responses via retry", async () => {
   const seenStatuses: string[] = [];
@@ -184,6 +183,72 @@ test("auto-highlight respects an expired deadline before starting preparation", 
   }
 });
 
+for (const stopFails of [false, true]) {
+  test(`auto-highlight confirms process termination after an unreadable exit marker (stop fails: ${stopFails})`, async (t) => {
+    const runtime = globalThis as any;
+    const previous = {
+      addon: runtime.addon,
+      Zotero: runtime.Zotero,
+      ztoolkit: runtime.ztoolkit,
+    };
+    const itemID = 603;
+    runtime.addon = {
+      data: { modeOverrides: new Map([[itemID, "codex_cli"]]) },
+    };
+    runtime.Zotero = {
+      Items: {
+        getAsync: async () => ({ id: itemID, isPDFAttachment: () => true }),
+      },
+    };
+    runtime.ztoolkit = { Reader: { getReader: async () => ({ itemID }) } };
+    t.mock.method(workspaceRun, "startWorkspaceTextRun", async () => ({
+      ok: true,
+      workspacePath: "/owned",
+      outputPath: "out",
+      stderrPath: "err",
+      exitCodePath: "exit",
+      pidPath: "pid",
+      promptPreview: "",
+      processId: "424242",
+    }));
+    t.mock.method(workspaceRun, "readWorkspaceRunProgress", async () => ({
+      completed: true,
+      exitCode: "file-read-error",
+      processExitCode: "file-read-error",
+      rawOutput: "",
+      diagnosticOutput: "exit marker unreadable",
+      parsedOutput: "",
+    }));
+    let stopped = false;
+    let cleaned = false;
+    t.mock.method(runCompletion, "stopDetachedRunProcess", async () => {
+      assert.equal(workspaceRun.isWorkspaceRunReservedForItem(itemID), true);
+      assert.equal(cleaned, false);
+      stopped = true;
+      if (stopFails) throw new Error("termination unconfirmed");
+    });
+    t.mock.method(cleanup, "cleanupWorkspaceIfEnabled", async () => {
+      assert.equal(stopped, true);
+      cleaned = true;
+      return false;
+    });
+    try {
+      await assert.rejects(
+        runAutoHighlightWorkflow({ itemID, itemTitle: "Paper" }),
+        stopFails ? /could not be stopped/ : /highlight run failed/,
+      );
+      assert.equal(stopped, true);
+      assert.equal(cleaned, !stopFails);
+      assert.equal(
+        workspaceRun.isWorkspaceRunReservedForItem(itemID),
+        stopFails,
+      );
+    } finally {
+      Object.assign(runtime, previous);
+    }
+  });
+}
+
 for (const scenario of [
   { name: "exact PDF", requestedID: 711, readerID: 721, expectedID: 711 },
   { name: "parent fallback", requestedID: 710, readerID: 721, expectedID: 711 },
@@ -292,20 +357,121 @@ test("a cancelled run erases the highlights it already saved", async () => {
   assert.equal(clean.message, "Automatic highlighting cancelled.");
 });
 
-test("the save loop rolls back on cancel before and after the last save", () => {
-  const source = readFileSync(
-    join(process.cwd(), "src", "modules", "autoHighlight", "workflow.ts"),
-    "utf8",
-  );
-  const loop = source.slice(
-    source.indexOf("for (const candidate of candidates)"),
-  );
-  assert.match(
-    loop,
-    /for \(const candidate of candidates\) \{\s*if \(params\.signal\?\.aborted\) \{\s*throw await rollBackCancelledHighlights\(createdItems\);/,
-  );
-  assert.match(
-    loop,
-    /createdItems\.push\(saved\);\s*\}\s*if \(params\.signal\?\.aborted\) \{\s*throw await rollBackCancelledHighlights\(createdItems\);/,
-  );
-});
+for (const scenario of [
+  "save-resolves",
+  "save-rejects",
+  "refresh-resolves",
+  "refresh-rejects",
+] as const) {
+  test(`cancelling auto-highlight rolls back owned annotations when ${scenario}`, async (t) => {
+    const runtime = globalThis as any;
+    const previous = {
+      addon: runtime.addon,
+      Zotero: runtime.Zotero,
+      ztoolkit: runtime.ztoolkit,
+    };
+    const itemID = 713;
+    const controller = new AbortController();
+    const savedIDs: number[] = [];
+    const erasedIDs: number[] = [];
+    let saveCount = 0;
+    const attachment = {
+      id: itemID,
+      isPDFAttachment: () => true,
+      getFilePathAsync: async () => "/paper.pdf",
+      getAnnotations: () => [],
+    };
+    runtime.addon = {
+      data: { modeOverrides: new Map([[itemID, "codex_cli"]]) },
+    };
+    runtime.Zotero = {
+      Items: { getAsync: async () => attachment },
+      DataObjectUtilities: { generateKey: () => "NEWKEY" },
+      Annotations: {
+        saveFromJSON: async () => {
+          const id = ++saveCount;
+          if (id === 2 && scenario.startsWith("save-")) {
+            controller.abort();
+            if (scenario === "save-rejects")
+              throw new Error("write failed after cancel");
+          }
+          savedIDs.push(id);
+          return {
+            eraseTx: async () => {
+              assert.equal(
+                workspaceRun.isWorkspaceRunReservedForItem(itemID),
+                true,
+              );
+              erasedIDs.push(id);
+              return true;
+            },
+          };
+        },
+      },
+    };
+    runtime.ztoolkit = {
+      Reader: {
+        getReader: async () => ({
+          itemID,
+          type: "pdf",
+          setAnnotations: async () => {
+            assert.ok(scenario.startsWith("refresh-"));
+            controller.abort();
+            if (scenario === "refresh-rejects")
+              throw new Error("reader closed after cancel");
+          },
+        }),
+      },
+    };
+    t.mock.method(workspaceRun, "startWorkspaceTextRun", async () => ({
+      ok: true,
+      workspacePath: "/owned",
+      outputPath: "out",
+      stderrPath: "err",
+      exitCodePath: "exit",
+      pidPath: "pid",
+      promptPreview: "",
+      processId: "424242",
+    }));
+    t.mock.method(workspaceRun, "readWorkspaceRunProgress", async () => ({
+      completed: true,
+      exitCode: "0",
+      rawOutput: "",
+      diagnosticOutput: "",
+      parsedOutput: JSON.stringify({
+        highlights: [{ quote: "first passage" }, { quote: "second passage" }],
+      }),
+    }));
+    t.mock.method(cleanup, "cleanupWorkspaceIfEnabled", async () => false);
+    t.mock.method(pdfMatch, "extractPdfTextPagesFromReader", async () => [
+      { pageIndex: 0, pageLabel: "1", spans: [] },
+    ]);
+    t.mock.method(pdfMatch, "matchQuoteInPages", (quote: string) => ({
+      quote,
+      normalizedQuote: quote,
+      pageIndex: 0,
+      pageLabel: "1",
+      rects: [[1, 2, 3, 4]],
+      sortIndex: "00000|000001|00000",
+    }));
+    try {
+      await assert.rejects(
+        runAutoHighlightWorkflow({
+          itemID,
+          itemTitle: "Paper",
+          signal: controller.signal,
+        }),
+        (error: unknown) => {
+          assert.ok(error instanceof AutoHighlightCancelledError);
+          assert.equal(error.keptHighlights, 0);
+          return true;
+        },
+      );
+      assert.deepEqual(erasedIDs, savedIDs);
+      assert.equal(savedIDs.length, scenario === "save-rejects" ? 1 : 2);
+      assert.equal(workspaceRun.isWorkspaceRunReservedForItem(itemID), false);
+    } finally {
+      Object.assign(runtime, previous);
+    }
+  });
+}

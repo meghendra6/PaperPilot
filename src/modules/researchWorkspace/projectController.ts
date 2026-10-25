@@ -139,6 +139,7 @@ export class ResearchWorkspaceProjectController {
   async home(): Promise<ResearchWorkspaceProjectHome> {
     const entries = await this.repository.listProjects({
       includeArchived: true,
+      includeDueMasteryReviews: true,
     });
     const projects = entries.filter((entry) => !entry.archivedAt);
     const archivedProjects = entries.filter((entry) => entry.archivedAt);

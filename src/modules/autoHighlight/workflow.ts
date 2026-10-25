@@ -20,6 +20,7 @@ import {
   claimWorkspaceRunReservation,
   getWorkspaceEngineLabel,
   getWorkspaceEngineActiveMessage,
+  hasConfirmedWorkspaceProcessExit,
   readWorkspaceRunProgress,
   releaseReservationAfterConfirmedCleanup,
   releaseWorkspaceRunReservation,
@@ -112,7 +113,7 @@ async function waitForWorkspaceText(params: {
       });
 
       if (progress.completed) {
-        completed = true;
+        completed = hasConfirmedWorkspaceProcessExit(progress);
         const parsedText = extractWorkspaceRunText(mode, progress);
         if (progress.exitCode !== "0") {
           throw new Error(parsedText || `${engineLabel} highlight run failed.`);
@@ -325,44 +326,56 @@ export async function runAutoHighlightWorkflow(params: {
     let skipped = 0;
     let unmatched = 0;
 
-    for (const candidate of candidates) {
+    try {
+      for (const candidate of candidates) {
+        if (params.signal?.aborted) {
+          throw new Error("Automatic highlighting cancelled.");
+        }
+        if (Date.now() >= deadline) {
+          throw new Error("Automatic highlighting timed out.");
+        }
+        const match = matchQuoteInPages(candidate.quote, pages);
+        if (!match) {
+          unmatched += 1;
+          continue;
+        }
+
+        if (isDuplicateHighlight(existingAnnotations, match)) {
+          skipped += 1;
+          continue;
+        }
+
+        const payload = buildHighlightAnnotationJSON(match);
+        const saved = await Zotero.Annotations.saveFromJSON(
+          attachment,
+          payload as unknown as Parameters<
+            typeof Zotero.Annotations.saveFromJSON
+          >[1],
+        );
+        existingAnnotations.push(saved);
+        createdItems.push(saved);
+      }
+      if (params.signal?.aborted) {
+        throw new Error("Automatic highlighting cancelled.");
+      }
+
+      if (
+        createdItems.length &&
+        reader?.itemID === attachment.id &&
+        reader.setAnnotations
+      ) {
+        await reader.setAnnotations(createdItems);
+      }
+      if (params.signal?.aborted) {
+        throw new Error("Automatic highlighting cancelled.");
+      }
+    } catch (error) {
+      // Cancellation can arrive during a write or reader refresh that rejects.
+      // Keep every successfully saved annotation owned until rollback finishes.
       if (params.signal?.aborted) {
         throw await rollBackCancelledHighlights(createdItems);
       }
-      if (Date.now() >= deadline) {
-        throw new Error("Automatic highlighting timed out.");
-      }
-      const match = matchQuoteInPages(candidate.quote, pages);
-      if (!match) {
-        unmatched += 1;
-        continue;
-      }
-
-      if (isDuplicateHighlight(existingAnnotations, match)) {
-        skipped += 1;
-        continue;
-      }
-
-      const payload = buildHighlightAnnotationJSON(match);
-      const saved = await Zotero.Annotations.saveFromJSON(
-        attachment,
-        payload as unknown as Parameters<
-          typeof Zotero.Annotations.saveFromJSON
-        >[1],
-      );
-      existingAnnotations.push(saved);
-      createdItems.push(saved);
-    }
-    if (params.signal?.aborted) {
-      throw await rollBackCancelledHighlights(createdItems);
-    }
-
-    if (
-      createdItems.length &&
-      reader?.itemID === attachment.id &&
-      reader.setAnnotations
-    ) {
-      await reader.setAnnotations(createdItems);
+      throw error;
     }
 
     const result: AutoHighlightResult = {

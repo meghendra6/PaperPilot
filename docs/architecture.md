@@ -122,6 +122,8 @@ are excluded from conversation, document, and job files.
 PDF context is extracted by the bundled local OpenDataLoader runtime, with
 process cancellation and temporary-file cleanup. PDF bytes remain read-only for
 AI proposals. Selected passages are explicitly added to the next question.
+The assistant remembers Stop during its pre-request document save, finishes that
+save without launching AI, and retains the question for an explicit retry.
 
 `StudioCompilerService` snapshots saved project revisions, runs Tectonic, Typst
 or MyST (Typst output) in an owned build directory, polls completion every 800 ms,
@@ -411,6 +413,12 @@ signals and missing-PDF signals are advisory only. The semantic review-log
 projection and JSON/CSV exports include the complete decision history; they do
 not invoke a model or silently finalize a decision.
 
+Repeated project intake preserves existing reading progress and understanding,
+including retries after concurrent membership updates. Home review counts use the
+latest complete Mastery artifact for each source scope and its active session's
+concept review dates. The count is evaluated at the time the home is loaded, so
+passing a review deadline does not require another analysis or saved artifact.
+
 The contradiction and evidence-gap dashboard is a selection-independent local
 derivation over saved project artifacts. It admits only complete artifacts whose
 source fingerprints match the current non-excluded project scope, then checks
@@ -640,6 +648,11 @@ that document boundary.
    only the elapsed-time node every second. The shared watchdog enforces a
    30-minute absolute limit from workspace preparation onward without treating
    an empty Claude output file as a stall.
+   An unreadable or nonnumeric exit marker does not prove process termination.
+   Reader controllers and direct highlight/discovery workflows confirm process
+   termination before releasing ownership or cleaning the workspace. An
+   unconfirmed stop keeps the paper reserved; reader pollers and Cancel remain
+   available for recovery.
 6. On completion the controller sanitizes the text
    (`message/assistantOutput.ts`), persists the turn via
    `session/sessionHistoryService.ts`, updates run state, and calls

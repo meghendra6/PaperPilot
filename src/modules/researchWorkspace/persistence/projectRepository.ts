@@ -1,7 +1,11 @@
 import { joinPath, researchProjectDirectory } from "./paths";
 import { getResearchWorkspaceProjectOwnedDirectories } from "./projectDeletionPaths";
 import { parseResearchWorkspaceCandidates } from "./candidates";
-import { projectScopeFingerprint } from "../operationInputs";
+import {
+  latestCurrentArtifact,
+  projectScopeFingerprint,
+} from "../operationInputs";
+import type { MasterySession } from "../core/comprehensionCheck/v2/types";
 import { stableHash } from "../identity";
 import {
   assertResearchWorkspaceID,
@@ -81,6 +85,38 @@ function sortCatalogProjects(entries: ResearchWorkspaceCatalogEntry[]) {
     }
     return left.projectID.localeCompare(right.projectID);
   });
+}
+
+function dueMasteryReviewCount(
+  artifacts: readonly ResearchWorkspaceArtifact[],
+  now: number,
+) {
+  const byScope = new Map<string, ResearchWorkspaceArtifact[]>();
+  for (const artifact of artifacts) {
+    if (artifact.type !== "paper-mastery" || artifact.status !== "complete")
+      continue;
+    const scope = [...artifact.sourceIDs].sort().join("\n");
+    const history = byScope.get(scope) ?? [];
+    history.push(artifact);
+    byScope.set(scope, history);
+  }
+  let count = 0;
+  for (const history of byScope.values()) {
+    const latest = latestCurrentArtifact(history, "paper-mastery");
+    const session = (
+      latest?.payload as { session?: Partial<MasterySession> } | undefined
+    )?.session;
+    if (session?.phase !== "active") continue;
+    if (
+      Object.values(session.conceptStates ?? {}).some(
+        (state) =>
+          typeof state?.nextReviewAt === "string" &&
+          Date.parse(state.nextReviewAt) <= now,
+      )
+    )
+      count += 1;
+  }
+  return count;
 }
 
 function emptyCatalog(now: string): ResearchWorkspaceCatalog {
@@ -425,10 +461,31 @@ export class ResearchWorkspaceProjectRepository {
     return this.files.exists(this.catalogPath);
   }
 
-  async listProjects(options: { includeArchived?: boolean } = {}) {
+  async listProjects(
+    options: {
+      includeArchived?: boolean;
+      includeDueMasteryReviews?: boolean;
+    } = {},
+  ) {
     const catalog = await this.getCatalog();
-    return catalog.projects.filter(
+    const entries = catalog.projects.filter(
       (entry) => options.includeArchived || !entry.archivedAt,
+    );
+    if (!options.includeDueMasteryReviews) return entries;
+    const now = this.now().getTime();
+    return Promise.all(
+      entries.map(async (entry) => {
+        try {
+          const { artifacts } = await this.listArtifacts(entry.projectID);
+          return {
+            ...entry,
+            dueMasteryReviewCount: dueMasteryReviewCount(artifacts, now),
+          };
+        } catch {
+          // Keep damaged or incompletely deleted projects visible for recovery.
+          return entry;
+        }
+      }),
     );
   }
 
@@ -521,20 +578,10 @@ export class ResearchWorkspaceProjectRepository {
       staleArtifactCount: artifacts.artifacts.filter(
         (artifact) => artifact.status === "stale",
       ).length,
-      dueMasteryReviewCount: artifacts.artifacts.filter((artifact) => {
-        if (artifact.type !== "paper-mastery") return false;
-        const payload = artifact.payload as {
-          session?: { nextReviewAt?: string; phase?: string };
-          nextReviewAt?: string;
-          phase?: string;
-        };
-        const session = payload.session ?? payload;
-        return Boolean(
-          session.phase !== "completed" &&
-            session.nextReviewAt &&
-            session.nextReviewAt <= now,
-        );
-      }).length,
+      dueMasteryReviewCount: dueMasteryReviewCount(
+        artifacts.artifacts,
+        Date.parse(now),
+      ),
     } satisfies ResearchWorkspaceCatalogEntry;
   }
 
@@ -1031,6 +1078,12 @@ export class ResearchWorkspaceProjectRepository {
           role: addition.role ?? previous?.role ?? "candidate",
           reviewStatus:
             addition.reviewStatus ?? previous?.reviewStatus ?? "unreviewed",
+          ...(previous?.readingProgress
+            ? { readingProgress: previous.readingProgress }
+            : {}),
+          ...(previous?.understanding
+            ? { understanding: previous.understanding }
+            : {}),
           ...(addition.exclusionReason?.trim()
             ? { exclusionReason: addition.exclusionReason.trim() }
             : previous?.exclusionReason

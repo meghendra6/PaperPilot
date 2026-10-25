@@ -93,6 +93,7 @@ compatibility only. Linux CLI execution requires `/bin/zsh` and Unix process too
 - [ ] Return pid `0` or `1`; confirm it is rejected before any kill command is executed and the run remains owned for safe recovery/restart
 - [ ] Leave an old completed Codex state with a recorded pid, then change sessions; confirm the terminal pid is cleared without signaling that process
 - [ ] Force Codex assistant-turn persistence to fail after process completion; confirm pending ownership settles but the terminal Codex state contains no pid and session cleanup signals nothing
+- [ ] Make the exit-code file unreadable during Codex and Claude chat, Auto Highlight, and verified discovery; confirm the process is stopped before workspace cleanup. If stop confirmation fails, confirm the paper remains busy and its process ownership is retained
 - [ ] Fail one normal chat request for each engine, click Retry, and confirm the same question runs through the original engine; confirm Workbench/Mastery failures do not replace this retry target
 - [ ] Double-click Retry and confirm only one user turn/run is created; switch to another saved session and confirm the old failure card does not replay its request into the new session
 - [ ] While Retry persistence is delayed, start Auto Highlight/verified discovery and reverse the order; confirm the second claim is rejected before another user turn or direct workflow side effect is stored
@@ -842,6 +843,7 @@ Run these in Zotero 7 and 10, in light and dark themes, with the pane about
 - [ ] On Claude Code, or Codex with web search off, confirm all three "Find prior work" entry points are disabled with the reason and the Compare helper text changes
 - [ ] Click a card's "Find prior work" while discovery runs; confirm "already running" appears and the search continues
 - [ ] Cancel highlighting part-way; confirm no annotations remain from the cancelled run, including highlights saved before the cancel
+- [ ] Cancel highlighting while an annotation save or reader refresh is pending, then let it resolve or fail; confirm already-created highlights are removed and any failed removals are reported
 - [ ] Pick a model in the engine popover, then tick "Allow web search when needed" or click Re-check; confirm the pick and the enabled Save stay
 - [ ] With Codex selected, turn web search off in Zotero Settings; confirm "Find prior work" turns disabled with its reason without reopening the paper
 - [ ] Confirm the engine buttons show the pressed engine, the reset reads "Use default (…)", and it is disabled without an override
@@ -936,6 +938,8 @@ These need real Zotero. Run them in Zotero 7 and 10 where the item says so.
 - [ ] In a reader tab of a parent with several PDFs, confirm the section uses the open PDF
 - [ ] Corrupt `change-inbox.json` for a project; confirm the project still opens and only Living Review shows a warning
 - [ ] Save reading progress, then record a screening decision without reopening the project; confirm the decision saves
+- [ ] Add the same paper concurrently from two project surfaces, then save its reading progress and understanding before the second add retries; confirm both reading fields survive the retry
+- [ ] Save an active Mastery session with a future concept review date, then reopen the project home after that date without saving another analysis; confirm the review count updates and repeated grades for one paper count only once
 - [ ] Run Evidence Matrix while the first paper chats in the reader; confirm the other rows still run and the progress line names each paper
 - [ ] Finish an analysis in a project; confirm prerequisite-gated panels (for example Contradictions) enable without reopening, and typed panel text survives
 - [ ] In a read-only group library, confirm sync preview marks items blocked and Auto Highlight refuses before starting
@@ -1119,6 +1123,9 @@ Word, model providers and kernel languages remain separate evidence layers.
 - Exercise Codex, Claude and a local endpoint independently. Stop a
   run, close its window, and verify the process/request stops. Unknown models and
   missing capabilities must fail without fallback or hidden retries.
+- Press Stop while the assistant is saving the active document before sending.
+  Let the save finish and confirm no provider request starts, the question remains
+  available, and the next explicit Send works normally.
 - Run two Python notebook cells sharing a variable, render a figure, save it as a
   project file, export IPYNB and reopen in Jupyter. Repeat with an installed R
   kernel. Test errors, infinite-loop interrupt, restart and project isolation.

@@ -15,11 +15,15 @@ import {
   claimDirectWorkspaceRun,
   directWorkspaceRunOwner,
   getPendingEngineCompletion,
+  isPendingEngineCompletionCurrent,
   isDirectWorkspaceRunClaimCurrent,
   isDirectWorkspaceRunClaimed,
   isReaderLifecycleClaimActive,
   releaseDirectWorkspaceRun,
+  releasePendingEngineCompletionClaim,
+  reportRunStopFailure,
 } from "./runLifecycle";
+import type { ReaderRunToken } from "./runPresentation";
 import type { RunProfile } from "./runProfile";
 import type { StructuredOutputSchema } from "./structuredOutput";
 import type { EngineMode } from "./types";
@@ -54,6 +58,56 @@ export interface WorkspaceRunProgress {
   /** Original exit-code file value, retained for diagnostics. */
   processExitCode?: string;
   providerFailed?: boolean;
+}
+
+/** A polling failure can be terminal without proving that the process exited. */
+export function hasConfirmedWorkspaceProcessExit(
+  progress: Pick<
+    WorkspaceRunProgress,
+    "completed" | "exitCode" | "processExitCode"
+  >,
+): boolean {
+  return (
+    progress.completed &&
+    /^\d+$/.test(progress.processExitCode ?? progress.exitCode)
+  );
+}
+
+/** Retain reader ownership until an unreadable exit marker is safe to finalize. */
+export async function confirmReaderRunProcessExit(params: {
+  itemID: number;
+  mode: EngineMode;
+  token: ReaderRunToken;
+  progress: Pick<
+    WorkspaceRunProgress,
+    "completed" | "exitCode" | "processExitCode"
+  >;
+  processId?: string;
+}): Promise<boolean> {
+  if (hasConfirmedWorkspaceProcessExit(params.progress)) return true;
+  try {
+    await stopDetachedRunProcess(params.processId, { requireProcessId: true });
+    return isPendingEngineCompletionCurrent(params.itemID, params.token);
+  } catch (error) {
+    releasePendingEngineCompletionClaim(
+      params.itemID,
+      params.token,
+      "controller",
+    );
+    const pending = getPendingEngineCompletion(params.itemID);
+    if (pending?.token === params.token) {
+      // The watchdog may have fired while this controller held the claim.
+      pending.cancelTimeout?.();
+      pending.rearmTimeout?.();
+    }
+    reportRunStopFailure({
+      itemID: params.itemID,
+      engine: params.mode,
+      token: params.token,
+      rawError: `Paper Pilot could not confirm process termination after reading its exit marker failed: ${error instanceof Error ? error.message : String(error)}`,
+    });
+    return false;
+  }
 }
 
 /** A successful process must also produce a readable answer after decoding. */
