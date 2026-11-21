@@ -472,6 +472,10 @@ test("Codex run settings default to Astra and preserve saved supported models in
       [undefined, "gpt-6-astra"],
       ["", "gpt-6-astra"],
       ["retired-model", "gpt-6-astra"],
+      ["gpt-6.2-sol", "gpt-6.2-sol"],
+      ["gpt-6.2-astra", "gpt-6.2-astra"],
+      ["gpt-6.1-terra", "gpt-6.1-terra"],
+      ["gpt-6.1-sol", "gpt-6.1-sol"],
       ["gpt-6-astra", "gpt-6-astra"],
       ["gpt-6-sol", "gpt-6-sol"],
       ["gpt-6-luna", "gpt-6-luna"],
@@ -505,8 +509,12 @@ test("Codex run settings default to Astra and preserve saved supported models in
   }
 });
 
-test("getCodexBuiltInModelCatalog exposes only current recommended models", () => {
+test("getCodexBuiltInModelCatalog exposes new and previous Codex models", () => {
   assert.deepEqual(getCodexBuiltInModels(), [
+    "gpt-6.2-sol",
+    "gpt-6.2-astra",
+    "gpt-6.1-terra",
+    "gpt-6.1-sol",
     "gpt-6-astra",
     "gpt-6-sol",
     "gpt-6-luna",
@@ -518,6 +526,21 @@ test("getCodexBuiltInModelCatalog exposes only current recommended models", () =
   const catalog = getCodexBuiltInModelCatalog();
   const bySlug = new Map(catalog.map((model) => [model.slug, model]));
 
+  for (const [slug, displayName] of [
+    ["gpt-6.2-sol", "GPT-6.2-Sol"],
+    ["gpt-6.2-astra", "GPT-6.2-Astra"],
+    ["gpt-6.1-terra", "GPT-6.1-Terra"],
+    ["gpt-6.1-sol", "GPT-6.1-Sol"],
+  ]) {
+    assert.deepEqual(bySlug.get(slug), {
+      slug,
+      displayName,
+      reasoningEfforts: ["low", "medium", "high", "xhigh", "max", "ultra"],
+      defaultReasoningEffort: "low",
+    });
+    assert.equal(normalizeCodexReasoningEffort("ultra", slug), "ultra");
+    assert.equal(normalizeCodexReasoningEffort("none", slug), "low");
+  }
   assert.deepEqual(bySlug.get("gpt-6-astra"), {
     slug: "gpt-6-astra",
     displayName: "GPT-6-Astra",

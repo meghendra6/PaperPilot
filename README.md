@@ -207,7 +207,7 @@ Codex mode is the more workspace-oriented path. The current codebase includes su
 - executable discovery and validation
 - login/status checks
 - workspace writability checks
-- model selection across the bundled Codex model catalog (`gpt-6-astra` default, plus `gpt-6-sol`, `gpt-6-luna`, `gpt-5.6-sol`, `gpt-5.6-terra`, and `gpt-5.6-luna`), with a reasoning effort picker next to the model picker that lists only the levels the chosen model supports (up to `max`/`ultra` where supported)
+- a bundled Codex model picker with GPT-6.2 Sol and Astra, GPT-6.1 Terra and Sol, and the GPT-6 and GPT-5.6 choices (`gpt-6-astra` is the default). The adjacent reasoning effort picker shows the levels available for the selected model, up to `max` or `ultra`
 - sandbox and approval settings
 - optional web-search toggle
 - resumable follow-up runs tied to the current paper

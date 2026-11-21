@@ -6,17 +6,17 @@ import { providerLabel } from "../src/modules/studio/aiContracts";
 test("assistant defaults follow the engine mode and list the reader's models", () => {
   const defaults = studioModelDefaults({
     engineMode: "claude_code",
-    codexModel: "gpt-6-sol",
+    codexModel: "gpt-6.2-sol",
     claudeModel: "opus",
-    codexAllowed: "gpt-6-sol, gpt-6-luna, retired-model",
+    codexAllowed: "gpt-6.2-sol, gpt-6.1-terra, gpt-6-luna, retired-model",
     claudeAllowed: "opus, claude-sonnet-5.5",
   });
   assert.equal(defaults.provider, "claude");
-  assert.equal(defaults.codex, "gpt-6-sol");
+  assert.equal(defaults.codex, "gpt-6.2-sol");
   assert.equal(defaults.claude, "opus");
   assert.deepEqual(
     defaults.models?.codex.map((choice) => choice.value),
-    ["gpt-6-sol", "gpt-6-luna"],
+    ["gpt-6.2-sol", "gpt-6.1-terra", "gpt-6-luna"],
   );
   const claude = defaults.models?.claude ?? [];
   assert.deepEqual(

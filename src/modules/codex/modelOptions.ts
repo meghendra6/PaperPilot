@@ -16,9 +16,33 @@ interface CodexBuiltInModel {
   defaultReasoningEffort: string;
 }
 
-// Keeps PaperPilot's picker on the current recommended Codex models.
+// Codex CLI can offer different effort levels from the public API.
 // Unknown or retired saved values normalize to the default model below.
 const CODEX_BUILT_IN_MODEL_CATALOG: CodexBuiltInModel[] = [
+  {
+    slug: "gpt-6.2-sol",
+    displayName: "GPT-6.2-Sol",
+    reasoningEfforts: ["low", "medium", "high", "xhigh", "max", "ultra"],
+    defaultReasoningEffort: "low",
+  },
+  {
+    slug: "gpt-6.2-astra",
+    displayName: "GPT-6.2-Astra",
+    reasoningEfforts: ["low", "medium", "high", "xhigh", "max", "ultra"],
+    defaultReasoningEffort: "low",
+  },
+  {
+    slug: "gpt-6.1-terra",
+    displayName: "GPT-6.1-Terra",
+    reasoningEfforts: ["low", "medium", "high", "xhigh", "max", "ultra"],
+    defaultReasoningEffort: "low",
+  },
+  {
+    slug: "gpt-6.1-sol",
+    displayName: "GPT-6.1-Sol",
+    reasoningEfforts: ["low", "medium", "high", "xhigh", "max", "ultra"],
+    defaultReasoningEffort: "low",
+  },
   {
     slug: "gpt-6-astra",
     displayName: "GPT-6-Astra",
@@ -57,7 +81,7 @@ const CODEX_BUILT_IN_MODEL_CATALOG: CodexBuiltInModel[] = [
   },
 ];
 
-export const CODEX_DEFAULT_MODEL = CODEX_BUILT_IN_MODEL_CATALOG[0].slug;
+export const CODEX_DEFAULT_MODEL = "gpt-6-astra";
 const CODEX_DEFAULT_REASONING_EFFORT = "medium";
 
 function findCodexBuiltInModel(slug: string) {

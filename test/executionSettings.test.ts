@@ -53,13 +53,14 @@ test("Codex allowed models determine both effective selection and picker options
       options.map((entry) => entry.value),
       ["gpt-5.6-luna"],
     );
-    allowedModels = "gpt-6-sol,gpt-6-luna";
+    const models = ["gpt-6.2-sol", "gpt-6.1-terra", "gpt-6-sol", "gpt-6-luna"];
+    allowedModels = models.join(",");
     renderModelHistory(container as any, input as any, "codex_cli");
     assert.deepEqual(
       options.map((entry) => entry.value),
-      ["gpt-6-sol", "gpt-6-luna"],
+      models,
     );
-    for (const model of ["gpt-6-sol", "gpt-6-luna"]) {
+    for (const model of models) {
       const prefs: Record<string, string> = {
         codexAllowedModels: allowedModels,
         codexDefaultModel: model,
@@ -72,7 +73,7 @@ test("Codex allowed models determine both effective selection and picker options
       assert.equal(settings.model, model);
       assert.equal(
         settings.reasoningEffort,
-        model === "gpt-6-sol" ? "ultra" : "medium",
+        model === "gpt-6-luna" ? "medium" : "ultra",
       );
     }
     rememberRecentModel("codex_cli", "gpt-6-astra");

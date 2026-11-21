@@ -202,7 +202,7 @@ Codex 模式更偏向工作區驅動。當前程式碼庫已包含：
 - 可執行檔發現與驗證
 - 登入／狀態檢查
 - 工作區可寫性檢查
-- 內建 Codex 模型清單（預設 `gpt-6-astra`，另含 `gpt-6-sol`、`gpt-6-luna`、`gpt-5.6-sol`、`gpt-5.6-terra`、`gpt-5.6-luna`），模型選擇器旁的 reasoning effort 選擇器只列出所選模型支援的等級（支援時可達 `max`/`ultra`）
+- 內建 Codex 模型選擇器提供 GPT-6.2 Sol 和 Astra、GPT-6.1 Terra 和 Sol，以及原有的 GPT-6 和 GPT-5.6 模型（預設為 `gpt-6-astra`）。旁邊的推理強度選擇器會顯示所選模型支援的等級，最高為 `max` 或 `ultra`
 - sandbox 與 approval 設定
 - 可選網頁搜尋切換
 - 與目前論文綁定的可恢復追問執行
