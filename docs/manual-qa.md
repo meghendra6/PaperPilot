@@ -115,12 +115,13 @@ compatibility only. Linux CLI execution requires `/bin/zsh` and Unix process too
 - [ ] Switch to `Claude Code`
 - [ ] Confirm Claude Code model controls and mode messaging update correctly, and that the effort select next to the model picker offers `default effort` plus `low` through `max`
 - [ ] Switch to `Codex CLI`
-- [ ] Confirm the unified run-progress card and Codex model controls offer GPT-6 Astra, Sol, and Luna plus GPT-5.6 Sol, Terra, and Luna, each listed once, with a separate effort select next to the model picker; a fresh install, empty preference, or unknown/retired saved model defaults to Astra; with no saved reasoning effort, it uses `medium`
-- [ ] In Codex mode, pick `ultra` on GPT-6 Sol, then switch the model to GPT-6 Luna; confirm the effort select drops `ultra` and selects `medium`. Pick `high` and switch to GPT-6 Astra; confirm `high` stays selected. Close the popover without saving and confirm both selects return to the saved values
-- [ ] Confirm an explicitly saved GPT-5.6 model/effort remains selected after upgrading; selecting each GPT-6 model persists across a pane refresh and starts/resumes a run with its exact model ID (`gpt-6-astra`, `gpt-6-sol`, or `gpt-6-luna`)
+- [ ] Confirm the Codex model pickers in the reader and Research Studio each list GPT-6.2 Sol and Astra, GPT-6.1 Terra and Sol, GPT-6 Astra, Sol, and Luna, and GPT-5.6 Sol, Terra, and Luna once. In the reader, confirm a fresh install, empty preference, or unknown saved model defaults to `gpt-6-astra` with `medium` effort when no effort is saved
+- [ ] In Codex mode, pick `ultra` on GPT-6.2 Sol, then switch to GPT-6 Luna and confirm the effort select drops `ultra` and selects `medium`. Pick `high` and switch to GPT-6.1 Terra to confirm `high` stays selected. Close the popover without saving and confirm both selects return to the saved values
+- [ ] Confirm an explicitly saved GPT-6 or GPT-5.6 model and effort survive an upgrade. Select each new model and confirm that it persists across a pane refresh and starts or resumes a run with its exact ID (`gpt-6.2-sol`, `gpt-6.2-astra`, `gpt-6.1-terra`, or `gpt-6.1-sol`)
+- [ ] Confirm GPT-6.2 Sol and Astra and GPT-6.1 Terra and Sol each offer `low` through `ultra` for Codex CLI, with an invalid saved effort falling back to `low`
 - [ ] Confirm Astra offers `low`, `medium`, `high`, `xhigh`, `max`, and `ultra` as supported by the installed Codex CLI, with invalid effort values falling back to `medium`
 - [ ] Confirm GPT-6 Sol offers `low` through `ultra` and invalid effort values fall back to `low`; GPT-6 Luna offers `low` through `max`, excludes `ultra`, and invalid effort values fall back to `medium`
-- [ ] With a custom `codexAllowedModels` list, confirm only listed supported models appear; explicitly include `gpt-6-sol` and `gpt-6-luna` to enable them in a restricted picker
+- [ ] With a custom `codexAllowedModels` list, confirm the reader lists only the supported models named in the list. Add `gpt-6.2-sol` and `gpt-6.1-terra` to the preference and confirm both appear
 - [ ] Confirm per-paper mode override does not affect another document unexpectedly
 
 ### Korean terminology in generated answers
